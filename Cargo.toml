@@ -1,0 +1,20 @@
+[workspace]
+members = ["core"]
+resolver = "2"
+
+[workspace.dependencies]
+anyhow = "1"
+chrono = { version = "0.4", features = ["serde"] }
+thiserror = "1"
+uuid = { version = "1", features = ["v4", "serde"] }
+
+knotq-commands = { path = "../desktop/commands" }
+knotq-date-util = { path = "../desktop/date-util" }
+knotq-index = { path = "../desktop/index" }
+knotq-model = { path = "../shared/model" }
+knotq-state = { path = "../desktop/state" }
+knotq-storage-json = { path = "../desktop/storage-json" }
+
+[profile.release]
+lto = true
+codegen-units = 1

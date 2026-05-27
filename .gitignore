@@ -1,0 +1,13 @@
+.DS_Store
+target/
+
+android/.idea/
+android/.bin/
+android/.gradle/
+android/local.properties
+android/app/build/
+android/app/src/main/jniLibs/
+
+ios/DerivedData/
+ios/KnotQMobile.xcodeproj/project.xcworkspace/xcuserdata/
+ios/KnotQMobile.xcodeproj/xcuserdata/

@@ -1,0 +1,189 @@
+namespace knotq_mobile_core {};
+
+[Error]
+interface MobileError {
+  Core(string reason);
+};
+
+dictionary MobileSnapshot {
+  MobileNode root;
+  sequence<MobileScheme> schemes;
+  sequence<MobileDailyEntry> daily;
+  MobileCalendar calendar;
+  MobileSettings settings;
+  string workspace_path;
+};
+
+dictionary MobileNode {
+  string kind;
+  string id;
+  string name;
+  i32? color_index;
+  boolean is_daily_queue;
+  sequence<MobileNode> children;
+};
+
+dictionary MobileScheme {
+  string id;
+  string name;
+  string display_name;
+  i32 color_index;
+  boolean is_daily_queue;
+  string? date;
+  sequence<MobileItem> items;
+};
+
+dictionary MobileItem {
+  string id;
+  string text;
+  string marker;
+  i32 indent;
+  string kind;
+  boolean done;
+  string? start;
+  string? end;
+  sequence<MobileItemMedia> media;
+};
+
+dictionary MobileItemMedia {
+  string kind;
+  string? path;
+  string format;
+  i32? width;
+  i32? height;
+};
+
+dictionary MobileItemEdit {
+  string? id;
+  string text;
+  string marker;
+  i32 indent;
+  boolean done;
+};
+
+dictionary MobileDailyEntry {
+  string date;
+  MobileScheme scheme;
+};
+
+dictionary MobileCalendar {
+  string start_date;
+  string end_date;
+  sequence<MobileCalendarDay> days;
+  sequence<MobileOccurrence> upcoming;
+  sequence<MobileOccurrence> overdue;
+};
+
+dictionary MobileCalendarDay {
+  string date;
+  sequence<MobileOccurrence> occurrences;
+};
+
+dictionary MobileOccurrence {
+  string scheme_id;
+  string item_id;
+  string scheme_name;
+  i32 color_index;
+  string title;
+  string kind;
+  boolean done;
+  string? start;
+  string? end;
+  string? local_date;
+};
+
+dictionary MobileSettings {
+  string theme_mode;
+  string time_format;
+};
+
+dictionary MobileSearchHit {
+  string target_kind;
+  string? scheme_id;
+  string? item_id;
+  string scheme_name;
+  i32? color_index;
+  string title;
+  string detail;
+  string status;
+};
+
+interface MobileCore {
+  [Throws=MobileError]
+  constructor(string app_dir);
+
+  [Throws=MobileError]
+  MobileSnapshot snapshot(string? today, i32 week_offset);
+
+  [Throws=MobileError]
+  sequence<MobileSearchHit> search(string query);
+
+  [Throws=MobileError]
+  void create_folder(string name, i32? position);
+
+  [Throws=MobileError]
+  void rename_folder(string folder_id, string name);
+
+  [Throws=MobileError]
+  void delete_folder(string folder_id);
+
+  [Throws=MobileError]
+  void create_scheme(string? folder_id, string name, i32? color_index, i32? position);
+
+  [Throws=MobileError]
+  void rename_scheme(string scheme_id, string name);
+
+  [Throws=MobileError]
+  void set_scheme_color(string scheme_id, i32 color_index);
+
+  [Throws=MobileError]
+  void delete_scheme(string scheme_id);
+
+  [Throws=MobileError]
+  void move_node(string kind, string id, string folder_id, i32 position);
+
+  [Throws=MobileError]
+  void ensure_daily_queue(string? date);
+
+  [Throws=MobileError]
+  void add_item(string scheme_id, string text, string? marker, i32? position, i32? indent);
+
+  [Throws=MobileError]
+  void add_calendar_item(string? scheme_id, string? date, string text, string kind, string? start, string? end);
+
+  [Throws=MobileError]
+  void update_item_text(string scheme_id, string item_id, string text);
+
+  [Throws=MobileError]
+  void set_item_marker(string scheme_id, string item_id, string marker);
+
+  [Throws=MobileError]
+  void set_item_indent(string scheme_id, string item_id, i32 indent);
+
+  [Throws=MobileError]
+  void set_item_date(string scheme_id, string item_id, string kind, string? date);
+
+  [Throws=MobileError]
+  void toggle_item(string scheme_id, string item_id);
+
+  [Throws=MobileError]
+  void delete_item(string scheme_id, string item_id);
+
+  [Throws=MobileError]
+  void reorder_item(string scheme_id, i32 from, i32 to);
+
+  [Throws=MobileError]
+  void replace_scheme_items(string scheme_id, sequence<MobileItemEdit> items);
+
+  [Throws=MobileError]
+  void set_theme_mode(string theme_mode);
+
+  [Throws=MobileError]
+  void set_time_format(string time_format);
+
+  [Throws=MobileError]
+  void reset_workspace();
+
+  [Throws=MobileError]
+  void seed_editor_image_fixture();
+};

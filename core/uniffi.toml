@@ -1,0 +1,10 @@
+[bindings.kotlin]
+package_name = "com.enigmadux.knotq.ffi"
+cdylib_name = "knotq_mobile_core"
+android_cleaner = true
+
+[bindings.swift]
+module_name = "KnotQMobileCore"
+ffi_module_name = "KnotQMobileCoreFFI"
+ffi_module_filename = "KnotQMobileCoreFFI"
+cdylib_name = "knotq_mobile_core"

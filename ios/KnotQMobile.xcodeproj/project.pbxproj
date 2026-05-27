@@ -1,0 +1,413 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 77;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		010000000000000000000001 /* KnotQMobileApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 020000000000000000000001 /* KnotQMobileApp.swift */; };
+		010000000000000000000002 /* Models.swift in Sources */ = {isa = PBXBuildFile; fileRef = 020000000000000000000002 /* Models.swift */; };
+		010000000000000000000003 /* RustBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = 020000000000000000000003 /* RustBridge.swift */; };
+		010000000000000000000004 /* AppModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 020000000000000000000004 /* AppModel.swift */; };
+		010000000000000000000005 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 020000000000000000000005 /* ContentView.swift */; };
+		010000000000000000000006 /* SchemesScreen.swift in Sources */ = {isa = PBXBuildFile; fileRef = 020000000000000000000006 /* SchemesScreen.swift */; };
+		010000000000000000000007 /* SchemeEditorView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 020000000000000000000007 /* SchemeEditorView.swift */; };
+		010000000000000000000008 /* CalendarScreen.swift in Sources */ = {isa = PBXBuildFile; fileRef = 020000000000000000000008 /* CalendarScreen.swift */; };
+		010000000000000000000009 /* DailyScreen.swift in Sources */ = {isa = PBXBuildFile; fileRef = 020000000000000000000009 /* DailyScreen.swift */; };
+		01000000000000000000000A /* SearchScreen.swift in Sources */ = {isa = PBXBuildFile; fileRef = 02000000000000000000000A /* SearchScreen.swift */; };
+		01000000000000000000000B /* SettingsScreen.swift in Sources */ = {isa = PBXBuildFile; fileRef = 02000000000000000000000B /* SettingsScreen.swift */; };
+		01000000000000000000000C /* SharedViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 02000000000000000000000C /* SharedViews.swift */; };
+		01000000000000000000000D /* KnotQMobileCore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 020000000000000000000010 /* KnotQMobileCore.swift */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXFileReference section */
+		020000000000000000000001 /* KnotQMobileApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KnotQMobileApp.swift; sourceTree = "<group>"; };
+		020000000000000000000002 /* Models.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Models.swift; sourceTree = "<group>"; };
+		020000000000000000000003 /* RustBridge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RustBridge.swift; sourceTree = "<group>"; };
+		020000000000000000000004 /* AppModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppModel.swift; sourceTree = "<group>"; };
+		020000000000000000000005 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
+		020000000000000000000006 /* SchemesScreen.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SchemesScreen.swift; sourceTree = "<group>"; };
+		020000000000000000000007 /* SchemeEditorView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SchemeEditorView.swift; sourceTree = "<group>"; };
+		020000000000000000000008 /* CalendarScreen.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CalendarScreen.swift; sourceTree = "<group>"; };
+		020000000000000000000009 /* DailyScreen.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DailyScreen.swift; sourceTree = "<group>"; };
+		02000000000000000000000A /* SearchScreen.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SearchScreen.swift; sourceTree = "<group>"; };
+		02000000000000000000000B /* SettingsScreen.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsScreen.swift; sourceTree = "<group>"; };
+		02000000000000000000000C /* SharedViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SharedViews.swift; sourceTree = "<group>"; };
+		02000000000000000000000D /* KnotQMobile-Bridging-Header.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = "KnotQMobile-Bridging-Header.h"; sourceTree = "<group>"; };
+		02000000000000000000000E /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		02000000000000000000000F /* KnotQMobile.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = KnotQMobile.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		020000000000000000000010 /* KnotQMobileCore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Generated/KnotQMobileCore.swift; sourceTree = "<group>"; };
+/* End PBXFileReference section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		030000000000000000000001 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		040000000000000000000001 = {
+			isa = PBXGroup;
+			children = (
+				040000000000000000000002 /* KnotQMobile */,
+				040000000000000000000003 /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		040000000000000000000002 /* KnotQMobile */ = {
+			isa = PBXGroup;
+			children = (
+				020000000000000000000001 /* KnotQMobileApp.swift */,
+				020000000000000000000002 /* Models.swift */,
+				020000000000000000000010 /* KnotQMobileCore.swift */,
+				020000000000000000000003 /* RustBridge.swift */,
+				020000000000000000000004 /* AppModel.swift */,
+				020000000000000000000005 /* ContentView.swift */,
+				020000000000000000000006 /* SchemesScreen.swift */,
+				020000000000000000000007 /* SchemeEditorView.swift */,
+				020000000000000000000008 /* CalendarScreen.swift */,
+				020000000000000000000009 /* DailyScreen.swift */,
+				02000000000000000000000A /* SearchScreen.swift */,
+				02000000000000000000000B /* SettingsScreen.swift */,
+				02000000000000000000000C /* SharedViews.swift */,
+				02000000000000000000000D /* KnotQMobile-Bridging-Header.h */,
+				02000000000000000000000E /* Info.plist */,
+			);
+			path = KnotQMobile;
+			sourceTree = "<group>";
+		};
+		040000000000000000000003 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				02000000000000000000000F /* KnotQMobile.app */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		050000000000000000000001 /* KnotQMobile */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 0B0000000000000000000002 /* Build configuration list for PBXNativeTarget "KnotQMobile" */;
+			buildPhases = (
+				090000000000000000000001 /* Build Rust Core */,
+				060000000000000000000001 /* Sources */,
+				030000000000000000000001 /* Frameworks */,
+				070000000000000000000001 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = KnotQMobile;
+			productName = KnotQMobile;
+			productReference = 02000000000000000000000F /* KnotQMobile.app */;
+			productType = "com.apple.product-type.application";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		080000000000000000000001 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = 1;
+				LastSwiftUpdateCheck = 2650;
+				LastUpgradeCheck = 2650;
+					TargetAttributes = {
+						050000000000000000000001 = {
+							CreatedOnToolsVersion = 26.5;
+							ProvisioningStyle = Automatic;
+						};
+					};
+			};
+			buildConfigurationList = 0B0000000000000000000001 /* Build configuration list for PBXProject "KnotQMobile" */;
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				en,
+				Base,
+			);
+			mainGroup = 040000000000000000000001;
+			minimizedProjectReferenceProxies = 1;
+			preferredProjectObjectVersion = 77;
+			productRefGroup = 040000000000000000000003 /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				050000000000000000000001 /* KnotQMobile */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		070000000000000000000001 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXShellScriptBuildPhase section */
+		090000000000000000000001 /* Build Rust Core */ = {
+			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+			);
+			name = "Build Rust Core";
+			outputFileListPaths = (
+			);
+			outputPaths = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "set -euo pipefail\nexport PATH=\"$HOME/.cargo/bin:/opt/homebrew/bin:/usr/local/bin:$PATH\"\ncd \"$PROJECT_DIR/..\"\nGENERATED_DIR=\"$PROJECT_DIR/KnotQMobile/Generated\"\nRUST_LIB_DIR=\"$TARGET_TEMP_DIR/rust\"\nmkdir -p \"$GENERATED_DIR\" \"$RUST_LIB_DIR\"\nif ! command -v cargo >/dev/null 2>&1; then\n  echo \"error: cargo was not found. Install Rust or make sure ~/.cargo/bin/cargo exists.\"\n  exit 1\nfi\ncargo run -p knotq-mobile-core --features bindgen-cli --bin uniffi-bindgen -- generate core/src/knotq_mobile_core.udl --language swift --out-dir \"$GENERATED_DIR\"\nbuild_target() {\n  local target=\"$1\"\n  echo \"Building knotq-mobile-core for $target\"\n  cargo build -p knotq-mobile-core --target \"$target\"\n}\ncopy_target() {\n  local target=\"$1\"\n  cp \"target/$target/debug/libknotq_mobile_core.a\" \"$RUST_LIB_DIR/libknotq_mobile_core.a\"\n}\nif [ \"$PLATFORM_NAME\" = \"iphonesimulator\" ]; then\n  if [ \"$CURRENT_ARCH\" = \"x86_64\" ]; then\n    build_target x86_64-apple-ios\n    copy_target x86_64-apple-ios\n  elif [ \"$CURRENT_ARCH\" = \"arm64\" ]; then\n    build_target aarch64-apple-ios-sim\n    copy_target aarch64-apple-ios-sim\n  else\n    build_target aarch64-apple-ios-sim\n    build_target x86_64-apple-ios\n    lipo -create \\\n      \"target/aarch64-apple-ios-sim/debug/libknotq_mobile_core.a\" \\\n      \"target/x86_64-apple-ios/debug/libknotq_mobile_core.a\" \\\n      -output \"$RUST_LIB_DIR/libknotq_mobile_core.a\"\n  fi\nelse\n  build_target aarch64-apple-ios\n  copy_target aarch64-apple-ios\nfi\n";
+		};
+/* End PBXShellScriptBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		060000000000000000000001 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				010000000000000000000001 /* KnotQMobileApp.swift in Sources */,
+				010000000000000000000002 /* Models.swift in Sources */,
+				01000000000000000000000D /* KnotQMobileCore.swift in Sources */,
+				010000000000000000000003 /* RustBridge.swift in Sources */,
+				010000000000000000000004 /* AppModel.swift in Sources */,
+				010000000000000000000005 /* ContentView.swift in Sources */,
+				010000000000000000000006 /* SchemesScreen.swift in Sources */,
+				010000000000000000000007 /* SchemeEditorView.swift in Sources */,
+				010000000000000000000008 /* CalendarScreen.swift in Sources */,
+				010000000000000000000009 /* DailyScreen.swift in Sources */,
+				01000000000000000000000A /* SearchScreen.swift in Sources */,
+				01000000000000000000000B /* SettingsScreen.swift in Sources */,
+				01000000000000000000000C /* SharedViews.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin XCBuildConfiguration section */
+		0A0000000000000000000001 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"DEBUG=1",
+					"$(inherited)",
+				);
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				MTL_FAST_MATH = YES;
+				ONLY_ACTIVE_ARCH = YES;
+				SDKROOT = iphoneos;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+			};
+			name = Debug;
+		};
+		0A0000000000000000000002 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				MTL_FAST_MATH = YES;
+				SDKROOT = iphoneos;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
+				VALIDATE_PRODUCT = YES;
+			};
+			name = Release;
+		};
+		0A0000000000000000000003 /* Debug */ = {
+				isa = XCBuildConfiguration;
+				buildSettings = {
+					CODE_SIGN_IDENTITY = "Apple Development";
+					CODE_SIGN_STYLE = Automatic;
+					CURRENT_PROJECT_VERSION = 1;
+					DEVELOPMENT_ASSET_PATHS = "";
+					DEVELOPMENT_TEAM = T35KD9JHQ6;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = KnotQMobile/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = KnotQ;
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.productivity";
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				LIBRARY_SEARCH_PATHS = (
+					"$(inherited)",
+					"$(TARGET_TEMP_DIR)/rust",
+				);
+				MARKETING_VERSION = 1.0;
+				OTHER_LDFLAGS = (
+					"$(inherited)",
+					"-lknotq_mobile_core",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.enigmadux.knotq;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SWIFT_OBJC_BRIDGING_HEADER = "KnotQMobile/KnotQMobile-Bridging-Header.h";
+				SWIFT_VERSION = 6.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		0A0000000000000000000004 /* Release */ = {
+				isa = XCBuildConfiguration;
+				buildSettings = {
+					CODE_SIGN_IDENTITY = "Apple Development";
+					CODE_SIGN_STYLE = Automatic;
+					CURRENT_PROJECT_VERSION = 1;
+					DEVELOPMENT_ASSET_PATHS = "";
+					DEVELOPMENT_TEAM = T35KD9JHQ6;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = KnotQMobile/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = KnotQ;
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.productivity";
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				LIBRARY_SEARCH_PATHS = (
+					"$(inherited)",
+					"$(TARGET_TEMP_DIR)/rust",
+				);
+				MARKETING_VERSION = 1.0;
+				OTHER_LDFLAGS = (
+					"$(inherited)",
+					"-lknotq_mobile_core",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.enigmadux.knotq;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SWIFT_OBJC_BRIDGING_HEADER = "KnotQMobile/KnotQMobile-Bridging-Header.h";
+				SWIFT_VERSION = 6.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		0B0000000000000000000001 /* Build configuration list for PBXProject "KnotQMobile" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				0A0000000000000000000001 /* Debug */,
+				0A0000000000000000000002 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		0B0000000000000000000002 /* Build configuration list for PBXNativeTarget "KnotQMobile" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				0A0000000000000000000003 /* Debug */,
+				0A0000000000000000000004 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+/* End XCConfigurationList section */
+	};
+	rootObject = 080000000000000000000001 /* Project object */;
+}
