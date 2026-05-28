@@ -7,6 +7,7 @@ import com.enigmadux.knotq.ffi.MobileCore
 import com.enigmadux.knotq.ffi.MobileDailyEntry
 import com.enigmadux.knotq.ffi.MobileItem
 import com.enigmadux.knotq.ffi.MobileItemEdit
+import com.enigmadux.knotq.ffi.MobileItemMedia
 import com.enigmadux.knotq.ffi.MobileNode
 import com.enigmadux.knotq.ffi.MobileOccurrence
 import com.enigmadux.knotq.ffi.MobileScheme
@@ -43,6 +44,9 @@ internal class RustBridge(context: Context) : AutoCloseable {
             "rename_scheme" -> core.renameScheme(body.getString("scheme_id"), body.getString("name"))
             "set_scheme_color" -> core.setSchemeColor(body.getString("scheme_id"), body.getInt("color_index"))
             "delete_scheme" -> core.deleteScheme(body.getString("scheme_id"))
+            "restore_scheme" -> core.restoreScheme(body.getString("scheme_id"))
+            "permanently_delete_scheme" -> core.permanentlyDeleteScheme(body.getString("scheme_id"))
+            "empty_archive" -> core.emptyArchive()
             "move_node" -> core.moveNode(
                 body.getString("kind"),
                 body.getString("id"),
@@ -119,6 +123,7 @@ internal class RustBridge(context: Context) : AutoCloseable {
     private fun MobileSnapshot.toJson(): JSONObject = JSONObject()
         .put("root", root.toJson())
         .put("schemes", schemes.toJsonArray { it.toJson() })
+        .put("archived_schemes", archivedSchemes.toJsonArray { it.toJson() })
         .put("daily", daily.toJsonArray { it.toJson() })
         .put("calendar", calendar.toJson())
         .put("settings", settings.toJson())
@@ -150,6 +155,14 @@ internal class RustBridge(context: Context) : AutoCloseable {
         .put("done", done)
         .put("start", start ?: JSONObject.NULL)
         .put("end", end ?: JSONObject.NULL)
+        .put("media", media.toJsonArray { it.toJson() })
+
+    private fun MobileItemMedia.toJson(): JSONObject = JSONObject()
+        .put("kind", kind)
+        .put("path", path ?: JSONObject.NULL)
+        .put("format", format)
+        .put("width", width ?: JSONObject.NULL)
+        .put("height", height ?: JSONObject.NULL)
 
     private fun MobileDailyEntry.toJson(): JSONObject = JSONObject()
         .put("date", date)

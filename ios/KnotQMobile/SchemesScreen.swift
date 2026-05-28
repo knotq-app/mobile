@@ -33,12 +33,16 @@ struct SchemesScreen: View {
             }
         }
         .sheet(isPresented: $showingNewScheme) {
-            NameSheet(title: "New Scheme", placeholder: "Scheme name", validator: WorkspaceNameValidation.schemeError) { name in
+            NameSheet(title: "New Scheme", placeholder: "Scheme name", validator: { name in
+                WorkspaceNameValidation.schemeError(name, root: model.snapshot?.root)
+            }) { name in
                 model.createScheme(name: name)
             }
         }
         .sheet(isPresented: $showingNewFolder) {
-            NameSheet(title: "New Folder", placeholder: "Folder name", validator: WorkspaceNameValidation.folderError) { name in
+            NameSheet(title: "New Folder", placeholder: "Folder name", validator: { name in
+                WorkspaceNameValidation.folderError(name, root: model.snapshot?.root)
+            }) { name in
                 model.createFolder(name: name)
             }
         }
@@ -65,7 +69,9 @@ struct NodeRow: View {
                 Button("Delete", role: .destructive) { model.deleteFolder(id: node.id) }
             }
             .sheet(item: $renameTarget) { node in
-                NameSheet(title: "Rename Folder", placeholder: "Folder name", initialText: node.name, validator: WorkspaceNameValidation.folderError) { name in
+                NameSheet(title: "Rename Folder", placeholder: "Folder name", initialText: node.name, validator: { name in
+                    WorkspaceNameValidation.folderError(name, root: model.snapshot?.root, excludingID: node.id)
+                }) { name in
                     model.renameFolder(id: node.id, name: name)
                 }
             }

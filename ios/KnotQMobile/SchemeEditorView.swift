@@ -375,6 +375,7 @@ struct IntegratedSchemeEditorPane: View {
                     isScrollEnabled: editorScrollEnabled,
                     textInsets: editorTextInsets,
                     schemeTitle: scheme.displayName,
+                    titleValidator: titleValidator,
                     onRenameTitle: { title in
                         model.renameScheme(id: scheme.id, name: title)
                     },
@@ -500,6 +501,15 @@ struct IntegratedSchemeEditorPane: View {
         scheme.items
             .map { "\($0.id)|\($0.text)|\($0.marker)|\($0.indent)|\($0.done)|\($0.start ?? "")|\($0.end ?? "")" }
             .joined(separator: "\n")
+    }
+
+    private func titleValidator(_ name: String) -> String? {
+        guard !scheme.isDailyQueue else {
+            return WorkspaceNameValidation.schemeError(name)
+        }
+        let root = model.snapshot?.root
+        let folderID = WorkspaceNameValidation.parentFolderID(containingSchemeID: scheme.id, root: root)
+        return WorkspaceNameValidation.schemeError(name, root: root, folderID: folderID, excludingID: scheme.id)
     }
 }
 
@@ -633,6 +643,7 @@ private struct SchemeTextView: UIViewRepresentable {
     let isScrollEnabled: Bool
     let textInsets: UIEdgeInsets
     let schemeTitle: String
+    let titleValidator: (String) -> String?
     let onRenameTitle: (String) -> Void
     let onDate: () -> Void
 
@@ -665,7 +676,7 @@ private struct SchemeTextView: UIViewRepresentable {
         view.smartDashesType = .no
         view.smartQuotesType = .no
         view.inputAccessoryView = coordinator.makeToolbar(for: view)
-        view.configureTitle(title: schemeTitle, theme: theme, onCommit: onRenameTitle)
+        view.configureTitle(title: schemeTitle, theme: theme, validator: titleValidator, onCommit: onRenameTitle)
         let checkboxTap = UITapGestureRecognizer(target: coordinator, action: #selector(EditorCoordinator.handleEditorTap(_:)))
         checkboxTap.delegate = coordinator
         checkboxTap.cancelsTouchesInView = false
@@ -685,7 +696,7 @@ private struct SchemeTextView: UIViewRepresentable {
         uiView.backgroundColor = UIColor(theme.bgApp)
         uiView.textContainerInset = textInsets
         uiView.isScrollEnabled = isScrollEnabled
-        uiView.configureTitle(title: schemeTitle, theme: theme, onCommit: onRenameTitle)
+        uiView.configureTitle(title: schemeTitle, theme: theme, validator: titleValidator, onCommit: onRenameTitle)
         uiView.setNeedsDisplay()
     }
 }
@@ -724,6 +735,9 @@ private final class EditorCoordinator: NSObject, UITextViewDelegate, @preconcurr
     // MARK: UITextViewDelegate
 
     func textViewDidChange(_ textView: UITextView) {
+        if let view = textView as? EditorTextView {
+            view.enforceTerminalNewlineAfterUserEdit()
+        }
         markDirty()
         refreshEmpty()
     }
@@ -982,7 +996,7 @@ private final class EditorCoordinator: NSObject, UITextViewDelegate, @preconcurr
 
     func makeToolbar(for textView: UITextView) -> UIView {
         let width = UIScreen.main.bounds.width
-        let container = UIInputView(frame: CGRect(x: 0, y: 0, width: width, height: 46), inputViewStyle: .keyboard)
+        let container = UIInputView(frame: CGRect(x: 0, y: 0, width: width, height: 38), inputViewStyle: .keyboard)
         container.autoresizingMask = [.flexibleWidth]
         container.allowsSelfSizing = true
 
@@ -995,9 +1009,9 @@ private final class EditorCoordinator: NSObject, UITextViewDelegate, @preconcurr
         let stack = UIStackView()
         stack.axis = .horizontal
         stack.alignment = .center
-        stack.spacing = 6
+        stack.spacing = 3
         stack.translatesAutoresizingMaskIntoConstraints = false
-        stack.layoutMargins = UIEdgeInsets(top: 6, left: 8, bottom: 6, right: 8)
+        stack.layoutMargins = UIEdgeInsets(top: 5, left: 8, bottom: 5, right: 8)
         stack.isLayoutMarginsRelativeArrangement = true
         scroll.addSubview(stack)
 
@@ -1007,8 +1021,8 @@ private final class EditorCoordinator: NSObject, UITextViewDelegate, @preconcurr
             toolbarButton("list.bullet") { [weak self] in self?.view?.setCurrentMarker(.bullet, theme: self?.theme ?? .dark) },
             toolbarButton("list.number") { [weak self] in self?.view?.setCurrentMarker(.numbered, theme: self?.theme ?? .dark) },
             separator(),
-            toolbarButton("decrease.indent") { [weak self] in self?.view?.shiftCurrentIndent(-1, theme: self?.theme ?? .dark) },
-            toolbarButton("increase.indent") { [weak self] in self?.view?.shiftCurrentIndent(1, theme: self?.theme ?? .dark) },
+            toolbarButton("decrease.indent", prominent: true) { [weak self] in self?.view?.shiftCurrentIndent(-1, theme: self?.theme ?? .dark) },
+            toolbarButton("increase.indent", prominent: true) { [weak self] in self?.view?.shiftCurrentIndent(1, theme: self?.theme ?? .dark) },
             separator(),
             toolbarButton("calendar.badge.clock") { [weak self] in self?.onDateRequested?() },
             toolbarButton("plus") { [weak self] in self?.view?.appendTaskLine(theme: self?.theme ?? .dark) },
@@ -1030,23 +1044,24 @@ private final class EditorCoordinator: NSObject, UITextViewDelegate, @preconcurr
         return container
     }
 
-    private func toolbarButton(_ systemName: String, _ action: @escaping () -> Void) -> UIButton {
+    private func toolbarButton(_ systemName: String, prominent: Bool = false, _ action: @escaping () -> Void) -> UIButton {
         let button = UIButton(type: .system)
         button.setImage(UIImage(systemName: systemName), for: .normal)
-        button.tintColor = UIColor(theme.textPrimary)
-        button.backgroundColor = UIColor(theme.buttonBg)
-        button.layer.cornerRadius = 7
-        button.widthAnchor.constraint(equalToConstant: 34).isActive = true
-        button.heightAnchor.constraint(equalToConstant: 30).isActive = true
+        button.setPreferredSymbolConfiguration(UIImage.SymbolConfiguration(pointSize: 13, weight: .semibold), forImageIn: .normal)
+        button.tintColor = UIColor(prominent ? theme.textPrimary : theme.textDim)
+        button.backgroundColor = prominent ? UIColor(theme.buttonBg) : .clear
+        button.layer.cornerRadius = 5
+        button.widthAnchor.constraint(equalToConstant: prominent ? 31 : 29).isActive = true
+        button.heightAnchor.constraint(equalToConstant: 27).isActive = true
         button.addAction(UIAction { _ in action() }, for: .touchUpInside)
         return button
     }
 
     private func separator() -> UIView {
         let view = UIView()
-        view.backgroundColor = UIColor(theme.divider)
+        view.backgroundColor = UIColor(theme.dividerSoft)
         view.widthAnchor.constraint(equalToConstant: 1).isActive = true
-        view.heightAnchor.constraint(equalToConstant: 22).isActive = true
+        view.heightAnchor.constraint(equalToConstant: 18).isActive = true
         return view
     }
 }
@@ -1057,6 +1072,7 @@ private final class EditorInlineTitleView: UIView, UITextFieldDelegate {
     private let textField = UITextField()
     private let errorLabel = UILabel()
     private var committedTitle = ""
+    private var validator: ((String) -> String?)?
     private var onCommit: ((String) -> Void)?
     private var normalTintColor: UIColor = .systemBlue
     private var errorTintColor: UIColor = .systemRed
@@ -1085,7 +1101,8 @@ private final class EditorInlineTitleView: UIView, UITextFieldDelegate {
     @available(*, unavailable)
     required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
 
-    func configure(title: String, theme: KnotQTheme, onCommit: @escaping (String) -> Void) {
+    func configure(title: String, theme: KnotQTheme, validator: @escaping (String) -> String?, onCommit: @escaping (String) -> Void) {
+        self.validator = validator
         self.onCommit = onCommit
         textField.textColor = UIColor(theme.textPrimary)
         normalTintColor = UIColor(theme.accent)
@@ -1120,7 +1137,7 @@ private final class EditorInlineTitleView: UIView, UITextFieldDelegate {
 
     private func commitTitle() {
         let draft = textField.text ?? ""
-        let validationError = WorkspaceNameValidation.schemeError(draft)
+        let validationError = validator?(draft)
         updateError(validationError)
         guard validationError == nil, draft != committedTitle else { return }
         committedTitle = draft
@@ -1128,7 +1145,7 @@ private final class EditorInlineTitleView: UIView, UITextFieldDelegate {
     }
 
     private func updateError(_ validationError: String? = nil) {
-        let error = validationError ?? WorkspaceNameValidation.schemeError(textField.text ?? "")
+        let error = validationError ?? validator?(textField.text ?? "")
         errorLabel.text = error
         errorLabel.isHidden = error == nil
         textField.tintColor = error == nil ? normalTintColor : errorTintColor
@@ -1175,8 +1192,8 @@ private final class EditorTextView: UITextView {
         return rect
     }
 
-    func configureTitle(title: String, theme: KnotQTheme, onCommit: @escaping (String) -> Void) {
-        inlineTitleView.configure(title: title, theme: theme, onCommit: onCommit)
+    func configureTitle(title: String, theme: KnotQTheme, validator: @escaping (String) -> String?, onCommit: @escaping (String) -> Void) {
+        inlineTitleView.configure(title: title, theme: theme, validator: validator, onCommit: onCommit)
         setNeedsLayout()
     }
 
@@ -1301,13 +1318,31 @@ private final class EditorTextView: UITextView {
         textStorage.removeAttribute(.strikethroughColor, range: range)
     }
 
-    private func ensureTerminalNewline() {
+    func enforceTerminalNewlineAfterUserEdit() {
+        let savedSelection = selectedRange
+        var appended = false
+        coordinator?.suppress {
+            textStorage.beginEditing()
+            appended = self.ensureTerminalNewline()
+            textStorage.endEditing()
+        }
+        if appended {
+            selectedRange = NSRange(
+                location: min(savedSelection.location, textStorage.length),
+                length: min(savedSelection.length, max(0, textStorage.length - savedSelection.location))
+            )
+        }
+    }
+
+    @discardableResult
+    private func ensureTerminalNewline() -> Bool {
         let ns = textStorage.string as NSString
-        guard ns.length > 0, ns.character(at: ns.length - 1) != 10 else { return }
+        guard ns.length > 0, ns.character(at: ns.length - 1) != 10 else { return false }
         let paragraph = ns.paragraphRange(for: NSRange(location: ns.length - 1, length: 0))
         let meta = metaForLine(storage: textStorage, lineRange: lineRange(from: paragraph, in: ns))
         let attrs = EditorAttributes.bodyAttributes(meta: meta, theme: theme)
         textStorage.replaceCharacters(in: NSRange(location: textStorage.length, length: 0), with: NSAttributedString(string: "\n", attributes: attrs))
+        return true
     }
 
     private func editableParagraphRange(in ns: NSString, at location: Int) -> NSRange {
@@ -1726,26 +1761,58 @@ struct ItemDateSheet: View {
     @Environment(\.dismiss) private var dismiss
     let schemeID: String
     let item: MobileItem
-    @State private var kind = "start"
-    @State private var date = Date()
+    @State private var kind: String
+    @State private var date: Date
+
+    init(schemeID: String, item: MobileItem) {
+        self.schemeID = schemeID
+        self.item = item
+        let initialKind = item.start != nil ? "start" : (item.end != nil ? "end" : "start")
+        _kind = State(initialValue: initialKind)
+        _date = State(initialValue: MobileDate.parseDateTime(initialKind == "start" ? item.start : item.end) ?? Date())
+    }
 
     var body: some View {
         NavigationStack {
             Form {
-                Picker("Field", selection: $kind) {
-                    Text("Start").tag("start")
-                    Text("End").tag("end")
+                Section {
+                    Picker("Field", selection: $kind) {
+                        Text("Start / At").tag("start")
+                        Text("End / Due").tag("end")
+                    }
+                    .pickerStyle(.segmented)
+                    .onChange(of: kind) { _, value in
+                        date = MobileDate.parseDateTime(value == "start" ? item.start : item.end) ?? date
+                    }
                 }
-                .pickerStyle(.segmented)
-                DatePicker("Date", selection: $date)
-            }
-            .navigationTitle("Item Date")
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Clear") {
+
+                Section {
+                    DatePicker(selectedLabel, selection: $date)
+                } footer: {
+                    Text(summaryText)
+                }
+
+                Section {
+                    Button("Clear \(selectedLabel)") {
                         model.setItemDate(schemeID: schemeID, itemID: item.id, kind: kind, date: nil)
                         dismiss()
                     }
+                    .foregroundStyle(.red)
+                    .disabled(kind == "start" ? item.start == nil : item.end == nil)
+
+                    Button("Clear Both Dates") {
+                        model.setItemDate(schemeID: schemeID, itemID: item.id, kind: "start", date: nil)
+                        model.setItemDate(schemeID: schemeID, itemID: item.id, kind: "end", date: nil)
+                        dismiss()
+                    }
+                    .foregroundStyle(.red)
+                    .disabled(item.start == nil && item.end == nil)
+                }
+            }
+            .navigationTitle("Schedule")
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { dismiss() }
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Save") {
@@ -1755,5 +1822,15 @@ struct ItemDateSheet: View {
                 }
             }
         }
+    }
+
+    private var selectedLabel: String {
+        kind == "start" ? "Start" : "End"
+    }
+
+    private var summaryText: String {
+        let start = MobileDate.formatTime(item.start) ?? "No start"
+        let end = MobileDate.formatTime(item.end) ?? "No end"
+        return "\(start) · \(end)"
     }
 }

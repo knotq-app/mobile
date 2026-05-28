@@ -61,11 +61,39 @@ struct NameSheet: View {
 
 enum WorkspaceNameValidation {
     static func schemeError(_ name: String) -> String? {
-        nodeError(name, label: "Item", disallowKnotqExtension: true)
+        nodeError(name, label: "Scheme", disallowKnotqExtension: true)
+    }
+
+    static func schemeError(_ name: String, root: MobileNode?, folderID: String? = nil, excludingID: String? = nil) -> String? {
+        if let error = schemeError(name) {
+            return error
+        }
+        guard let root else { return nil }
+        let parentID = folderID ?? parentFolderID(containingSchemeID: excludingID, root: root) ?? root.id
+        if siblingExists(named: name, kind: "scheme", parentID: parentID, root: root, excludingID: excludingID) {
+            return "A scheme named \"\(name)\" already exists here."
+        }
+        return nil
     }
 
     static func folderError(_ name: String) -> String? {
         nodeError(name, label: "Folder", disallowKnotqExtension: false)
+    }
+
+    static func folderError(_ name: String, root: MobileNode?, excludingID: String? = nil) -> String? {
+        if let error = folderError(name) {
+            return error
+        }
+        guard let root else { return nil }
+        if siblingExists(named: name, kind: "folder", parentID: root.id, root: root, excludingID: excludingID) {
+            return "A folder named \"\(name)\" already exists here."
+        }
+        return nil
+    }
+
+    static func parentFolderID(containingSchemeID schemeID: String?, root: MobileNode?) -> String? {
+        guard let schemeID, let root else { return nil }
+        return parentFolderID(containingSchemeID: schemeID, in: root)
     }
 
     private static func nodeError(_ name: String, label: String, disallowKnotqExtension: Bool) -> String? {
@@ -101,6 +129,39 @@ enum WorkspaceNameValidation {
         }
         if disallowKnotqExtension && name.lowercased().hasSuffix(".knotq") {
             return "Item names cannot end in .knotq."
+        }
+        return nil
+    }
+
+    private static func parentFolderID(containingSchemeID schemeID: String, in node: MobileNode) -> String? {
+        for child in node.children {
+            if child.kind == "scheme", child.id == schemeID {
+                return node.id
+            }
+            if child.kind == "folder", let found = parentFolderID(containingSchemeID: schemeID, in: child) {
+                return found
+            }
+        }
+        return nil
+    }
+
+    private static func siblingExists(named name: String, kind: String, parentID: String, root: MobileNode, excludingID: String?) -> Bool {
+        guard let parent = node(id: parentID, in: root) else { return false }
+        return parent.children.contains { child in
+            child.kind == kind
+                && child.id != excludingID
+                && child.name.compare(name, options: [.caseInsensitive, .diacriticInsensitive]) == .orderedSame
+        }
+    }
+
+    private static func node(id: String, in node: MobileNode) -> MobileNode? {
+        if node.id == id {
+            return node
+        }
+        for child in node.children {
+            if let found = self.node(id: id, in: child) {
+                return found
+            }
         }
         return nil
     }
@@ -158,5 +219,10 @@ enum MobileDate {
     static func formatTime(_ raw: String?, timeFormat: String = "twelve_hour") -> String? {
         guard let raw, let date = isoFormatter().date(from: raw) else { return nil }
         return timeFormatter(timeFormat: timeFormat).string(from: date)
+    }
+
+    static func parseDateTime(_ raw: String?) -> Date? {
+        guard let raw else { return nil }
+        return isoFormatter().date(from: raw)
     }
 }

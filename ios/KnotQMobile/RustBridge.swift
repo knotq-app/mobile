@@ -47,6 +47,18 @@ final class RustBridge {
         try core.deleteScheme(schemeId: id)
     }
 
+    func restoreScheme(id: String) throws {
+        try core.restoreScheme(schemeId: id)
+    }
+
+    func permanentlyDeleteScheme(id: String) throws {
+        try core.permanentlyDeleteScheme(schemeId: id)
+    }
+
+    func emptyArchive() throws {
+        try core.emptyArchive()
+    }
+
     func setSchemeColor(id: String, colorIndex: Int32) throws {
         try core.setSchemeColor(schemeId: id, colorIndex: colorIndex)
     }

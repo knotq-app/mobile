@@ -8,6 +8,7 @@ interface MobileError {
 dictionary MobileSnapshot {
   MobileNode root;
   sequence<MobileScheme> schemes;
+  sequence<MobileScheme> archived_schemes;
   sequence<MobileDailyEntry> daily;
   MobileCalendar calendar;
   MobileSettings settings;
@@ -138,6 +139,15 @@ interface MobileCore {
 
   [Throws=MobileError]
   void delete_scheme(string scheme_id);
+
+  [Throws=MobileError]
+  void restore_scheme(string scheme_id);
+
+  [Throws=MobileError]
+  void permanently_delete_scheme(string scheme_id);
+
+  [Throws=MobileError]
+  void empty_archive();
 
   [Throws=MobileError]
   void move_node(string kind, string id, string folder_id, i32 position);

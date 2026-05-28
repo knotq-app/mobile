@@ -14,8 +14,8 @@ private enum MobilePane: String, CaseIterable, Identifiable {
     var title: String {
         switch self {
         case .calendar: "Calendar"
-        case .lists: "Lists"
-        case .scheme: "List"
+        case .lists: "Schemes"
+        case .scheme: "Scheme"
         case .daily: "Daily"
         case .search: "Search"
         case .settings: "Settings"
@@ -25,7 +25,7 @@ private enum MobilePane: String, CaseIterable, Identifiable {
     var icon: String {
         switch self {
         case .calendar: "calendar"
-        case .lists: "sidebar.left"
+        case .lists: "square.stack"
         case .scheme: "list.bullet.rectangle"
         case .daily: "checklist"
         case .search: "magnifyingglass"
@@ -91,6 +91,7 @@ struct ContentView: View {
                     if wide {
                         DesktopNavigator(
                             root: model.snapshot?.root,
+                            archivedSchemes: model.snapshot?.archivedSchemes ?? [],
                             selectedPane: pane,
                             selectedSchemeID: selectedSchemeID,
                             theme: theme,
@@ -99,9 +100,9 @@ struct ContentView: View {
                             onNewScheme: { showingNewScheme = true },
                             onNewFolder: { showingNewFolder = true }
                         )
-                        .frame(width: 182)
-                        .padding(.leading, 8)
-                        .padding(.vertical, 8)
+                        .frame(width: 168)
+                        .padding(.leading, 6)
+                        .padding(.vertical, 6)
 
                         DesktopUpcomingRail(
                             calendar: model.snapshot?.calendar,
@@ -143,16 +144,19 @@ struct ContentView: View {
             .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillHideNotification)) { _ in
                 keyboardVisible = false
             }
-            .overlay(alignment: .bottom) {
-                if let error = model.errorMessage {
-                    Text(error)
-                        .font(.footnote.weight(.semibold))
-                        .foregroundStyle(.white)
-                        .padding(.horizontal, 14)
-                        .padding(.vertical, 10)
-                        .background(Color.red.opacity(0.92), in: RoundedRectangle(cornerRadius: 6))
-                        .padding(.bottom, wide ? 16 : 72)
+            .alert("KnotQ", isPresented: Binding(
+                get: { model.errorMessage != nil },
+                set: { showing in
+                    if !showing {
+                        model.errorMessage = nil
+                    }
                 }
+            )) {
+                Button("OK", role: .cancel) {
+                    model.errorMessage = nil
+                }
+            } message: {
+                Text(model.errorMessage ?? "")
             }
         }
         .sheet(item: $addItemTarget) { target in
@@ -164,21 +168,25 @@ struct ContentView: View {
                 .presentationDetents([.medium, .large])
         }
         .sheet(isPresented: $showingNewScheme) {
-            NameSheet(title: "New Scheme", placeholder: "Scheme name", validator: WorkspaceNameValidation.schemeError) { name in
+            NameSheet(title: "New Scheme", placeholder: "Scheme name", validator: { name in
+                WorkspaceNameValidation.schemeError(name, root: model.snapshot?.root)
+            }) { name in
                 if let id = model.createScheme(name: name) {
                     selectScheme(id)
                 } else {
                     pane = .lists
                 }
             }
-            .presentationDetents([.height(180)])
+            .presentationDetents([.height(220)])
         }
         .sheet(isPresented: $showingNewFolder) {
-            NameSheet(title: "New Folder", placeholder: "Folder name", validator: WorkspaceNameValidation.folderError) { name in
+            NameSheet(title: "New Folder", placeholder: "Folder name", validator: { name in
+                WorkspaceNameValidation.folderError(name, root: model.snapshot?.root)
+            }) { name in
                 model.createFolder(name: name)
                 pane = .lists
             }
-            .presentationDetents([.height(180)])
+            .presentationDetents([.height(220)])
         }
         .onAppear { model.refresh() }
     }
@@ -205,6 +213,7 @@ struct ContentView: View {
             if wide {
                 DesktopListsPane(
                     root: model.snapshot?.root,
+                    archivedSchemes: model.snapshot?.archivedSchemes ?? [],
                     selectedSchemeID: selectedSchemeID,
                     theme: theme,
                     onSelectScheme: selectScheme,
@@ -214,6 +223,7 @@ struct ContentView: View {
             } else {
                 MobileListsNavigationPane(
                     root: model.snapshot?.root,
+                    archivedSchemes: model.snapshot?.archivedSchemes ?? [],
                     selectedSchemeID: $selectedSchemeID,
                     path: $schemePath,
                     theme: theme,
@@ -232,6 +242,7 @@ struct ContentView: View {
             } else if !wide {
                 MobileListsNavigationPane(
                     root: model.snapshot?.root,
+                    archivedSchemes: model.snapshot?.archivedSchemes ?? [],
                     selectedSchemeID: $selectedSchemeID,
                     path: $schemePath,
                     theme: theme,
@@ -239,7 +250,7 @@ struct ContentView: View {
                     onNewFolder: { showingNewFolder = true }
                 )
             } else {
-                EmptyState(title: "Pick a list", detail: "Choose a scheme from the navigator.", theme: theme)
+                EmptyState(title: "Pick a scheme", detail: "Choose a scheme from the navigator.", theme: theme)
             }
         case .daily:
             DailyFeedPane(
@@ -365,7 +376,7 @@ private struct DesktopTitleBar: View {
         HStack(spacing: 10) {
             RoundedRectangle(cornerRadius: 3)
                 .fill(markerColor)
-                .frame(width: 18, height: 18)
+                .frame(width: 14, height: 14)
 
             Text(title)
                 .font(.system(size: 14, weight: .semibold))
@@ -390,7 +401,7 @@ private struct DesktopTitleBar: View {
                 .buttonStyle(TitleIconButton(theme: theme))
             }
         }
-        .frame(height: 38)
+        .frame(height: 34)
         .padding(.horizontal, 12)
         .background(theme.bgToolbar)
         .overlay(alignment: .bottom) {
@@ -417,15 +428,16 @@ struct TitleIconButton: ButtonStyle {
 
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .font(.system(size: 13, weight: .semibold))
+            .font(.system(size: 12, weight: .semibold))
             .foregroundStyle(theme.textPrimary)
-            .frame(width: 28, height: 28)
-            .background(configuration.isPressed ? theme.rowSelected : theme.buttonBg, in: RoundedRectangle(cornerRadius: 5))
+            .frame(width: 25, height: 25)
+            .background(configuration.isPressed ? theme.rowSelected : theme.buttonBg, in: RoundedRectangle(cornerRadius: 4))
     }
 }
 
 private struct DesktopNavigator: View {
     let root: MobileNode?
+    let archivedSchemes: [MobileScheme]
     let selectedPane: MobilePane
     let selectedSchemeID: String?
     let theme: KnotQTheme
@@ -455,6 +467,8 @@ private struct DesktopNavigator: View {
                             NavigatorNodeRow(
                                 node: node,
                                 depth: 0,
+                                parentFolderID: root.id,
+                                root: root,
                                 selectedSchemeID: selectedSchemeID,
                                 theme: theme,
                                 onSelectScheme: onSelectScheme
@@ -464,6 +478,9 @@ private struct DesktopNavigator: View {
                 }
                 .padding(.bottom, 8)
             }
+
+            ArchiveNavigatorSection(schemes: archivedSchemes, theme: theme, compact: true)
+                .padding(.top, 4)
 
             HStack(spacing: 6) {
                 Menu {
@@ -487,11 +504,11 @@ private struct DesktopNavigator: View {
             .padding(.top, 5)
         }
         .padding(.top, 10)
-        .padding(.horizontal, 8)
+        .padding(.horizontal, 7)
         .padding(.bottom, 8)
-        .background(theme.bgSidebar, in: RoundedRectangle(cornerRadius: 13))
+        .background(theme.bgSidebar, in: RoundedRectangle(cornerRadius: 10))
         .overlay {
-            RoundedRectangle(cornerRadius: 13).stroke(theme.borderOverlay, lineWidth: 1)
+            RoundedRectangle(cornerRadius: 10).stroke(theme.borderOverlay, lineWidth: 1)
         }
         .shadow(color: .black.opacity(theme.isDark ? 0.18 : 0.08), radius: 9, x: 0, y: 5)
     }
@@ -509,16 +526,16 @@ private struct NavigatorSpecialRow: View {
             HStack(spacing: 7) {
                 RoundedRectangle(cornerRadius: 2)
                     .fill(color)
-                    .frame(width: 10, height: 10)
+                    .frame(width: 9, height: 9)
                 Text(title)
-                    .font(.system(size: 13))
+                    .font(.system(size: 12))
                     .lineLimit(1)
                 Spacer(minLength: 0)
             }
-            .frame(height: 25)
-            .padding(.horizontal, 7)
+            .frame(height: 22)
+            .padding(.horizontal, 6)
             .foregroundStyle(theme.textPrimary)
-            .background(selected ? theme.rowSelected : Color.clear, in: RoundedRectangle(cornerRadius: 5))
+            .background(selected ? theme.rowSelected : Color.clear, in: RoundedRectangle(cornerRadius: 4))
         }
         .buttonStyle(.plain)
     }
@@ -528,6 +545,8 @@ private struct NavigatorNodeRow: View {
     @EnvironmentObject private var model: AppModel
     let node: MobileNode
     let depth: Int
+    let parentFolderID: String
+    let root: MobileNode
     let selectedSchemeID: String?
     let theme: KnotQTheme
     let onSelectScheme: (String) -> Void
@@ -543,6 +562,8 @@ private struct NavigatorNodeRow: View {
                         NavigatorNodeRow(
                             node: child,
                             depth: depth + 1,
+                            parentFolderID: node.id,
+                            root: root,
                             selectedSchemeID: selectedSchemeID,
                             theme: theme,
                             onSelectScheme: onSelectScheme
@@ -552,15 +573,15 @@ private struct NavigatorNodeRow: View {
             } label: {
                 HStack(spacing: 7) {
                     Image(systemName: "folder")
-                        .font(.system(size: 11, weight: .semibold))
-                        .frame(width: 13)
+                        .font(.system(size: 10, weight: .semibold))
+                        .frame(width: 12)
                     Text(node.name)
-                        .font(.system(size: 13))
+                        .font(.system(size: 12))
                         .lineLimit(1)
                     Spacer(minLength: 0)
                 }
-                .padding(.leading, CGFloat(depth) * 9)
-                .frame(height: 25)
+                .padding(.leading, CGFloat(depth) * 8)
+                .frame(height: 22)
                 .foregroundStyle(theme.textPrimary)
             }
             .tint(theme.textDim)
@@ -570,35 +591,39 @@ private struct NavigatorNodeRow: View {
                 Button("Delete", role: .destructive) { model.deleteFolder(id: node.id) }
             }
             .sheet(item: $renameNode) { target in
-                NameSheet(title: "Rename Folder", placeholder: "Folder name", initialText: target.name, validator: WorkspaceNameValidation.folderError) { name in
+                NameSheet(title: "Rename Folder", placeholder: "Folder name", initialText: target.name, validator: { name in
+                    WorkspaceNameValidation.folderError(name, root: root, excludingID: target.id)
+                }) { name in
                     model.renameFolder(id: target.id, name: name)
                 }
-                .presentationDetents([.height(180)])
+                .presentationDetents([.height(220)])
             }
             .sheet(isPresented: $newSchemeInFolder) {
-                NameSheet(title: "New Scheme", placeholder: "Scheme name", validator: WorkspaceNameValidation.schemeError) { name in
+                NameSheet(title: "New Scheme", placeholder: "Scheme name", validator: { name in
+                    WorkspaceNameValidation.schemeError(name, root: root, folderID: node.id)
+                }) { name in
                     if let id = model.createScheme(name: name, folderID: node.id) {
                         onSelectScheme(id)
                     }
                 }
-                .presentationDetents([.height(180)])
+                .presentationDetents([.height(220)])
             }
         } else {
             Button { onSelectScheme(node.id) } label: {
                 HStack(spacing: 7) {
                     RoundedRectangle(cornerRadius: 2)
                         .fill(schemeColor(node.colorIndex ?? 0, dark: theme.isDark))
-                        .frame(width: 10, height: 10)
+                        .frame(width: 9, height: 9)
                     Text(node.name)
-                        .font(.system(size: 13))
+                        .font(.system(size: 12))
                         .lineLimit(1)
                     Spacer(minLength: 0)
                 }
-                .padding(.leading, CGFloat(depth) * 9)
-                .padding(.horizontal, 7)
-                .frame(height: 25)
+                .padding(.leading, CGFloat(depth) * 8)
+                .padding(.horizontal, 6)
+                .frame(height: 22)
                 .foregroundStyle(theme.textPrimary)
-                .background(selectedSchemeID == node.id ? theme.rowSelected : Color.clear, in: RoundedRectangle(cornerRadius: 5))
+                .background(selectedSchemeID == node.id ? theme.rowSelected : Color.clear, in: RoundedRectangle(cornerRadius: 4))
             }
             .buttonStyle(.plain)
             .contextMenu {
@@ -607,10 +632,12 @@ private struct NavigatorNodeRow: View {
                 Button("Delete", role: .destructive) { model.deleteScheme(id: node.id) }
             }
             .sheet(item: $renameNode) { target in
-                NameSheet(title: "Rename Scheme", placeholder: "Scheme name", initialText: target.name, validator: WorkspaceNameValidation.schemeError) { name in
+                NameSheet(title: "Rename Scheme", placeholder: "Scheme name", initialText: target.name, validator: { name in
+                    WorkspaceNameValidation.schemeError(name, root: root, folderID: parentFolderID, excludingID: target.id)
+                }) { name in
                     model.renameScheme(id: target.id, name: name)
                 }
-                .presentationDetents([.height(180)])
+                .presentationDetents([.height(220)])
             }
         }
     }
@@ -910,6 +937,7 @@ private struct OccurrenceCompactRow: View {
 
 private struct DesktopListsPane: View {
     let root: MobileNode?
+    let archivedSchemes: [MobileScheme]
     let selectedSchemeID: String?
     let theme: KnotQTheme
     let onSelectScheme: (String) -> Void
@@ -920,8 +948,8 @@ private struct DesktopListsPane: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 10) {
                 HStack {
-                    Text("Workspace")
-                        .font(.system(size: 18, weight: .semibold))
+                    Text("Schemes")
+                        .font(.system(size: 16, weight: .semibold))
                     Spacer()
                     Menu {
                         Button("Scheme", systemImage: "doc.badge.plus", action: onNewScheme)
@@ -938,6 +966,8 @@ private struct DesktopListsPane: View {
                             NavigatorNodeRow(
                                 node: node,
                                 depth: 0,
+                                parentFolderID: root.id,
+                                root: root,
                                 selectedSchemeID: selectedSchemeID,
                                 theme: theme,
                                 onSelectScheme: onSelectScheme
@@ -948,16 +978,110 @@ private struct DesktopListsPane: View {
                 .padding(8)
                 .background(theme.bgSidebar, in: RoundedRectangle(cornerRadius: 8))
                 .overlay { RoundedRectangle(cornerRadius: 8).stroke(theme.borderOverlay, lineWidth: 1) }
+
+                ArchiveNavigatorSection(schemes: archivedSchemes, theme: theme, compact: false)
             }
-            .padding(14)
+            .padding(12)
         }
         .background(theme.bgApp)
+    }
+}
+
+private struct ArchiveNavigatorSection: View {
+    @EnvironmentObject private var model: AppModel
+    let schemes: [MobileScheme]
+    let theme: KnotQTheme
+    let compact: Bool
+    @State private var expanded = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: compact ? 1 : 3) {
+            Button {
+                withAnimation(.snappy(duration: 0.18)) {
+                    expanded.toggle()
+                }
+            } label: {
+                HStack(spacing: 7) {
+                    Image(systemName: "archivebox")
+                        .font(.system(size: compact ? 10 : 11, weight: .semibold))
+                        .frame(width: compact ? 12 : 14)
+                    Text("Archive")
+                        .font(.system(size: compact ? 12 : 13, weight: .medium))
+                    Spacer(minLength: 0)
+                    if !schemes.isEmpty {
+                        Text("\(schemes.count)")
+                            .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                            .foregroundStyle(theme.textMuted)
+                    }
+                    Image(systemName: expanded ? "chevron.down" : "chevron.right")
+                        .font(.system(size: 9, weight: .semibold))
+                        .foregroundStyle(theme.textMuted)
+                }
+                .frame(height: compact ? 22 : 25)
+                .padding(.horizontal, compact ? 6 : 8)
+                .foregroundStyle(theme.textPrimary)
+                .background(expanded ? theme.rowAlt : Color.clear, in: RoundedRectangle(cornerRadius: 4))
+            }
+            .buttonStyle(.plain)
+            .contextMenu {
+                Button("Empty Archive", systemImage: "trash", role: .destructive) {
+                    model.emptyArchive()
+                }
+                .disabled(schemes.isEmpty)
+            }
+
+            if expanded {
+                if schemes.isEmpty {
+                    Text("No archived schemes")
+                        .font(.system(size: compact ? 11 : 12))
+                        .foregroundStyle(theme.textMuted)
+                        .padding(.horizontal, compact ? 25 : 28)
+                        .frame(height: compact ? 20 : 24)
+                } else {
+                    ForEach(schemes) { scheme in
+                        ArchiveSchemeRow(scheme: scheme, theme: theme, compact: compact)
+                    }
+                }
+            }
+        }
+    }
+}
+
+private struct ArchiveSchemeRow: View {
+    @EnvironmentObject private var model: AppModel
+    let scheme: MobileScheme
+    let theme: KnotQTheme
+    let compact: Bool
+
+    var body: some View {
+        HStack(spacing: 7) {
+            RoundedRectangle(cornerRadius: 2)
+                .fill(schemeColor(scheme.colorIndex, dark: theme.isDark).opacity(0.7))
+                .frame(width: compact ? 9 : 10, height: compact ? 9 : 10)
+            Text(scheme.displayName)
+                .font(.system(size: compact ? 12 : 13))
+                .foregroundStyle(theme.textMuted)
+                .lineLimit(1)
+            Spacer(minLength: 0)
+        }
+        .padding(.leading, compact ? 22 : 26)
+        .padding(.trailing, compact ? 6 : 8)
+        .frame(height: compact ? 22 : 25)
+        .contextMenu {
+            Button("Restore", systemImage: "arrow.uturn.backward") {
+                model.restoreScheme(id: scheme.id)
+            }
+            Button("Delete Permanently", systemImage: "trash", role: .destructive) {
+                model.permanentlyDeleteScheme(id: scheme.id)
+            }
+        }
     }
 }
 
 private struct MobileListsNavigationPane: View {
     @EnvironmentObject private var model: AppModel
     let root: MobileNode?
+    let archivedSchemes: [MobileScheme]
     @Binding var selectedSchemeID: String?
     @Binding var path: [String]
     let theme: KnotQTheme
@@ -972,16 +1096,19 @@ private struct MobileListsNavigationPane: View {
                         MobileNavigatorNode(
                             node: node,
                             depth: 0,
+                            parentFolderID: root.id,
+                            root: root,
                             selectedSchemeID: selectedSchemeID,
                             theme: theme
                         )
                     }
                 }
+                MobileArchiveListSection(schemes: archivedSchemes, theme: theme)
             }
             .listStyle(.plain)
             .scrollContentBackground(.hidden)
             .background(theme.bgApp)
-            .navigationTitle("Lists")
+            .navigationTitle("Schemes")
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
                     Menu {
@@ -1003,7 +1130,7 @@ private struct MobileListsNavigationPane: View {
                     )
                     .onAppear { selectedSchemeID = schemeID }
                 } else {
-                    EmptyState(title: "List missing", detail: "It may have been deleted.", theme: theme)
+                    EmptyState(title: "Scheme missing", detail: "It may have been deleted.", theme: theme)
                 }
             }
         }
@@ -1023,6 +1150,8 @@ private struct MobileNavigatorNode: View {
     @EnvironmentObject private var model: AppModel
     let node: MobileNode
     let depth: Int
+    let parentFolderID: String
+    let root: MobileNode
     let selectedSchemeID: String?
     let theme: KnotQTheme
 
@@ -1036,16 +1165,19 @@ private struct MobileNavigatorNode: View {
                     MobileNavigatorNode(
                         node: child,
                         depth: depth + 1,
+                        parentFolderID: node.id,
+                        root: root,
                         selectedSchemeID: selectedSchemeID,
                         theme: theme
                     )
                 }
             } label: {
                 Label(node.name, systemImage: "folder")
-                    .font(.system(size: 15, weight: .semibold))
+                    .font(.system(size: 14, weight: .semibold))
                     .foregroundStyle(theme.textPrimary)
-                    .padding(.leading, CGFloat(depth) * 8)
+                    .padding(.leading, CGFloat(depth) * 7)
             }
+            .listRowInsets(EdgeInsets(top: 4, leading: 14, bottom: 4, trailing: 12))
             .listRowBackground(theme.bgApp)
             .contextMenu {
                 Button("New Scheme", systemImage: "doc.badge.plus") { newSchemeInFolder = true }
@@ -1058,32 +1190,37 @@ private struct MobileNavigatorNode: View {
                 }
             }
             .sheet(item: $renameNode) { target in
-                NameSheet(title: "Rename Folder", placeholder: "Folder name", initialText: target.name, validator: WorkspaceNameValidation.folderError) { name in
+                NameSheet(title: "Rename Folder", placeholder: "Folder name", initialText: target.name, validator: { name in
+                    WorkspaceNameValidation.folderError(name, root: root, excludingID: target.id)
+                }) { name in
                     model.renameFolder(id: target.id, name: name)
                 }
-                .presentationDetents([.height(180)])
+                .presentationDetents([.height(220)])
             }
             .sheet(isPresented: $newSchemeInFolder) {
-                NameSheet(title: "New Scheme", placeholder: "Scheme name", validator: WorkspaceNameValidation.schemeError) { name in
+                NameSheet(title: "New Scheme", placeholder: "Scheme name", validator: { name in
+                    WorkspaceNameValidation.schemeError(name, root: root, folderID: node.id)
+                }) { name in
                     _ = model.createScheme(name: name, folderID: node.id)
                 }
-                .presentationDetents([.height(180)])
+                .presentationDetents([.height(220)])
             }
         } else {
             NavigationLink(value: node.id) {
                 HStack(spacing: 10) {
                     RoundedRectangle(cornerRadius: 2)
                         .fill(schemeColor(node.colorIndex ?? 0, dark: theme.isDark))
-                        .frame(width: 10, height: 10)
+                        .frame(width: 9, height: 9)
                     Text(node.name)
-                        .font(.system(size: 15))
+                        .font(.system(size: 14))
                         .foregroundStyle(theme.textPrimary)
                         .lineLimit(1)
                     Spacer(minLength: 0)
                 }
-                .padding(.leading, CGFloat(depth) * 8)
+                .padding(.leading, CGFloat(depth) * 7)
                 .contentShape(Rectangle())
             }
+            .listRowInsets(EdgeInsets(top: 4, leading: 14, bottom: 4, trailing: 12))
             .listRowBackground(selectedSchemeID == node.id ? theme.rowSelected : theme.bgApp)
             .contextMenu {
                 Button("Rename", systemImage: "pencil") { renameNode = node }
@@ -1096,10 +1233,68 @@ private struct MobileNavigatorNode: View {
                 }
             }
             .sheet(item: $renameNode) { target in
-                NameSheet(title: "Rename Scheme", placeholder: "Scheme name", initialText: target.name, validator: WorkspaceNameValidation.schemeError) { name in
+                NameSheet(title: "Rename Scheme", placeholder: "Scheme name", initialText: target.name, validator: { name in
+                    WorkspaceNameValidation.schemeError(name, root: root, folderID: parentFolderID, excludingID: target.id)
+                }) { name in
                     model.renameScheme(id: target.id, name: name)
                 }
-                .presentationDetents([.height(180)])
+                .presentationDetents([.height(220)])
+            }
+        }
+    }
+}
+
+private struct MobileArchiveListSection: View {
+    @EnvironmentObject private var model: AppModel
+    let schemes: [MobileScheme]
+    let theme: KnotQTheme
+    @State private var expanded = false
+
+    var body: some View {
+        Section {
+            DisclosureGroup(isExpanded: $expanded) {
+                if schemes.isEmpty {
+                    Text("No archived schemes")
+                        .font(.system(size: 13))
+                        .foregroundStyle(theme.textMuted)
+                        .listRowInsets(EdgeInsets(top: 4, leading: 34, bottom: 4, trailing: 12))
+                        .listRowBackground(theme.bgApp)
+                } else {
+                    ForEach(schemes) { scheme in
+                        HStack(spacing: 10) {
+                            RoundedRectangle(cornerRadius: 2)
+                                .fill(schemeColor(scheme.colorIndex, dark: theme.isDark).opacity(0.7))
+                                .frame(width: 9, height: 9)
+                            Text(scheme.displayName)
+                                .font(.system(size: 14))
+                                .foregroundStyle(theme.textMuted)
+                                .lineLimit(1)
+                            Spacer(minLength: 0)
+                        }
+                        .listRowInsets(EdgeInsets(top: 4, leading: 34, bottom: 4, trailing: 12))
+                        .listRowBackground(theme.bgApp)
+                        .contextMenu {
+                            Button("Restore", systemImage: "arrow.uturn.backward") {
+                                model.restoreScheme(id: scheme.id)
+                            }
+                            Button("Delete Permanently", systemImage: "trash", role: .destructive) {
+                                model.permanentlyDeleteScheme(id: scheme.id)
+                            }
+                        }
+                    }
+                }
+            } label: {
+                Label("Archive", systemImage: "archivebox")
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundStyle(theme.textPrimary)
+            }
+            .listRowInsets(EdgeInsets(top: 4, leading: 14, bottom: 4, trailing: 12))
+            .listRowBackground(theme.bgApp)
+            .contextMenu {
+                Button("Empty Archive", systemImage: "trash", role: .destructive) {
+                    model.emptyArchive()
+                }
+                .disabled(schemes.isEmpty)
             }
         }
     }
@@ -1127,28 +1322,33 @@ struct DailyFeedPane: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            HStack(spacing: 8) {
-                Button(action: onPrevious) { Image(systemName: "chevron.left") }
-                    .buttonStyle(TitleIconButton(theme: theme))
-                DatePicker(
-                    "",
-                    selection: Binding(
-                        get: { selectedDate },
-                        set: { newValue in onDate(newValue) }
-                    ),
-                    displayedComponents: .date
-                )
-                    .labelsHidden()
-                    .tint(theme.accent)
-                Spacer()
-                Button(action: onAdd) { Image(systemName: "plus") }
-                    .buttonStyle(TitleIconButton(theme: theme))
-                    .disabled(selectedEntry == nil)
-                Button(action: onNext) { Image(systemName: "chevron.right") }
-                    .buttonStyle(TitleIconButton(theme: theme))
+            HStack {
+                HStack(spacing: 7) {
+                    Button(action: onPrevious) { Image(systemName: "chevron.left") }
+                        .buttonStyle(TitleIconButton(theme: theme))
+                    DatePicker(
+                        "",
+                        selection: Binding(
+                            get: { selectedDate },
+                            set: { newValue in onDate(newValue) }
+                        ),
+                        displayedComponents: .date
+                    )
+                        .labelsHidden()
+                        .fixedSize()
+                        .tint(theme.accent)
+                    Spacer(minLength: 8)
+                    Button(action: onAdd) { Image(systemName: "plus") }
+                        .buttonStyle(TitleIconButton(theme: theme))
+                        .disabled(selectedEntry == nil)
+                    Button(action: onNext) { Image(systemName: "chevron.right") }
+                        .buttonStyle(TitleIconButton(theme: theme))
+                }
+                .frame(maxWidth: 760)
+                Spacer(minLength: 0)
             }
             .padding(.horizontal, 12)
-            .frame(height: 52)
+            .frame(height: 44)
             .overlay(alignment: .bottom) { Rectangle().fill(theme.dividerSoft).frame(height: 1) }
 
             if sortedEntries.isEmpty {
@@ -1167,8 +1367,10 @@ struct DailyFeedPane: View {
                                 .id(entry.date)
                             }
                         }
+                        .frame(maxWidth: 760, alignment: .leading)
                         .padding(.horizontal, 12)
                         .padding(.vertical, 12)
+                        .frame(maxWidth: .infinity, alignment: .leading)
                     }
                     .onAppear { proxy.scrollTo(selectedDateKey, anchor: .center) }
                     .onChange(of: selectedDateKey) { _, value in

@@ -80,6 +80,18 @@ final class AppModel: ObservableObject {
         mutate { try $0.deleteScheme(id: id) }
     }
 
+    func restoreScheme(id: String) {
+        mutate { try $0.restoreScheme(id: id) }
+    }
+
+    func permanentlyDeleteScheme(id: String) {
+        mutate { try $0.permanentlyDeleteScheme(id: id) }
+    }
+
+    func emptyArchive() {
+        mutate { try $0.emptyArchive() }
+    }
+
     func setSchemeColor(id: String, colorIndex: Int32) {
         mutate { try $0.setSchemeColor(id: id, colorIndex: colorIndex) }
     }
@@ -160,6 +172,7 @@ final class AppModel: ObservableObject {
     func scheme(id: String?) -> MobileScheme? {
         guard let id else { return nil }
         return snapshot?.schemes.first { $0.id == id }
+            ?? snapshot?.archivedSchemes.first { $0.id == id }
     }
 
     private func mutate(_ action: (RustBridge) throws -> Void) {

@@ -4,10 +4,13 @@ import android.app.Activity
 import android.app.AlertDialog
 import android.app.DatePickerDialog
 import android.content.res.Configuration
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
 import android.graphics.Path
+import android.graphics.Rect
 import android.graphics.RectF
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
@@ -61,7 +64,15 @@ private const val EDITOR_TEXT_LEFT_PAD_DP = 35
 private const val EDITOR_MARKER_SLOT_DP = 21
 private const val EDITOR_INDENT_WIDTH_DP = 15
 private const val EDITOR_CHECKBOX_SIZE_DP = 14
-private const val EDITOR_ANNOTATION_HEIGHT_DP = 13
+private const val EDITOR_ANNOTATION_HEIGHT_DP = 14
+private const val EDITOR_ANNOTATION_BAR_GAP_DP = 8
+private const val EDITOR_ANNOTATION_TEXT_GAP_DP = 7
+private const val EDITOR_INDENT_GUIDE_X_SHIFT_DP = 2
+private const val EDITOR_IMAGE_TOP_GAP_DP = 8
+private const val EDITOR_IMAGE_STACK_GAP_DP = 7
+private const val EDITOR_IMAGE_MAX_HEIGHT_DP = 300
+private const val EDITOR_IMAGE_FALLBACK_WIDTH_DP = 320
+private const val EDITOR_IMAGE_FALLBACK_HEIGHT_DP = 180
 
 class MainActivity : Activity() {
     private lateinit var bridge: RustBridge
@@ -160,7 +171,7 @@ class MainActivity : Activity() {
 
     private fun renderDock() {
         dock.removeAllViews()
-        listOf("Calendar", "Lists", "Daily", "Search", "Settings").forEachIndexed { index, label ->
+        listOf("Calendar", "Schemes", "Daily", "Search", "Settings").forEachIndexed { index, label ->
             val tab = text(label, if (selectedTab == index) theme.textPrimary else theme.textMuted, 11f, true).apply {
                 gravity = Gravity.CENTER
                 setOnClickListener {
@@ -173,12 +184,24 @@ class MainActivity : Activity() {
         }
     }
 
+    private fun hidePhoneDockForEditing() {
+        if (resources.configuration.screenWidthDp < 760 && ::dock.isInitialized) {
+            dock.visibility = View.GONE
+        }
+    }
+
+    private fun showPhoneDockAfterEditing() {
+        if (resources.configuration.screenWidthDp < 760 && ::dock.isInitialized) {
+            dock.visibility = View.VISIBLE
+        }
+    }
+
     private fun renderWideShell(): View {
         return LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             setBackgroundColor(theme.bgApp)
-            addView(renderNavigator(), LinearLayout.LayoutParams(dp(182), -1).apply {
-                setMargins(dp(8), dp(8), 0, dp(8))
+            addView(renderNavigator(), LinearLayout.LayoutParams(dp(160), -1).apply {
+                setMargins(dp(7), dp(7), 0, dp(7))
             })
             addView(renderUpcomingRail(), LinearLayout.LayoutParams(dp(258), -1))
             addView(View(this@MainActivity).apply { setBackgroundColor(theme.dividerTiny) }, LinearLayout.LayoutParams(dp(1), -1))
@@ -204,7 +227,7 @@ class MainActivity : Activity() {
         val panel = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(8), dp(10), dp(8), dp(8))
-            background = rounded(theme.bgSidebar, dp(13), theme.borderOverlay)
+            background = rounded(theme.bgSidebar, dp(10), theme.borderOverlay)
         }
         panel.addView(navSpecial("Calendar", theme.textPrimary, selectedTab == 0) {
             selectedTab = 0
@@ -223,23 +246,26 @@ class MainActivity : Activity() {
         val tree = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         snapshot.optJSONObject("root")?.optJSONArray("children")?.forEachObject { addNode(tree, it, 0) }
         panel.addView(scroll(tree), LinearLayout.LayoutParams(-1, 0, 1f))
+        panel.addView(archiveNavigatorSection(compact = true), LinearLayout.LayoutParams(-1, -2).apply {
+            setMargins(0, dp(4), 0, dp(5))
+        })
 
         panel.addView(LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
             addView(chip("New") { showNewMenu() }, LinearLayout.LayoutParams(0, dp(30), 1f))
-            addView(chip("Settings") {
+            addView(chip("⚙") {
                 selectedTab = 4
                 selectedSchemeId = null
                 render()
-            }, LinearLayout.LayoutParams(dp(78), dp(30)))
+            }, LinearLayout.LayoutParams(dp(33), dp(30)).apply { setMargins(dp(6), 0, 0, 0) })
         })
         return panel
     }
 
     private fun renderListsPage(): LinearLayout {
         val root = page()
-        root.addView(sectionHeader("Workspace"))
+        root.addView(sectionHeader("Schemes"))
         val list = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(0, dp(4), 0, dp(4))
@@ -248,8 +274,56 @@ class MainActivity : Activity() {
             addNode(list, it, 0, spacious = true)
         }
         root.addView(list)
+        root.addView(archiveNavigatorSection(compact = false), LinearLayout.LayoutParams(-1, -2).apply {
+            setMargins(0, dp(12), 0, 0)
+        })
         return root
     }
+
+    private fun archiveNavigatorSection(compact: Boolean): View {
+        val schemes = archivedSchemes()
+        val root = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+        }
+        val title = if (schemes.length() == 0) "Archive" else "Archive ${schemes.length()}"
+        root.addView(text(title, theme.textDim, if (compact) 12f else 14f, true).apply {
+            setPadding(dp(if (compact) 6 else 8), dp(if (compact) 5 else 8), dp(6), dp(if (compact) 4 else 6))
+            setOnLongClickListener {
+                if (schemes.length() > 0) showArchiveActions()
+                true
+            }
+        })
+        if (schemes.length() == 0) {
+            if (!compact) {
+                root.addView(text("No archived schemes", theme.textMuted, 13f, false).apply {
+                    setPadding(dp(8), 0, dp(8), dp(4))
+                })
+            }
+            return root
+        }
+        schemes.forEachObject { scheme ->
+            root.addView(archivedSchemeRow(scheme, compact), LinearLayout.LayoutParams(-1, if (compact) dp(22) else dp(40)))
+        }
+        return root
+    }
+
+    private fun archivedSchemeRow(scheme: JSONObject, compact: Boolean): View =
+        LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(dp(if (compact) 6 else 10), 0, dp(7), 0)
+            addView(colorSquare(adjust(schemeColor(scheme.optInt("color_index")), 0.72f), if (compact) 9 else 10), LinearLayout.LayoutParams(dp(if (compact) 9 else 10), dp(if (compact) 9 else 10)))
+            addView(text(scheme.optString("display_name"), theme.textMuted, if (compact) 12f else 14f, false).apply {
+                maxLines = 1
+            }, LinearLayout.LayoutParams(0, -1, 1f).apply {
+                setMargins(dp(if (compact) 7 else 10), 0, 0, 0)
+            })
+            setOnClickListener { showArchivedSchemeActions(scheme) }
+            setOnLongClickListener {
+                showArchivedSchemeActions(scheme)
+                true
+            }
+        }
 
     private fun renderUpcomingRail(): View {
         val root = page(compact = true)
@@ -384,18 +458,16 @@ class MainActivity : Activity() {
             setPadding(dp(12), 0, dp(12), 0)
             background = underline(theme.bgApp)
             addView(iconChip("<") {
+                activeEditor()?.let { commitSchemeDocument(schemeId, it, rerender = false) }
                 selectedSchemeId = null
                 render()
             })
-            addView(LinearLayout(this@MainActivity).apply {
-                orientation = LinearLayout.VERTICAL
-                addView(text(scheme.optString("display_name"), theme.textPrimary, 17f, true))
-            }, LinearLayout.LayoutParams(0, -2, 1f).apply { setMargins(dp(8), 0, dp(8), 0) })
+            addView(View(this@MainActivity), LinearLayout.LayoutParams(0, 1, 1f))
             addView(iconChip("+") {
                 activeEditor()?.let(::insertTaskLine) ?: showItemDialog(schemeId, null)
             })
             addView(chip("More") { showSchemeActions(scheme) }, LinearLayout.LayoutParams(dp(64), dp(28)).apply { setMargins(dp(6), 0, 0, 0) })
-        }, LinearLayout.LayoutParams(-1, dp(52)))
+        }, LinearLayout.LayoutParams(-1, dp(44)))
 
         val editor = SchemeEditText(this).apply {
             setText(renderDocument(originalLines))
@@ -413,16 +485,105 @@ class MainActivity : Activity() {
             imeOptions = EditorInfo.IME_ACTION_DONE
             setTextSize(16f)
             setHorizontallyScrolling(false)
-            setPadding(dp(EDITOR_TEXT_LEFT_PAD_DP), dp(18), dp(24), dp(160))
+            setPadding(dp(EDITOR_TEXT_LEFT_PAD_DP), dp(2), dp(24), dp(170))
             setLineSpacing(0f, 1f)
+            minHeight = max(dp(360), resources.displayMetrics.heightPixels - dp(210))
+            isVerticalScrollBarEnabled = false
+            overScrollMode = View.OVER_SCROLL_NEVER
             background = null
             setOnFocusChangeListener { _, hasFocus ->
-                if (!hasFocus) commitSchemeDocument(schemeId, this, rerender = true)
+                if (hasFocus) {
+                    hidePhoneDockForEditing()
+                } else {
+                    showPhoneDockAfterEditing()
+                    commitSchemeDocument(schemeId, this, rerender = true)
+                }
             }
         }
-        root.addView(editor, LinearLayout.LayoutParams(-1, 0, 1f))
-        root.addView(editorFormatBar(schemeId, editor), LinearLayout.LayoutParams(-1, dp(46)))
+        val editorBody = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(0, dp(8), 0, 0)
+            addView(schemeTitleBlock(scheme), LinearLayout.LayoutParams(-1, -2).apply {
+                setMargins(dp(EDITOR_TEXT_LEFT_PAD_DP), 0, dp(24), dp(1))
+            })
+            addView(editor, LinearLayout.LayoutParams(-1, -2))
+        }
+        root.addView(scroll(editorBody), LinearLayout.LayoutParams(-1, 0, 1f))
+        root.addView(editorFormatBar(schemeId, editor), LinearLayout.LayoutParams(-1, dp(38)))
         return root
+    }
+
+    private fun schemeTitleBlock(scheme: JSONObject): View {
+        val schemeId = scheme.optString("id")
+        val committed = scheme.optString("display_name", scheme.optString("name"))
+        val input = edit(committed).apply {
+            setSingleLine(true)
+            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_CAP_SENTENCES
+            imeOptions = EditorInfo.IME_ACTION_DONE
+            textSize = 26f
+            setTypeface(typeface, Typeface.BOLD)
+            includeFontPadding = false
+            minHeight = dp(34)
+            background = null
+            setPadding(0, 0, 0, 0)
+        }
+        val error = text("", theme.danger, 11f, true).apply {
+            visibility = View.GONE
+            setPadding(0, dp(1), 0, 0)
+        }
+        val validator = {
+            validateSchemeName(
+                input.text.toString(),
+                folderId = if (scheme.optBoolean("is_daily_queue", false)) null else parentFolderIdForScheme(schemeId),
+                excludingId = if (scheme.optBoolean("is_daily_queue", false)) null else schemeId,
+                checkDuplicates = !scheme.optBoolean("is_daily_queue", false)
+            )
+        }
+        fun refreshError(): String? {
+            val message = validator()
+            error.text = message.orEmpty()
+            error.visibility = if (message == null) View.GONE else View.VISIBLE
+            input.setTextColor(if (message == null) theme.textPrimary else theme.danger)
+            return message
+        }
+        fun commitTitle() {
+            val draft = input.text.toString()
+            val message = refreshError()
+            if (message == null && draft != committed) {
+                mutate(obj("type" to "rename_scheme", "scheme_id" to schemeId, "name" to draft))
+            }
+        }
+        input.addTextChangedListener(object : TextWatcher {
+            override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) = Unit
+            override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {
+                refreshError()
+            }
+            override fun afterTextChanged(s: Editable?) = Unit
+        })
+        input.setOnEditorActionListener { _, actionId, _ ->
+            if (actionId == EditorInfo.IME_ACTION_DONE) {
+                commitTitle()
+                input.clearFocus()
+                true
+            } else {
+                false
+            }
+        }
+        input.setOnFocusChangeListener { _, hasFocus ->
+            if (hasFocus) {
+                hidePhoneDockForEditing()
+            } else {
+                showPhoneDockAfterEditing()
+                commitTitle()
+            }
+        }
+        refreshError()
+
+        return LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            addView(input, LinearLayout.LayoutParams(-1, dp(34)))
+            addView(error, LinearLayout.LayoutParams(-1, dp(13)))
+        }
     }
 
     private fun renderDaily(): LinearLayout {
@@ -453,9 +614,13 @@ class MainActivity : Activity() {
                 selectedDate = selectedDate.plusDays(1)
                 ensureDaily()
             }, LinearLayout.LayoutParams(dp(32), dp(28)).apply { setMargins(dp(6), 0, 0, 0) })
-        }, LinearLayout.LayoutParams(-1, dp(52)))
+        }, LinearLayout.LayoutParams(-1, dp(44)))
 
-        val list = page()
+        val list = MaxWidthLinearLayout(this, dp(760)).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(14), dp(12), dp(14), dp(20))
+            setBackgroundColor(theme.bgApp)
+        }
         val days = dailyEntries()
         if (days.isEmpty()) {
             list.addView(emptyState("Daily not ready", "Could not create the daily queue."))
@@ -467,7 +632,7 @@ class MainActivity : Activity() {
             }
         }
         root.addView(scroll(list), LinearLayout.LayoutParams(-1, 0, 1f))
-        root.addView(editorFormatBar(), LinearLayout.LayoutParams(-1, dp(46)))
+        root.addView(editorFormatBar(), LinearLayout.LayoutParams(-1, dp(38)))
         return root
     }
 
@@ -524,7 +689,12 @@ class MainActivity : Activity() {
                 overScrollMode = View.OVER_SCROLL_NEVER
                 background = rounded(if (selected) theme.rowSelected else Color.TRANSPARENT, dp(7))
                 setOnFocusChangeListener { _, hasFocus ->
-                    if (!hasFocus) commitSchemeDocument(schemeId, this, rerender = false)
+                    if (hasFocus) {
+                        hidePhoneDockForEditing()
+                    } else {
+                        showPhoneDockAfterEditing()
+                        commitSchemeDocument(schemeId, this, rerender = false)
+                    }
                 }
             }
             addView(editor, LinearLayout.LayoutParams(-1, -2))
@@ -600,7 +770,7 @@ class MainActivity : Activity() {
                 results.addView(row, rowParams())
             }
         } catch (error: RuntimeException) {
-            toast(error.message)
+            showError("Could not save edits", error.message)
         }
     }
 
@@ -647,15 +817,15 @@ class MainActivity : Activity() {
             return
         }
         val selected = selectedSchemeId == node.optString("id")
-        val rowHeight = if (spacious) dp(44) else dp(25)
+        val rowHeight = if (spacious) dp(44) else dp(22)
         val row = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            setPadding(dp((if (spacious) 11 else 7) + depth * if (spacious) 14 else 9), 0, dp(7), 0)
-            background = rounded(if (selected) theme.rowSelected else Color.TRANSPARENT, if (spacious) dp(7) else dp(5))
-            val squareSize = if (spacious) 12 else 10
+            setPadding(dp((if (spacious) 11 else 6) + depth * if (spacious) 14 else 8), 0, dp(7), 0)
+            background = rounded(if (selected) theme.rowSelected else Color.TRANSPARENT, if (spacious) dp(7) else dp(4))
+            val squareSize = if (spacious) 12 else 9
             addView(colorSquare(schemeColor(node.optInt("color_index")), squareSize), LinearLayout.LayoutParams(dp(squareSize), dp(squareSize)))
-            addView(text(node.optString("name"), theme.textPrimary, if (spacious) 15f else 13f, false).apply { maxLines = 1 }, LinearLayout.LayoutParams(0, -1, 1f).apply {
+            addView(text(node.optString("name"), theme.textPrimary, if (spacious) 15f else 12f, false).apply { maxLines = 1 }, LinearLayout.LayoutParams(0, -1, 1f).apply {
                 setMargins(dp(if (spacious) 10 else 7), 0, dp(4), 0)
             })
             if (spacious) {
@@ -671,9 +841,9 @@ class MainActivity : Activity() {
     }
 
     private fun folderRow(node: JSONObject, depth: Int, spacious: Boolean = false): View {
-        val label = if (spacious) "⌄  ${node.optString("name")}" else "Folder  ${node.optString("name")}"
-        return text(label, theme.textPrimary, if (spacious) 15f else 13f, false).apply {
-            setPadding(dp((if (spacious) 11 else 7) + depth * if (spacious) 14 else 9), 0, dp(7), 0)
+        val label = if (spacious) "⌄  ${node.optString("name")}" else "▾ ${node.optString("name")}"
+        return text(label, theme.textPrimary, if (spacious) 15f else 12f, false).apply {
+            setPadding(dp((if (spacious) 11 else 6) + depth * if (spacious) 14 else 8), 0, dp(7), 0)
             gravity = Gravity.CENTER_VERTICAL
             setOnLongClickListener {
                 showFolderActions(node)
@@ -738,7 +908,7 @@ class MainActivity : Activity() {
             addView(LinearLayout(this@MainActivity).apply {
                 orientation = LinearLayout.HORIZONTAL
                 gravity = Gravity.CENTER_VERTICAL
-                setPadding(dp(8), dp(6), dp(8), dp(6))
+                setPadding(dp(7), dp(5), dp(7), dp(5))
                 addView(formatButton("T") { targetEditor()?.let { setCurrentLineMarker(it, "blank") } })
                 addView(formatButton("✓") { targetEditor()?.let { setCurrentLineMarker(it, "checkbox") } })
                 addView(formatButton("•") { targetEditor()?.let { setCurrentLineMarker(it, "bullet") } })
@@ -769,17 +939,17 @@ class MainActivity : Activity() {
     private fun formatButton(label: String, action: () -> Unit): TextView =
         text(label, theme.textPrimary, 12f, true).apply {
             gravity = Gravity.CENTER
-            background = rounded(theme.buttonBg, dp(7))
+            background = rounded(theme.buttonBg, dp(5))
             setOnClickListener { action() }
-            layoutParams = LinearLayout.LayoutParams(dp(34), dp(30)).apply {
-                setMargins(0, 0, dp(6), 0)
+            layoutParams = LinearLayout.LayoutParams(dp(29), dp(27)).apply {
+                setMargins(0, 0, dp(5), 0)
             }
         }
 
     private fun formatDivider(): View = View(this).apply {
-        setBackgroundColor(theme.divider)
-        layoutParams = LinearLayout.LayoutParams(dp(1), dp(22)).apply {
-            setMargins(dp(2), 0, dp(8), 0)
+        setBackgroundColor(theme.dividerSoft)
+        layoutParams = LinearLayout.LayoutParams(dp(1), dp(18)).apply {
+            setMargins(dp(1), 0, dp(6), 0)
         }
     }
 
@@ -810,15 +980,16 @@ class MainActivity : Activity() {
     }
 
     private fun insertTaskLine(editor: EditText) {
-        val start = max(0, editor.selectionStart)
+        val start = editor.logicalSelectionStart()
         val end = max(start, editor.selectionEnd)
         val prefix = if (start == 0 || editor.text.isEmpty()) "" else "\n"
         editor.text.replace(start, end, "${prefix}[ ] ")
+        ensureTerminalNewline(editor.text, editor.selectionStart)
     }
 
     private fun editCurrentLine(editor: EditText, transform: (String) -> String) {
         val value = editor.text.toString()
-        val cursor = editor.selectionStart.coerceIn(0, value.length)
+        val cursor = editor.logicalSelectionStart().coerceIn(0, value.length)
         val start = value.lastIndexOf('\n', (cursor - 1).coerceAtLeast(0)).let { if (it < 0) 0 else it + 1 }
         val newline = value.indexOf('\n', cursor)
         val end = if (newline < 0) value.length else newline
@@ -852,13 +1023,27 @@ class MainActivity : Activity() {
 
     private fun currentLineIndex(editor: EditText): Int {
         val value = editor.text.toString()
-        val cursor = editor.selectionStart.coerceIn(0, value.length)
+        val cursor = editor.logicalSelectionStart().coerceIn(0, value.length)
         return value.substring(0, cursor).count { it == '\n' }
     }
 
+    private fun EditText.logicalSelectionStart(): Int {
+        val value = text?.toString().orEmpty()
+        val raw = max(0, selectionStart).coerceAtMost(value.length)
+        return if (raw == value.length && value.endsWith("\n")) max(0, raw - 1) else raw
+    }
+
+    private fun ensureTerminalNewline(editable: Editable, preferredSelection: Int? = null) {
+        if (editable.isNotEmpty() && editable.last() == '\n') return
+        val selection = (preferredSelection ?: editable.length).coerceIn(0, editable.length)
+        editable.append("\n")
+        activeEditor()?.setSelection(selection.coerceAtMost(editable.length))
+    }
+
     private fun commitSchemeDocument(schemeId: String, editor: EditText, rerender: Boolean) {
+        ensureTerminalNewline(editor.text, editor.selectionStart)
         val oldLines = (editor.tag as? List<*>)?.filterIsInstance<SchemeEditorLine>().orEmpty()
-        val nextLines = reconcileEditorLines(oldLines, parseEditorDocument(editor.text.toString()))
+        val nextLines = reconcileEditorLines(oldLines, parseEditorDocument(editor.text.toString(), preserveBlankDocument = oldLines.isNotEmpty()))
         val array = JSONArray()
         nextLines.forEach { line ->
             array.put(obj(
@@ -872,7 +1057,11 @@ class MainActivity : Activity() {
         try {
             bridge.request(obj("type" to "replace_scheme_items", "scheme_id" to schemeId, "items" to array))
             loadSnapshot()
-            editor.tag = findScheme(schemeId)?.let(::documentLines) ?: nextLines
+            val refreshed = findScheme(schemeId)
+            editor.tag = refreshed?.let(::documentLines) ?: nextLines
+            if (editor is SchemeEditText && refreshed != null) {
+                editor.lineAdornments = editorLineAdornments(refreshed)
+            }
             if (rerender) render()
         } catch (error: RuntimeException) {
             toast(error.message)
@@ -909,10 +1098,10 @@ class MainActivity : Activity() {
                     0 -> showCalendarItemDialog()
                     1 -> {
                         val schemeId = if (selectedTab == 2) dailyScheme()?.optString("id") else selectedSchemeId
-                        if (schemeId != null) showItemDialog(schemeId, null) else toast("Pick a list first")
+                        if (schemeId != null) showItemDialog(schemeId, null) else toast("Pick a scheme first")
                     }
-                    2 -> showNameDialog("New Scheme", "") { name -> mutate(obj("type" to "create_scheme", "name" to name)) }
-                    3 -> showNameDialog("New Folder", "") { name -> mutate(obj("type" to "create_folder", "name" to name)) }
+                    2 -> showNameDialog("New Scheme", "", { validateSchemeName(it, folderId = rootFolderId()) }) { name -> mutate(obj("type" to "create_scheme", "name" to name)) }
+                    3 -> showNameDialog("New Folder", "", { validateFolderName(it) }) { name -> mutate(obj("type" to "create_folder", "name" to name)) }
                 }
             }
             .show()
@@ -981,20 +1170,37 @@ class MainActivity : Activity() {
     }
 
     private fun showDateKindDialog(schemeId: String, itemId: String) {
-        val kinds = arrayOf("start", "end")
+        val kinds = arrayOf("Set Start", "Set End", "Clear Start", "Clear End", "Clear Both")
         AlertDialog.Builder(this)
             .setTitle("Date")
-            .setItems(kinds) { _, which -> showItemDateDialog(schemeId, itemId, kinds[which]) }
-            .setNeutralButton("Clear Start") { _, _ ->
-                mutate(obj("type" to "set_item_date", "scheme_id" to schemeId, "item_id" to itemId, "kind" to "start", "date" to null))
+            .setItems(kinds) { _, which ->
+                when (which) {
+                    0 -> showItemDateDialog(schemeId, itemId, "start")
+                    1 -> showItemDateDialog(schemeId, itemId, "end")
+                    2 -> mutate(obj("type" to "set_item_date", "scheme_id" to schemeId, "item_id" to itemId, "kind" to "start", "date" to null))
+                    3 -> mutate(obj("type" to "set_item_date", "scheme_id" to schemeId, "item_id" to itemId, "kind" to "end", "date" to null))
+                    4 -> {
+                        mutate(obj("type" to "set_item_date", "scheme_id" to schemeId, "item_id" to itemId, "kind" to "start", "date" to null))
+                        mutate(obj("type" to "set_item_date", "scheme_id" to schemeId, "item_id" to itemId, "kind" to "end", "date" to null))
+                    }
+                }
             }
             .show()
     }
 
     private fun showItemDateDialog(schemeId: String, itemId: String, kind: String) {
         val form = page(compact = true)
-        val date = DatePicker(this)
-        val time = TimePicker(this).apply { setIs24HourView(timeFormat24()) }
+        val initial = findItem(schemeId, itemId)?.optionalString(kind)?.let(::localDateTime)
+        val date = DatePicker(this).apply {
+            val local = initial?.toLocalDate() ?: selectedDate
+            updateDate(local.year, local.monthValue - 1, local.dayOfMonth)
+        }
+        val time = TimePicker(this).apply {
+            setIs24HourView(timeFormat24())
+            val local = initial?.toLocalTime() ?: LocalTime.now().withSecond(0).withNano(0)
+            hour = local.hour
+            minute = local.minute
+        }
         form.addView(date, spaced())
         form.addView(time)
         AlertDialog.Builder(this)
@@ -1032,9 +1238,11 @@ class MainActivity : Activity() {
             .setTitle(nodeOrScheme.optString("name", nodeOrScheme.optString("display_name")))
             .setItems(arrayOf("Rename", "Color", "Delete")) { _, which ->
                 when (which) {
-                    0 -> showNameDialog("Rename Scheme", nodeOrScheme.optString("name", nodeOrScheme.optString("display_name"))) { name ->
-                        mutate(obj("type" to "rename_scheme", "scheme_id" to id, "name" to name))
-                    }
+                    0 -> showNameDialog(
+                        "Rename Scheme",
+                        nodeOrScheme.optString("name", nodeOrScheme.optString("display_name")),
+                        { validateSchemeName(it, folderId = parentFolderIdForScheme(id), excludingId = id, checkDuplicates = !isDaily) }
+                    ) { name -> mutate(obj("type" to "rename_scheme", "scheme_id" to id, "name" to name)) }
                     1 -> showColorDialog(id)
                     2 -> if (!isDaily) mutate(obj("type" to "delete_scheme", "scheme_id" to id))
                 }
@@ -1057,10 +1265,10 @@ class MainActivity : Activity() {
             .setTitle(node.optString("name"))
             .setItems(arrayOf("New Scheme", "Rename", "Delete")) { _, which ->
                 when (which) {
-                    0 -> showNameDialog("New Scheme", "") { name ->
+                    0 -> showNameDialog("New Scheme", "", { validateSchemeName(it, folderId = node.optString("id")) }) { name ->
                         mutate(obj("type" to "create_scheme", "folder_id" to node.optString("id"), "name" to name))
                     }
-                    1 -> showNameDialog("Rename Folder", node.optString("name")) { name ->
+                    1 -> showNameDialog("Rename Folder", node.optString("name"), { validateFolderName(it, excludingId = node.optString("id")) }) { name ->
                         mutate(obj("type" to "rename_folder", "folder_id" to node.optString("id"), "name" to name))
                     }
                     2 -> mutate(obj("type" to "delete_folder", "folder_id" to node.optString("id")))
@@ -1069,20 +1277,71 @@ class MainActivity : Activity() {
             .show()
     }
 
-    private fun showNameDialog(title: String, initial: String, callback: (String) -> Unit) {
+    private fun showArchiveActions() {
+        AlertDialog.Builder(this)
+            .setTitle("Archive")
+            .setItems(arrayOf("Empty Archive")) { _, which ->
+                if (which == 0) mutate(obj("type" to "empty_archive"))
+            }
+            .show()
+    }
+
+    private fun showArchivedSchemeActions(scheme: JSONObject) {
+        AlertDialog.Builder(this)
+            .setTitle(scheme.optString("display_name"))
+            .setItems(arrayOf("Restore", "Delete Permanently")) { _, which ->
+                when (which) {
+                    0 -> mutate(obj("type" to "restore_scheme", "scheme_id" to scheme.optString("id")))
+                    1 -> mutate(obj("type" to "permanently_delete_scheme", "scheme_id" to scheme.optString("id")))
+                }
+            }
+            .show()
+    }
+
+    private fun showNameDialog(title: String, initial: String, validator: (String) -> String?, callback: (String) -> Unit) {
         val input = edit(initial).apply {
             setSingleLine(true)
             background = rounded(theme.bgModal, dp(5), theme.borderOverlay)
             setPadding(dp(10), 0, dp(10), 0)
         }
-        AlertDialog.Builder(this)
-            .setTitle(title)
-            .setView(input)
-            .setPositiveButton("Save") { _, _ ->
-                input.text.toString().trim().takeIf { it.isNotEmpty() }?.let(callback)
+        val error = text("", theme.danger, 11f, true).apply {
+            visibility = View.GONE
+            setPadding(dp(2), dp(5), dp(2), 0)
+        }
+        fun refreshError(): String? {
+            val message = validator(input.text.toString())
+            error.text = message.orEmpty()
+            error.visibility = if (message == null) View.GONE else View.VISIBLE
+            return message
+        }
+        input.addTextChangedListener(object : TextWatcher {
+            override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) = Unit
+            override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {
+                refreshError()
             }
+            override fun afterTextChanged(s: Editable?) = Unit
+        })
+        val form = page(compact = true).apply {
+            setPadding(0, 0, 0, 0)
+            addView(input, LinearLayout.LayoutParams(-1, dp(44)))
+            addView(error, LinearLayout.LayoutParams(-1, -2))
+        }
+        val dialog = AlertDialog.Builder(this)
+            .setTitle(title)
+            .setView(form)
+            .setPositiveButton("Save", null)
             .setNegativeButton("Cancel", null)
-            .show()
+            .create()
+        dialog.setOnShowListener {
+            refreshError()
+            dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
+                if (refreshError() == null) {
+                    callback(input.text.toString())
+                    dialog.dismiss()
+                }
+            }
+        }
+        dialog.show()
     }
 
     private fun showDatePicker() {
@@ -1108,7 +1367,7 @@ class MainActivity : Activity() {
             loadSnapshot()
             render()
         } catch (error: RuntimeException) {
-            toast(error.message)
+            showError("Could not save", error.message)
         }
     }
 
@@ -1151,11 +1410,112 @@ class MainActivity : Activity() {
         return entries
     }
 
+    private fun archivedSchemes(): JSONArray = snapshot.optJSONArray("archived_schemes") ?: JSONArray()
+
     private fun findScheme(id: String): JSONObject? {
-        val schemes = snapshot.optJSONArray("schemes") ?: return null
-        for (index in 0 until schemes.length()) {
-            val scheme = schemes.optJSONObject(index)
-            if (scheme != null && id == scheme.optString("id")) return scheme
+        listOf(snapshot.optJSONArray("schemes"), snapshot.optJSONArray("archived_schemes")).forEach { schemes ->
+            if (schemes != null) {
+                for (index in 0 until schemes.length()) {
+                    val scheme = schemes.optJSONObject(index)
+                    if (scheme != null && id == scheme.optString("id")) return scheme
+                }
+            }
+        }
+        return null
+    }
+
+    private fun findItem(schemeId: String, itemId: String): JSONObject? {
+        val items = findScheme(schemeId)?.optJSONArray("items") ?: return null
+        for (index in 0 until items.length()) {
+            val item = items.optJSONObject(index)
+            if (item != null && itemId == item.optString("id")) return item
+        }
+        return null
+    }
+
+    private fun localDateTime(raw: String): ZonedDateTime? =
+        try {
+            Instant.parse(raw).atZone(ZoneId.systemDefault())
+        } catch (_: RuntimeException) {
+            null
+        }
+
+    private fun rootFolderId(): String? = snapshot.optJSONObject("root")?.optString("id")
+
+    private fun parentFolderIdForScheme(schemeId: String): String? {
+        val root = snapshot.optJSONObject("root") ?: return null
+        return parentFolderIdForScheme(schemeId, root)
+    }
+
+    private fun parentFolderIdForScheme(schemeId: String, node: JSONObject): String? {
+        val children = node.optJSONArray("children") ?: return null
+        for (index in 0 until children.length()) {
+            val child = children.optJSONObject(index) ?: continue
+            if (child.optString("kind") == "scheme" && child.optString("id") == schemeId) {
+                return node.optString("id")
+            }
+            if (child.optString("kind") == "folder") {
+                parentFolderIdForScheme(schemeId, child)?.let { return it }
+            }
+        }
+        return null
+    }
+
+    private fun validateSchemeName(name: String, folderId: String? = null, excludingId: String? = null, checkDuplicates: Boolean = true): String? {
+        validateNodeName(name, "Scheme", disallowKnotqExtension = true)?.let { return it }
+        if (!checkDuplicates) return null
+        val parent = nodeById(folderId ?: rootFolderId(), snapshot.optJSONObject("root")) ?: return null
+        if (siblingExists(parent, name, "scheme", excludingId)) {
+            return "A scheme named \"$name\" already exists here."
+        }
+        return null
+    }
+
+    private fun validateFolderName(name: String, excludingId: String? = null): String? {
+        validateNodeName(name, "Folder", disallowKnotqExtension = false)?.let { return it }
+        val parent = snapshot.optJSONObject("root") ?: return null
+        if (siblingExists(parent, name, "folder", excludingId)) {
+            return "A folder named \"$name\" already exists here."
+        }
+        return null
+    }
+
+    private fun validateNodeName(name: String, label: String, disallowKnotqExtension: Boolean): String? {
+        if (name.isEmpty()) return "$label name cannot be empty."
+        if (name.trim() != name) return "File or directory name contains leading or trailing whitespace."
+        if (name == "." || name == "..") return "File or directory name cannot be . or ..."
+        if (name.endsWith(".")) return "File or directory name cannot end with a period."
+        if (name.contains("/") || name.contains("\\")) return "File or directory name cannot contain path separators."
+        val reservedCharacters = setOf(':', '*', '?', '"', '<', '>', '|')
+        name.firstOrNull { it in reservedCharacters }?.let { return "File or directory name cannot contain \"$it\"." }
+        if (name.any { it.code < 32 || it.code == 127 }) return "File or directory name cannot contain control characters."
+        val reservedNames = setOf("CON", "PRN", "AUX", "NUL", "COM1", "COM2", "COM3", "COM4", "COM5", "COM6", "COM7", "COM8", "COM9", "LPT1", "LPT2", "LPT3", "LPT4", "LPT5", "LPT6", "LPT7", "LPT8", "LPT9")
+        if (name.startsWith(".") || name.uppercase(Locale.US) in reservedNames) return "\"$name\" is reserved by the operating system."
+        if (disallowKnotqExtension && name.lowercase(Locale.US).endsWith(".knotq")) return "Scheme names cannot end in .knotq."
+        return null
+    }
+
+    private fun siblingExists(parent: JSONObject, name: String, kind: String, excludingId: String?): Boolean {
+        val normalized = name.lowercase(Locale.US)
+        val children = parent.optJSONArray("children") ?: return false
+        for (index in 0 until children.length()) {
+            val child = children.optJSONObject(index) ?: continue
+            if (child.optString("kind") == kind &&
+                child.optString("id") != excludingId &&
+                child.optString("name").lowercase(Locale.US) == normalized
+            ) {
+                return true
+            }
+        }
+        return false
+    }
+
+    private fun nodeById(id: String?, node: JSONObject?): JSONObject? {
+        if (id == null || node == null) return null
+        if (node.optString("id") == id) return node
+        val children = node.optJSONArray("children") ?: return null
+        for (index in 0 until children.length()) {
+            nodeById(id, children.optJSONObject(index))?.let { return it }
         }
         return null
     }
@@ -1184,9 +1544,9 @@ class MainActivity : Activity() {
 
     private fun titleText(): String {
         return if (selectedTab == 1 && selectedSchemeId != null) {
-            findScheme(selectedSchemeId!!)?.optString("display_name") ?: "List"
+            findScheme(selectedSchemeId!!)?.optString("display_name") ?: "Scheme"
         } else {
-            listOf("Calendar", "Lists", "Daily", "Search", "Settings").getOrElse(selectedTab) { "KnotQ" }
+            listOf("Calendar", "Schemes", "Daily", "Search", "Settings").getOrElse(selectedTab) { "KnotQ" }
         }
     }
 
@@ -1260,14 +1620,14 @@ class MainActivity : Activity() {
         return LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            setPadding(dp(7), 0, dp(7), 0)
-            background = rounded(if (selected) theme.rowSelected else Color.TRANSPARENT, dp(5))
-            addView(colorSquare(color, 10), LinearLayout.LayoutParams(dp(10), dp(10)))
-            addView(text(value, theme.textPrimary, 13f, false), LinearLayout.LayoutParams(0, -1, 1f).apply {
+            setPadding(dp(6), 0, dp(6), 0)
+            background = rounded(if (selected) theme.rowSelected else Color.TRANSPARENT, dp(4))
+            addView(colorSquare(color, 9), LinearLayout.LayoutParams(dp(9), dp(9)))
+            addView(text(value, theme.textPrimary, 12f, false), LinearLayout.LayoutParams(0, -1, 1f).apply {
                 setMargins(dp(7), 0, 0, 0)
             })
             setOnClickListener { listener() }
-        }.also { it.layoutParams = LinearLayout.LayoutParams(-1, dp(25)) }
+        }.also { it.layoutParams = LinearLayout.LayoutParams(-1, dp(22)) }
     }
 
     private fun chip(value: String, listener: () -> Unit): TextView = text(value, theme.textPrimary, 12f, true).apply {
@@ -1430,6 +1790,14 @@ class MainActivity : Activity() {
         Toast.makeText(this, value ?: "Error", Toast.LENGTH_LONG).show()
     }
 
+    private fun showError(title: String, message: String?) {
+        AlertDialog.Builder(this)
+            .setTitle(title)
+            .setMessage(message ?: "Unknown error")
+            .setPositiveButton("OK", null)
+            .show()
+    }
+
     private fun showFatal(message: String?) {
         setContentView(text(message ?: "KnotQ failed to start", theme.textPrimary, 16f, true).apply {
             gravity = Gravity.CENTER
@@ -1468,20 +1836,35 @@ class MainActivity : Activity() {
                 end != null -> "Due ${time(end)}"
                 else -> null
             }
+            val media = ArrayList<EditorLineMedia>()
+            item.optJSONArray("media")?.forEachObject { rawMedia ->
+                media.add(
+                    EditorLineMedia(
+                        kind = rawMedia.optString("kind"),
+                        path = rawMedia.optionalString("path"),
+                        width = rawMedia.takeUnless { it.isNull("width") }?.optInt("width"),
+                        height = rawMedia.takeUnless { it.isNull("height") }?.optInt("height")
+                    )
+                )
+            }
             out.add(
                 EditorLineAdornment(
                     marker = item.optString("marker", "blank"),
                     done = item.optBoolean("done", false),
-                    annotation = annotation
+                    annotation = annotation,
+                    media = media
                 )
             )
         }
         return out
     }
 
-    private fun parseEditorDocument(text: String): List<SchemeEditorLine> {
-        if (text.isEmpty()) return emptyList()
-        return text.split("\n", ignoreCase = false, limit = 0).map(::parseEditorLine)
+    private fun parseEditorDocument(text: String, preserveBlankDocument: Boolean): List<SchemeEditorLine> {
+        val body = if (text.endsWith("\n")) text.dropLast(1) else text
+        if (body.isEmpty()) {
+            return if (preserveBlankDocument) listOf(parseEditorLine("")) else emptyList()
+        }
+        return body.split("\n", ignoreCase = false, limit = 0).map(::parseEditorLine)
     }
 
     private fun parseEditorLine(raw: String): SchemeEditorLine {
@@ -1523,11 +1906,12 @@ class MainActivity : Activity() {
 
     private fun renderDocument(lines: List<SchemeEditorLine>): String {
         var number = 1
-        return lines.joinToString("\n") { line ->
+        val body = lines.joinToString("\n") { line ->
             val out = renderEditorLine(line, number)
             if (line.marker == "numbered") number++ else number = 1
             out
         }
+        return "$body\n"
     }
 
     private fun renderEditorLine(line: SchemeEditorLine, ordinal: Int): String {
@@ -1577,7 +1961,19 @@ class MainActivity : Activity() {
 private fun JSONObject.optionalString(name: String): String? =
     if (isNull(name)) null else optString(name).takeIf { it.isNotEmpty() && it != "null" }
 
+private class MaxWidthLinearLayout(context: android.content.Context, private val maxWidthPx: Int) : LinearLayout(context) {
+    override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
+        val width = View.MeasureSpec.getSize(widthMeasureSpec)
+        val mode = View.MeasureSpec.getMode(widthMeasureSpec)
+        val constrainedWidth = if (width > 0) min(width, maxWidthPx) else maxWidthPx
+        super.onMeasure(View.MeasureSpec.makeMeasureSpec(constrainedWidth, mode), heightMeasureSpec)
+    }
+}
+
 private class SchemeEditText(context: android.content.Context) : EditText(context) {
+    private val chromePaint = Paint(Paint.ANTI_ALIAS_FLAG)
+    private val imageCache = HashMap<String, Bitmap?>()
+
     var editorTheme: UiTheme = UiTheme.dark
         set(value) {
             field = value
@@ -1613,7 +2009,8 @@ private class SchemeEditText(context: android.content.Context) : EditText(contex
             }
             override fun afterTextChanged(s: Editable?) {
                 if (!styling && s != null && BaseInputConnection.getComposingSpanStart(s) < 0) {
-                    applyPrefixSpans(s, fullDocument = false)
+                    enforceTerminalNewline(s)
+                    applyPrefixSpans(s, fullDocument = true)
                 }
                 invalidate()
             }
@@ -1621,8 +2018,19 @@ private class SchemeEditText(context: android.content.Context) : EditText(contex
     }
 
     override fun setText(text: CharSequence?, type: BufferType?) {
-        super.setText(text, type)
+        val value = text?.toString().orEmpty().let { if (it.endsWith("\n")) it else "$it\n" }
+        super.setText(value, type)
         editableText?.let { applyPrefixSpans(it, fullDocument = true) }
+    }
+
+    override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
+        super.onSizeChanged(w, h, oldw, oldh)
+        if (w != oldw) editableText?.let { applyPrefixSpans(it, fullDocument = true) }
+    }
+
+    override fun onDraw(canvas: Canvas) {
+        super.onDraw(canvas)
+        drawEditorChrome(canvas)
     }
 
     override fun onTouchEvent(event: MotionEvent): Boolean {
@@ -1644,10 +2052,12 @@ private class SchemeEditText(context: android.content.Context) : EditText(contex
             val logicalLine = value.substring(0, lineStart).count { it == '\n' }
             val lineEnd = value.indexOf('\n', lineStart).let { if (it < 0) value.length else it }
             val parsed = parseChromeLine(value.substring(lineStart, lineEnd))
+            val prefixWidth = prefixVisualWidth(parsed, parsed.marker)
+            val extraHeight = extraHeightFor(lineAdornments.getOrNull(logicalLine), prefixWidth)
             val rect = markerRect(
                 parsed.indent,
                 totalPaddingTop + layout.getLineTop(visualLine) - scrollY,
-                totalPaddingTop + layout.getLineBottom(visualLine) - scrollY
+                totalPaddingTop + layout.getLineBottom(visualLine) - scrollY - extraHeight
             )
             rect.left = 0f
             rect.right = (totalPaddingLeft + dp(EDITOR_MARKER_SLOT_DP + 12)).toFloat()
@@ -1687,16 +2097,15 @@ private class SchemeEditText(context: android.content.Context) : EditText(contex
 
         var start = rangeStart
         var lineIndex = lineIndexAtStart
-        var numberedOrdinal = 1
         while (start <= rangeEnd) {
+            if (start == value.length && value.endsWith("\n")) break
             val end = value.indexOf('\n', start).let { if (it < 0 || it > rangeEnd) rangeEnd else it }
             val raw = value.substring(start, end)
             val prefix = chromePrefixLength(raw)
             val parsed = parseChromeLine(raw)
             val adornment = lineAdornments.getOrNull(lineIndex)
-            val marker = adornment?.marker ?: parsed.marker
+            val marker = parsed.marker
             val prefixWidth = prefixVisualWidth(parsed, marker)
-            val lineOrdinal = if (marker == "numbered") numberedOrdinal else 1
             val bodyStart = (start + prefix).coerceAtMost(end)
             val body = raw.drop(prefix.coerceAtMost(raw.length))
             val heading = isMarkdownHeading(body)
@@ -1708,16 +2117,9 @@ private class SchemeEditText(context: android.content.Context) : EditText(contex
             if (spanEnd > start) {
                 editable.setSpan(
                     EditorChromeSpan(
-                        lineStart = start,
-                        indent = parsed.indent,
-                        marker = marker,
-                        done = adornment?.done ?: parsed.done,
-                        annotation = adornment?.annotation,
-                        ordinal = lineOrdinal,
-                        prefixWidth = prefixWidth,
+                        lineTextEnd = end,
                         heading = heading,
-                        accentColor = accentColor,
-                        theme = editorTheme,
+                        extraHeight = extraHeightFor(adornment, prefixWidth),
                         density = resources.displayMetrics.density
                     ),
                     start,
@@ -1735,7 +2137,7 @@ private class SchemeEditText(context: android.content.Context) : EditText(contex
             }
             if (prefixWidth > 0 && spanEnd > start) {
                 editable.setSpan(
-                    EditorHangingIndentSpan(prefixWidth),
+                    EditorHangingIndentSpan(parsed.indent.coerceIn(0, 8) * dp(EDITOR_INDENT_WIDTH_DP)),
                     start,
                     spanEnd,
                     Spannable.SPAN_EXCLUSIVE_EXCLUSIVE
@@ -1753,13 +2155,280 @@ private class SchemeEditText(context: android.content.Context) : EditText(contex
                 editable.setSpan(DoneTextSpan(), start + prefix, end, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE)
                 editable.setSpan(DoneTextColorSpan(editorTheme.textMuted), start + prefix, end, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE)
             }
-            numberedOrdinal = if (marker == "numbered") numberedOrdinal + 1 else 1
             lineIndex++
             if (end >= rangeEnd) break
             start = end + 1
         }
         styling = false
     }
+
+    private fun enforceTerminalNewline(editable: Editable) {
+        if (editable.isNotEmpty() && editable.last() == '\n') return
+        val start = selectionStart.coerceIn(0, editable.length)
+        val end = selectionEnd.coerceIn(0, editable.length)
+        styling = true
+        editable.append("\n")
+        styling = false
+        setSelection(start.coerceAtMost(editable.length), end.coerceAtMost(editable.length))
+    }
+
+    private fun drawEditorChrome(canvas: Canvas) {
+        val layout = layout ?: return
+        val value = text?.toString().orEmpty()
+        val lines = chromeDrawLines(value)
+        var ordinal = 1
+        lines.forEachIndexed { index, line ->
+            if (value.isEmpty()) return@forEachIndexed
+            val firstVisual = layout.getLineForOffset(line.start.coerceIn(0, max(0, value.length - 1)))
+            val lastOffset = if (line.end > line.start) line.end - 1 else line.start
+            val lastVisual = layout.getLineForOffset(lastOffset.coerceIn(0, max(0, value.length - 1)))
+            val firstTop = totalPaddingTop + layout.getLineTop(firstVisual) - scrollY
+            val firstBottomRaw = totalPaddingTop + layout.getLineBottom(firstVisual) - scrollY
+            val rowBottom = totalPaddingTop + layout.getLineBottom(lastVisual) - scrollY
+            val firstBottom = if (firstVisual == lastVisual) firstBottomRaw - line.extraHeight else firstBottomRaw
+            val contentBottom = rowBottom - line.extraHeight
+            val markerRect = markerRect(line.indent, firstTop, firstBottom)
+            val previous = lines.getOrNull(index - 1)
+            val next = lines.getOrNull(index + 1)
+
+            drawGuides(canvas, markerRect, line.indent, previous?.indent ?: 0, next?.indent ?: 0, firstTop, rowBottom)
+            val lineOrdinal = if (line.marker == "numbered") {
+                ordinal++
+            } else {
+                ordinal = 1
+                1
+            }
+            drawMarker(canvas, markerRect, line.marker, line.done, lineOrdinal)
+            line.annotation?.let { annotation ->
+                drawAnnotationBar(
+                    canvas = canvas,
+                    markerRect = markerRect,
+                    top = firstTop,
+                    bottom = rowBottom,
+                    connectsToPrevious = previous?.annotation != null,
+                    connectsToNext = next?.annotation != null
+                )
+                drawAnnotation(canvas, annotation, markerRect, contentBottom)
+            }
+            drawMediaStack(canvas, line.media, line.prefixWidth, contentBottom + if (line.annotation == null) 0 else dp(EDITOR_ANNOTATION_HEIGHT_DP))
+        }
+    }
+
+    private fun chromeDrawLines(value: String): List<ChromeDrawLine> {
+        val out = ArrayList<ChromeDrawLine>()
+        var start = 0
+        var lineIndex = 0
+        while (start <= value.length) {
+            if (start == value.length && value.endsWith("\n")) break
+            val end = value.indexOf('\n', start).let { if (it < 0) value.length else it }
+            val raw = value.substring(start, end)
+            val parsed = parseChromeLine(raw)
+            val marker = parsed.marker
+            val prefixWidth = prefixVisualWidth(parsed, marker)
+            val body = raw.drop(chromePrefixLength(raw).coerceAtMost(raw.length))
+            val adornment = lineAdornments.getOrNull(lineIndex)
+            out.add(
+                ChromeDrawLine(
+                    start = start,
+                    end = end,
+                    indent = parsed.indent,
+                    marker = marker,
+                    done = parsed.done,
+                    annotation = adornment?.annotation,
+                    media = adornment?.media.orEmpty(),
+                    prefixWidth = prefixWidth,
+                    heading = isMarkdownHeading(body),
+                    extraHeight = extraHeightFor(adornment, prefixWidth)
+                )
+            )
+            lineIndex++
+            if (end >= value.length) break
+            start = end + 1
+        }
+        return out
+    }
+
+    private fun drawGuides(canvas: Canvas, markerRect: RectF, indent: Int, previousIndent: Int, nextIndent: Int, top: Int, bottom: Int) {
+        if (indent <= 0) return
+        chromePaint.style = Paint.Style.FILL
+        chromePaint.color = editorTheme.dividerSoft
+        val guideBottom = bottom.toFloat()
+        for (level in 1..indent.coerceIn(0, 8)) {
+            val hasPrevious = previousIndent.coerceIn(0, 8) >= level
+            val hasNext = nextIndent.coerceIn(0, 8) >= level
+            val topMargin = if (hasPrevious) 0f else dp(3f)
+            val bottomMargin = if (hasNext) 0f else dp(3f)
+            val x = annotationGuideX(markerRect) - (indent - level) * dp(EDITOR_INDENT_WIDTH_DP.toFloat())
+            canvas.drawRect(x, top + topMargin, x + 1f, max(top + topMargin + 1f, guideBottom - bottomMargin), chromePaint)
+        }
+    }
+
+    private fun drawMarker(canvas: Canvas, rect: RectF, marker: String, done: Boolean, ordinal: Int) {
+        when (marker) {
+            "checkbox" -> {
+                chromePaint.style = Paint.Style.FILL
+                chromePaint.color = if (done) accentColor else editorTheme.buttonBg
+                canvas.drawRoundRect(rect, dp(3f), dp(3f), chromePaint)
+                chromePaint.style = Paint.Style.STROKE
+                chromePaint.strokeWidth = dp(1f)
+                chromePaint.color = accentColor
+                canvas.drawRoundRect(rect, dp(3f), dp(3f), chromePaint)
+                if (done) {
+                    chromePaint.style = Paint.Style.STROKE
+                    chromePaint.strokeWidth = dp(2f)
+                    chromePaint.strokeCap = Paint.Cap.ROUND
+                    chromePaint.strokeJoin = Paint.Join.ROUND
+                    chromePaint.color = editorTheme.bgApp
+                    val check = Path()
+                    check.moveTo(rect.left + dp(3.2f), rect.top + dp(7.2f))
+                    check.lineTo(rect.left + dp(5.8f), rect.top + dp(9.7f))
+                    check.lineTo(rect.right - dp(3f), rect.top + dp(4.3f))
+                    canvas.drawPath(check, chromePaint)
+                }
+            }
+            "bullet" -> {
+                chromePaint.style = Paint.Style.FILL
+                chromePaint.color = accentColor
+                canvas.drawCircle(rect.centerX(), rect.centerY(), dp(2.2f), chromePaint)
+            }
+            "numbered" -> {
+                chromePaint.style = Paint.Style.FILL
+                chromePaint.typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+                chromePaint.textSize = dp(12f)
+                chromePaint.color = accentColor
+                chromePaint.textAlign = Paint.Align.RIGHT
+                canvas.drawText("$ordinal.", rect.left - dp(5f), rect.bottom - dp(2f), chromePaint)
+                chromePaint.textAlign = Paint.Align.LEFT
+                chromePaint.typeface = Typeface.DEFAULT
+            }
+        }
+    }
+
+    private fun drawAnnotationBar(canvas: Canvas, markerRect: RectF, top: Int, bottom: Int, connectsToPrevious: Boolean, connectsToNext: Boolean) {
+        val x = annotationGuideX(markerRect)
+        val y1 = if (connectsToPrevious) top.toFloat() else markerRect.top
+        val y2 = bottom.toFloat() - if (connectsToNext) 0f else dp(3f)
+        chromePaint.style = Paint.Style.FILL
+        chromePaint.color = accentColor
+        canvas.drawRect(x, y1, x + 1f, max(y1 + 1f, y2), chromePaint)
+    }
+
+    private fun drawAnnotation(canvas: Canvas, value: String, markerRect: RectF, contentBottom: Int) {
+        chromePaint.style = Paint.Style.FILL
+        chromePaint.typeface = Typeface.MONOSPACE
+        chromePaint.textSize = dp(10.5f)
+        chromePaint.color = accentColor
+        chromePaint.textAlign = Paint.Align.LEFT
+        canvas.drawText(
+            value,
+            annotationGuideX(markerRect) + dp(EDITOR_ANNOTATION_TEXT_GAP_DP.toFloat()),
+            contentBottom + dp(EDITOR_ANNOTATION_HEIGHT_DP.toFloat()) - dp(3f),
+            chromePaint
+        )
+        chromePaint.typeface = Typeface.DEFAULT
+    }
+
+    private fun drawMediaStack(canvas: Canvas, media: List<EditorLineMedia>, prefixWidth: Int, yStart: Int) {
+        if (media.isEmpty()) return
+        val maxWidth = editorImageMaxWidth(prefixWidth)
+        var y = yStart + dp(EDITOR_IMAGE_TOP_GAP_DP)
+        var drewImage = false
+        media.filter { it.kind == "image" }.forEach { item ->
+            val size = mediaDisplaySize(item, maxWidth)
+            if (size.first <= 0f || size.second <= 0f) return@forEach
+            if (drewImage) y += dp(EDITOR_IMAGE_STACK_GAP_DP)
+            val rect = RectF(totalPaddingLeft + prefixWidth.toFloat(), y.toFloat(), totalPaddingLeft + prefixWidth + size.first, y + size.second)
+            drawImageMedia(canvas, item, rect)
+            y += size.second.roundToInt()
+            drewImage = true
+        }
+    }
+
+    private fun drawImageMedia(canvas: Canvas, media: EditorLineMedia, rect: RectF) {
+        chromePaint.style = Paint.Style.FILL
+        chromePaint.color = editorTheme.buttonBg
+        canvas.drawRoundRect(rect, dp(5f), dp(5f), chromePaint)
+        chromePaint.style = Paint.Style.STROKE
+        chromePaint.strokeWidth = dp(1f)
+        chromePaint.color = editorTheme.divider
+        canvas.drawRoundRect(rect, dp(5f), dp(5f), chromePaint)
+        val bitmap = media.path?.let(::bitmapForPath)
+        if (bitmap != null && bitmap.width > 2 && bitmap.height > 2) {
+            canvas.save()
+            canvas.clipRect(rect)
+            canvas.drawBitmap(
+                bitmap,
+                null,
+                Rect(rect.left.roundToInt(), rect.top.roundToInt(), rect.right.roundToInt(), rect.bottom.roundToInt()),
+                chromePaint
+            )
+            canvas.restore()
+        } else {
+            drawImageFallback(canvas, rect)
+        }
+    }
+
+    private fun drawImageFallback(canvas: Canvas, rect: RectF) {
+        val inner = RectF(rect.left + 1f, rect.top + 1f, rect.right - 1f, rect.bottom - 1f)
+        chromePaint.style = Paint.Style.FILL
+        chromePaint.color = editorTheme.bgModal
+        canvas.drawRect(inner, chromePaint)
+        chromePaint.color = adjustColor(editorTheme.accent, 0.16f)
+        canvas.drawCircle(inner.right - inner.width() * 0.23f, inner.top + inner.height() * 0.20f, inner.width() * 0.08f, chromePaint)
+        chromePaint.color = editorTheme.divider
+        canvas.drawRoundRect(RectF(inner.left + inner.width() * 0.07f, inner.top + inner.height() * 0.16f, inner.left + inner.width() * 0.47f, inner.top + inner.height() * 0.23f), dp(4f), dp(4f), chromePaint)
+        canvas.drawRoundRect(RectF(inner.left + inner.width() * 0.07f, inner.top + inner.height() * 0.32f, inner.left + inner.width() * 0.69f, inner.top + inner.height() * 0.37f), dp(4f), dp(4f), chromePaint)
+        canvas.drawRoundRect(RectF(inner.left + inner.width() * 0.07f, inner.top + inner.height() * 0.45f, inner.left + inner.width() * 0.57f, inner.top + inner.height() * 0.50f), dp(4f), dp(4f), chromePaint)
+        canvas.drawRoundRect(RectF(inner.left + inner.width() * 0.07f, inner.bottom - inner.height() * 0.29f, inner.left + inner.width() * 0.77f, inner.bottom - inner.height() * 0.16f), dp(6f), dp(6f), chromePaint)
+        chromePaint.color = editorTheme.textPrimary
+        chromePaint.typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+        chromePaint.textSize = max(dp(11f), inner.height() * 0.07f)
+        canvas.drawText("Image", inner.left + inner.width() * 0.10f, inner.bottom - inner.height() * 0.18f, chromePaint)
+        chromePaint.typeface = Typeface.DEFAULT
+    }
+
+    private fun bitmapForPath(path: String): Bitmap? {
+        if (imageCache.containsKey(path)) return imageCache[path]
+        val decoded = BitmapFactory.decodeFile(path)
+        imageCache[path] = decoded
+        return decoded
+    }
+
+    private fun extraHeightFor(adornment: EditorLineAdornment?, prefixWidth: Int): Int {
+        var extra = if (adornment?.annotation == null) 0 else dp(EDITOR_ANNOTATION_HEIGHT_DP)
+        extra += mediaStackHeight(adornment?.media.orEmpty(), editorImageMaxWidth(prefixWidth))
+        return extra
+    }
+
+    private fun mediaStackHeight(media: List<EditorLineMedia>, maxWidth: Int): Int {
+        var height = 0
+        var count = 0
+        media.filter { it.kind == "image" }.forEach { item ->
+            val size = mediaDisplaySize(item, maxWidth)
+            if (size.second <= 0f) return@forEach
+            height += if (count == 0) dp(EDITOR_IMAGE_TOP_GAP_DP) else dp(EDITOR_IMAGE_STACK_GAP_DP)
+            height += size.second.roundToInt()
+            count++
+        }
+        return height
+    }
+
+    private fun mediaDisplaySize(media: EditorLineMedia, maxWidth: Int): Pair<Float, Float> {
+        val rawWidth = dp((media.width ?: EDITOR_IMAGE_FALLBACK_WIDTH_DP).coerceAtLeast(1)).toFloat()
+        val rawHeight = dp((media.height ?: EDITOR_IMAGE_FALLBACK_HEIGHT_DP).coerceAtLeast(1)).toFloat()
+        if (rawWidth <= 0f || rawHeight <= 0f || maxWidth <= 0) return 0f to 0f
+        val scale = min(1f, min(maxWidth / rawWidth, dp(EDITOR_IMAGE_MAX_HEIGHT_DP) / rawHeight))
+        return rawWidth * scale to rawHeight * scale
+    }
+
+    private fun editorImageMaxWidth(prefixWidth: Int): Int =
+        max(dp(120), (width.takeIf { it > 0 } ?: dp(EDITOR_IMAGE_FALLBACK_WIDTH_DP + 80)) - totalPaddingLeft - prefixWidth - totalPaddingRight - dp(8))
+
+    private fun annotationGuideX(markerRect: RectF): Float =
+        markerRect.left - dp((EDITOR_ANNOTATION_BAR_GAP_DP + EDITOR_INDENT_GUIDE_X_SHIFT_DP).toFloat())
+
+    private fun adjustColor(color: Int, alpha: Float): Int =
+        Color.argb((255 * alpha).roundToInt(), Color.red(color), Color.green(color), Color.blue(color))
 
     private fun <T> removeSpansInRange(editable: Editable, start: Int, end: Int, kind: Class<T>) {
         editable.getSpans(start, end, kind).forEach { span ->
@@ -1810,22 +2479,15 @@ private class SchemeEditText(context: android.content.Context) : EditText(contex
     }
 
     private fun dp(value: Int): Int = (value * resources.displayMetrics.density).roundToInt()
+    private fun dp(value: Float): Float = value * resources.displayMetrics.density
 }
 
 private class EditorChromeSpan(
-    private val lineStart: Int,
-    private val indent: Int,
-    private val marker: String,
-    private val done: Boolean,
-    private val annotation: String?,
-    private val ordinal: Int,
-    private val prefixWidth: Int,
+    private val lineTextEnd: Int,
     private val heading: Boolean,
-    private val accentColor: Int,
-    private val theme: UiTheme,
+    private val extraHeight: Int,
     private val density: Float,
 ) : LineBackgroundSpan, LineHeightSpan {
-    private val chromePaint = Paint(Paint.ANTI_ALIAS_FLAG)
 
     override fun drawBackground(
         canvas: Canvas,
@@ -1839,20 +2501,7 @@ private class EditorChromeSpan(
         start: Int,
         end: Int,
         lineNumber: Int
-    ) {
-        val lineLeft = if (start == lineStart) left else left - prefixWidth
-        val annotationExtra = if (annotation != null && start == lineStart) {
-            dp(EDITOR_ANNOTATION_HEIGHT_DP.toFloat()).roundToInt()
-        } else {
-            0
-        }
-        val markerRect = markerRect(lineLeft, top, bottom - annotationExtra)
-        drawGuides(canvas, markerRect, top, bottom)
-        if (start == lineStart) {
-            drawMarker(canvas, markerRect)
-            annotation?.let { drawAnnotation(canvas, it, markerRect, right, baseline) }
-        }
-    }
+    ) = Unit
 
     override fun chooseHeight(
         text: CharSequence?,
@@ -1873,88 +2522,10 @@ private class EditorChromeSpan(
                 fm.top = min(fm.top, fm.ascent)
             }
         }
-        if (annotation != null && start == lineStart) {
-            val extra = dp(EDITOR_ANNOTATION_HEIGHT_DP.toFloat()).roundToInt()
-            fm.descent += extra
-            fm.bottom += extra
+        if (extraHeight > 0 && end >= lineTextEnd) {
+            fm.descent += extraHeight
+            fm.bottom += extraHeight
         }
-    }
-
-    private fun drawGuides(canvas: Canvas, markerRect: RectF, top: Int, bottom: Int) {
-        if (indent <= 0) return
-        chromePaint.style = Paint.Style.FILL
-        chromePaint.color = theme.dividerSoft
-        for (level in 1..indent) {
-            val x = markerRect.left - dp(8f) - (indent - level) * dp(EDITOR_INDENT_WIDTH_DP.toFloat())
-            canvas.drawRect(x, top + dp(3f), x + 1f, bottom + dp(10f), chromePaint)
-        }
-    }
-
-    private fun drawMarker(canvas: Canvas, rect: RectF) {
-        when (marker) {
-            "checkbox" -> {
-                chromePaint.style = Paint.Style.FILL
-                chromePaint.color = if (done) accentColor else theme.buttonBg
-                canvas.drawRoundRect(rect, dp(3f), dp(3f), chromePaint)
-                chromePaint.style = Paint.Style.STROKE
-                chromePaint.strokeWidth = dp(1f)
-                chromePaint.color = accentColor
-                canvas.drawRoundRect(rect, dp(3f), dp(3f), chromePaint)
-                if (done) {
-                    chromePaint.style = Paint.Style.STROKE
-                    chromePaint.strokeWidth = dp(2f)
-                    chromePaint.strokeCap = Paint.Cap.ROUND
-                    chromePaint.strokeJoin = Paint.Join.ROUND
-                    chromePaint.color = theme.bgApp
-                    val check = Path()
-                    check.moveTo(rect.left + dp(3.2f), rect.top + dp(7.2f))
-                    check.lineTo(rect.left + dp(5.8f), rect.top + dp(9.7f))
-                    check.lineTo(rect.right - dp(3f), rect.top + dp(4.3f))
-                    canvas.drawPath(check, chromePaint)
-                }
-            }
-            "bullet" -> {
-                chromePaint.style = Paint.Style.FILL
-                chromePaint.color = accentColor
-                canvas.drawCircle(rect.centerX(), rect.centerY(), dp(2.2f), chromePaint)
-            }
-            "numbered" -> {
-                chromePaint.style = Paint.Style.FILL
-                chromePaint.typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
-                chromePaint.textSize = dp(12f)
-                chromePaint.color = accentColor
-                chromePaint.textAlign = Paint.Align.RIGHT
-                canvas.drawText("$ordinal.", rect.left - dp(5f), rect.bottom - dp(2f), chromePaint)
-                chromePaint.textAlign = Paint.Align.LEFT
-                chromePaint.typeface = Typeface.DEFAULT
-            }
-        }
-    }
-
-    private fun drawAnnotation(canvas: Canvas, value: String, markerRect: RectF, right: Int, baseline: Int) {
-        chromePaint.style = Paint.Style.FILL
-        chromePaint.color = accentColor
-        canvas.drawRect(
-            markerRect.left - dp(6f),
-            markerRect.top,
-            markerRect.left - dp(5f),
-            markerRect.bottom + dp(EDITOR_ANNOTATION_HEIGHT_DP.toFloat()) - dp(3f),
-            chromePaint
-        )
-        chromePaint.typeface = Typeface.MONOSPACE
-        chromePaint.textSize = dp(10f)
-        chromePaint.color = accentColor
-        chromePaint.textAlign = Paint.Align.LEFT
-        canvas.drawText(value, markerRect.left, baseline + dp(EDITOR_ANNOTATION_HEIGHT_DP.toFloat()) - dp(1f), chromePaint)
-        chromePaint.textAlign = Paint.Align.LEFT
-        chromePaint.typeface = Typeface.DEFAULT
-    }
-
-    private fun markerRect(left: Int, top: Int, bottom: Int): RectF {
-        val size = dp(EDITOR_CHECKBOX_SIZE_DP.toFloat())
-        val markerLeft = left + indent.coerceIn(0, 8) * dp(EDITOR_INDENT_WIDTH_DP.toFloat())
-        val centerY = (top + bottom) / 2f
-        return RectF(markerLeft, centerY - size / 2f, markerLeft + size, centerY + size / 2f)
     }
 
     private fun dp(value: Float): Float = value * density
@@ -2014,6 +2585,27 @@ private data class EditorLineAdornment(
     val marker: String,
     val done: Boolean,
     val annotation: String?,
+    val media: List<EditorLineMedia>,
+)
+
+private data class EditorLineMedia(
+    val kind: String,
+    val path: String?,
+    val width: Int?,
+    val height: Int?,
+)
+
+private data class ChromeDrawLine(
+    val start: Int,
+    val end: Int,
+    val indent: Int,
+    val marker: String,
+    val done: Boolean,
+    val annotation: String?,
+    val media: List<EditorLineMedia>,
+    val prefixWidth: Int,
+    val heading: Boolean,
+    val extraHeight: Int,
 )
 
 private data class ChromeLine(

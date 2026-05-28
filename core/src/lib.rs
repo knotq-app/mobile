@@ -146,6 +146,24 @@ impl MobileCore {
             .map_err(Into::into)
     }
 
+    pub fn restore_scheme(&self, scheme_id: String) -> Result<(), MobileError> {
+        self.lock()?
+            .restore_deleted_scheme(parse_id(&scheme_id)?)
+            .map_err(Into::into)
+    }
+
+    pub fn permanently_delete_scheme(&self, scheme_id: String) -> Result<(), MobileError> {
+        self.lock()?
+            .apply(Command::PermanentlyDeleteScheme {
+                id: parse_id(&scheme_id)?,
+            })
+            .map_err(Into::into)
+    }
+
+    pub fn empty_archive(&self) -> Result<(), MobileError> {
+        self.lock()?.empty_archive().map_err(Into::into)
+    }
+
     pub fn move_node(
         &self,
         kind: String,
@@ -461,6 +479,11 @@ impl MobileCoreInner {
                 .cmp(&b.is_daily_queue)
                 .then_with(|| a.name.to_lowercase().cmp(&b.name.to_lowercase()))
         });
+        let archived_schemes = self
+            .workspace
+            .iter_deleted_schemes()
+            .map(|scheme| self.mobile_scheme(scheme))
+            .collect::<Vec<_>>();
 
         let daily_start = today - Duration::days(3);
         let daily = (0..14)
@@ -518,6 +541,7 @@ impl MobileCoreInner {
         Ok(MobileSnapshot {
             root,
             schemes,
+            archived_schemes,
             daily,
             calendar: MobileCalendar {
                 start_date: week_start.to_string(),
@@ -652,6 +676,59 @@ impl MobileCoreInner {
         Ok(hits)
     }
 
+    fn restore_deleted_scheme(&mut self, scheme_id: SchemeId) -> Result<()> {
+        if !self.workspace.is_scheme_deleted(scheme_id) {
+            return Ok(());
+        }
+        let Some(scheme) = self.workspace.scheme(scheme_id).cloned() else {
+            self.workspace.unmark_scheme_deleted(scheme_id);
+            return self.save_workspace();
+        };
+        let (folder, position) = self.deleted_scheme_restore_target(scheme_id);
+        self.apply(Command::RestoreScheme {
+            folder,
+            position,
+            scheme,
+        })
+    }
+
+    fn empty_archive(&mut self) -> Result<()> {
+        let deleted = self.workspace.recently_deleted.clone();
+        for id in deleted {
+            self.apply(Command::PermanentlyDeleteScheme { id })?;
+        }
+        Ok(())
+    }
+
+    fn deleted_scheme_restore_target(&self, scheme_id: SchemeId) -> (FolderId, usize) {
+        if let Some(origin) = self.workspace.deleted_scheme_origin(scheme_id) {
+            if self.is_valid_scheme_restore_folder(origin.folder) {
+                let len = self
+                    .workspace
+                    .folder(origin.folder)
+                    .map(|folder| folder.children.len())
+                    .unwrap_or(0);
+                return (origin.folder, origin.position.min(len));
+            }
+        }
+
+        let root = self.workspace.root;
+        let position = self
+            .workspace
+            .folder(root)
+            .map(|folder| folder.children.len())
+            .unwrap_or(0);
+        (root, position)
+    }
+
+    fn is_valid_scheme_restore_folder(&self, folder: FolderId) -> bool {
+        folder == self.workspace.root
+            || self
+                .workspace
+                .folder(folder)
+                .is_some_and(|folder| folder.parent == Some(self.workspace.root))
+    }
+
     fn seed_editor_image_fixture(&mut self) -> Result<()> {
         if self.workspace.iter_schemes().any(|scheme| {
             scheme
@@ -761,6 +838,7 @@ impl MobileCoreInner {
 pub struct MobileSnapshot {
     pub root: MobileNode,
     pub schemes: Vec<MobileScheme>,
+    pub archived_schemes: Vec<MobileScheme>,
     pub daily: Vec<MobileDailyEntry>,
     pub calendar: MobileCalendar,
     pub settings: MobileSettings,
