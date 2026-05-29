@@ -59,6 +59,140 @@ struct NameSheet: View {
     }
 }
 
+struct ArchiveTarget: Identifiable, Equatable {
+    enum Kind: String {
+        case folder
+        case scheme
+
+        var label: String {
+            switch self {
+            case .folder: "Folder"
+            case .scheme: "Scheme"
+            }
+        }
+    }
+
+    let id: String
+    let name: String
+    let kind: Kind
+
+    static func folder(_ node: MobileNode) -> ArchiveTarget {
+        ArchiveTarget(id: node.id, name: node.name, kind: .folder)
+    }
+
+    static func scheme(_ node: MobileNode) -> ArchiveTarget {
+        ArchiveTarget(id: node.id, name: node.name, kind: .scheme)
+    }
+
+    static func scheme(_ scheme: MobileScheme) -> ArchiveTarget {
+        ArchiveTarget(id: scheme.id, name: scheme.displayName, kind: .scheme)
+    }
+
+    var title: String {
+        "Archive \(kind.label)"
+    }
+
+    var confirmTitle: String {
+        "Archive \(kind.label)"
+    }
+
+    var message: String {
+        switch kind {
+        case .folder:
+            return "\"\(name)\" and its schemes will move to Archive."
+        case .scheme:
+            return "\"\(name)\" will move to Archive."
+        }
+    }
+}
+
+struct DestructiveConfirmationTarget: Identifiable, Equatable {
+    let id: String
+    let title: String
+    let message: String
+    let confirmTitle: String
+
+    static func permanentlyDeleteScheme(_ scheme: MobileScheme) -> DestructiveConfirmationTarget {
+        DestructiveConfirmationTarget(
+            id: "permanent-\(scheme.id)",
+            title: "Delete Permanently",
+            message: "\"\(scheme.displayName)\" will be removed from the archive permanently.",
+            confirmTitle: "Delete Permanently"
+        )
+    }
+
+    static func emptyArchive(count: Int) -> DestructiveConfirmationTarget {
+        DestructiveConfirmationTarget(
+            id: "empty-archive",
+            title: "Empty Archive",
+            message: count == 1
+                ? "The archived scheme will be deleted permanently."
+                : "\(count) archived schemes will be deleted permanently.",
+            confirmTitle: "Empty Archive"
+        )
+    }
+}
+
+extension View {
+    func archiveConfirmation(
+        target selection: Binding<ArchiveTarget?>,
+        onConfirm: @escaping (ArchiveTarget) -> Void
+    ) -> some View {
+        confirmationDialog(
+            selection.wrappedValue?.title ?? "Archive",
+            isPresented: Binding(
+                get: { selection.wrappedValue != nil },
+                set: { isPresented in
+                    if !isPresented {
+                        selection.wrappedValue = nil
+                    }
+                }
+            ),
+            titleVisibility: .visible,
+            presenting: selection.wrappedValue
+        ) { target in
+            Button(target.confirmTitle, role: .destructive) {
+                onConfirm(target)
+                selection.wrappedValue = nil
+            }
+            Button("Cancel", role: .cancel) {
+                selection.wrappedValue = nil
+            }
+        } message: { target in
+            Text(target.message)
+        }
+    }
+
+    func destructiveConfirmation(
+        target selection: Binding<DestructiveConfirmationTarget?>,
+        onConfirm: @escaping (DestructiveConfirmationTarget) -> Void
+    ) -> some View {
+        confirmationDialog(
+            selection.wrappedValue?.title ?? "Confirm",
+            isPresented: Binding(
+                get: { selection.wrappedValue != nil },
+                set: { isPresented in
+                    if !isPresented {
+                        selection.wrappedValue = nil
+                    }
+                }
+            ),
+            titleVisibility: .visible,
+            presenting: selection.wrappedValue
+        ) { target in
+            Button(target.confirmTitle, role: .destructive) {
+                onConfirm(target)
+                selection.wrappedValue = nil
+            }
+            Button("Cancel", role: .cancel) {
+                selection.wrappedValue = nil
+            }
+        } message: { target in
+            Text(target.message)
+        }
+    }
+}
+
 enum WorkspaceNameValidation {
     static func schemeError(_ name: String) -> String? {
         nodeError(name, label: "Scheme", disallowKnotqExtension: true)
@@ -190,12 +324,12 @@ enum MobileDate {
 
     private static func timeFormatter(timeFormat: String) -> DateFormatter {
         let formatter = DateFormatter()
+        formatter.calendar = Calendar(identifier: .gregorian)
+        formatter.locale = Locale(identifier: "en_US_POSIX")
         if timeFormat == "twenty_four_hour" {
-            formatter.calendar = Calendar(identifier: .gregorian)
-            formatter.locale = Locale(identifier: "en_US_POSIX")
             formatter.dateFormat = "HH:mm"
         } else {
-            formatter.timeStyle = .short
+            formatter.dateFormat = "h:mm a"
         }
         return formatter
     }

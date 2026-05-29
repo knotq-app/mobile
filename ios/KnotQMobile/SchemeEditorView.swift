@@ -132,9 +132,28 @@ private enum EditorAttributes {
     }
 }
 
+// MARK: - Editor invariants
+//
+// The editor maintains three invariants over its text storage so every other
+// operation can ignore edge cases:
+//
+//   I1. Storage is non-empty and the last character is "\n".
+//       → there is always at least one paragraph and one line of meta.
+//   I2. Every character (including the trailing "\n") carries a uniform
+//       .knotqLine attribute over its paragraph.
+//       → meta(of:in:) is total and unambiguous.
+//   I3. The caret is clamped to [0, length - 1] (never past the trailing "\n").
+//       → "typing on the last line" inserts onto that line, not a phantom line.
+//
+// The helpers below are the only sanctioned read/write API for meta + styling.
+// Editing operations call `setLineMeta` after any mutation that changes meta.
+
 private func buildAttributedString(items: [MobileItem], theme: KnotQTheme, timeFormat: String) -> NSAttributedString {
     let result = NSMutableAttributedString()
     if items.isEmpty {
+        // Invariant I1: storage is never empty; seed a single blank line.
+        let attrs = EditorAttributes.bodyAttributes(meta: LineMeta(), theme: theme)
+        result.append(NSAttributedString(string: "\n", attributes: attrs))
         return result
     }
     for item in items {
@@ -146,56 +165,174 @@ private func buildAttributedString(items: [MobileItem], theme: KnotQTheme, timeF
     return result
 }
 
-private func extractEdits(from storage: NSAttributedString) -> [MobileItemEdit] {
+/// Ensures invariants I1 and I2 hold. Inserts a trailing "\n" with the previous
+/// paragraph's meta if missing; initializes empty storage with a single "\n".
+@discardableResult
+private func ensureWellFormed(_ storage: NSTextStorage, theme: KnotQTheme) -> Bool {
     let ns = storage.string as NSString
-    var edits: [MobileItemEdit] = []
-    var paraStart = 0
-    while true {
-        let rest = NSRange(location: paraStart, length: ns.length - paraStart)
-        let nlRange = ns.range(of: "\n", options: [], range: rest)
-        let lineEnd = nlRange.location == NSNotFound ? ns.length : nlRange.location
-        let lineRange = NSRange(location: paraStart, length: lineEnd - paraStart)
-        let meta = metaForLine(storage: storage, lineRange: lineRange)
-        let body = lineRange.length > 0 ? editorVisibleString(ns.substring(with: lineRange)) : ""
-        edits.append(MobileItemEdit(
+    if ns.length == 0 {
+        let attrs = EditorAttributes.bodyAttributes(meta: LineMeta(), theme: theme)
+        storage.replaceCharacters(
+            in: NSRange(location: 0, length: 0),
+            with: NSAttributedString(string: "\n", attributes: attrs)
+        )
+        return true
+    }
+    if ns.character(at: ns.length - 1) != 10 {
+        let m = lineMeta(at: ns.length - 1, in: storage)
+        let attrs = EditorAttributes.bodyAttributes(meta: m, theme: theme)
+        storage.replaceCharacters(
+            in: NSRange(location: ns.length, length: 0),
+            with: NSAttributedString(string: "\n", attributes: attrs)
+        )
+        return true
+    }
+    return false
+}
+
+/// Reads the .knotqLine attribute at `location`, with sensible fallbacks. Total.
+private func lineMeta(at location: Int, in storage: NSAttributedString) -> LineMeta {
+    guard storage.length > 0 else { return LineMeta() }
+    let probe = min(max(0, location), storage.length - 1)
+    return (storage.attribute(.knotqLine, at: probe, effectiveRange: nil) as? LineMeta) ?? LineMeta()
+}
+
+/// Reads the meta of the paragraph containing `location`. With I1+I2, always
+/// returns the well-defined meta of that paragraph.
+private func lineMeta(forParagraphAt location: Int, in storage: NSAttributedString) -> LineMeta {
+    let para = editableParagraphRange(in: storage.string as NSString, at: location)
+    return lineMeta(at: para.location, in: storage)
+}
+
+/// Reads a paragraph's meta by preferring its trailing "\n". Inline text
+/// replacement — autocorrect, predictive insert, double-space-period — rewrites
+/// a span inside the line body and can drop `.knotqLine` from the edited run,
+/// but it never touches the paragraph's newline. Probing the newline first
+/// keeps the line's marker/indent intact across those corrections.
+private func paragraphMeta(of fullRange: NSRange, in storage: NSAttributedString) -> LineMeta {
+    if fullRange.length > 0 {
+        let ns = storage.string as NSString
+        let last = NSMaxRange(fullRange) - 1
+        if last >= 0, last < ns.length, ns.character(at: last) == 10,
+           let meta = storage.attribute(.knotqLine, at: last, effectiveRange: nil) as? LineMeta {
+            return meta
+        }
+    }
+    return lineMeta(at: fullRange.location, in: storage)
+}
+
+/// Returns the body text of `paragraphRange` (without trailing newline).
+private func bodyText(paragraphRange: NSRange, in storage: NSAttributedString) -> String {
+    let ns = storage.string as NSString
+    let bodyLen = paragraphRange.length > 0 && ns.character(at: NSMaxRange(paragraphRange) - 1) == 10
+        ? paragraphRange.length - 1
+        : paragraphRange.length
+    guard bodyLen > 0 else { return "" }
+    return ns.substring(with: NSRange(location: paragraphRange.location, length: bodyLen))
+}
+
+/// Sets `meta` uniformly across `paragraphRange` (body + trailing newline) and
+/// applies all derived styling (font, color, paragraph style, strikethrough,
+/// heading, emphasis). The single sanctioned way to change meta on a line.
+private func setLineMeta(
+    _ meta: LineMeta,
+    onParagraph paragraphRange: NSRange,
+    in storage: NSTextStorage,
+    theme: KnotQTheme
+) {
+    guard paragraphRange.length > 0 else { return }
+    let attrs = EditorAttributes.bodyAttributes(meta: meta, theme: theme)
+    storage.removeAttribute(.font, range: paragraphRange)
+    storage.removeAttribute(.foregroundColor, range: paragraphRange)
+    storage.removeAttribute(.paragraphStyle, range: paragraphRange)
+    storage.removeAttribute(.strikethroughStyle, range: paragraphRange)
+    storage.removeAttribute(.strikethroughColor, range: paragraphRange)
+    storage.addAttributes(attrs, range: paragraphRange)
+    let body = bodyText(paragraphRange: paragraphRange, in: storage)
+    let bodyRange = NSRange(
+        location: paragraphRange.location,
+        length: (body as NSString).length
+    )
+    if isMarkdownHeading(body) {
+        storage.addAttribute(
+            .font,
+            value: UIFont.systemFont(ofSize: DesktopEditorMetrics.headingFontSize, weight: .bold),
+            range: bodyRange
+        )
+    } else if bodyRange.length > 0 {
+        applyEmphasis(body: body, lineLocation: bodyRange.location, storage: storage)
+    }
+}
+
+/// Standard emphasis pass: `*…*` → bold, `_…_` → italic.
+private func applyEmphasis(body: String, lineLocation: Int, storage: NSTextStorage) {
+    let ns = body as NSString
+    var i = 0
+    while i < ns.length {
+        let ch = ns.substring(with: NSRange(location: i, length: 1))
+        if ch != "*" && ch != "_" { i += 1; continue }
+        let searchRange = NSRange(location: i + 1, length: ns.length - i - 1)
+        let close = ns.range(of: ch, options: [], range: searchRange)
+        if close.location == NSNotFound { i += 1; continue }
+        if close.location > i + 1 {
+            let range = NSRange(location: lineLocation + i + 1, length: close.location - i - 1)
+            let font: UIFont = ch == "*"
+                ? .systemFont(ofSize: DesktopEditorMetrics.textFontSize, weight: .bold)
+                : .italicSystemFont(ofSize: DesktopEditorMetrics.textFontSize)
+            storage.addAttribute(.font, value: font, range: range)
+        }
+        i = close.location + 1
+    }
+}
+
+/// Clamps a caret position to [0, length - 1] under invariant I3. With I1 the
+/// max caret position is the index immediately before the trailing "\n", i.e.
+/// the end of the last visible line.
+private func clampedCaret(_ location: Int, in storage: NSAttributedString) -> Int {
+    guard storage.length > 0 else { return 0 }
+    return min(max(0, location), storage.length - 1)
+}
+
+private func extractEdits(from storage: NSAttributedString) -> [MobileItemEdit] {
+    // With invariant I1, paragraphRanges yields one entry per line including
+    // an empty trailing paragraph only when the user typed an extra "\n".
+    let ns = storage.string as NSString
+    let edits: [MobileItemEdit] = paragraphRanges(in: ns).map { paragraph in
+        let meta = lineMeta(at: paragraph.fullRange.location, in: storage)
+        let body = paragraph.lineRange.length > 0
+            ? ns.substring(with: paragraph.lineRange)
+            : ""
+        return MobileItemEdit(
             id: meta.itemID,
             text: body,
             marker: meta.marker.rawValue,
             indent: Int32(meta.indent),
             done: meta.done
-        ))
-        if nlRange.location == NSNotFound { break }
-        paraStart = nlRange.location + 1
-        if paraStart >= ns.length { break }
+        )
     }
-    if ns.length == 0 {
+    // A single blank-marker, empty-text line means "no items" (matches the
+    // pre-invariant semantics for an empty document).
+    if edits.count == 1, let only = edits.first,
+       only.text.isEmpty, only.marker == "blank", only.indent == 0, !only.done {
         return []
     }
     return edits
 }
 
+/// Convenience overload kept for the chrome-drawing path which still works
+/// in lineRange (body-only) coordinates. With invariants I1+I2 this is a thin
+/// alias for `lineMeta(at:)`.
 private func metaForLine(storage: NSAttributedString, lineRange: NSRange) -> LineMeta {
-    if lineRange.location < storage.length, let m = storage.attribute(.knotqLine, at: lineRange.location, effectiveRange: nil) as? LineMeta {
-        return m
-    }
-    if lineRange.location > 0, let m = storage.attribute(.knotqLine, at: lineRange.location - 1, effectiveRange: nil) as? LineMeta {
-        return m
-    }
-    return LineMeta()
+    lineMeta(at: lineRange.location, in: storage)
 }
 
 private func isMarkdownHeading(_ line: String) -> Bool {
-    let trimmed = editorVisibleString(line).trimmingCharacters(in: .whitespaces)
+    let trimmed = line.trimmingCharacters(in: .whitespaces)
     guard let first = trimmed.first, first == "#" else { return false }
     let hashes = trimmed.prefix { $0 == "#" }.count
-    guard hashes > 0 else { return false }
     if trimmed.count == hashes { return true }
     let index = trimmed.index(trimmed.startIndex, offsetBy: hashes)
     return trimmed[index].isWhitespace
-}
-
-private func editorVisibleString(_ raw: String) -> String {
-    raw
 }
 
 private struct EditorParagraphRange {
@@ -228,6 +365,12 @@ private func paragraphRanges(in ns: NSString, intersecting target: NSRange? = ni
     return ranges
 }
 
+private func editableParagraphRange(in ns: NSString, at location: Int) -> NSRange {
+    guard ns.length > 0 else { return NSRange(location: 0, length: 0) }
+    let probe = min(max(0, location), ns.length - 1)
+    return ns.paragraphRange(for: NSRange(location: probe, length: 0))
+}
+
 private func lineRange(from paragraphRange: NSRange, in ns: NSString) -> NSRange {
     var length = paragraphRange.length
     if length > 0 && ns.character(at: NSMaxRange(paragraphRange) - 1) == 10 {
@@ -238,13 +381,6 @@ private func lineRange(from paragraphRange: NSRange, in ns: NSString) -> NSRange
 
 private func rangesOverlapOrTouch(_ a: NSRange, _ b: NSRange) -> Bool {
     a.location <= NSMaxRange(b) && b.location <= NSMaxRange(a)
-}
-
-private extension NSAttributedString {
-    func metaAt(_ location: Int) -> LineMeta? {
-        guard location < length, location >= 0 else { return nil }
-        return attribute(.knotqLine, at: location, effectiveRange: nil) as? LineMeta
-    }
 }
 
 // MARK: - Outer SwiftUI views
@@ -262,7 +398,7 @@ struct SchemeEditorView: View {
         if let scheme = model.scheme(id: schemeID) {
             IntegratedSchemeEditorPane(scheme: scheme, theme: theme, onBack: nil, onAdd: {}, usesNativeNavigation: true)
         } else {
-            EmptyState(title: "Scheme missing", detail: "It may have been deleted.", theme: theme)
+            EmptyState(title: "Scheme missing", detail: "It may have been archived or moved.", theme: theme)
         }
     }
 }
@@ -278,8 +414,8 @@ final class EditorController: ObservableObject {
     @Published var isDirty = false
     @Published var isEmpty = true
 
-    func load(items: [MobileItem], theme: KnotQTheme, timeFormat: String) {
-        view?.loadItems(items, theme: theme, timeFormat: timeFormat)
+    func load(items: [MobileItem], theme: KnotQTheme, timeFormat: String, placeCursorAtEnd: Bool = false) {
+        view?.loadItems(items, theme: theme, timeFormat: timeFormat, placeCursorAtEnd: placeCursorAtEnd)
         isDirty = false
         isEmpty = items.isEmpty || items.allSatisfy { $0.text.isEmpty && $0.marker == "blank" && $0.indent == 0 && $0.start == nil && $0.end == nil }
     }
@@ -307,10 +443,17 @@ final class EditorController: ObservableObject {
     func shiftCurrentIndent(_ delta: Int, theme: KnotQTheme) {
         view?.shiftCurrentIndent(delta, theme: theme)
     }
+
+    /// Activates the text view so the system shows the caret + keyboard.
+    func focus() {
+        guard let view, !view.isFirstResponder else { return }
+        view.becomeFirstResponder()
+    }
 }
 
 struct IntegratedSchemeEditorPane: View {
     @EnvironmentObject private var model: AppModel
+    @Environment(\.dismiss) private var dismiss
     let scheme: MobileScheme
     let theme: KnotQTheme
     let onBack: (() -> Void)?
@@ -323,6 +466,8 @@ struct IntegratedSchemeEditorPane: View {
     @StateObject private var controller = EditorController()
     @State private var schemeSignature = ""
     @State private var dateTarget: EditorDateTarget?
+    @State private var loadedSchemeID: String?
+    @State private var archiveTarget: ArchiveTarget?
 
     private var accent: Color {
         schemeColor(scheme.colorIndex, dark: theme.isDark)
@@ -341,6 +486,8 @@ struct IntegratedSchemeEditorPane: View {
         )
     }
 
+    let autoFocusOnAppear: Bool
+
     init(
         scheme: MobileScheme,
         theme: KnotQTheme,
@@ -349,7 +496,8 @@ struct IntegratedSchemeEditorPane: View {
         usesNativeNavigation: Bool = false,
         showsEditorNavigation: Bool = true,
         editorScrollEnabled: Bool = true,
-        editorInsets: UIEdgeInsets = UIEdgeInsets(top: 6, left: DesktopEditorMetrics.textLeftPad, bottom: 180, right: 24)
+        editorInsets: UIEdgeInsets = UIEdgeInsets(top: 6, left: DesktopEditorMetrics.textLeftPad, bottom: 180, right: 24),
+        autoFocusOnAppear: Bool = false
     ) {
         self.scheme = scheme
         self.theme = theme
@@ -359,6 +507,7 @@ struct IntegratedSchemeEditorPane: View {
         self.showsEditorNavigation = showsEditorNavigation
         self.editorScrollEnabled = editorScrollEnabled
         self.editorInsets = editorInsets
+        self.autoFocusOnAppear = autoFocusOnAppear
     }
 
     var body: some View {
@@ -375,6 +524,7 @@ struct IntegratedSchemeEditorPane: View {
                     isScrollEnabled: editorScrollEnabled,
                     textInsets: editorTextInsets,
                     schemeTitle: scheme.displayName,
+                    titleEditable: !scheme.isDailyQueue,
                     titleValidator: titleValidator,
                     onRenameTitle: { title in
                         model.renameScheme(id: scheme.id, name: title)
@@ -382,7 +532,10 @@ struct IntegratedSchemeEditorPane: View {
                     onDate: openDateForLine
                 )
 
-                if controller.isEmpty {
+                // Suppress the "Start typing" placeholder in inline (Daily)
+                // contexts — empty days are filtered upstream, and the
+                // placeholder adds visual noise inside the day row.
+                if controller.isEmpty && editorScrollEnabled {
                     Text("Start typing")
                         .font(.system(size: 16))
                         .foregroundStyle(theme.textMuted)
@@ -409,7 +562,9 @@ struct IntegratedSchemeEditorPane: View {
                     Menu {
                         ColorMenu(nodeID: scheme.id, colorIndex: scheme.colorIndex, theme: theme)
                         Button("Save", systemImage: "checkmark") { commitDocument() }
-                        Button("Delete", systemImage: "trash", role: .destructive) { model.deleteScheme(id: scheme.id) }
+                        Button("Archive", systemImage: "archivebox") {
+                            archiveTarget = .scheme(scheme)
+                        }
                             .disabled(scheme.isDailyQueue)
                     } label: {
                         RoundedRectangle(cornerRadius: 3)
@@ -419,7 +574,17 @@ struct IntegratedSchemeEditorPane: View {
                 }
             }
         }
-        .onAppear { loadDocument(force: true) }
+        .onAppear {
+            loadDocument(force: true)
+            if autoFocusOnAppear {
+                // Focus on the next runloop tick (once the text view is in the
+                // window) rather than after a fixed delay, so the caret + scroll
+                // land immediately instead of a beat later.
+                DispatchQueue.main.async {
+                    controller.focus()
+                }
+            }
+        }
         .onChange(of: signature(for: scheme)) { _, newValue in
             guard newValue != schemeSignature else { return }
             loadDocument(force: false)
@@ -429,8 +594,11 @@ struct IntegratedSchemeEditorPane: View {
         .sheet(item: $dateTarget) { target in
             if let item = model.scheme(id: scheme.id)?.items.first(where: { $0.id == target.itemID }) {
                 ItemDateSheet(schemeID: scheme.id, item: item)
-                    .presentationDetents([.medium])
+                    .presentationDetents([.medium, .large])
             }
+        }
+        .archiveConfirmation(target: $archiveTarget) { _ in
+            archiveCurrentScheme()
         }
     }
 
@@ -458,7 +626,9 @@ struct IntegratedSchemeEditorPane: View {
             Menu {
                 ColorMenu(nodeID: scheme.id, colorIndex: scheme.colorIndex, theme: theme)
                 Button("Commit Edits", systemImage: "checkmark") { commitDocument() }
-                Button("Delete", role: .destructive) { model.deleteScheme(id: scheme.id) }
+                Button("Archive", systemImage: "archivebox") {
+                    archiveTarget = .scheme(scheme)
+                }
                     .disabled(scheme.isDailyQueue)
             } label: {
                 Image(systemName: "ellipsis")
@@ -473,8 +643,10 @@ struct IntegratedSchemeEditorPane: View {
 
     private func loadDocument(force: Bool) {
         if !force && controller.isDirty { return }
-        controller.load(items: scheme.items, theme: theme, timeFormat: timeFormat)
+        let shouldPlaceCursorAtEnd = loadedSchemeID != scheme.id
+        controller.load(items: scheme.items, theme: theme, timeFormat: timeFormat, placeCursorAtEnd: shouldPlaceCursorAtEnd)
         schemeSignature = signature(for: scheme)
+        loadedSchemeID = scheme.id
     }
 
     private func commitDocument() {
@@ -486,6 +658,17 @@ struct IntegratedSchemeEditorPane: View {
             schemeSignature = signature(for: refreshed)
         } else {
             controller.isDirty = false
+        }
+    }
+
+    private func archiveCurrentScheme() {
+        guard !scheme.isDailyQueue else { return }
+        commitDocument()
+        model.archiveScheme(id: scheme.id)
+        if usesNativeNavigation {
+            dismiss()
+        } else {
+            onBack?()
         }
     }
 
@@ -510,108 +693,6 @@ struct IntegratedSchemeEditorPane: View {
         let root = model.snapshot?.root
         let folderID = WorkspaceNameValidation.parentFolderID(containingSchemeID: scheme.id, root: root)
         return WorkspaceNameValidation.schemeError(name, root: root, folderID: folderID, excludingID: scheme.id)
-    }
-}
-
-struct ItemRow: View {
-    @EnvironmentObject private var model: AppModel
-    let schemeID: String
-    let item: MobileItem
-    @State private var draft: String
-    @State private var showingDate = false
-
-    init(schemeID: String, item: MobileItem) {
-        self.schemeID = schemeID
-        self.item = item
-        _draft = State(initialValue: item.text)
-    }
-
-    var body: some View {
-        HStack(alignment: .top, spacing: 10) {
-            Button {
-                if item.marker == "checkbox" {
-                    model.toggleItem(schemeID: schemeID, itemID: item.id)
-                } else {
-                    model.setItemMarker(schemeID: schemeID, itemID: item.id, marker: .checkbox)
-                }
-            } label: {
-                Image(systemName: item.done ? "checkmark.circle.fill" : markerIcon(item.marker))
-                    .foregroundStyle(item.done ? .green : .secondary)
-                    .frame(width: 26, height: 26)
-            }
-            .buttonStyle(.plain)
-            .padding(.leading, CGFloat(item.indent) * 18)
-
-            VStack(alignment: .leading, spacing: 8) {
-                TextField("Item", text: $draft, axis: .vertical)
-                    .textFieldStyle(.plain)
-                    .strikethrough(item.done)
-                    .onSubmit { commitText() }
-                    .onDisappear { commitText() }
-                    .onChange(of: item.text) { _, value in
-                        if draft != value { draft = value }
-                    }
-
-                HStack(spacing: 10) {
-                    Menu {
-                        ForEach(Marker.allCases) { marker in
-                            Button {
-                                model.setItemMarker(schemeID: schemeID, itemID: item.id, marker: marker)
-                            } label: {
-                                Label(marker.label, systemImage: marker.icon)
-                            }
-                        }
-                    } label: {
-                        Image(systemName: "text.badge.checkmark")
-                    }
-
-                    Button {
-                        model.setItemIndent(schemeID: schemeID, itemID: item.id, indent: item.indent > 0 ? item.indent - 1 : 0)
-                    } label: {
-                        Image(systemName: "decrease.indent")
-                    }
-                    .disabled(item.indent == 0)
-
-                    Button {
-                        model.setItemIndent(schemeID: schemeID, itemID: item.id, indent: min(item.indent + 1, 8))
-                    } label: {
-                        Image(systemName: "increase.indent")
-                    }
-
-                    Button {
-                        showingDate = true
-                    } label: {
-                        Image(systemName: "calendar.badge.clock")
-                    }
-
-                    Text(item.kind.capitalized)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-
-                    Spacer(minLength: 0)
-                }
-                .buttonStyle(.borderless)
-                .font(.caption)
-            }
-        }
-        .sheet(isPresented: $showingDate) {
-            ItemDateSheet(schemeID: schemeID, item: item)
-        }
-    }
-
-    private func commitText() {
-        if draft != item.text {
-            model.updateItemText(schemeID: schemeID, itemID: item.id, text: draft)
-        }
-    }
-
-    private func markerIcon(_ marker: String) -> String {
-        switch marker {
-        case "checkbox": "circle"
-        case "bullet": "smallcircle.filled.circle"
-        case "numbered": "list.number"
-        default: "text.alignleft"
-        }
     }
 }
 
@@ -643,6 +724,7 @@ private struct SchemeTextView: UIViewRepresentable {
     let isScrollEnabled: Bool
     let textInsets: UIEdgeInsets
     let schemeTitle: String
+    let titleEditable: Bool
     let titleValidator: (String) -> String?
     let onRenameTitle: (String) -> Void
     let onDate: () -> Void
@@ -669,14 +751,21 @@ private struct SchemeTextView: UIViewRepresentable {
         view.font = .systemFont(ofSize: DesktopEditorMetrics.textFontSize)
         view.textContainerInset = textInsets
         view.textContainer.lineFragmentPadding = 0
+        view.textContainer.lineBreakMode = .byWordWrapping
+        view.textContainer.widthTracksTextView = true
         view.isScrollEnabled = isScrollEnabled
-        view.keyboardDismissMode = .interactive
+        // When embedded with scrolling disabled (e.g. the Daily feed), let the
+        // parent SwiftUI layout dictate width instead of UITextView insisting
+        // on its intrinsic (effectively unbounded) width.
+        view.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        view.setContentHuggingPriority(.defaultLow, for: .horizontal)
+        view.keyboardDismissMode = .none
         view.alwaysBounceVertical = true
         view.autocapitalizationType = .sentences
         view.smartDashesType = .no
         view.smartQuotesType = .no
         view.inputAccessoryView = coordinator.makeToolbar(for: view)
-        view.configureTitle(title: schemeTitle, theme: theme, validator: titleValidator, onCommit: onRenameTitle)
+        view.configureTitle(title: schemeTitle, theme: theme, editable: titleEditable, validator: titleValidator, onCommit: onRenameTitle)
         let checkboxTap = UITapGestureRecognizer(target: coordinator, action: #selector(EditorCoordinator.handleEditorTap(_:)))
         checkboxTap.delegate = coordinator
         checkboxTap.cancelsTouchesInView = false
@@ -696,7 +785,8 @@ private struct SchemeTextView: UIViewRepresentable {
         uiView.backgroundColor = UIColor(theme.bgApp)
         uiView.textContainerInset = textInsets
         uiView.isScrollEnabled = isScrollEnabled
-        uiView.configureTitle(title: schemeTitle, theme: theme, validator: titleValidator, onCommit: onRenameTitle)
+        uiView.keyboardDismissMode = .none
+        uiView.configureTitle(title: schemeTitle, theme: theme, editable: titleEditable, validator: titleValidator, onCommit: onRenameTitle)
         uiView.setNeedsDisplay()
     }
 }
@@ -713,6 +803,10 @@ private final class EditorCoordinator: NSObject, UITextViewDelegate, @preconcurr
 
     private var suppressDelegateDepth = 0
     private var autoBulletizePending = false
+    fileprivate var autoBulletUndo: (lineLocation: Int, originalBody: String)?
+
+    // Toolbar marker buttons keyed by Marker, so we can tint the active one.
+    private var markerButtons: [Marker: UIButton] = [:]
 
     func suppress(_ block: () -> Void) {
         suppressDelegateDepth += 1
@@ -735,11 +829,36 @@ private final class EditorCoordinator: NSObject, UITextViewDelegate, @preconcurr
     // MARK: UITextViewDelegate
 
     func textViewDidChange(_ textView: UITextView) {
-        if let view = textView as? EditorTextView {
-            view.enforceTerminalNewlineAfterUserEdit()
-        }
+        // Invariants are restored from `textStorage(_:didProcessEditing:...)`.
         markDirty()
         refreshEmpty()
+    }
+
+    func textViewDidChangeSelection(_ textView: UITextView) {
+        // I3: the caret is never past the trailing "\n". Clamp collapsed caret
+        // to length - 1 so taps at the very end stay on the last visible line.
+        if textView.selectedRange.length == 0 {
+            let storage = textView.textStorage
+            let maxCaret = max(0, storage.length - 1)
+            if textView.selectedRange.location > maxCaret {
+                textView.selectedRange = NSRange(location: maxCaret, length: 0)
+                textView.typingAttributes = EditorAttributes.bodyAttributes(
+                    meta: lineMeta(at: maxCaret, in: storage),
+                    theme: theme
+                )
+            }
+        }
+        refreshToolbarActiveMarker(in: textView)
+    }
+
+    /// Highlights the toolbar marker button matching the caret's line.
+    fileprivate func refreshToolbarActiveMarker(in textView: UITextView) {
+        let storage = textView.textStorage
+        let caret = clampedCaret(textView.selectedRange.location, in: storage)
+        let active = lineMeta(at: caret, in: storage).marker
+        for (marker, button) in markerButtons {
+            button.tintColor = UIColor(marker == active ? theme.textPrimary : theme.textDim)
+        }
     }
 
     @objc func handleEditorTap(_ recognizer: UITapGestureRecognizer) {
@@ -757,74 +876,138 @@ private final class EditorCoordinator: NSObject, UITextViewDelegate, @preconcurr
         if text == "\n" && range.length == 0 {
             return !handleEnter(in: view, at: range.location)
         }
+        if text.isEmpty && range.length == 1 {
+            if handleAutoBulletUndo(in: view, deletionRange: range) {
+                return false
+            }
+            if handleClearMarkerBackspace(in: view, deletionRange: range) {
+                return false
+            }
+        }
+        // Any non-backspace edit clears the pending auto-bullet undo.
+        if !(text.isEmpty && range.length == 1) {
+            autoBulletUndo = nil
+        }
         return true
     }
 
-    private func handleEnter(in view: EditorTextView, at cursor: Int) -> Bool {
+    /// Desktop parity: backspace at col 0 of a line with a non-blank marker
+    /// clears the marker first instead of joining lines. The user has to
+    /// backspace a second time to actually merge with the previous line.
+    private func handleClearMarkerBackspace(in view: EditorTextView, deletionRange: NSRange) -> Bool {
         let storage = view.textStorage
         let ns = storage.string as NSString
-        if cursor == ns.length, ns.length > 0, ns.character(at: ns.length - 1) == 10 {
-            let baseMeta = storage.metaAt(ns.length - 1) ?? LineMeta()
-            let newMeta = continuationMeta(baseMeta)
-            let attrs = EditorAttributes.bodyAttributes(meta: newMeta, theme: theme)
+        // backspace at column 0 of paragraph P targets the prior "\n"; the
+        // caret sits at P.location, deletionRange = (P.location - 1, 1).
+        let caret = deletionRange.location + 1
+        guard caret <= ns.length else { return false }
+        let para = editableParagraphRange(in: ns, at: caret)
+        guard caret == para.location, para.location > 0 else { return false }
+        let meta = lineMeta(at: para.location, in: storage)
+        guard meta.marker != .blank else { return false }
+        let cleared = LineMeta(
+            marker: .blank,
+            indent: meta.indent,
+            done: false,
+            itemID: meta.itemID,
+            annotation: meta.annotation,
+            media: meta.media
+        )
+        suppress {
+            storage.beginEditing()
+            setLineMeta(cleared, onParagraph: para, in: storage, theme: theme)
+            storage.endEditing()
+        }
+        view.typingAttributes = EditorAttributes.bodyAttributes(meta: cleared, theme: theme)
+        autoBulletUndo = nil
+        markDirty()
+        refreshEmpty()
+        return true
+    }
+
+    // MARK: - Edit handlers (called from shouldChangeTextIn)
+
+    /// Backspace immediately after auto-bulletize → undo the conversion.
+    /// Auto-bulletize left the caret at col 0 of the converted line; that
+    /// backspace would otherwise delete the prior newline.
+    private func handleAutoBulletUndo(in view: EditorTextView, deletionRange: NSRange) -> Bool {
+        guard let undo = autoBulletUndo else { return false }
+        guard deletionRange.location == undo.lineLocation - 1,
+              deletionRange.length == 1 else {
+            autoBulletUndo = nil
+            return false
+        }
+        let storage = view.textStorage
+        let paraRange = editableParagraphRange(in: storage.string as NSString, at: undo.lineLocation)
+        let body = bodyText(paragraphRange: paraRange, in: storage)
+        let bodyRange = NSRange(location: paraRange.location, length: (body as NSString).length)
+        let restoredMeta = LineMeta()
+        let attrs = EditorAttributes.bodyAttributes(meta: restoredMeta, theme: theme)
+        suppress {
+            storage.beginEditing()
+            storage.replaceCharacters(in: bodyRange, with: NSAttributedString(string: undo.originalBody, attributes: attrs))
+            let restored = editableParagraphRange(in: storage.string as NSString, at: paraRange.location)
+            setLineMeta(restoredMeta, onParagraph: restored, in: storage, theme: theme)
+            storage.endEditing()
+        }
+        view.selectedRange = NSRange(
+            location: paraRange.location + (undo.originalBody as NSString).length,
+            length: 0
+        )
+        view.typingAttributes = attrs
+        autoBulletUndo = nil
+        markDirty()
+        refreshEmpty()
+        return true
+    }
+
+    /// Enter: either escape an empty marker line (clear marker, no insertion),
+    /// or split the current paragraph and continue the marker on the new line.
+    /// With invariant I3 the caret is always within a real paragraph, so the
+    /// "cursor past end of storage" edge case no longer needs special handling.
+    private func handleEnter(in view: EditorTextView, at cursor: Int) -> Bool {
+        let storage = view.textStorage
+        let paraRange = editableParagraphRange(in: storage.string as NSString, at: cursor)
+        let body = bodyText(paragraphRange: paraRange, in: storage)
+        let currentMeta = lineMeta(at: paraRange.location, in: storage)
+
+        // Empty marker line → escape: clear marker without inserting a newline.
+        if body.isEmpty && currentMeta.marker != .blank {
+            let cleared = LineMeta(
+                marker: .blank,
+                indent: currentMeta.indent,
+                done: false,
+                itemID: currentMeta.itemID,
+                annotation: currentMeta.annotation,
+                media: currentMeta.media
+            )
             suppress {
                 storage.beginEditing()
-                storage.replaceCharacters(in: NSRange(location: cursor, length: 0), with: NSAttributedString(string: "\n", attributes: attrs))
+                setLineMeta(cleared, onParagraph: paraRange, in: storage, theme: theme)
                 storage.endEditing()
             }
-            view.selectedRange = NSRange(location: cursor, length: 0)
-            view.typingAttributes = attrs
-            markDirty()
-            refreshEmpty()
-            return true
-        }
-        let probe = min(cursor, max(0, ns.length - 1))
-        let paraRange = ns.length > 0 ? ns.paragraphRange(for: NSRange(location: probe, length: 0)) : NSRange(location: 0, length: 0)
-        let currentLineRange = lineRange(from: paraRange, in: ns)
-        let body = currentLineRange.length > 0 ? ns.substring(with: currentLineRange) : ""
-        let meta = metaForLine(storage: storage, lineRange: currentLineRange)
-
-        // Empty marker line → exit list (clear marker, no newline insertion).
-        if editorVisibleString(body).isEmpty && meta.marker != .blank {
-            let cleared = LineMeta(marker: .blank, indent: meta.indent, done: false, itemID: meta.itemID, annotation: meta.annotation, media: meta.media)
-            let attrs = EditorAttributes.bodyAttributes(meta: cleared, theme: theme)
-            suppress {
-                storage.beginEditing()
-                if paraRange.length > 0 {
-                    for (key, value) in attrs {
-                        storage.addAttribute(key, value: value, range: paraRange)
-                    }
-                }
-                storage.endEditing()
-            }
-            view.typingAttributes = attrs
+            view.typingAttributes = EditorAttributes.bodyAttributes(meta: cleared, theme: theme)
             markDirty()
             return true
         }
 
-        // Continue marker / inherit indent on new paragraph.
-        let newMeta = continuationMeta(meta)
-        let oldAttrs = EditorAttributes.bodyAttributes(meta: meta, theme: theme)
+        // Split the paragraph at the caret: old half keeps currentMeta, new half
+        // gets continuation meta (fresh identity, same marker/indent/done-reset).
+        let newMeta = continuationMeta(currentMeta)
+        let oldAttrs = EditorAttributes.bodyAttributes(meta: currentMeta, theme: theme)
         let newAttrs = EditorAttributes.bodyAttributes(meta: newMeta, theme: theme)
         suppress {
             storage.beginEditing()
-            storage.replaceCharacters(in: NSRange(location: cursor, length: 0), with: NSAttributedString(string: "\n", attributes: oldAttrs))
-            // Make sure the old paragraph keeps its meta + style.
-            let oldLen = cursor - currentLineRange.location + 1
-            if oldLen > 0 {
-                for (key, value) in oldAttrs {
-                    storage.addAttribute(key, value: value, range: NSRange(location: paraRange.location, length: oldLen))
-                }
-            }
-            let nsAfter = storage.string as NSString
-            if cursor + 1 < nsAfter.length {
-                let newParaRange = nsAfter.paragraphRange(for: NSRange(location: cursor + 1, length: 0))
-                if newParaRange.length > 0 {
-                    for (key, value) in newAttrs {
-                        storage.addAttribute(key, value: value, range: newParaRange)
-                    }
-                }
-            }
+            storage.replaceCharacters(
+                in: NSRange(location: cursor, length: 0),
+                with: NSAttributedString(string: "\n", attributes: oldAttrs)
+            )
+            // Re-establish meta uniformly on both halves.
+            let ns = storage.string as NSString
+            let oldHalf = editableParagraphRange(in: ns, at: cursor)
+            let newHalf = editableParagraphRange(in: ns, at: cursor + 1)
+            setLineMeta(currentMeta, onParagraph: oldHalf, in: storage, theme: theme)
+            setLineMeta(newMeta, onParagraph: newHalf, in: storage, theme: theme)
             storage.endEditing()
         }
         view.selectedRange = NSRange(location: cursor + 1, length: 0)
@@ -835,156 +1018,94 @@ private final class EditorCoordinator: NSObject, UITextViewDelegate, @preconcurr
     }
 
     private func continuationMeta(_ meta: LineMeta) -> LineMeta {
-        switch meta.marker {
-        case .blank, .bullet, .numbered:
-            return LineMeta(marker: meta.marker, indent: meta.indent, done: false, itemID: nil, annotation: nil)
-        case .checkbox:
-            return LineMeta(marker: .checkbox, indent: meta.indent, done: false, itemID: nil, annotation: nil)
-        }
+        LineMeta(marker: meta.marker, indent: meta.indent, done: false, itemID: nil, annotation: nil)
     }
 
     // MARK: NSTextStorageDelegate
 
+    /// After any user edit we (a) re-establish invariants I1 + I2 and (b) try
+    /// auto-bulletize. Programmatic edits (set marker, toggle indent, etc.)
+    /// suppress this callback because they already maintain the invariants.
     func textStorage(_ storage: NSTextStorage, didProcessEditing actions: NSTextStorage.EditActions, range editedRange: NSRange, changeInLength delta: Int) {
         guard suppressDelegateDepth == 0 else { return }
-        if actions.contains(.editedCharacters) {
-            ensureMetaConsistency(in: storage, around: editedRange)
-            applyStylingForEditedParagraphs(in: storage, around: editedRange)
-            if !autoBulletizePending {
-                autoBulletizePending = true
-                let editLocation = editedRange.location
-                DispatchQueue.main.async { [weak self] in
-                    self?.autoBulletizePending = false
-                    self?.maybeAutoBulletize(at: editLocation)
-                }
-            }
-        }
-    }
+        guard actions.contains(.editedCharacters) else { return }
 
-    private func ensureMetaConsistency(in storage: NSTextStorage, around editedRange: NSRange) {
-        let ns = storage.string as NSString
-        let paraRange = ns.paragraphRange(for: editedRange)
         suppress {
             storage.beginEditing()
-            for paragraph in paragraphRanges(in: ns, intersecting: paraRange) {
-                let meta = self.inheritedMeta(in: storage, ns: ns, lineRange: paragraph.lineRange)
-                let fullRange = paragraph.fullRange
-                guard fullRange.length > 0 else { continue }
-                storage.addAttribute(.knotqLine, value: meta, range: fullRange)
-            }
+            ensureWellFormed(storage, theme: theme)
+            normalizeAffectedParagraphs(in: storage, around: editedRange)
             storage.endEditing()
         }
-    }
 
-    private func inheritedMeta(in storage: NSTextStorage, ns: NSString, lineRange: NSRange) -> LineMeta {
-        if lineRange.location < storage.length, let m = storage.attribute(.knotqLine, at: lineRange.location, effectiveRange: nil) as? LineMeta {
-            if lineRange.location > 0,
-               ns.character(at: lineRange.location - 1) == 10,
-               let previous = storage.attribute(.knotqLine, at: lineRange.location - 1, effectiveRange: nil) as? LineMeta,
-               m.itemID == previous.itemID,
-               m.annotation == previous.annotation {
-                return LineMeta(marker: previous.marker, indent: previous.indent, done: false, itemID: nil, annotation: nil)
+        if !autoBulletizePending {
+            autoBulletizePending = true
+            let editLocation = editedRange.location
+            DispatchQueue.main.async { [weak self] in
+                self?.autoBulletizePending = false
+                self?.maybeAutoBulletize(at: editLocation)
             }
-            return m
         }
-        if lineRange.location > 0, let m = storage.attribute(.knotqLine, at: lineRange.location - 1, effectiveRange: nil) as? LineMeta {
-            // Inherit marker/indent only; a brand-new paragraph is a fresh item.
-            return LineMeta(marker: m.marker, indent: m.indent, done: false, itemID: nil, annotation: nil)
-        }
-        return LineMeta()
     }
 
-    private func fullParagraphRange(lineRange: NSRange, in ns: NSString) -> NSRange {
-        let end = lineRange.location + lineRange.length
-        let includesTrailingNewline = end < ns.length && ns.character(at: end) == 10
-        return NSRange(location: lineRange.location, length: lineRange.length + (includesTrailingNewline ? 1 : 0))
-    }
-
-    private func applyStylingForEditedParagraphs(in storage: NSTextStorage, around editedRange: NSRange) {
+    /// Re-applies meta + styling uniformly on every paragraph that overlaps the
+    /// edit. Detects "cloned" paragraphs (where UITextView's attribute extension
+    /// leaked an itemID/annotation from the previous paragraph) by reference
+    /// equality of the .knotqLine value and resets identity on those.
+    private func normalizeAffectedParagraphs(in storage: NSTextStorage, around editedRange: NSRange) {
         let ns = storage.string as NSString
-        let paraRange = ns.paragraphRange(for: editedRange)
-        suppress {
-            storage.beginEditing()
-            for paragraph in paragraphRanges(in: ns, intersecting: paraRange) {
-                let lineRange = paragraph.lineRange
-                let meta = metaForLine(storage: storage, lineRange: lineRange)
-                let fullRange = paragraph.fullRange
-                guard fullRange.length > 0 else { continue }
-                let attrs = EditorAttributes.bodyAttributes(meta: meta, theme: self.theme)
-                storage.removeAttribute(.font, range: fullRange)
-                storage.removeAttribute(.foregroundColor, range: fullRange)
-                storage.removeAttribute(.paragraphStyle, range: fullRange)
-                storage.removeAttribute(.strikethroughStyle, range: fullRange)
-                storage.removeAttribute(.strikethroughColor, range: fullRange)
-                for (key, value) in attrs {
-                    storage.addAttribute(key, value: value, range: fullRange)
-                }
-                let body = lineRange.length > 0 ? ns.substring(with: lineRange) : ""
-                if isMarkdownHeading(body) {
-                    storage.addAttribute(.font, value: UIFont.systemFont(ofSize: DesktopEditorMetrics.headingFontSize, weight: .bold), range: lineRange)
-                } else {
-                    self.applyEmphasis(body: body, lineLocation: lineRange.location, storage: storage)
+        let editParaRange = ns.paragraphRange(for: editedRange)
+        for paragraph in paragraphRanges(in: ns, intersecting: editParaRange) {
+            let fullRange = paragraph.fullRange
+            guard fullRange.length > 0 else { continue }
+            var meta = paragraphMeta(of: fullRange, in: storage)
+            if fullRange.location > 0 {
+                let prev = storage.attribute(.knotqLine, at: fullRange.location - 1, effectiveRange: nil) as? LineMeta
+                if let prev, prev === meta {
+                    // Cloned via attribute inheritance — fresh paragraph, reset identity.
+                    meta = LineMeta(
+                        marker: prev.marker,
+                        indent: prev.indent,
+                        done: false,
+                        itemID: nil,
+                        annotation: nil,
+                        media: []
+                    )
                 }
             }
-            storage.endEditing()
+            setLineMeta(meta, onParagraph: fullRange, in: storage, theme: theme)
         }
     }
 
-    private func applyEmphasis(body: String, lineLocation: Int, storage: NSTextStorage) {
-        let ns = body as NSString
-        var i = 0
-        while i < ns.length {
-            let ch = ns.substring(with: NSRange(location: i, length: 1))
-            if ch != "*" && ch != "_" { i += 1; continue }
-            let searchRange = NSRange(location: i + 1, length: ns.length - i - 1)
-            let close = ns.range(of: ch, options: [], range: searchRange)
-            if close.location == NSNotFound { i += 1; continue }
-            if close.location > i + 1 {
-                let range = NSRange(location: lineLocation + i + 1, length: close.location - i - 1)
-                let font: UIFont = ch == "*" ? .systemFont(ofSize: DesktopEditorMetrics.textFontSize, weight: .bold) : .italicSystemFont(ofSize: DesktopEditorMetrics.textFontSize)
-                storage.addAttribute(.font, value: font, range: range)
-            }
-            i = close.location + 1
-        }
-    }
-
+    /// Detects "- ", "* ", or "N. " typed on a blank line and converts the
+    /// marker. Runs asynchronously after the typing settles so the caret is in
+    /// a consistent position.
     private func maybeAutoBulletize(at editLocation: Int) {
         guard let view else { return }
         let storage = view.textStorage
-        let ns = storage.string as NSString
-        guard editLocation <= ns.length else { return }
-        let paraRange = ns.paragraphRange(for: NSRange(location: min(editLocation, max(0, ns.length - 1)), length: 0))
-        var bodyEnd = paraRange.location + paraRange.length
-        if bodyEnd > paraRange.location, bodyEnd <= ns.length, ns.character(at: bodyEnd - 1) == 10 { bodyEnd -= 1 }
-        let bodyLen = bodyEnd - paraRange.location
-        guard bodyLen > 0 else { return }
-        let body = ns.substring(with: NSRange(location: paraRange.location, length: bodyLen))
-        let visibleBody = editorVisibleString(body)
-        guard let meta = storage.attribute(.knotqLine, at: paraRange.location, effectiveRange: nil) as? LineMeta, meta.marker == .blank else { return }
+        let paraRange = editableParagraphRange(in: storage.string as NSString, at: editLocation)
+        let body = bodyText(paragraphRange: paraRange, in: storage)
+        guard !body.isEmpty else { return }
+        let currentMeta = lineMeta(at: paraRange.location, in: storage)
+        guard currentMeta.marker == .blank else { return }
 
-        var newMarker: Marker?
-        var stripLen = 0
-        if visibleBody == "- " || visibleBody == "* " {
+        let newMarker: Marker
+        if body == "- " || body == "* " {
             newMarker = .bullet
-            stripLen = (body as NSString).length
-        } else if visibleBody.range(of: #"^\d+\.\s$"#, options: .regularExpression) != nil {
+        } else if body.range(of: #"^\d+\.\s$"#, options: .regularExpression) != nil {
             newMarker = .numbered
-            stripLen = (body as NSString).length
+        } else {
+            return
         }
-        guard let newMarker else { return }
 
-        let newMeta = meta.with(marker: newMarker, done: false)
+        autoBulletUndo = (lineLocation: paraRange.location, originalBody: body)
+        let newMeta = currentMeta.with(marker: newMarker, done: false)
+        let bodyRange = NSRange(location: paraRange.location, length: (body as NSString).length)
         let attrs = EditorAttributes.bodyAttributes(meta: newMeta, theme: theme)
         suppress {
             storage.beginEditing()
-            storage.replaceCharacters(in: NSRange(location: paraRange.location, length: stripLen), with: "")
-            let nsAfter = storage.string as NSString
-            let updatedParaRange = nsAfter.paragraphRange(for: NSRange(location: paraRange.location, length: 0))
-            if updatedParaRange.length > 0 {
-                for (key, value) in attrs {
-                    storage.addAttribute(key, value: value, range: updatedParaRange)
-                }
-            }
+            storage.replaceCharacters(in: bodyRange, with: NSAttributedString(string: "", attributes: attrs))
+            let updated = editableParagraphRange(in: storage.string as NSString, at: paraRange.location)
+            setLineMeta(newMeta, onParagraph: updated, in: storage, theme: theme)
             storage.endEditing()
         }
         view.selectedRange = NSRange(location: paraRange.location, length: 0)
@@ -995,46 +1116,79 @@ private final class EditorCoordinator: NSObject, UITextViewDelegate, @preconcurr
     // MARK: Toolbar
 
     func makeToolbar(for textView: UITextView) -> UIView {
+        markerButtons.removeAll()
         let width = UIScreen.main.bounds.width
-        let container = UIInputView(frame: CGRect(x: 0, y: 0, width: width, height: 38), inputViewStyle: .keyboard)
+        let container = UIInputView(frame: CGRect(x: 0, y: 0, width: width, height: 50), inputViewStyle: .keyboard)
         container.autoresizingMask = [.flexibleWidth]
         container.allowsSelfSizing = true
+        let dismissPan = UIPanGestureRecognizer(target: self, action: #selector(handleToolbarPan(_:)))
+        dismissPan.cancelsTouchesInView = false
+        container.addGestureRecognizer(dismissPan)
+
+        // Liquid glass background (iOS 26+). Falls back to an ultra-thin
+        // material so older OSes still render something readable above the
+        // keyboard. The glass replaces per-button chip backgrounds — the bar
+        // itself is the only floating surface.
+        let backdrop: UIVisualEffectView
+        if #available(iOS 26.0, *) {
+            backdrop = UIVisualEffectView(effect: UIGlassEffect())
+        } else {
+            backdrop = UIVisualEffectView(effect: UIBlurEffect(style: .systemUltraThinMaterial))
+        }
+        backdrop.translatesAutoresizingMaskIntoConstraints = false
+        // Float the bar as a rounded pill rather than a full-width rectangle.
+        backdrop.layer.cornerRadius = 18
+        backdrop.layer.cornerCurve = .continuous
+        backdrop.clipsToBounds = true
+        backdrop.layer.borderWidth = 1
+        backdrop.layer.borderColor = UIColor(theme.borderOverlay).cgColor
+        container.addSubview(backdrop)
 
         let scroll = UIScrollView()
         scroll.translatesAutoresizingMaskIntoConstraints = false
         scroll.showsHorizontalScrollIndicator = false
         scroll.backgroundColor = .clear
-        container.addSubview(scroll)
+        backdrop.contentView.addSubview(scroll)
 
         let stack = UIStackView()
         stack.axis = .horizontal
         stack.alignment = .center
-        stack.spacing = 3
+        stack.spacing = 4
         stack.translatesAutoresizingMaskIntoConstraints = false
-        stack.layoutMargins = UIEdgeInsets(top: 5, left: 8, bottom: 5, right: 8)
+        stack.layoutMargins = UIEdgeInsets(top: 7, left: 10, bottom: 7, right: 10)
         stack.isLayoutMarginsRelativeArrangement = true
         scroll.addSubview(stack)
 
+        // Desktop format-palette order, with dismiss-keyboard as the leftmost
+        // glyph and section dividers between functional groups.
+        let blank = markerButton(.blank, systemName: "text.alignleft")
+        let checkbox = markerButton(.checkbox, systemName: "checkmark.square")
+        let bullet = markerButton(.bullet, systemName: "list.bullet")
+        let numbered = markerButton(.numbered, systemName: "list.number")
         [
-            toolbarButton("text.alignleft") { [weak self] in self?.view?.setCurrentMarker(.blank, theme: self?.theme ?? .dark) },
-            toolbarButton("checkmark.square") { [weak self] in self?.view?.setCurrentMarker(.checkbox, theme: self?.theme ?? .dark) },
-            toolbarButton("list.bullet") { [weak self] in self?.view?.setCurrentMarker(.bullet, theme: self?.theme ?? .dark) },
-            toolbarButton("list.number") { [weak self] in self?.view?.setCurrentMarker(.numbered, theme: self?.theme ?? .dark) },
+            toolbarButton("keyboard.chevron.compact.down") { [weak textView] in textView?.resignFirstResponder() },
             separator(),
-            toolbarButton("decrease.indent", prominent: true) { [weak self] in self?.view?.shiftCurrentIndent(-1, theme: self?.theme ?? .dark) },
-            toolbarButton("increase.indent", prominent: true) { [weak self] in self?.view?.shiftCurrentIndent(1, theme: self?.theme ?? .dark) },
+            blank, checkbox, bullet, numbered,
+            separator(),
+            toolbarButton("decrease.indent") { [weak self] in self?.view?.shiftCurrentIndent(-1, theme: self?.theme ?? .dark) },
+            toolbarButton("increase.indent") { [weak self] in self?.view?.shiftCurrentIndent(1, theme: self?.theme ?? .dark) },
             separator(),
             toolbarButton("calendar.badge.clock") { [weak self] in self?.onDateRequested?() },
-            toolbarButton("plus") { [weak self] in self?.view?.appendTaskLine(theme: self?.theme ?? .dark) },
             separator(),
-            toolbarButton("keyboard.chevron.compact.down") { [weak textView] in textView?.resignFirstResponder() }
+            toolbarButton("bold") { [weak self] in self?.view?.toggleWrappedMarkdown("*", theme: self?.theme ?? .dark) },
+            toolbarButton("italic") { [weak self] in self?.view?.toggleWrappedMarkdown("_", theme: self?.theme ?? .dark) },
+            toolbarButton("textformat.size") { [weak self] in self?.view?.toggleHeading(theme: self?.theme ?? .dark) },
         ].forEach(stack.addArrangedSubview)
 
         NSLayoutConstraint.activate([
-            scroll.leadingAnchor.constraint(equalTo: container.leadingAnchor),
-            scroll.trailingAnchor.constraint(equalTo: container.trailingAnchor),
-            scroll.topAnchor.constraint(equalTo: container.topAnchor),
-            scroll.bottomAnchor.constraint(equalTo: container.bottomAnchor),
+            backdrop.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 8),
+            backdrop.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -8),
+            backdrop.topAnchor.constraint(equalTo: container.topAnchor, constant: 4),
+            backdrop.bottomAnchor.constraint(equalTo: container.bottomAnchor, constant: -6),
+            scroll.leadingAnchor.constraint(equalTo: backdrop.contentView.leadingAnchor),
+            scroll.trailingAnchor.constraint(equalTo: backdrop.contentView.trailingAnchor),
+            scroll.topAnchor.constraint(equalTo: backdrop.contentView.topAnchor),
+            scroll.bottomAnchor.constraint(equalTo: backdrop.contentView.bottomAnchor),
             stack.leadingAnchor.constraint(equalTo: scroll.contentLayoutGuide.leadingAnchor),
             stack.trailingAnchor.constraint(equalTo: scroll.contentLayoutGuide.trailingAnchor),
             stack.topAnchor.constraint(equalTo: scroll.contentLayoutGuide.topAnchor),
@@ -1044,15 +1198,34 @@ private final class EditorCoordinator: NSObject, UITextViewDelegate, @preconcurr
         return container
     }
 
-    private func toolbarButton(_ systemName: String, prominent: Bool = false, _ action: @escaping () -> Void) -> UIButton {
+    @objc private func handleToolbarPan(_ recognizer: UIPanGestureRecognizer) {
+        let translation = recognizer.translation(in: recognizer.view)
+        guard recognizer.state == .ended || recognizer.state == .changed else { return }
+        if translation.y > 22, translation.y > abs(translation.x) * 1.25 {
+            view?.resignFirstResponder()
+        }
+    }
+
+    private func markerButton(_ marker: Marker, systemName: String) -> UIButton {
+        let button = toolbarButton(systemName) { [weak self] in
+            guard let self else { return }
+            self.view?.setCurrentMarker(marker, theme: self.theme)
+        }
+        markerButtons[marker] = button
+        return button
+    }
+
+    private func toolbarButton(_ systemName: String, _ action: @escaping () -> Void) -> UIButton {
         let button = UIButton(type: .system)
         button.setImage(UIImage(systemName: systemName), for: .normal)
-        button.setPreferredSymbolConfiguration(UIImage.SymbolConfiguration(pointSize: 13, weight: .semibold), forImageIn: .normal)
-        button.tintColor = UIColor(prominent ? theme.textPrimary : theme.textDim)
-        button.backgroundColor = prominent ? UIColor(theme.buttonBg) : .clear
-        button.layer.cornerRadius = 5
-        button.widthAnchor.constraint(equalToConstant: prominent ? 31 : 29).isActive = true
-        button.heightAnchor.constraint(equalToConstant: 27).isActive = true
+        button.setPreferredSymbolConfiguration(
+            UIImage.SymbolConfiguration(pointSize: 17, weight: .semibold),
+            forImageIn: .normal
+        )
+        button.tintColor = UIColor(theme.textDim)
+        button.backgroundColor = .clear
+        button.widthAnchor.constraint(equalToConstant: 38).isActive = true
+        button.heightAnchor.constraint(equalToConstant: 34).isActive = true
         button.addAction(UIAction { _ in action() }, for: .touchUpInside)
         return button
     }
@@ -1061,7 +1234,7 @@ private final class EditorCoordinator: NSObject, UITextViewDelegate, @preconcurr
         let view = UIView()
         view.backgroundColor = UIColor(theme.dividerSoft)
         view.widthAnchor.constraint(equalToConstant: 1).isActive = true
-        view.heightAnchor.constraint(equalToConstant: 18).isActive = true
+        view.heightAnchor.constraint(equalToConstant: 22).isActive = true
         return view
     }
 }
@@ -1101,16 +1274,20 @@ private final class EditorInlineTitleView: UIView, UITextFieldDelegate {
     @available(*, unavailable)
     required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
 
-    func configure(title: String, theme: KnotQTheme, validator: @escaping (String) -> String?, onCommit: @escaping (String) -> Void) {
+    func configure(title: String, theme: KnotQTheme, editable: Bool, validator: @escaping (String) -> String?, onCommit: @escaping (String) -> Void) {
         self.validator = validator
         self.onCommit = onCommit
         textField.textColor = UIColor(theme.textPrimary)
         normalTintColor = UIColor(theme.accent)
         errorTintColor = UIColor(theme.danger)
         errorLabel.textColor = errorTintColor
+        textField.isUserInteractionEnabled = editable
         if !textField.isFirstResponder {
             committedTitle = title
             textField.text = title
+        }
+        if !editable, textField.isFirstResponder {
+            textField.resignFirstResponder()
         }
         updateError()
     }
@@ -1178,9 +1355,26 @@ private final class EditorTextView: UITextView {
     @available(*, unavailable)
     required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
 
+    private var lastIntrinsicWidth: CGFloat = 0
+
     override func layoutSubviews() {
         super.layoutSubviews()
         layoutInlineTitleView()
+        // With scrolling disabled (Daily feed), recompute intrinsic height after
+        // the parent grants a width — otherwise wrapping is calculated against
+        // an unbounded container and the text never breaks.
+        if !isScrollEnabled, bounds.width != lastIntrinsicWidth {
+            lastIntrinsicWidth = bounds.width
+            invalidateIntrinsicContentSize()
+        }
+    }
+
+    override var intrinsicContentSize: CGSize {
+        guard !isScrollEnabled else { return super.intrinsicContentSize }
+        let width = bounds.width > 0 ? bounds.width : UIScreen.main.bounds.width
+        let fitted = sizeThatFits(CGSize(width: width, height: .greatestFiniteMagnitude))
+        // Defer width to the parent layout; only height is meaningful here.
+        return CGSize(width: UIView.noIntrinsicMetric, height: fitted.height)
     }
 
     override func caretRect(for position: UITextPosition) -> CGRect {
@@ -1192,8 +1386,8 @@ private final class EditorTextView: UITextView {
         return rect
     }
 
-    func configureTitle(title: String, theme: KnotQTheme, validator: @escaping (String) -> String?, onCommit: @escaping (String) -> Void) {
-        inlineTitleView.configure(title: title, theme: theme, validator: validator, onCommit: onCommit)
+    func configureTitle(title: String, theme: KnotQTheme, editable: Bool, validator: @escaping (String) -> String?, onCommit: @escaping (String) -> Void) {
+        inlineTitleView.configure(title: title, theme: theme, editable: editable, validator: validator, onCommit: onCommit)
         setNeedsLayout()
     }
 
@@ -1209,53 +1403,77 @@ private final class EditorTextView: UITextView {
         )
     }
 
-    func loadItems(_ items: [MobileItem], theme: KnotQTheme, timeFormat: String) {
+    func loadItems(_ items: [MobileItem], theme: KnotQTheme, timeFormat: String, placeCursorAtEnd: Bool) {
         let savedSelection = selectedRange
         self.theme = theme
         coordinator?.suppress {
             let attributed = buildAttributedString(items: items, theme: theme, timeFormat: timeFormat)
             textStorage.setAttributedString(attributed)
+            ensureWellFormed(textStorage, theme: theme)
         }
         let length = textStorage.length
-        selectedRange = NSRange(location: min(savedSelection.location, length), length: 0)
-        if length > 0 {
-            let probe = min(savedSelection.location, length - 1)
-            let meta = textStorage.metaAt(probe) ?? LineMeta()
-            typingAttributes = EditorAttributes.bodyAttributes(meta: meta, theme: theme)
-        } else {
-            typingAttributes = EditorAttributes.bodyAttributes(meta: LineMeta(), theme: theme)
-        }
+        // I3: caret never past length - 1 (the trailing "\n").
+        let targetLocation = placeCursorAtEnd
+            ? max(0, length - 1)
+            : clampedCaret(savedSelection.location, in: textStorage)
+        selectedRange = NSRange(location: targetLocation, length: 0)
+        typingAttributes = EditorAttributes.bodyAttributes(
+            meta: lineMeta(at: targetLocation, in: textStorage),
+            theme: theme
+        )
         layoutManager.ensureLayout(for: textContainer)
+        if placeCursorAtEnd {
+            scrollRangeToVisible(NSRange(location: targetLocation, length: 0))
+            // On first open the text view often has no real bounds yet, so the
+            // initial scroll lands nowhere. Re-scroll to the end once layout has
+            // settled so we reliably open at the very bottom of the document.
+            DispatchQueue.main.async { [weak self] in
+                guard let self else { return }
+                self.scrollRangeToVisible(NSRange(location: max(0, self.textStorage.length - 1), length: 0))
+            }
+        }
         setNeedsDisplay()
         coordinator?.markClean()
     }
 
     func extractItemEdits() -> [MobileItemEdit] {
-        ensureTerminalNewline()
+        coordinator?.suppress {
+            textStorage.beginEditing()
+            ensureWellFormed(textStorage, theme: theme)
+            textStorage.endEditing()
+        }
         return extractEdits(from: textStorage)
     }
 
     func isEffectivelyEmpty() -> Bool {
+        // With invariant I1, "empty" = one paragraph (the trailing "\n") with
+        // blank marker and zero indent.
         let ns = textStorage.string as NSString
-        guard ns.length > 0 else { return true }
-        return paragraphRanges(in: ns).allSatisfy { paragraph in
-            let body = paragraph.lineRange.length > 0 ? editorVisibleString(ns.substring(with: paragraph.lineRange)) : ""
-            let meta = metaForLine(storage: textStorage, lineRange: paragraph.lineRange)
-            return body.isEmpty && meta.marker == .blank && meta.indent == 0 && meta.annotation == nil
-        }
+        let paragraphs = paragraphRanges(in: ns)
+        guard paragraphs.count <= 1 else { return false }
+        guard let only = paragraphs.first else { return true }
+        let body = bodyText(paragraphRange: only.fullRange, in: textStorage)
+        let m = lineMeta(at: only.fullRange.location, in: textStorage)
+        return body.isEmpty && m.marker == .blank && m.indent == 0 && m.annotation == nil
     }
 
     func appendTaskLine(theme: KnotQTheme) {
         let storage = textStorage
-        let location = storage.length
         let meta = LineMeta(marker: .checkbox)
         let attrs = EditorAttributes.bodyAttributes(meta: meta, theme: theme)
-        var lineStart = location
+        var lineStart = storage.length
         coordinator?.suppress {
             storage.beginEditing()
-            self.ensureTerminalNewline()
+            ensureWellFormed(storage, theme: theme)
+            // Append a new line just before the final trailing "\n" so it lives
+            // as its own paragraph with the new marker.
             lineStart = storage.length
-            storage.replaceCharacters(in: NSRange(location: storage.length, length: 0), with: NSAttributedString(string: "\n", attributes: attrs))
+            storage.replaceCharacters(
+                in: NSRange(location: storage.length, length: 0),
+                with: NSAttributedString(string: "\n", attributes: attrs)
+            )
+            let para = editableParagraphRange(in: storage.string as NSString, at: lineStart)
+            setLineMeta(meta, onParagraph: para, in: storage, theme: theme)
             storage.endEditing()
         }
         selectedRange = NSRange(location: lineStart, length: 0)
@@ -1268,97 +1486,138 @@ private final class EditorTextView: UITextView {
     }
 
     func currentLineItemID() -> String? {
-        let ns = textStorage.string as NSString
-        let loc = min(selectedRange.location, max(0, ns.length - 1))
-        guard ns.length > 0, loc < ns.length else { return nil }
-        return textStorage.metaAt(loc)?.itemID
+        lineMeta(at: clampedCaret(selectedRange.location, in: textStorage), in: textStorage).itemID
     }
 
     func setCurrentMarker(_ marker: Marker, theme: KnotQTheme) {
-        let ns = textStorage.string as NSString
-        let loc = min(selectedRange.location, ns.length)
-        let paraRange = editableParagraphRange(in: ns, at: loc)
-        let oldMeta = metaForLine(storage: textStorage, lineRange: lineRange(from: paraRange, in: ns))
-        let newDone = (marker == .checkbox && oldMeta.marker == .checkbox) ? !oldMeta.done : false
-        let newMeta = LineMeta(marker: marker, indent: oldMeta.indent, done: newDone, itemID: oldMeta.itemID, annotation: oldMeta.annotation, media: oldMeta.media)
-        applyMetaToCurrentParagraph(newMeta, paragraphRange: paraRange, theme: theme)
+        let para = editableParagraphRange(in: textStorage.string as NSString, at: selectedRange.location)
+        let old = lineMeta(at: para.location, in: textStorage)
+        let newDone = (marker == .checkbox && old.marker == .checkbox) ? !old.done : false
+        let new = LineMeta(
+            marker: marker,
+            indent: old.indent,
+            done: newDone,
+            itemID: old.itemID,
+            annotation: old.annotation,
+            media: old.media
+        )
+        applyMeta(new, paragraphRange: para, theme: theme)
     }
 
     func shiftCurrentIndent(_ delta: Int, theme: KnotQTheme) {
-        let ns = textStorage.string as NSString
-        let loc = min(selectedRange.location, ns.length)
-        let paraRange = editableParagraphRange(in: ns, at: loc)
-        let oldMeta = metaForLine(storage: textStorage, lineRange: lineRange(from: paraRange, in: ns))
-        let newMeta = oldMeta.with(indent: max(0, min(8, oldMeta.indent + delta)))
-        applyMetaToCurrentParagraph(newMeta, paragraphRange: paraRange, theme: theme)
+        let para = editableParagraphRange(in: textStorage.string as NSString, at: selectedRange.location)
+        let old = lineMeta(at: para.location, in: textStorage)
+        let new = old.with(indent: max(0, min(8, old.indent + delta)))
+        applyMeta(new, paragraphRange: para, theme: theme)
     }
 
-    private func applyMetaToCurrentParagraph(_ meta: LineMeta, paragraphRange: NSRange, theme: KnotQTheme) {
-        let attrs = EditorAttributes.bodyAttributes(meta: meta, theme: theme)
-        coordinator?.suppress {
-            textStorage.beginEditing()
-            if paragraphRange.length > 0 {
-                self.clearBaseAttributes(in: paragraphRange)
-                for (key, value) in attrs {
-                    textStorage.addAttribute(key, value: value, range: paragraphRange)
-                }
-            }
-            textStorage.endEditing()
+    func toggleWrappedMarkdown(_ delimiter: String, theme: KnotQTheme) {
+        let ns = textStorage.string as NSString
+        let target: NSRange
+        if selectedRange.length > 0 {
+            target = selectedRange
+        } else {
+            let para = editableParagraphRange(in: ns, at: selectedRange.location)
+            target = lineRange(from: para, in: ns)
         }
-        typingAttributes = attrs
+        guard target.location <= ns.length, NSMaxRange(target) <= ns.length else { return }
+        let selected = target.length > 0 ? ns.substring(with: target) : ""
+        let dlen = delimiter.count
+        let wasWrapped = selected.count >= dlen * 2
+            && selected.hasPrefix(delimiter)
+            && selected.hasSuffix(delimiter)
+        let replacement = wasWrapped
+            ? String(selected.dropFirst(dlen).dropLast(dlen))
+            : "\(delimiter)\(selected)\(delimiter)"
+        let meta = lineMeta(at: target.location, in: textStorage)
+        let attrs = EditorAttributes.bodyAttributes(meta: meta, theme: theme)
+        textStorage.replaceCharacters(
+            in: target,
+            with: NSAttributedString(string: replacement, attributes: attrs)
+        )
+        let newLength = (replacement as NSString).length
+        let caret: NSRange
+        if selectedRange.length > 0 {
+            caret = NSRange(location: target.location, length: newLength)
+        } else if !wasWrapped {
+            caret = NSRange(location: target.location + (delimiter as NSString).length, length: 0)
+        } else {
+            caret = NSRange(location: target.location + newLength, length: 0)
+        }
+        selectedRange = caret
         coordinator?.markDirty()
         setNeedsDisplay()
     }
 
-    private func clearBaseAttributes(in range: NSRange) {
-        textStorage.removeAttribute(.font, range: range)
-        textStorage.removeAttribute(.foregroundColor, range: range)
-        textStorage.removeAttribute(.paragraphStyle, range: range)
-        textStorage.removeAttribute(.strikethroughStyle, range: range)
-        textStorage.removeAttribute(.strikethroughColor, range: range)
-    }
-
-    func enforceTerminalNewlineAfterUserEdit() {
+    func toggleHeading(theme: KnotQTheme) {
+        let ns = textStorage.string as NSString
+        let para = editableParagraphRange(in: ns, at: selectedRange.location)
+        let lineText = bodyText(paragraphRange: para, in: textStorage)
+        let leading = lineText.prefix { $0 == " " || $0 == "\t" }
+        let afterLeading = String(lineText.dropFirst(leading.count))
+        let hashes = afterLeading.prefix { $0 == "#" }.count
+        let isHeading: Bool = {
+            guard hashes > 0 else { return false }
+            if afterLeading.count == hashes { return true }
+            let idx = afterLeading.index(afterLeading.startIndex, offsetBy: hashes)
+            return afterLeading[idx].isWhitespace
+        }()
+        let meta = lineMeta(at: para.location, in: textStorage)
+        let attrs = EditorAttributes.bodyAttributes(meta: meta, theme: theme)
         let savedSelection = selectedRange
-        var appended = false
-        coordinator?.suppress {
-            textStorage.beginEditing()
-            appended = self.ensureTerminalNewline()
-            textStorage.endEditing()
-        }
-        if appended {
+        let leadingLen = (leading as NSString).length
+        if isHeading {
+            var removeLen = hashes
+            let nsAfter = afterLeading as NSString
+            if nsAfter.length > hashes {
+                let ch = nsAfter.character(at: hashes)
+                if ch == 32 || ch == 9 { removeLen += 1 }
+            }
+            textStorage.replaceCharacters(
+                in: NSRange(location: para.location + leadingLen, length: removeLen),
+                with: NSAttributedString(string: "", attributes: attrs)
+            )
             selectedRange = NSRange(
-                location: min(savedSelection.location, textStorage.length),
-                length: min(savedSelection.length, max(0, textStorage.length - savedSelection.location))
+                location: max(para.location, savedSelection.location - removeLen),
+                length: savedSelection.length
+            )
+        } else {
+            let insertion = "# "
+            textStorage.replaceCharacters(
+                in: NSRange(location: para.location + leadingLen, length: 0),
+                with: NSAttributedString(string: insertion, attributes: attrs)
+            )
+            selectedRange = NSRange(
+                location: savedSelection.location + (insertion as NSString).length,
+                length: savedSelection.length
             )
         }
+        coordinator?.markDirty()
+        setNeedsDisplay()
     }
 
-    @discardableResult
-    private func ensureTerminalNewline() -> Bool {
-        let ns = textStorage.string as NSString
-        guard ns.length > 0, ns.character(at: ns.length - 1) != 10 else { return false }
-        let paragraph = ns.paragraphRange(for: NSRange(location: ns.length - 1, length: 0))
-        let meta = metaForLine(storage: textStorage, lineRange: lineRange(from: paragraph, in: ns))
-        let attrs = EditorAttributes.bodyAttributes(meta: meta, theme: theme)
-        textStorage.replaceCharacters(in: NSRange(location: textStorage.length, length: 0), with: NSAttributedString(string: "\n", attributes: attrs))
-        return true
-    }
-
-    private func editableParagraphRange(in ns: NSString, at location: Int) -> NSRange {
-        guard ns.length > 0 else { return NSRange(location: 0, length: 0) }
-        let probe = min(max(0, location), ns.length - 1)
-        return ns.paragraphRange(for: NSRange(location: probe, length: 0))
+    /// Single internal entry point used by every "change just the meta" action
+    /// (set marker, shift indent, toggle checkbox). Suppresses the textStorage
+    /// delegate because we already maintain the invariants here.
+    private func applyMeta(_ meta: LineMeta, paragraphRange: NSRange, theme: KnotQTheme) {
+        coordinator?.suppress {
+            textStorage.beginEditing()
+            setLineMeta(meta, onParagraph: paragraphRange, in: textStorage, theme: theme)
+            textStorage.endEditing()
+        }
+        typingAttributes = EditorAttributes.bodyAttributes(meta: meta, theme: theme)
+        coordinator?.markDirty()
+        coordinator?.refreshToolbarActiveMarker(in: self)
+        setNeedsDisplay()
     }
 
     @discardableResult
     fileprivate func toggleCheckboxAt(point: CGPoint) -> Bool {
         let ns = textStorage.string as NSString
         guard let lineRange = checkboxLineRange(at: point) else { return false }
-        let paraRange = ns.paragraphRange(for: lineRange)
-        let oldMeta = textStorage.metaAt(paraRange.location) ?? LineMeta()
-        let newMeta = oldMeta.with(done: !oldMeta.done)
-        applyMetaToCurrentParagraph(newMeta, paragraphRange: paraRange, theme: theme)
+        let para = ns.paragraphRange(for: lineRange)
+        let old = lineMeta(at: para.location, in: textStorage)
+        applyMeta(old.with(done: !old.done), paragraphRange: para, theme: theme)
         return true
     }
 
@@ -1385,8 +1644,8 @@ private final class EditorTextView: UITextView {
         guard let context = UIGraphicsGetCurrentContext() else { return }
         let storage = textStorage
         let ns = storage.string as NSString
-        var numberedOrdinal = 1
         let paragraphs = paragraphRanges(in: ns)
+        let metas: [LineMeta] = paragraphs.map { lineMeta(at: $0.fullRange.location, in: storage) }
         for index in paragraphs.indices {
             let paragraph = paragraphs[index]
             guard let geometry = paragraphGeometry(for: paragraph, origin: origin) else { continue }
@@ -1394,30 +1653,47 @@ private final class EditorTextView: UITextView {
             guard NSIntersectionRange(glyphRange, glyphsToShow).length > 0 else { continue }
             let firstFragment = geometry.fragments[0]
             let visualBounds = geometry.bounds
-            let meta = metaForLine(storage: storage, lineRange: paragraph.lineRange)
-            let previousMeta = index > 0 ? metaForLine(storage: storage, lineRange: paragraphs[index - 1].lineRange) : nil
-            let nextMeta = index + 1 < paragraphs.count ? metaForLine(storage: storage, lineRange: paragraphs[index + 1].lineRange) : nil
-            let previousAnnotated = index > 0 && metaForLine(storage: storage, lineRange: paragraphs[index - 1].lineRange).annotation != nil
-            let nextAnnotated = index + 1 < paragraphs.count && metaForLine(storage: storage, lineRange: paragraphs[index + 1].lineRange).annotation != nil
+            let meta = metas[index]
+            let previousMeta = index > 0 ? metas[index - 1] : nil
+            let nextMeta = index + 1 < metas.count ? metas[index + 1] : nil
+            let previousAnnotated = previousMeta?.annotation != nil
+            let nextAnnotated = nextMeta?.annotation != nil
             let mediaExtraHeight = mediaStackHeight(meta.media, maxWidth: editorImageMaxWidth(textLeft: firstFragment.minX))
             let rowExtraHeight = (meta.annotation == nil ? CGFloat(0) : DesktopEditorMetrics.annotationHeight) + mediaExtraHeight
-            if meta.marker == .numbered {
-                self.drawIndentGuides(meta: meta, previousMeta: previousMeta, nextMeta: nextMeta, firstFragment: firstFragment, visualBounds: visualBounds, rowExtraHeight: rowExtraHeight, context: context)
-                self.drawMarker(meta: meta, ordinal: numberedOrdinal, fragment: firstFragment, context: context)
-                numberedOrdinal += 1
-            } else {
-                numberedOrdinal = 1
-                self.drawIndentGuides(meta: meta, previousMeta: previousMeta, nextMeta: nextMeta, firstFragment: firstFragment, visualBounds: visualBounds, rowExtraHeight: rowExtraHeight, context: context)
-                self.drawMarker(meta: meta, ordinal: 1, fragment: firstFragment, context: context)
-            }
+            let ordinal = meta.marker == .numbered ? numberedOrdinal(at: index, in: metas) : 1
+            drawIndentGuides(
+                meta: meta, previousMeta: previousMeta, nextMeta: nextMeta,
+                firstFragment: firstFragment, visualBounds: visualBounds,
+                rowExtraHeight: rowExtraHeight, context: context
+            )
+            drawMarker(meta: meta, ordinal: ordinal, fragment: firstFragment, context: context)
             if let annotation = meta.annotation {
-                self.drawAnnotationBar(meta: meta, firstFragment: firstFragment, visualBounds: visualBounds, rowExtraHeight: rowExtraHeight, connectsToPrevious: previousAnnotated, connectsToNext: nextAnnotated, context: context)
-                self.drawAnnotation(annotation, meta: meta, visualBounds: visualBounds, context: context)
+                drawAnnotationBar(meta: meta, firstFragment: firstFragment, visualBounds: visualBounds, rowExtraHeight: rowExtraHeight, connectsToPrevious: previousAnnotated, connectsToNext: nextAnnotated, context: context)
+                drawAnnotation(annotation, meta: meta, visualBounds: visualBounds, context: context)
             }
             if !meta.media.isEmpty {
-                self.drawMediaStack(meta.media, meta: meta, firstFragment: firstFragment, visualBounds: visualBounds, context: context)
+                drawMediaStack(meta.media, meta: meta, firstFragment: firstFragment, visualBounds: visualBounds, context: context)
             }
         }
+    }
+
+    /// Counts the current line as Nth where N = 1 + the number of consecutive
+    /// prior Numbered siblings at the same indent (nested-deeper lines are
+    /// transparent; anything at a shallower indent or a non-Numbered at the
+    /// same indent ends the run). Mirrors desktop's `numbered_marker_ordinal`.
+    private func numberedOrdinal(at index: Int, in metas: [LineMeta]) -> Int {
+        let currentIndent = metas[index].indent
+        var ordinal = 1
+        var i = index - 1
+        while i >= 0 {
+            let prev = metas[i]
+            if prev.indent > currentIndent { i -= 1; continue }
+            if prev.indent < currentIndent { break }
+            if prev.marker != .numbered { break }
+            ordinal += 1
+            i -= 1
+        }
+        return ordinal
     }
 
     private func drawIndentGuides(meta: LineMeta, previousMeta: LineMeta?, nextMeta: LineMeta?, firstFragment: CGRect, visualBounds: CGRect, rowExtraHeight: CGFloat, context: CGContext) {
@@ -1445,25 +1721,26 @@ private final class EditorTextView: UITextView {
 
     private func drawMarker(meta: LineMeta, ordinal: Int, fragment: CGRect, context: CGContext) {
         let rect = markerRect(for: meta, fragment: fragment)
+        let chrome = theme.editorChromeColor
         switch meta.marker {
         case .blank:
             return
         case .bullet:
-            context.setFillColor(accentColor.cgColor)
+            context.setFillColor(chrome.cgColor)
             context.fillEllipse(in: rect.insetBy(dx: 4.5, dy: 4.5))
         case .numbered:
             let label = "\(ordinal)." as NSString
             let attrs: [NSAttributedString.Key: Any] = [
                 .font: UIFont.systemFont(ofSize: 12, weight: .medium),
-                .foregroundColor: accentColor
+                .foregroundColor: chrome
             ]
             let size = label.size(withAttributes: attrs)
             label.draw(at: CGPoint(x: rect.maxX - size.width, y: rect.minY + (rect.height - size.height) / 2), withAttributes: attrs)
         case .checkbox:
             let path = UIBezierPath(roundedRect: rect, cornerRadius: 3)
-            (meta.done ? accentColor : UIColor(theme.buttonBg)).setFill()
+            (meta.done ? chrome : UIColor(theme.buttonBg)).setFill()
             path.fill()
-            accentColor.setStroke()
+            chrome.setStroke()
             path.lineWidth = 1
             path.stroke()
             if meta.done {
@@ -1756,81 +2033,164 @@ struct AddItemSheet: View {
     }
 }
 
+/// The line "Schedule" sheet. Mirrors the calendar's EventEditorSheet — a kind
+/// segmented control, conditional start/end pickers with footer guidance, and a
+/// repeat picker — but operates on an existing scheme line (it unschedules
+/// rather than deleting). A header shows the owning scheme's colour + name.
 struct ItemDateSheet: View {
     @EnvironmentObject private var model: AppModel
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.colorScheme) private var systemScheme
     let schemeID: String
     let item: MobileItem
-    @State private var kind: String
-    @State private var date: Date
+
+    @State private var hasStart: Bool
+    @State private var hasEnd: Bool
+    @State private var start: Date
+    @State private var end: Date
+    @State private var repeatChoice: RepeatChoice
 
     init(schemeID: String, item: MobileItem) {
         self.schemeID = schemeID
         self.item = item
-        let initialKind = item.start != nil ? "start" : (item.end != nil ? "end" : "start")
-        _kind = State(initialValue: initialKind)
-        _date = State(initialValue: MobileDate.parseDateTime(initialKind == "start" ? item.start : item.end) ?? Date())
+        let startDate = MobileDate.parseDateTime(item.start)
+        let endDate = MobileDate.parseDateTime(item.end)
+        _hasStart = State(initialValue: startDate != nil)
+        _hasEnd = State(initialValue: endDate != nil)
+        _start = State(initialValue: startDate ?? endDate ?? Date())
+        _end = State(initialValue: endDate ?? startDate?.addingTimeInterval(3600) ?? Date().addingTimeInterval(3600))
+        _repeatChoice = State(initialValue: RepeatChoice.from(rrule: item.repeatRule))
     }
+
+    private var theme: KnotQTheme {
+        KnotQTheme.resolve(mode: model.snapshot?.settings.themeMode, systemScheme: systemScheme)
+    }
+
+    private var scheme: MobileScheme? { model.scheme(id: schemeID) }
 
     var body: some View {
         NavigationStack {
             Form {
+                if let scheme {
+                    Section {
+                        HStack(spacing: 10) {
+                            RoundedRectangle(cornerRadius: 3)
+                                .fill(schemeColor(scheme.colorIndex, dark: theme.isDark))
+                                .frame(width: 14, height: 14)
+                            Text(scheme.displayName)
+                                .font(.system(size: 15, weight: .semibold))
+                            Spacer(minLength: 8)
+                            if !item.text.isEmpty {
+                                Text(item.text)
+                                    .font(.system(size: 13))
+                                    .foregroundStyle(.secondary)
+                                    .lineLimit(1)
+                            }
+                        }
+                    }
+                }
+
                 Section {
-                    Picker("Field", selection: $kind) {
-                        Text("Start / At").tag("start")
-                        Text("End / Due").tag("end")
+                    Picker("Kind", selection: kindBinding) {
+                        Text("Event").tag(CalendarKind.event)
+                        Text("Reminder").tag(CalendarKind.reminder)
+                        Text("Assignment").tag(CalendarKind.assignment)
                     }
                     .pickerStyle(.segmented)
-                    .onChange(of: kind) { _, value in
-                        date = MobileDate.parseDateTime(value == "start" ? item.start : item.end) ?? date
-                    }
-                }
 
-                Section {
-                    DatePicker(selectedLabel, selection: $date)
+                    if hasStart {
+                        DatePicker(hasEnd ? "Start" : "At", selection: $start)
+                            .onChange(of: start) { _, value in
+                                if hasEnd, end < value { end = value.addingTimeInterval(3600) }
+                            }
+                    }
+                    if hasEnd {
+                        DatePicker(hasStart ? "End" : "Due", selection: $end, in: (hasStart ? start : Date.distantPast)...)
+                    }
                 } footer: {
-                    Text(summaryText)
+                    Text(kindDescription)
                 }
 
                 Section {
-                    Button("Clear \(selectedLabel)") {
-                        model.setItemDate(schemeID: schemeID, itemID: item.id, kind: kind, date: nil)
-                        dismiss()
+                    Picker("Repeat", selection: $repeatChoice) {
+                        ForEach(RepeatChoice.allCases) { choice in
+                            Text(choice.label).tag(choice)
+                        }
                     }
-                    .foregroundStyle(.red)
-                    .disabled(kind == "start" ? item.start == nil : item.end == nil)
+                }
 
-                    Button("Clear Both Dates") {
+                Section {
+                    Button(role: .destructive) {
                         model.setItemDate(schemeID: schemeID, itemID: item.id, kind: "start", date: nil)
                         model.setItemDate(schemeID: schemeID, itemID: item.id, kind: "end", date: nil)
+                        model.setItemRecurrence(schemeID: schemeID, itemID: item.id, rrule: nil)
                         dismiss()
+                    } label: {
+                        Label("Clear Schedule", systemImage: "calendar.badge.minus")
                     }
-                    .foregroundStyle(.red)
                     .disabled(item.start == nil && item.end == nil)
                 }
             }
             .navigationTitle("Schedule")
+            .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { dismiss() }
                 }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Save") {
-                        model.setItemDate(schemeID: schemeID, itemID: item.id, kind: kind, date: date)
-                        dismiss()
-                    }
+                    Button("Save") { save() }
+                        .disabled(!hasStart && !hasEnd)
                 }
             }
         }
     }
 
-    private var selectedLabel: String {
-        kind == "start" ? "Start" : "End"
+    private var kindDescription: String {
+        switch (hasStart, hasEnd) {
+        case (true, true): "Event — a time block on the calendar."
+        case (true, false): "Reminder — alerts at the start time."
+        case (false, true): "Assignment — due at the end time."
+        default: "Set a start or end time to place it on the calendar."
+        }
     }
 
-    private var summaryText: String {
-        let start = MobileDate.formatTime(item.start) ?? "No start"
-        let end = MobileDate.formatTime(item.end) ?? "No end"
-        return "\(start) · \(end)"
+    private var kindBinding: Binding<CalendarKind> {
+        Binding(
+            get: {
+                switch (hasStart, hasEnd) {
+                case (true, true): .event
+                case (true, false): .reminder
+                case (false, true): .assignment
+                default: .event
+                }
+            },
+            set: { kind in
+                switch kind {
+                case .event:
+                    if !hasStart { start = hasEnd ? end.addingTimeInterval(-3600) : Date() }
+                    if !hasEnd { end = start.addingTimeInterval(3600) }
+                    hasStart = true
+                    hasEnd = true
+                    if end < start { end = start.addingTimeInterval(3600) }
+                case .reminder:
+                    if !hasStart { start = hasEnd ? end : Date() }
+                    hasStart = true
+                    hasEnd = false
+                case .assignment:
+                    if !hasEnd { end = hasStart ? start : Date() }
+                    hasStart = false
+                    hasEnd = true
+                case .task:
+                    break
+                }
+            }
+        )
+    }
+
+    private func save() {
+        model.setItemDate(schemeID: schemeID, itemID: item.id, kind: "start", date: hasStart ? start : nil)
+        model.setItemDate(schemeID: schemeID, itemID: item.id, kind: "end", date: hasEnd ? end : nil)
+        model.setItemRecurrence(schemeID: schemeID, itemID: item.id, rrule: repeatChoice.rrule)
+        dismiss()
     }
 }

@@ -20,6 +20,7 @@
 		01000000000000000000000B /* SettingsScreen.swift in Sources */ = {isa = PBXBuildFile; fileRef = 02000000000000000000000B /* SettingsScreen.swift */; };
 		01000000000000000000000C /* SharedViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 02000000000000000000000C /* SharedViews.swift */; };
 		01000000000000000000000D /* KnotQMobileCore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 020000000000000000000010 /* KnotQMobileCore.swift */; };
+		01000000000000000000000E /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 020000000000000000000011 /* Assets.xcassets */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -39,6 +40,7 @@
 		02000000000000000000000E /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		02000000000000000000000F /* KnotQMobile.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = KnotQMobile.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		020000000000000000000010 /* KnotQMobileCore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Generated/KnotQMobileCore.swift; sourceTree = "<group>"; };
+		020000000000000000000011 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -78,6 +80,7 @@
 				02000000000000000000000C /* SharedViews.swift */,
 				02000000000000000000000D /* KnotQMobile-Bridging-Header.h */,
 				02000000000000000000000E /* Info.plist */,
+				020000000000000000000011 /* Assets.xcassets */,
 			);
 			path = KnotQMobile;
 			sourceTree = "<group>";
@@ -151,6 +154,7 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				01000000000000000000000E /* Assets.xcassets in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -319,6 +323,7 @@
 		0A0000000000000000000003 /* Debug */ = {
 				isa = XCBuildConfiguration;
 				buildSettings = {
+					ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 					CODE_SIGN_IDENTITY = "Apple Development";
 					CODE_SIGN_STYLE = Automatic;
 					CURRENT_PROJECT_VERSION = 1;
@@ -354,6 +359,7 @@
 		0A0000000000000000000004 /* Release */ = {
 				isa = XCBuildConfiguration;
 				buildSettings = {
+					ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 					CODE_SIGN_IDENTITY = "Apple Development";
 					CODE_SIGN_STYLE = Automatic;
 					CURRENT_PROJECT_VERSION = 1;

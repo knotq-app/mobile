@@ -54,6 +54,7 @@ struct NodeRow: View {
     @EnvironmentObject private var model: AppModel
     let node: MobileNode
     @State private var renameTarget: MobileNode?
+    @State private var archiveTarget: ArchiveTarget?
 
     var body: some View {
         if node.kind == "folder" {
@@ -66,13 +67,20 @@ struct NodeRow: View {
             }
             .contextMenu {
                 Button("Rename") { renameTarget = node }
-                Button("Delete", role: .destructive) { model.deleteFolder(id: node.id) }
+                Button("Archive", systemImage: "archivebox") {
+                    archiveTarget = .folder(node)
+                }
             }
             .sheet(item: $renameTarget) { node in
                 NameSheet(title: "Rename Folder", placeholder: "Folder name", initialText: node.name, validator: { name in
                     WorkspaceNameValidation.folderError(name, root: model.snapshot?.root, excludingID: node.id)
                 }) { name in
                     model.renameFolder(id: node.id, name: name)
+                }
+            }
+            .archiveConfirmation(target: $archiveTarget) { target in
+                if target.kind == .folder {
+                    model.archiveFolder(id: target.id)
                 }
             }
         } else {

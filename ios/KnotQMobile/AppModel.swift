@@ -64,6 +64,10 @@ final class AppModel: ObservableObject {
         mutate { try $0.deleteFolder(id: id) }
     }
 
+    func archiveFolder(id: String) {
+        deleteFolder(id: id)
+    }
+
     @discardableResult
     func createScheme(name: String, folderID: String? = nil) -> String? {
         let before = Set(snapshot?.schemes.map(\.id) ?? [])
@@ -80,6 +84,10 @@ final class AppModel: ObservableObject {
         mutate { try $0.deleteScheme(id: id) }
     }
 
+    func archiveScheme(id: String) {
+        deleteScheme(id: id)
+    }
+
     func restoreScheme(id: String) {
         mutate { try $0.restoreScheme(id: id) }
     }
@@ -94,6 +102,10 @@ final class AppModel: ObservableObject {
 
     func setSchemeColor(id: String, colorIndex: Int32) {
         mutate { try $0.setSchemeColor(id: id, colorIndex: colorIndex) }
+    }
+
+    func moveNode(kind: String, id: String, folderID: String, position: Int) {
+        mutate { try $0.moveNode(kind: kind, id: id, folderID: folderID, position: Int32(position)) }
     }
 
     func ensureDailyQueue(date: Date) {
@@ -136,6 +148,10 @@ final class AppModel: ObservableObject {
         }
     }
 
+    func setItemRecurrence(schemeID: String, itemID: String, rrule: String?) {
+        mutate { try $0.setItemRecurrence(schemeID: schemeID, itemID: itemID, rrule: rrule) }
+    }
+
     func toggleItem(schemeID: String, itemID: String) {
         mutate { try $0.toggleItem(schemeID: schemeID, itemID: itemID) }
     }
@@ -157,6 +173,45 @@ final class AppModel: ObservableObject {
         }
     }
 
+    /// Creates a calendar item and returns the new item's id so callers can
+    /// follow up (e.g. apply a recurrence). Resolves the daily-queue scheme for
+    /// `date` when `schemeID` is nil, then diffs that scheme's items.
+    @discardableResult
+    func createCalendarItemReturningID(
+        kind: CalendarKind,
+        text: String,
+        date: Date,
+        start: Date?,
+        end: Date?,
+        schemeID: String?
+    ) -> String? {
+        guard let bridge else { return nil }
+        let dateKey = Self.dateOnly(date)
+        let targetID: String
+        if let schemeID {
+            targetID = schemeID
+        } else {
+            try? bridge.ensureDailyQueue(date: dateKey)
+            refresh()
+            guard let dailyID = snapshot?.daily.first(where: { $0.date == dateKey })?.scheme.id else {
+                addCalendarItem(kind: kind, text: text, date: date, start: start, end: end, schemeID: nil)
+                return nil
+            }
+            targetID = dailyID
+        }
+        let before = Set(schemeItems(id: targetID).map(\.id))
+        addCalendarItem(kind: kind, text: text, date: date, start: start, end: end, schemeID: targetID)
+        return schemeItems(id: targetID).first { !before.contains($0.id) }?.id
+    }
+
+    /// Items for a scheme id, searching active, archived, and daily schemes.
+    private func schemeItems(id: String) -> [MobileItem] {
+        if let s = snapshot?.schemes.first(where: { $0.id == id }) { return s.items }
+        if let s = snapshot?.daily.first(where: { $0.scheme.id == id })?.scheme { return s.items }
+        if let s = snapshot?.archivedSchemes.first(where: { $0.id == id }) { return s.items }
+        return []
+    }
+
     func setThemeMode(_ mode: String) {
         mutate { try $0.setThemeMode(mode) }
     }
@@ -172,6 +227,7 @@ final class AppModel: ObservableObject {
     func scheme(id: String?) -> MobileScheme? {
         guard let id else { return nil }
         return snapshot?.schemes.first { $0.id == id }
+            ?? snapshot?.daily.first { $0.scheme.id == id }?.scheme
             ?? snapshot?.archivedSchemes.first { $0.id == id }
     }
 

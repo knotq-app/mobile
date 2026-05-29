@@ -33,6 +33,7 @@ import android.view.View
 import android.view.ViewGroup
 import android.view.inputmethod.BaseInputConnection
 import android.view.inputmethod.EditorInfo
+import android.view.inputmethod.InputMethodManager
 import android.widget.ArrayAdapter
 import android.widget.DatePicker
 import android.widget.EditText
@@ -56,6 +57,7 @@ import java.time.format.DateTimeFormatter
 import java.time.format.TextStyle
 import java.util.Locale
 import java.util.WeakHashMap
+import kotlin.math.abs
 import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.roundToInt
@@ -87,6 +89,7 @@ class MainActivity : Activity() {
     private var weekOffset = 0
     private var selectedDate: LocalDate = LocalDate.now()
     private var selectedSchemeId: String? = null
+    private var keyboardActive = false
     private val editorSchemeIds = WeakHashMap<EditText, String>()
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -134,6 +137,7 @@ class MainActivity : Activity() {
         shell.addView(content, LinearLayout.LayoutParams(-1, 0, 1f))
         shell.addView(dock, LinearLayout.LayoutParams(-1, dp(58)))
         setContentView(shell)
+        installKeyboardVisibilityWatcher()
     }
 
     private fun render() {
@@ -148,7 +152,7 @@ class MainActivity : Activity() {
         renderDock()
         content.removeAllViews()
         val wide = resources.configuration.screenWidthDp >= 760
-        dock.visibility = if (wide) View.GONE else View.VISIBLE
+        updateChromeVisibility()
         val view = if (wide) renderWideShell() else renderPhoneMain()
         content.addView(view)
     }
@@ -171,8 +175,8 @@ class MainActivity : Activity() {
 
     private fun renderDock() {
         dock.removeAllViews()
-        listOf("Calendar", "Schemes", "Daily", "Search", "Settings").forEachIndexed { index, label ->
-            val tab = text(label, if (selectedTab == index) theme.textPrimary else theme.textMuted, 11f, true).apply {
+        listOf(0 to "Calendar", 1 to "Schemes", 3 to "Search", 4 to "Settings").forEach { (index, label) ->
+            val tab = text(label, if (selectedTab == index || selectedTab == 2 && index == 1) theme.textPrimary else theme.textMuted, 11f, true).apply {
                 gravity = Gravity.CENTER
                 setOnClickListener {
                     selectedTab = index
@@ -185,15 +189,47 @@ class MainActivity : Activity() {
     }
 
     private fun hidePhoneDockForEditing() {
-        if (resources.configuration.screenWidthDp < 760 && ::dock.isInitialized) {
-            dock.visibility = View.GONE
-        }
+        keyboardActive = true
+        updateChromeVisibility()
     }
 
     private fun showPhoneDockAfterEditing() {
-        if (resources.configuration.screenWidthDp < 760 && ::dock.isInitialized) {
-            dock.visibility = View.VISIBLE
+        keyboardActive = false
+        updateChromeVisibility()
+    }
+
+    private fun dismissKeyboard() {
+        val focus = currentFocus
+        if (focus is EditText) {
+            focus.clearFocus()
         }
+        val imm = getSystemService(INPUT_METHOD_SERVICE) as? InputMethodManager
+        imm?.hideSoftInputFromWindow((focus ?: shell).windowToken, 0)
+        keyboardActive = false
+        updateChromeVisibility()
+    }
+
+    private fun installKeyboardVisibilityWatcher() {
+        shell.viewTreeObserver.addOnGlobalLayoutListener {
+            if (!::shell.isInitialized) return@addOnGlobalLayoutListener
+            val frame = Rect()
+            shell.getWindowVisibleDisplayFrame(frame)
+            val height = shell.rootView.height
+            if (height <= 0) return@addOnGlobalLayoutListener
+            val hidden = height - frame.bottom
+            val next = hidden > height * 0.15f
+            if (keyboardActive != next) {
+                keyboardActive = next
+                updateChromeVisibility()
+            }
+        }
+    }
+
+    private fun updateChromeVisibility() {
+        if (!::titleBar.isInitialized || !::dock.isInitialized) return
+        val wide = resources.configuration.screenWidthDp >= 760
+        titleBar.visibility = if (!wide && keyboardActive) View.GONE else View.VISIBLE
+        dock.visibility = if (wide || keyboardActive) View.GONE else View.VISIBLE
     }
 
     private fun renderWideShell(): View {
@@ -264,21 +300,47 @@ class MainActivity : Activity() {
     }
 
     private fun renderListsPage(): LinearLayout {
-        val root = page()
-        root.addView(sectionHeader("Schemes"))
+        val root = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setBackgroundColor(theme.bgApp)
+        }
+        val body = page()
+        body.addView(sectionHeader("Schemes"))
+        body.addView(dailyShortcutRow(), LinearLayout.LayoutParams(-1, dp(30)).apply {
+            setMargins(0, 0, 0, dp(6))
+        })
         val list = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(0, dp(4), 0, dp(4))
+            setPadding(0, dp(2), 0, dp(2))
         }
         snapshot.optJSONObject("root")?.optJSONArray("children")?.forEachObject {
             addNode(list, it, 0, spacious = true)
         }
-        root.addView(list)
-        root.addView(archiveNavigatorSection(compact = false), LinearLayout.LayoutParams(-1, -2).apply {
+        body.addView(list)
+        body.addView(archiveNavigatorSection(compact = false), LinearLayout.LayoutParams(-1, -2).apply {
             setMargins(0, dp(12), 0, 0)
         })
+        root.addView(scroll(body), LinearLayout.LayoutParams(-1, 0, 1f))
         return root
     }
+
+    private fun dailyShortcutRow(): View =
+        LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(dp(8), 0, dp(7), 0)
+            background = rounded(Color.TRANSPARENT, dp(4))
+            addView(colorSquare(dailyAccent(), 9), LinearLayout.LayoutParams(dp(9), dp(9)).apply {
+                setMargins(0, 0, dp(7), 0)
+            })
+            addView(text("Daily", theme.textPrimary, 13f, true).apply { maxLines = 1 }, LinearLayout.LayoutParams(0, -1, 1f))
+            addView(text(">", theme.textMuted, 12f, true).apply { gravity = Gravity.CENTER }, LinearLayout.LayoutParams(dp(16), -1))
+            setOnClickListener {
+                selectedTab = 2
+                selectedSchemeId = null
+                ensureDaily()
+            }
+        }
 
     private fun archiveNavigatorSection(compact: Boolean): View {
         val schemes = archivedSchemes()
@@ -356,7 +418,9 @@ class MainActivity : Activity() {
                 addView(row)
             }, LinearLayout.LayoutParams(-1, 0, 1f))
         } else {
-            days?.forEachObject { day -> body.addView(dayList(day), spaced()) }
+            for (offset in 0 until phoneCalendarDayCount()) {
+                dayForDate(selectedDate.plusDays(offset.toLong()))?.let { body.addView(dayList(it), spaced()) }
+            }
             root.addView(scroll(body), LinearLayout.LayoutParams(-1, 0, 1f))
         }
         return root
@@ -364,40 +428,58 @@ class MainActivity : Activity() {
 
     private fun calendarToolbar(): View {
         return LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            background = underline(theme.bgApp)
+            addView(text(selectedDateTitle(), theme.textPrimary, 20f, true).apply {
+                gravity = Gravity.CENTER
+                setPadding(dp(12), dp(8), dp(12), dp(4))
+            }, LinearLayout.LayoutParams(-1, dp(46)))
+            addView(calendarWeekStrip(), LinearLayout.LayoutParams(-1, dp(56)))
+        }.also {
+            it.layoutParams = LinearLayout.LayoutParams(-1, dp(102))
+        }
+    }
+
+    private fun calendarWeekStrip(): View =
+        LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            setPadding(dp(12), 0, dp(12), 0)
-            addView(iconChip("<") {
-                weekOffset--
-                loadSnapshot()
-                render()
-            })
-            addView(LinearLayout(this@MainActivity).apply {
-                orientation = LinearLayout.VERTICAL
-                gravity = Gravity.CENTER_VERTICAL
-                val range = "${formatDay(calendar().optString("start_date"))} - ${formatDay(calendar().optString("end_date"))}"
-                addView(text(range, theme.textPrimary, 13f, true))
-                addView(text("Today", theme.textDim, 11f, true).apply {
+            setPadding(dp(10), 0, dp(10), dp(4))
+            for (offset in 0 until 8) {
+                val date = weekStart(selectedDate).plusDays(offset.toLong())
+                val today = date == LocalDate.now()
+                val visibleOffset = date.toEpochDay() - selectedDate.toEpochDay()
+                val visible = visibleOffset >= 0 && visibleOffset < phoneCalendarDayCount()
+                addView(LinearLayout(this@MainActivity).apply {
+                    orientation = LinearLayout.VERTICAL
+                    gravity = Gravity.CENTER
+                    if (visible) {
+                        background = roundedHorizontalSegment(
+                            calendarRangeFill(),
+                            leadingRounded = date == selectedDate,
+                            trailingRounded = visibleOffset == phoneCalendarDayCount().toLong() - 1
+                        )
+                    }
+                    addView(text(date.dayOfWeek.getDisplayName(TextStyle.NARROW, Locale.getDefault()).uppercase(Locale.getDefault()), if (today || visible) theme.textPrimary else theme.textMuted, 10f, true).apply {
+                        gravity = Gravity.CENTER
+                    }, LinearLayout.LayoutParams(-1, dp(16)))
+                    addView(text(date.dayOfMonth.toString(), if (today) theme.accent else theme.textPrimary, 17f, false).apply {
+                        gravity = Gravity.CENTER
+                    }, LinearLayout.LayoutParams(dp(34), dp(34)))
                     setOnClickListener {
+                        selectedDate = date
                         weekOffset = 0
-                        selectedDate = LocalDate.now()
                         loadSnapshot()
                         render()
                     }
+                }, LinearLayout.LayoutParams(0, -1, 1f).apply {
+                    setMargins(if (visible && date != selectedDate) 0 else dp(1), dp(3), if (visible && visibleOffset == 0L) 0 else dp(1), dp(3))
                 })
-            }, LinearLayout.LayoutParams(0, -1, 1f).apply { setMargins(dp(8), 0, dp(8), 0) })
-            addView(iconChip("+") { showCalendarItemDialog() })
-            addView(iconChip(">") {
-                weekOffset++
-                loadSnapshot()
-                render()
-            }, LinearLayout.LayoutParams(dp(32), dp(28)).apply { setMargins(dp(6), 0, 0, 0) })
-        }.apply {
-            background = underline(theme.bgApp)
-        }.also {
-            it.layoutParams = LinearLayout.LayoutParams(-1, dp(48))
+            }
         }
-    }
+
+    private fun phoneCalendarDayCount(): Int =
+        if (resources.configuration.screenWidthDp >= 600) 3 else 2
 
     private fun dayColumn(day: JSONObject): View {
         val column = LinearLayout(this).apply {
@@ -427,20 +509,39 @@ class MainActivity : Activity() {
             if (occurrences == null || occurrences.length() == 0) {
                 addView(text("No calendar items", theme.textMuted, 13f, false).apply { setPadding(0, dp(6), 0, dp(6)) })
             } else {
-                occurrences.forEachObject { occurrence -> addView(occurrenceRow(occurrence, false), spaced()) }
+                occurrences.forEachObject { occurrence -> addView(eventBlock(occurrence), spaced()) }
             }
         }
     }
 
     private fun eventBlock(occurrence: JSONObject): View {
-        return LinearLayout(this).apply {
+        val isReminder = occurrence.optString("kind") == "reminder"
+        val isAssignment = occurrence.optString("kind") == "assignment"
+        val isPill = isReminder || isAssignment
+        val content = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(dp(9), dp(7), dp(8), dp(7))
-            background = rounded(if (theme.isDark) rgb(0x333333) else rgb(0xd3d2ce), dp(4), schemeColor(occurrence.optInt("color_index")))
+            gravity = Gravity.CENTER_HORIZONTAL
+            setPadding(dp(if (isPill) 8 else 6), if (isReminder) dp(6) else dp(3), dp(if (isPill) 8 else 6), dp(4))
+            val time = eventTimeLabel(occurrence)
+            if (time.isNotEmpty() && !hideEventTime(occurrence)) {
+                addView(text(time, calendarTimeColor(occurrence), 9f, false).apply {
+                    gravity = Gravity.CENTER
+                    typeface = Typeface.MONOSPACE
+                    maxLines = 1
+                }, LinearLayout.LayoutParams(-1, dp(12)))
+            }
+            addView(text(occurrence.optString("title").ifEmpty { occurrence.optString("kind").replaceFirstChar(Char::titlecase) }, calendarItemTextColor(occurrence), 11f, true).apply {
+                gravity = Gravity.CENTER
+                maxLines = 1
+            }, LinearLayout.LayoutParams(-1, dp(16)))
+        }
+        return FrameLayout(this).apply {
+            background = if (isPill) rounded(eventBg(), 0) else rounded(eventBg(), dp(3), eventBorder(), strokeWidth = calendarEventBorderWidth())
             alpha = if (occurrence.optBoolean("done")) 0.45f else 1f
-            addView(text(occurrence.optString("title").ifEmpty { occurrence.optString("kind").replaceFirstChar(Char::titlecase) }, theme.textPrimary, 12f, true))
-            addView(text(timeLabel(occurrence), theme.textSoft, 10f, true))
-            addView(text(occurrence.optString("scheme_name"), schemeColor(occurrence.optInt("color_index")), 10f, true))
+            addView(content, FrameLayout.LayoutParams(-1, -2))
+            if (isReminder || isAssignment) {
+                addView(View(this@MainActivity).apply { setBackgroundColor(eventBorder()) }, FrameLayout.LayoutParams(-1, calendarPillStrokeWidth(), if (isReminder) Gravity.TOP else Gravity.BOTTOM))
+            }
             setOnClickListener { openScheme(occurrence.optString("scheme_id")) }
         }
     }
@@ -471,6 +572,7 @@ class MainActivity : Activity() {
 
         val editor = SchemeEditText(this).apply {
             setText(renderDocument(originalLines))
+            placeCursorAtDocumentEnd(this)
             tag = originalLines
             editorSchemeIds[this] = schemeId
             editorTheme = theme
@@ -508,7 +610,12 @@ class MainActivity : Activity() {
             })
             addView(editor, LinearLayout.LayoutParams(-1, -2))
         }
-        root.addView(scroll(editorBody), LinearLayout.LayoutParams(-1, 0, 1f))
+        val editorScroll = scroll(editorBody)
+        root.addView(editorScroll, LinearLayout.LayoutParams(-1, 0, 1f))
+        editorScroll.post {
+            placeCursorAtDocumentEnd(editor)
+            editorScroll.fullScroll(View.FOCUS_DOWN)
+        }
         root.addView(editorFormatBar(schemeId, editor), LinearLayout.LayoutParams(-1, dp(38)))
         return root
     }
@@ -618,7 +725,7 @@ class MainActivity : Activity() {
 
         val list = MaxWidthLinearLayout(this, dp(760)).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(dp(14), dp(12), dp(14), dp(20))
+            setPadding(dp(14), dp(8), dp(14), dp(14))
             setBackgroundColor(theme.bgApp)
         }
         val days = dailyEntries()
@@ -627,7 +734,7 @@ class MainActivity : Activity() {
         } else {
             days.forEach { day ->
                 list.addView(dailyDayEditor(day), LinearLayout.LayoutParams(-1, -2).apply {
-                    setMargins(0, 0, 0, dp(14))
+                    setMargins(0, 0, 0, dp(6))
                 })
             }
         }
@@ -647,7 +754,7 @@ class MainActivity : Activity() {
             addView(LinearLayout(this@MainActivity).apply {
                 orientation = LinearLayout.HORIZONTAL
                 gravity = Gravity.CENTER_VERTICAL
-                setPadding(dp(6), 0, dp(6), dp(7))
+                setPadding(dp(6), 0, dp(6), dp(3))
                 addView(View(this@MainActivity).apply {
                     background = rounded(if (selected) dailyAccent() else theme.divider, dp(4))
                 }, LinearLayout.LayoutParams(dp(7), dp(7)).apply {
@@ -667,6 +774,7 @@ class MainActivity : Activity() {
             })
             val editor = SchemeEditText(this@MainActivity).apply {
                 setText(renderDocument(originalLines))
+                placeCursorAtDocumentEnd(this)
                 tag = originalLines
                 editorSchemeIds[this] = schemeId
                 editorTheme = theme
@@ -697,6 +805,9 @@ class MainActivity : Activity() {
                     }
                 }
             }
+            if (selected) {
+                editor.post { placeCursorAtDocumentEnd(editor) }
+            }
             addView(editor, LinearLayout.LayoutParams(-1, -2))
         }
     }
@@ -711,7 +822,7 @@ class MainActivity : Activity() {
                 visualLines += max(1, (max(textLength, 1) + 33) / 34)
             }
         }
-        return dp(max(104, visualLines * 25 + 34))
+        return dp(max(92, visualLines * 24 + 28))
     }
 
     private fun dailyAccent(): Int = if (theme.isDark) rgb(0xb8c9e8) else rgb(0x5a7aad)
@@ -812,25 +923,22 @@ class MainActivity : Activity() {
     private fun addNode(parent: LinearLayout, node: JSONObject, depth: Int, spacious: Boolean = false) {
         val kind = node.optString("kind")
         if (kind == "folder") {
-            parent.addView(folderRow(node, depth, spacious), if (spacious) LinearLayout.LayoutParams(-1, dp(42)) else rowParams())
+            parent.addView(folderRow(node, depth, spacious), if (spacious) LinearLayout.LayoutParams(-1, dp(30)) else rowParams())
             node.optJSONArray("children")?.forEachObject { addNode(parent, it, depth + 1, spacious) }
             return
         }
         val selected = selectedSchemeId == node.optString("id")
-        val rowHeight = if (spacious) dp(44) else dp(22)
+        val rowHeight = if (spacious) dp(30) else dp(22)
         val row = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            setPadding(dp((if (spacious) 11 else 6) + depth * if (spacious) 14 else 8), 0, dp(7), 0)
-            background = rounded(if (selected) theme.rowSelected else Color.TRANSPARENT, if (spacious) dp(7) else dp(4))
-            val squareSize = if (spacious) 12 else 9
+            setPadding(dp((if (spacious) 8 else 6) + depth * if (spacious) 10 else 8), 0, dp(7), 0)
+            background = rounded(if (selected) theme.rowSelected else Color.TRANSPARENT, dp(4))
+            val squareSize = 9
             addView(colorSquare(schemeColor(node.optInt("color_index")), squareSize), LinearLayout.LayoutParams(dp(squareSize), dp(squareSize)))
-            addView(text(node.optString("name"), theme.textPrimary, if (spacious) 15f else 12f, false).apply { maxLines = 1 }, LinearLayout.LayoutParams(0, -1, 1f).apply {
-                setMargins(dp(if (spacious) 10 else 7), 0, dp(4), 0)
+            addView(text(node.optString("name"), if (selected) theme.textPrimary else theme.textDim, if (spacious) 13f else 12f, false).apply { maxLines = 1 }, LinearLayout.LayoutParams(0, -1, 1f).apply {
+                setMargins(dp(7), 0, dp(4), 0)
             })
-            if (spacious) {
-                addView(text(">", theme.textMuted, 15f, true).apply { gravity = Gravity.CENTER }, LinearLayout.LayoutParams(dp(18), -1))
-            }
             setOnClickListener { openScheme(node.optString("id")) }
             setOnLongClickListener {
                 showSchemeActions(node)
@@ -843,7 +951,8 @@ class MainActivity : Activity() {
     private fun folderRow(node: JSONObject, depth: Int, spacious: Boolean = false): View {
         val label = if (spacious) "⌄  ${node.optString("name")}" else "▾ ${node.optString("name")}"
         return text(label, theme.textPrimary, if (spacious) 15f else 12f, false).apply {
-            setPadding(dp((if (spacious) 11 else 6) + depth * if (spacious) 14 else 8), 0, dp(7), 0)
+            textSize = if (spacious) 13f else 12f
+            setPadding(dp((if (spacious) 8 else 6) + depth * if (spacious) 10 else 8), 0, dp(7), 0)
             gravity = Gravity.CENTER_VERTICAL
             setOnLongClickListener {
                 showFolderActions(node)
@@ -905,10 +1014,32 @@ class MainActivity : Activity() {
         return HorizontalScrollView(this).apply {
             isHorizontalScrollBarEnabled = false
             setBackgroundColor(theme.bgToolbar)
+            var downX = 0f
+            var downY = 0f
+            setOnTouchListener { _, event ->
+                when (event.actionMasked) {
+                    MotionEvent.ACTION_DOWN -> {
+                        downX = event.rawX
+                        downY = event.rawY
+                    }
+                    MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                        val dx = event.rawX - downX
+                        val dy = event.rawY - downY
+                        if (dy > dp(22) && dy > abs(dx) * 1.25f) {
+                            dismissKeyboard()
+                        }
+                    }
+                }
+                false
+            }
             addView(LinearLayout(this@MainActivity).apply {
                 orientation = LinearLayout.HORIZONTAL
                 gravity = Gravity.CENTER_VERTICAL
                 setPadding(dp(7), dp(5), dp(7), dp(5))
+                addView(formatButton("B") { targetEditor()?.let { toggleWrappedMarkdown(it, "*") } })
+                addView(formatButton("I") { targetEditor()?.let { toggleWrappedMarkdown(it, "_") } })
+                addView(formatButton("H") { targetEditor()?.let { toggleHeading(it) } })
+                addView(formatDivider())
                 addView(formatButton("T") { targetEditor()?.let { setCurrentLineMarker(it, "blank") } })
                 addView(formatButton("✓") { targetEditor()?.let { setCurrentLineMarker(it, "checkbox") } })
                 addView(formatButton("•") { targetEditor()?.let { setCurrentLineMarker(it, "bullet") } })
@@ -969,6 +1100,58 @@ class MainActivity : Activity() {
             } else {
                 renderEditorLine(line.copy(marker = "checkbox", done = false), 1)
             }
+        }
+    }
+
+    private fun toggleWrappedMarkdown(editor: EditText, delimiter: String) {
+        val editable = editor.editableText ?: return
+        val value = editable.toString()
+        val selStart = editor.selectionStart.coerceIn(0, value.length)
+        val selEnd = editor.selectionEnd.coerceIn(0, value.length)
+        val (start, end) = if (selStart == selEnd) {
+            val lineStart = value.lastIndexOf('\n', (selStart - 1).coerceAtLeast(0)).let { if (it < 0) 0 else it + 1 }
+            val nl = value.indexOf('\n', selStart)
+            val lineEnd = if (nl < 0) value.length else nl
+            val prefixLen = chromePrefixLength(value.substring(lineStart, lineEnd))
+            Pair((lineStart + prefixLen).coerceAtMost(lineEnd), lineEnd)
+        } else {
+            Pair(min(selStart, selEnd), max(selStart, selEnd))
+        }
+        if (end < start) return
+        val selected = value.substring(start, end)
+        val dlen = delimiter.length
+        val replacement = if (selected.length >= dlen * 2 && selected.startsWith(delimiter) && selected.endsWith(delimiter)) {
+            selected.substring(dlen, selected.length - dlen)
+        } else {
+            "$delimiter$selected$delimiter"
+        }
+        editable.replace(start, end, replacement)
+        val cursor = if (selStart == selEnd) {
+            (start + replacement.length - if (replacement == "$delimiter$delimiter") dlen else 0)
+        } else {
+            start + replacement.length
+        }
+        editor.setSelection(cursor.coerceIn(0, editor.text.length))
+    }
+
+    private fun toggleHeading(editor: EditText) {
+        editCurrentLine(editor) { raw ->
+            val line = parseEditorLine(raw)
+            val body = line.text
+            val trimmed = body.trimStart()
+            val leading = body.length - trimmed.length
+            val newBody = if (trimmed.startsWith("#")) {
+                val hashes = trimmed.takeWhile { it == '#' }.length
+                val afterHashes = trimmed.drop(hashes)
+                if (afterHashes.isEmpty() || afterHashes.first().isWhitespace()) {
+                    body.substring(0, leading) + afterHashes.dropWhile { it == ' ' || it == '\t' }
+                } else {
+                    "# $body"
+                }
+            } else {
+                "# $body"
+            }
+            renderEditorLine(line.copy(text = newBody), 1)
         }
     }
 
@@ -1038,6 +1221,12 @@ class MainActivity : Activity() {
         val selection = (preferredSelection ?: editable.length).coerceIn(0, editable.length)
         editable.append("\n")
         activeEditor()?.setSelection(selection.coerceAtMost(editable.length))
+    }
+
+    private fun placeCursorAtDocumentEnd(editor: EditText) {
+        val value = editor.text?.toString().orEmpty()
+        val location = if (value.endsWith("\n")) max(0, value.length - 1) else value.length
+        editor.setSelection(location.coerceIn(0, editor.text?.length ?: 0))
     }
 
     private fun commitSchemeDocument(schemeId: String, editor: EditText, rerender: Boolean) {
@@ -1236,7 +1425,7 @@ class MainActivity : Activity() {
         val isDaily = nodeOrScheme.optBoolean("is_daily_queue", false)
         AlertDialog.Builder(this)
             .setTitle(nodeOrScheme.optString("name", nodeOrScheme.optString("display_name")))
-            .setItems(arrayOf("Rename", "Color", "Delete")) { _, which ->
+            .setItems(arrayOf("Rename", "Color", "Move Up", "Move Down", "Delete")) { _, which ->
                 when (which) {
                     0 -> showNameDialog(
                         "Rename Scheme",
@@ -1244,7 +1433,9 @@ class MainActivity : Activity() {
                         { validateSchemeName(it, folderId = parentFolderIdForScheme(id), excludingId = id, checkDuplicates = !isDaily) }
                     ) { name -> mutate(obj("type" to "rename_scheme", "scheme_id" to id, "name" to name)) }
                     1 -> showColorDialog(id)
-                    2 -> if (!isDaily) mutate(obj("type" to "delete_scheme", "scheme_id" to id))
+                    2 -> moveNavigatorNode("scheme", id, -1)
+                    3 -> moveNavigatorNode("scheme", id, 1)
+                    4 -> if (!isDaily) mutate(obj("type" to "delete_scheme", "scheme_id" to id))
                 }
             }
             .show()
@@ -1263,7 +1454,7 @@ class MainActivity : Activity() {
     private fun showFolderActions(node: JSONObject) {
         AlertDialog.Builder(this)
             .setTitle(node.optString("name"))
-            .setItems(arrayOf("New Scheme", "Rename", "Delete")) { _, which ->
+            .setItems(arrayOf("New Scheme", "Rename", "Move Up", "Move Down", "Delete")) { _, which ->
                 when (which) {
                     0 -> showNameDialog("New Scheme", "", { validateSchemeName(it, folderId = node.optString("id")) }) { name ->
                         mutate(obj("type" to "create_scheme", "folder_id" to node.optString("id"), "name" to name))
@@ -1271,7 +1462,9 @@ class MainActivity : Activity() {
                     1 -> showNameDialog("Rename Folder", node.optString("name"), { validateFolderName(it, excludingId = node.optString("id")) }) { name ->
                         mutate(obj("type" to "rename_folder", "folder_id" to node.optString("id"), "name" to name))
                     }
-                    2 -> mutate(obj("type" to "delete_folder", "folder_id" to node.optString("id")))
+                    2 -> moveNavigatorNode("folder", node.optString("id"), -1)
+                    3 -> moveNavigatorNode("folder", node.optString("id"), 1)
+                    4 -> mutate(obj("type" to "delete_folder", "folder_id" to node.optString("id")))
                 }
             }
             .show()
@@ -1421,6 +1614,13 @@ class MainActivity : Activity() {
                 }
             }
         }
+        val daily = snapshot.optJSONArray("daily")
+        if (daily != null) {
+            for (index in 0 until daily.length()) {
+                val scheme = daily.optJSONObject(index)?.optJSONObject("scheme")
+                if (scheme != null && id == scheme.optString("id")) return scheme
+            }
+        }
         return null
     }
 
@@ -1459,6 +1659,42 @@ class MainActivity : Activity() {
             }
         }
         return null
+    }
+
+    private fun parentFolderIdForNode(nodeId: String): String? {
+        val root = snapshot.optJSONObject("root") ?: return null
+        return parentFolderIdForNode(nodeId, root)
+    }
+
+    private fun parentFolderIdForNode(nodeId: String, node: JSONObject): String? {
+        val children = node.optJSONArray("children") ?: return null
+        for (index in 0 until children.length()) {
+            val child = children.optJSONObject(index) ?: continue
+            if (child.optString("id") == nodeId) {
+                return node.optString("id")
+            }
+            if (child.optString("kind") == "folder") {
+                parentFolderIdForNode(nodeId, child)?.let { return it }
+            }
+        }
+        return null
+    }
+
+    private fun moveNavigatorNode(kind: String, nodeId: String, delta: Int) {
+        val parentId = parentFolderIdForNode(nodeId) ?: return toast("Cannot move this item")
+        val parent = nodeById(parentId, snapshot.optJSONObject("root")) ?: return toast("Cannot find parent")
+        val children = parent.optJSONArray("children") ?: return toast("Cannot move this item")
+        var index = -1
+        for (i in 0 until children.length()) {
+            if (children.optJSONObject(i)?.optString("id") == nodeId) {
+                index = i
+                break
+            }
+        }
+        if (index < 0) return toast("Cannot move this item")
+        val position = if (delta < 0) index - 1 else index + 2
+        if (position < 0 || position > children.length()) return toast("Already there")
+        mutate(obj("type" to "move_node", "kind" to kind, "id" to nodeId, "folder_id" to parentId, "position" to position))
     }
 
     private fun validateSchemeName(name: String, folderId: String? = null, excludingId: String? = null, checkDuplicates: Boolean = true): String? {
@@ -1529,6 +1765,23 @@ class MainActivity : Activity() {
         }
         return out
     }
+
+    private fun dayForDate(date: LocalDate): JSONObject? {
+        val days = calendar().optJSONArray("days") ?: return null
+        for (index in 0 until days.length()) {
+            val day = days.optJSONObject(index) ?: continue
+            if (day.optString("date") == date.toString()) return day
+        }
+        return null
+    }
+
+    private fun weekStart(date: LocalDate): LocalDate =
+        date.minusDays((date.dayOfWeek.value % 7).toLong())
+
+    private fun selectedDateTitle(): String =
+        LocalDate.now().let { today ->
+            "${today.month.getDisplayName(TextStyle.FULL, Locale.getDefault())} ${today.dayOfMonth}, ${today.year}"
+        }
 
     private fun addOccurrenceSection(root: LinearLayout, title: String, empty: String, occurrences: JSONArray?) {
         root.addView(sectionLabel(title))
@@ -1698,11 +1951,92 @@ class MainActivity : Activity() {
     private fun timeLabel(occurrence: JSONObject): String {
         val start = time(occurrence.optionalString("start"))
         val end = time(occurrence.optionalString("end"))
+        if (occurrence.optString("kind") == "reminder" && start.isNotEmpty()) return "At $start"
+        if (occurrence.optString("kind") == "assignment" && end.isNotEmpty()) return "Due $end"
         return when {
             start.isNotEmpty() && end.isNotEmpty() -> "$start - $end"
             start.isNotEmpty() -> start
             end.isNotEmpty() -> "Due $end"
             else -> occurrence.optString("kind").replaceFirstChar(Char::titlecase)
+        }
+    }
+
+    private fun eventTimeLabel(occurrence: JSONObject): String {
+        if (occurrence.optString("kind") == "reminder") {
+            val start = time(occurrence.optionalString("start"))
+            return if (start.isNotEmpty()) "At $start" else ""
+        }
+        if (occurrence.optString("kind") == "assignment") {
+            val end = time(occurrence.optionalString("end"))
+            return if (end.isNotEmpty()) "Due $end" else ""
+        }
+        val start = eventTime(occurrence.optionalString("start"), includePeriod = false)
+        val end = eventTime(occurrence.optionalString("end"), includePeriod = true)
+        return when {
+            start.isNotEmpty() && end.isNotEmpty() -> "$start to $end"
+            start.isNotEmpty() -> start
+            end.isNotEmpty() -> end
+            else -> ""
+        }
+    }
+
+    private fun hideEventTime(occurrence: JSONObject): Boolean {
+        if (occurrence.optString("kind") != "event") return false
+        val start = instant(occurrence.optionalString("start")) ?: return false
+        val end = instant(occurrence.optionalString("end")) ?: return false
+        return end.epochSecond - start.epochSecond <= 30 * 60
+    }
+
+    private fun calendarTimeColor(occurrence: JSONObject): Int {
+        val default = if (theme.isDark) adjustAlpha(rgb(0xe8edf2), 0.90f) else adjustAlpha(rgb(0x2e291f), 0.90f)
+        if (occurrence.optBoolean("done")) return default
+        val start = instant(occurrence.optionalString("start") ?: occurrence.optionalString("end")) ?: return default
+        val now = Instant.now()
+        val end = instant(occurrence.optionalString("end"))
+        if (end != null && !start.isAfter(now) && end.isAfter(now)) return todayTimeColor()
+        if (start.isBefore(now)) return if (theme.isDark) rgb(0xff5a53) else rgb(0xd20f39)
+        val startDay = start.atZone(ZoneId.systemDefault()).toLocalDate()
+        val dayDiff = java.time.temporal.ChronoUnit.DAYS.between(LocalDate.now(), startDay)
+        return when {
+            dayDiff <= 0 -> todayTimeColor()
+            dayDiff <= 1 -> if (theme.isDark) rgb(0xe5e5ff) else rgb(0x4f5f8f)
+            else -> default
+        }
+    }
+
+    private fun todayTimeColor(): Int =
+        if (theme.isDark) rgb(0xbfbfff) else rgb(0x2f67cf)
+
+    private fun calendarItemTextColor(occurrence: JSONObject): Int {
+        val color = schemeColor(occurrence.optInt("color_index"))
+        val hsv = FloatArray(3)
+        Color.colorToHSV(color, hsv)
+        val done = occurrence.optBoolean("done")
+        hsv[1] *= if (done) {
+            if (theme.isDark) 0.35f else 0.45f
+        } else {
+            if (theme.isDark) 0.70f else 0.90f
+        }
+        val alpha = if (done) (255 * 0.78f).roundToInt() else 255
+        return Color.HSVToColor(alpha, hsv)
+    }
+
+    private fun instant(raw: String?): Instant? {
+        if (raw.isNullOrEmpty() || raw == "null") return null
+        return try {
+            Instant.parse(raw)
+        } catch (_: RuntimeException) {
+            null
+        }
+    }
+
+    private fun eventTime(raw: String?, includePeriod: Boolean): String {
+        if (raw.isNullOrEmpty() || raw == "null") return ""
+        return try {
+            val pattern = if (timeFormat24()) "HH:mm" else if (includePeriod) "h:mm a" else "h:mm"
+            DateTimeFormatter.ofPattern(pattern).format(Instant.parse(raw).atZone(ZoneId.systemDefault()))
+        } catch (_: RuntimeException) {
+            raw
         }
     }
 
@@ -1721,6 +2055,13 @@ class MainActivity : Activity() {
         "${date.month.getDisplayName(TextStyle.SHORT, Locale.getDefault())} ${date.dayOfMonth}"
     } catch (_: RuntimeException) {
         raw
+    }
+
+    private fun monthLabel(raw: String): String = try {
+        val date = LocalDate.parse(raw)
+        "${date.month.getDisplayName(TextStyle.FULL, Locale.getDefault())} ${date.year}"
+    } catch (_: RuntimeException) {
+        "Week"
     }
 
     private fun formatFullDay(raw: String): String = try {
@@ -1748,11 +2089,47 @@ class MainActivity : Activity() {
     private fun editorChromeColor(): Int =
         if (theme.isDark) rgb(0xb8c9e8) else rgb(0x536a8f)
 
+    private fun eventBg(): Int =
+        if (theme.isDark) adjustAlpha(rgb(0x333333), 0.62f) else adjustAlpha(rgb(0xe6e8ec), 0.62f)
+
+    private fun eventBorder(): Int =
+        if (theme.isDark) adjustAlpha(Color.WHITE, 0.84f) else adjustAlpha(rgb(0x24272d), 0.80f)
+
+    private fun calendarPillStrokeWidth(): Int =
+        max(1, (1.5f * resources.displayMetrics.density).roundToInt())
+
+    private fun calendarEventBorderWidth(): Int =
+        max(1, (1.8f * resources.displayMetrics.density).roundToInt())
+
+    private fun calendarDayStrokeWidth(visible: Boolean): Int {
+        val width = if (visible) 1.8f else 1.4f
+        return max(1, (width * resources.displayMetrics.density).roundToInt())
+    }
+
+    private fun calendarRangeFill(): Int =
+        if (theme.isDark) adjustAlpha(Color.WHITE, 0.09f) else adjustAlpha(rgb(0x3f6fd5), 0.08f)
+
     private fun rounded(color: Int, radius: Int, strokeColor: Int = Color.TRANSPARENT, strokeWidth: Int = dp(1)): GradientDrawable =
         GradientDrawable().apply {
             setColor(color)
             cornerRadius = radius.toFloat()
             if (strokeColor != Color.TRANSPARENT) setStroke(strokeWidth, strokeColor)
+        }
+
+    private fun roundedHorizontalSegment(color: Int, leadingRounded: Boolean, trailingRounded: Boolean): GradientDrawable =
+        GradientDrawable().apply {
+            val radius = dp(8).toFloat()
+            setColor(color)
+            cornerRadii = floatArrayOf(
+                if (leadingRounded) radius else 0f,
+                if (leadingRounded) radius else 0f,
+                if (trailingRounded) radius else 0f,
+                if (trailingRounded) radius else 0f,
+                if (trailingRounded) radius else 0f,
+                if (trailingRounded) radius else 0f,
+                if (leadingRounded) radius else 0f,
+                if (leadingRounded) radius else 0f,
+            )
         }
 
     private fun underline(color: Int): GradientDrawable =
@@ -1761,10 +2138,9 @@ class MainActivity : Activity() {
             setStroke(dp(1), theme.dividerSoft)
         }
 
-    private fun adjust(color: Int, alpha: Float): Int =
-        Color.argb((255 * alpha).roundToInt(), Color.red(color), Color.green(color), Color.blue(color))
+    private fun adjust(color: Int, alpha: Float): Int = adjustAlpha(color, alpha)
 
-    private fun rgb(hex: Int): Int = Color.rgb((hex shr 16) and 0xff, (hex shr 8) and 0xff, hex and 0xff)
+    private fun rgb(hex: Int): Int = rgbColor(hex)
 
     private fun Int.floorMod(mod: Int): Int = ((this % mod) + mod) % mod
 
@@ -1868,40 +2244,9 @@ class MainActivity : Activity() {
     }
 
     private fun parseEditorLine(raw: String): SchemeEditorLine {
-        var rest = raw
-        var indent = 0
-        while (rest.startsWith("    ") && indent < 8) {
-            rest = rest.drop(4)
-            indent++
-        }
-        while (rest.startsWith("\t") && indent < 8) {
-            rest = rest.drop(1)
-            indent++
-        }
-
-        var marker = "blank"
-        var done = false
-        when {
-            rest.startsWith("[x] ", ignoreCase = true) -> {
-                marker = "checkbox"
-                done = true
-                rest = rest.drop(4)
-            }
-            rest.startsWith("[ ] ") -> {
-                marker = "checkbox"
-                rest = rest.drop(4)
-            }
-            rest.startsWith("- ") || rest.startsWith("* ") -> {
-                marker = "bullet"
-                rest = rest.drop(2)
-            }
-            numberedPrefix.find(rest) != null -> {
-                marker = "numbered"
-                rest = rest.replaceFirst(numberedPrefix, "")
-            }
-        }
-
-        return SchemeEditorLine(id = null, text = rest, marker = marker, indent = indent, done = done)
+        val parsed = parseChromeLine(raw)
+        val text = raw.drop(chromePrefixLength(raw).coerceAtMost(raw.length))
+        return SchemeEditorLine(id = null, text = text, marker = parsed.marker, indent = parsed.indent, done = parsed.done)
     }
 
     private fun renderDocument(lines: List<SchemeEditorLine>): String {
@@ -2010,6 +2355,7 @@ private class SchemeEditText(context: android.content.Context) : EditText(contex
             override fun afterTextChanged(s: Editable?) {
                 if (!styling && s != null && BaseInputConnection.getComposingSpanStart(s) < 0) {
                     enforceTerminalNewline(s)
+                    handleEnterContinuation(s)
                     applyPrefixSpans(s, fullDocument = true)
                 }
                 invalidate()
@@ -2160,6 +2506,73 @@ private class SchemeEditText(context: android.content.Context) : EditText(contex
             start = end + 1
         }
         styling = false
+    }
+
+    private fun handleEnterContinuation(editable: Editable) {
+        val insertStart = pendingEditStart
+        val insertEnd = pendingEditEnd
+        if (insertStart < 0 || insertEnd - insertStart != 1) return
+        if (insertStart >= editable.length) return
+        if (editable[insertStart] != '\n') return
+        val value = editable.toString()
+        val lineStart = value.lastIndexOf('\n', (insertStart - 1).coerceAtLeast(0)).let { if (it < 0) 0 else it + 1 }
+        val lineText = value.substring(lineStart, insertStart)
+        val parsed = parseChromeLine(lineText)
+        val prefixLen = chromePrefixLength(lineText)
+        val body = lineText.drop(prefixLen.coerceAtMost(lineText.length))
+        if (parsed.marker == "blank" && parsed.indent == 0) return
+        val indentStr = "    ".repeat(parsed.indent.coerceIn(0, 8))
+        if (body.isEmpty() && parsed.marker != "blank") {
+            // Escape the list: drop the prefix on the now-empty source line
+            // and the newline that was just inserted.
+            styling = true
+            editable.replace(lineStart, insertStart + 1, "")
+            setSelection(lineStart.coerceAtMost(editable.length))
+            styling = false
+            pendingEditStart = -1
+            pendingEditEnd = -1
+            return
+        }
+        if (body.isEmpty() && parsed.indent > 0) {
+            // Plain indented blank line + Enter: outdent by collapsing the indent.
+            styling = true
+            editable.replace(lineStart, insertStart + 1, "")
+            setSelection(lineStart.coerceAtMost(editable.length))
+            styling = false
+            pendingEditStart = -1
+            pendingEditEnd = -1
+            return
+        }
+        val newPrefix = when (parsed.marker) {
+            "checkbox" -> "$indentStr[ ] "
+            "bullet" -> "$indentStr- "
+            "numbered" -> "$indentStr${nextNumberedOrdinal(value, lineStart, parsed.indent)}. "
+            else -> if (parsed.indent > 0) indentStr else ""
+        }
+        if (newPrefix.isEmpty()) return
+        val insertPos = insertStart + 1
+        styling = true
+        editable.insert(insertPos, newPrefix)
+        setSelection((insertPos + newPrefix.length).coerceAtMost(editable.length))
+        styling = false
+        pendingEditStart = -1
+        pendingEditEnd = -1
+    }
+
+    private fun nextNumberedOrdinal(value: String, lineStart: Int, indent: Int): Int {
+        var ordinal = 1
+        var cursor = lineStart
+        while (cursor > 0) {
+            val prevEnd = cursor - 1 // newline char
+            if (prevEnd < 0 || value[prevEnd] != '\n') break
+            val prevStart = value.lastIndexOf('\n', (prevEnd - 1).coerceAtLeast(0)).let { if (it < 0) 0 else it + 1 }
+            val prevLine = value.substring(prevStart, prevEnd)
+            val prevParsed = parseChromeLine(prevLine)
+            if (prevParsed.marker != "numbered" || prevParsed.indent != indent) break
+            ordinal++
+            cursor = prevStart
+        }
+        return ordinal + 1 // the current line itself is the Nth; next is N+1
     }
 
     private fun enforceTerminalNewline(editable: Editable) {
@@ -2427,8 +2840,7 @@ private class SchemeEditText(context: android.content.Context) : EditText(contex
     private fun annotationGuideX(markerRect: RectF): Float =
         markerRect.left - dp((EDITOR_ANNOTATION_BAR_GAP_DP + EDITOR_INDENT_GUIDE_X_SHIFT_DP).toFloat())
 
-    private fun adjustColor(color: Int, alpha: Float): Int =
-        Color.argb((255 * alpha).roundToInt(), Color.red(color), Color.green(color), Color.blue(color))
+    private fun adjustColor(color: Int, alpha: Float): Int = adjustAlpha(color, alpha)
 
     private fun <T> removeSpansInRange(editable: Editable, start: Int, end: Int, kind: Class<T>) {
         editable.getSpans(start, end, kind).forEach { span ->
@@ -2663,6 +3075,15 @@ private fun isMarkdownHeading(line: String): Boolean {
 
 private val numberedPrefix = Regex("^\\d+\\.\\s+")
 
+private fun rgbColor(hex: Int): Int =
+    Color.rgb((hex shr 16) and 0xff, (hex shr 8) and 0xff, hex and 0xff)
+
+private fun rgbaColor(hex: Int, alpha: Int): Int =
+    Color.argb(alpha, (hex shr 16) and 0xff, (hex shr 8) and 0xff, hex and 0xff)
+
+private fun adjustAlpha(color: Int, alpha: Float): Int =
+    Color.argb((255 * alpha).roundToInt(), Color.red(color), Color.green(color), Color.blue(color))
+
 private data class SchemeEditorLine(
     val id: String?,
     val text: String,
@@ -2695,8 +3116,8 @@ private data class UiTheme(
     val danger: Int,
 ) {
     companion object {
-        private fun rgb(hex: Int): Int = Color.rgb((hex shr 16) and 0xff, (hex shr 8) and 0xff, hex and 0xff)
-        private fun rgba(hex: Int, alpha: Int): Int = Color.argb(alpha, (hex shr 16) and 0xff, (hex shr 8) and 0xff, hex and 0xff)
+        private fun rgb(hex: Int): Int = rgbColor(hex)
+        private fun rgba(hex: Int, alpha: Int): Int = rgbaColor(hex, alpha)
 
         val dark = UiTheme(
             isDark = true,

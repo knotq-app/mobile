@@ -352,7 +352,7 @@ private func uniffiTraitInterfaceCallWithError<T, E>(
         callStatus.pointee.errorBuf = FfiConverterString.lower(String(describing: error))
     }
 }
-// Initial value and increment amount for handles.
+// Initial value and increment amount for handles. 
 // These ensure that SWIFT handles always have the lowest bit set
 fileprivate let UNIFFI_HANDLEMAP_INITIAL: UInt64 = 1
 fileprivate let UNIFFI_HANDLEMAP_DELTA: UInt64 = 2
@@ -501,63 +501,65 @@ fileprivate struct FfiConverterString: FfiConverter {
 
 
 public protocol MobileCoreProtocol: AnyObject, Sendable {
-
-    func addCalendarItem(schemeId: String?, date: String?, text: String, kind: String, start: String?, end: String?) throws
-
-    func addItem(schemeId: String, text: String, marker: String?, position: Int32?, indent: Int32?) throws
-
-    func createFolder(name: String, position: Int32?) throws
-
-    func createScheme(folderId: String?, name: String, colorIndex: Int32?, position: Int32?) throws
-
-    func deleteFolder(folderId: String) throws
-
-    func deleteItem(schemeId: String, itemId: String) throws
-
-    func deleteScheme(schemeId: String) throws
-
-    func emptyArchive() throws
-
-    func ensureDailyQueue(date: String?) throws
-
-    func moveNode(kind: String, id: String, folderId: String, position: Int32) throws
-
-    func permanentlyDeleteScheme(schemeId: String) throws
-
-    func renameFolder(folderId: String, name: String) throws
-
-    func renameScheme(schemeId: String, name: String) throws
-
-    func reorderItem(schemeId: String, from: Int32, to: Int32) throws
-
-    func replaceSchemeItems(schemeId: String, items: [MobileItemEdit]) throws
-
-    func resetWorkspace() throws
-
-    func restoreScheme(schemeId: String) throws
-
+    
+    func addCalendarItem(schemeId: String?, date: String?, text: String, kind: String, start: String?, end: String?) throws 
+    
+    func addItem(schemeId: String, text: String, marker: String?, position: Int32?, indent: Int32?) throws 
+    
+    func createFolder(name: String, position: Int32?) throws 
+    
+    func createScheme(folderId: String?, name: String, colorIndex: Int32?, position: Int32?) throws 
+    
+    func deleteFolder(folderId: String) throws 
+    
+    func deleteItem(schemeId: String, itemId: String) throws 
+    
+    func deleteScheme(schemeId: String) throws 
+    
+    func emptyArchive() throws 
+    
+    func ensureDailyQueue(date: String?) throws 
+    
+    func moveNode(kind: String, id: String, folderId: String, position: Int32) throws 
+    
+    func permanentlyDeleteScheme(schemeId: String) throws 
+    
+    func renameFolder(folderId: String, name: String) throws 
+    
+    func renameScheme(schemeId: String, name: String) throws 
+    
+    func reorderItem(schemeId: String, from: Int32, to: Int32) throws 
+    
+    func replaceSchemeItems(schemeId: String, items: [MobileItemEdit]) throws 
+    
+    func resetWorkspace() throws 
+    
+    func restoreScheme(schemeId: String) throws 
+    
     func search(query: String) throws  -> [MobileSearchHit]
-
-    func seedEditorImageFixture() throws
-
-    func setItemDate(schemeId: String, itemId: String, kind: String, date: String?) throws
-
-    func setItemIndent(schemeId: String, itemId: String, indent: Int32) throws
-
-    func setItemMarker(schemeId: String, itemId: String, marker: String) throws
-
-    func setSchemeColor(schemeId: String, colorIndex: Int32) throws
-
-    func setThemeMode(themeMode: String) throws
-
-    func setTimeFormat(timeFormat: String) throws
-
+    
+    func seedEditorImageFixture() throws 
+    
+    func setItemDate(schemeId: String, itemId: String, kind: String, date: String?) throws 
+    
+    func setItemIndent(schemeId: String, itemId: String, indent: Int32) throws 
+    
+    func setItemMarker(schemeId: String, itemId: String, marker: String) throws 
+    
+    func setItemRecurrence(schemeId: String, itemId: String, rrule: String?) throws 
+    
+    func setSchemeColor(schemeId: String, colorIndex: Int32) throws 
+    
+    func setThemeMode(themeMode: String) throws 
+    
+    func setTimeFormat(timeFormat: String) throws 
+    
     func snapshot(today: String?, weekOffset: Int32) throws  -> MobileSnapshot
-
-    func toggleItem(schemeId: String, itemId: String) throws
-
-    func updateItemText(schemeId: String, itemId: String, text: String) throws
-
+    
+    func toggleItem(schemeId: String, itemId: String) throws 
+    
+    func updateItemText(schemeId: String, itemId: String, text: String) throws 
+    
 }
 open class MobileCore: MobileCoreProtocol, @unchecked Sendable {
     fileprivate let handle: UInt64
@@ -617,9 +619,9 @@ public convenience init(appDir: String)throws  {
         try! rustCall { uniffi_knotq_mobile_core_fn_free_mobilecore(handle, $0) }
     }
 
+    
 
-
-
+    
 open func addCalendarItem(schemeId: String?, date: String?, text: String, kind: String, start: String?, end: String?)throws   {try rustCallWithError(FfiConverterTypeMobileError_lift) {
     uniffi_knotq_mobile_core_fn_method_mobilecore_add_calendar_item(
             self.uniffiCloneHandle(),
@@ -632,7 +634,7 @@ open func addCalendarItem(schemeId: String?, date: String?, text: String, kind: 
     )
 }
 }
-
+    
 open func addItem(schemeId: String, text: String, marker: String?, position: Int32?, indent: Int32?)throws   {try rustCallWithError(FfiConverterTypeMobileError_lift) {
     uniffi_knotq_mobile_core_fn_method_mobilecore_add_item(
             self.uniffiCloneHandle(),
@@ -644,7 +646,7 @@ open func addItem(schemeId: String, text: String, marker: String?, position: Int
     )
 }
 }
-
+    
 open func createFolder(name: String, position: Int32?)throws   {try rustCallWithError(FfiConverterTypeMobileError_lift) {
     uniffi_knotq_mobile_core_fn_method_mobilecore_create_folder(
             self.uniffiCloneHandle(),
@@ -653,7 +655,7 @@ open func createFolder(name: String, position: Int32?)throws   {try rustCallWith
     )
 }
 }
-
+    
 open func createScheme(folderId: String?, name: String, colorIndex: Int32?, position: Int32?)throws   {try rustCallWithError(FfiConverterTypeMobileError_lift) {
     uniffi_knotq_mobile_core_fn_method_mobilecore_create_scheme(
             self.uniffiCloneHandle(),
@@ -664,7 +666,7 @@ open func createScheme(folderId: String?, name: String, colorIndex: Int32?, posi
     )
 }
 }
-
+    
 open func deleteFolder(folderId: String)throws   {try rustCallWithError(FfiConverterTypeMobileError_lift) {
     uniffi_knotq_mobile_core_fn_method_mobilecore_delete_folder(
             self.uniffiCloneHandle(),
@@ -672,7 +674,7 @@ open func deleteFolder(folderId: String)throws   {try rustCallWithError(FfiConve
     )
 }
 }
-
+    
 open func deleteItem(schemeId: String, itemId: String)throws   {try rustCallWithError(FfiConverterTypeMobileError_lift) {
     uniffi_knotq_mobile_core_fn_method_mobilecore_delete_item(
             self.uniffiCloneHandle(),
@@ -681,7 +683,7 @@ open func deleteItem(schemeId: String, itemId: String)throws   {try rustCallWith
     )
 }
 }
-
+    
 open func deleteScheme(schemeId: String)throws   {try rustCallWithError(FfiConverterTypeMobileError_lift) {
     uniffi_knotq_mobile_core_fn_method_mobilecore_delete_scheme(
             self.uniffiCloneHandle(),
@@ -689,14 +691,14 @@ open func deleteScheme(schemeId: String)throws   {try rustCallWithError(FfiConve
     )
 }
 }
-
+    
 open func emptyArchive()throws   {try rustCallWithError(FfiConverterTypeMobileError_lift) {
     uniffi_knotq_mobile_core_fn_method_mobilecore_empty_archive(
             self.uniffiCloneHandle(),$0
     )
 }
 }
-
+    
 open func ensureDailyQueue(date: String?)throws   {try rustCallWithError(FfiConverterTypeMobileError_lift) {
     uniffi_knotq_mobile_core_fn_method_mobilecore_ensure_daily_queue(
             self.uniffiCloneHandle(),
@@ -704,7 +706,7 @@ open func ensureDailyQueue(date: String?)throws   {try rustCallWithError(FfiConv
     )
 }
 }
-
+    
 open func moveNode(kind: String, id: String, folderId: String, position: Int32)throws   {try rustCallWithError(FfiConverterTypeMobileError_lift) {
     uniffi_knotq_mobile_core_fn_method_mobilecore_move_node(
             self.uniffiCloneHandle(),
@@ -715,7 +717,7 @@ open func moveNode(kind: String, id: String, folderId: String, position: Int32)t
     )
 }
 }
-
+    
 open func permanentlyDeleteScheme(schemeId: String)throws   {try rustCallWithError(FfiConverterTypeMobileError_lift) {
     uniffi_knotq_mobile_core_fn_method_mobilecore_permanently_delete_scheme(
             self.uniffiCloneHandle(),
@@ -723,7 +725,7 @@ open func permanentlyDeleteScheme(schemeId: String)throws   {try rustCallWithErr
     )
 }
 }
-
+    
 open func renameFolder(folderId: String, name: String)throws   {try rustCallWithError(FfiConverterTypeMobileError_lift) {
     uniffi_knotq_mobile_core_fn_method_mobilecore_rename_folder(
             self.uniffiCloneHandle(),
@@ -732,7 +734,7 @@ open func renameFolder(folderId: String, name: String)throws   {try rustCallWith
     )
 }
 }
-
+    
 open func renameScheme(schemeId: String, name: String)throws   {try rustCallWithError(FfiConverterTypeMobileError_lift) {
     uniffi_knotq_mobile_core_fn_method_mobilecore_rename_scheme(
             self.uniffiCloneHandle(),
@@ -741,7 +743,7 @@ open func renameScheme(schemeId: String, name: String)throws   {try rustCallWith
     )
 }
 }
-
+    
 open func reorderItem(schemeId: String, from: Int32, to: Int32)throws   {try rustCallWithError(FfiConverterTypeMobileError_lift) {
     uniffi_knotq_mobile_core_fn_method_mobilecore_reorder_item(
             self.uniffiCloneHandle(),
@@ -751,7 +753,7 @@ open func reorderItem(schemeId: String, from: Int32, to: Int32)throws   {try rus
     )
 }
 }
-
+    
 open func replaceSchemeItems(schemeId: String, items: [MobileItemEdit])throws   {try rustCallWithError(FfiConverterTypeMobileError_lift) {
     uniffi_knotq_mobile_core_fn_method_mobilecore_replace_scheme_items(
             self.uniffiCloneHandle(),
@@ -760,14 +762,14 @@ open func replaceSchemeItems(schemeId: String, items: [MobileItemEdit])throws   
     )
 }
 }
-
+    
 open func resetWorkspace()throws   {try rustCallWithError(FfiConverterTypeMobileError_lift) {
     uniffi_knotq_mobile_core_fn_method_mobilecore_reset_workspace(
             self.uniffiCloneHandle(),$0
     )
 }
 }
-
+    
 open func restoreScheme(schemeId: String)throws   {try rustCallWithError(FfiConverterTypeMobileError_lift) {
     uniffi_knotq_mobile_core_fn_method_mobilecore_restore_scheme(
             self.uniffiCloneHandle(),
@@ -775,7 +777,7 @@ open func restoreScheme(schemeId: String)throws   {try rustCallWithError(FfiConv
     )
 }
 }
-
+    
 open func search(query: String)throws  -> [MobileSearchHit]  {
     return try  FfiConverterSequenceTypeMobileSearchHit.lift(try rustCallWithError(FfiConverterTypeMobileError_lift) {
     uniffi_knotq_mobile_core_fn_method_mobilecore_search(
@@ -784,14 +786,14 @@ open func search(query: String)throws  -> [MobileSearchHit]  {
     )
 })
 }
-
+    
 open func seedEditorImageFixture()throws   {try rustCallWithError(FfiConverterTypeMobileError_lift) {
     uniffi_knotq_mobile_core_fn_method_mobilecore_seed_editor_image_fixture(
             self.uniffiCloneHandle(),$0
     )
 }
 }
-
+    
 open func setItemDate(schemeId: String, itemId: String, kind: String, date: String?)throws   {try rustCallWithError(FfiConverterTypeMobileError_lift) {
     uniffi_knotq_mobile_core_fn_method_mobilecore_set_item_date(
             self.uniffiCloneHandle(),
@@ -802,7 +804,7 @@ open func setItemDate(schemeId: String, itemId: String, kind: String, date: Stri
     )
 }
 }
-
+    
 open func setItemIndent(schemeId: String, itemId: String, indent: Int32)throws   {try rustCallWithError(FfiConverterTypeMobileError_lift) {
     uniffi_knotq_mobile_core_fn_method_mobilecore_set_item_indent(
             self.uniffiCloneHandle(),
@@ -812,7 +814,7 @@ open func setItemIndent(schemeId: String, itemId: String, indent: Int32)throws  
     )
 }
 }
-
+    
 open func setItemMarker(schemeId: String, itemId: String, marker: String)throws   {try rustCallWithError(FfiConverterTypeMobileError_lift) {
     uniffi_knotq_mobile_core_fn_method_mobilecore_set_item_marker(
             self.uniffiCloneHandle(),
@@ -822,7 +824,17 @@ open func setItemMarker(schemeId: String, itemId: String, marker: String)throws 
     )
 }
 }
-
+    
+open func setItemRecurrence(schemeId: String, itemId: String, rrule: String?)throws   {try rustCallWithError(FfiConverterTypeMobileError_lift) {
+    uniffi_knotq_mobile_core_fn_method_mobilecore_set_item_recurrence(
+            self.uniffiCloneHandle(),
+        FfiConverterString.lower(schemeId),
+        FfiConverterString.lower(itemId),
+        FfiConverterOptionString.lower(rrule),$0
+    )
+}
+}
+    
 open func setSchemeColor(schemeId: String, colorIndex: Int32)throws   {try rustCallWithError(FfiConverterTypeMobileError_lift) {
     uniffi_knotq_mobile_core_fn_method_mobilecore_set_scheme_color(
             self.uniffiCloneHandle(),
@@ -831,7 +843,7 @@ open func setSchemeColor(schemeId: String, colorIndex: Int32)throws   {try rustC
     )
 }
 }
-
+    
 open func setThemeMode(themeMode: String)throws   {try rustCallWithError(FfiConverterTypeMobileError_lift) {
     uniffi_knotq_mobile_core_fn_method_mobilecore_set_theme_mode(
             self.uniffiCloneHandle(),
@@ -839,7 +851,7 @@ open func setThemeMode(themeMode: String)throws   {try rustCallWithError(FfiConv
     )
 }
 }
-
+    
 open func setTimeFormat(timeFormat: String)throws   {try rustCallWithError(FfiConverterTypeMobileError_lift) {
     uniffi_knotq_mobile_core_fn_method_mobilecore_set_time_format(
             self.uniffiCloneHandle(),
@@ -847,7 +859,7 @@ open func setTimeFormat(timeFormat: String)throws   {try rustCallWithError(FfiCo
     )
 }
 }
-
+    
 open func snapshot(today: String?, weekOffset: Int32)throws  -> MobileSnapshot  {
     return try  FfiConverterTypeMobileSnapshot_lift(try rustCallWithError(FfiConverterTypeMobileError_lift) {
     uniffi_knotq_mobile_core_fn_method_mobilecore_snapshot(
@@ -857,7 +869,7 @@ open func snapshot(today: String?, weekOffset: Int32)throws  -> MobileSnapshot  
     )
 })
 }
-
+    
 open func toggleItem(schemeId: String, itemId: String)throws   {try rustCallWithError(FfiConverterTypeMobileError_lift) {
     uniffi_knotq_mobile_core_fn_method_mobilecore_toggle_item(
             self.uniffiCloneHandle(),
@@ -866,7 +878,7 @@ open func toggleItem(schemeId: String, itemId: String)throws   {try rustCallWith
     )
 }
 }
-
+    
 open func updateItemText(schemeId: String, itemId: String, text: String)throws   {try rustCallWithError(FfiConverterTypeMobileError_lift) {
     uniffi_knotq_mobile_core_fn_method_mobilecore_update_item_text(
             self.uniffiCloneHandle(),
@@ -876,9 +888,9 @@ open func updateItemText(schemeId: String, itemId: String, text: String)throws  
     )
 }
 }
+    
 
-
-
+    
 }
 
 
@@ -942,9 +954,9 @@ public struct MobileCalendar: Equatable, Hashable {
         self.overdue = overdue
     }
 
+    
 
-
-
+    
 }
 
 #if compiler(>=6)
@@ -958,10 +970,10 @@ public struct FfiConverterTypeMobileCalendar: FfiConverterRustBuffer {
     public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> MobileCalendar {
         return
             try MobileCalendar(
-                startDate: FfiConverterString.read(from: &buf),
-                endDate: FfiConverterString.read(from: &buf),
-                days: FfiConverterSequenceTypeMobileCalendarDay.read(from: &buf),
-                upcoming: FfiConverterSequenceTypeMobileOccurrence.read(from: &buf),
+                startDate: FfiConverterString.read(from: &buf), 
+                endDate: FfiConverterString.read(from: &buf), 
+                days: FfiConverterSequenceTypeMobileCalendarDay.read(from: &buf), 
+                upcoming: FfiConverterSequenceTypeMobileOccurrence.read(from: &buf), 
                 overdue: FfiConverterSequenceTypeMobileOccurrence.read(from: &buf)
         )
     }
@@ -1002,9 +1014,9 @@ public struct MobileCalendarDay: Equatable, Hashable {
         self.occurrences = occurrences
     }
 
+    
 
-
-
+    
 }
 
 #if compiler(>=6)
@@ -1018,7 +1030,7 @@ public struct FfiConverterTypeMobileCalendarDay: FfiConverterRustBuffer {
     public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> MobileCalendarDay {
         return
             try MobileCalendarDay(
-                date: FfiConverterString.read(from: &buf),
+                date: FfiConverterString.read(from: &buf), 
                 occurrences: FfiConverterSequenceTypeMobileOccurrence.read(from: &buf)
         )
     }
@@ -1056,9 +1068,9 @@ public struct MobileDailyEntry: Equatable, Hashable {
         self.scheme = scheme
     }
 
+    
 
-
-
+    
 }
 
 #if compiler(>=6)
@@ -1072,7 +1084,7 @@ public struct FfiConverterTypeMobileDailyEntry: FfiConverterRustBuffer {
     public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> MobileDailyEntry {
         return
             try MobileDailyEntry(
-                date: FfiConverterString.read(from: &buf),
+                date: FfiConverterString.read(from: &buf), 
                 scheme: FfiConverterTypeMobileScheme.read(from: &buf)
         )
     }
@@ -1108,11 +1120,12 @@ public struct MobileItem: Equatable, Hashable {
     public var done: Bool
     public var start: String?
     public var end: String?
+    public var repeatRule: String?
     public var media: [MobileItemMedia]
 
     // Default memberwise initializers are never public by default, so we
     // declare one manually.
-    public init(id: String, text: String, marker: String, indent: Int32, kind: String, done: Bool, start: String?, end: String?, media: [MobileItemMedia]) {
+    public init(id: String, text: String, marker: String, indent: Int32, kind: String, done: Bool, start: String?, end: String?, repeatRule: String?, media: [MobileItemMedia]) {
         self.id = id
         self.text = text
         self.marker = marker
@@ -1121,12 +1134,13 @@ public struct MobileItem: Equatable, Hashable {
         self.done = done
         self.start = start
         self.end = end
+        self.repeatRule = repeatRule
         self.media = media
     }
 
+    
 
-
-
+    
 }
 
 #if compiler(>=6)
@@ -1140,14 +1154,15 @@ public struct FfiConverterTypeMobileItem: FfiConverterRustBuffer {
     public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> MobileItem {
         return
             try MobileItem(
-                id: FfiConverterString.read(from: &buf),
-                text: FfiConverterString.read(from: &buf),
-                marker: FfiConverterString.read(from: &buf),
-                indent: FfiConverterInt32.read(from: &buf),
-                kind: FfiConverterString.read(from: &buf),
-                done: FfiConverterBool.read(from: &buf),
-                start: FfiConverterOptionString.read(from: &buf),
-                end: FfiConverterOptionString.read(from: &buf),
+                id: FfiConverterString.read(from: &buf), 
+                text: FfiConverterString.read(from: &buf), 
+                marker: FfiConverterString.read(from: &buf), 
+                indent: FfiConverterInt32.read(from: &buf), 
+                kind: FfiConverterString.read(from: &buf), 
+                done: FfiConverterBool.read(from: &buf), 
+                start: FfiConverterOptionString.read(from: &buf), 
+                end: FfiConverterOptionString.read(from: &buf), 
+                repeatRule: FfiConverterOptionString.read(from: &buf), 
                 media: FfiConverterSequenceTypeMobileItemMedia.read(from: &buf)
         )
     }
@@ -1161,6 +1176,7 @@ public struct FfiConverterTypeMobileItem: FfiConverterRustBuffer {
         FfiConverterBool.write(value.done, into: &buf)
         FfiConverterOptionString.write(value.start, into: &buf)
         FfiConverterOptionString.write(value.end, into: &buf)
+        FfiConverterOptionString.write(value.repeatRule, into: &buf)
         FfiConverterSequenceTypeMobileItemMedia.write(value.media, into: &buf)
     }
 }
@@ -1198,9 +1214,9 @@ public struct MobileItemEdit: Equatable, Hashable {
         self.done = done
     }
 
+    
 
-
-
+    
 }
 
 #if compiler(>=6)
@@ -1214,10 +1230,10 @@ public struct FfiConverterTypeMobileItemEdit: FfiConverterRustBuffer {
     public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> MobileItemEdit {
         return
             try MobileItemEdit(
-                id: FfiConverterOptionString.read(from: &buf),
-                text: FfiConverterString.read(from: &buf),
-                marker: FfiConverterString.read(from: &buf),
-                indent: FfiConverterInt32.read(from: &buf),
+                id: FfiConverterOptionString.read(from: &buf), 
+                text: FfiConverterString.read(from: &buf), 
+                marker: FfiConverterString.read(from: &buf), 
+                indent: FfiConverterInt32.read(from: &buf), 
                 done: FfiConverterBool.read(from: &buf)
         )
     }
@@ -1264,9 +1280,9 @@ public struct MobileItemMedia: Equatable, Hashable {
         self.height = height
     }
 
+    
 
-
-
+    
 }
 
 #if compiler(>=6)
@@ -1280,10 +1296,10 @@ public struct FfiConverterTypeMobileItemMedia: FfiConverterRustBuffer {
     public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> MobileItemMedia {
         return
             try MobileItemMedia(
-                kind: FfiConverterString.read(from: &buf),
-                path: FfiConverterOptionString.read(from: &buf),
-                format: FfiConverterString.read(from: &buf),
-                width: FfiConverterOptionInt32.read(from: &buf),
+                kind: FfiConverterString.read(from: &buf), 
+                path: FfiConverterOptionString.read(from: &buf), 
+                format: FfiConverterString.read(from: &buf), 
+                width: FfiConverterOptionInt32.read(from: &buf), 
                 height: FfiConverterOptionInt32.read(from: &buf)
         )
     }
@@ -1332,9 +1348,9 @@ public struct MobileNode: Equatable, Hashable {
         self.children = children
     }
 
+    
 
-
-
+    
 }
 
 #if compiler(>=6)
@@ -1348,11 +1364,11 @@ public struct FfiConverterTypeMobileNode: FfiConverterRustBuffer {
     public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> MobileNode {
         return
             try MobileNode(
-                kind: FfiConverterString.read(from: &buf),
-                id: FfiConverterString.read(from: &buf),
-                name: FfiConverterString.read(from: &buf),
-                colorIndex: FfiConverterOptionInt32.read(from: &buf),
-                isDailyQueue: FfiConverterBool.read(from: &buf),
+                kind: FfiConverterString.read(from: &buf), 
+                id: FfiConverterString.read(from: &buf), 
+                name: FfiConverterString.read(from: &buf), 
+                colorIndex: FfiConverterOptionInt32.read(from: &buf), 
+                isDailyQueue: FfiConverterBool.read(from: &buf), 
                 children: FfiConverterSequenceTypeMobileNode.read(from: &buf)
         )
     }
@@ -1394,10 +1410,11 @@ public struct MobileOccurrence: Equatable, Hashable {
     public var start: String?
     public var end: String?
     public var localDate: String?
+    public var repeatRule: String?
 
     // Default memberwise initializers are never public by default, so we
     // declare one manually.
-    public init(schemeId: String, itemId: String, schemeName: String, colorIndex: Int32, title: String, kind: String, done: Bool, start: String?, end: String?, localDate: String?) {
+    public init(schemeId: String, itemId: String, schemeName: String, colorIndex: Int32, title: String, kind: String, done: Bool, start: String?, end: String?, localDate: String?, repeatRule: String?) {
         self.schemeId = schemeId
         self.itemId = itemId
         self.schemeName = schemeName
@@ -1408,11 +1425,12 @@ public struct MobileOccurrence: Equatable, Hashable {
         self.start = start
         self.end = end
         self.localDate = localDate
+        self.repeatRule = repeatRule
     }
 
+    
 
-
-
+    
 }
 
 #if compiler(>=6)
@@ -1426,16 +1444,17 @@ public struct FfiConverterTypeMobileOccurrence: FfiConverterRustBuffer {
     public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> MobileOccurrence {
         return
             try MobileOccurrence(
-                schemeId: FfiConverterString.read(from: &buf),
-                itemId: FfiConverterString.read(from: &buf),
-                schemeName: FfiConverterString.read(from: &buf),
-                colorIndex: FfiConverterInt32.read(from: &buf),
-                title: FfiConverterString.read(from: &buf),
-                kind: FfiConverterString.read(from: &buf),
-                done: FfiConverterBool.read(from: &buf),
-                start: FfiConverterOptionString.read(from: &buf),
-                end: FfiConverterOptionString.read(from: &buf),
-                localDate: FfiConverterOptionString.read(from: &buf)
+                schemeId: FfiConverterString.read(from: &buf), 
+                itemId: FfiConverterString.read(from: &buf), 
+                schemeName: FfiConverterString.read(from: &buf), 
+                colorIndex: FfiConverterInt32.read(from: &buf), 
+                title: FfiConverterString.read(from: &buf), 
+                kind: FfiConverterString.read(from: &buf), 
+                done: FfiConverterBool.read(from: &buf), 
+                start: FfiConverterOptionString.read(from: &buf), 
+                end: FfiConverterOptionString.read(from: &buf), 
+                localDate: FfiConverterOptionString.read(from: &buf), 
+                repeatRule: FfiConverterOptionString.read(from: &buf)
         )
     }
 
@@ -1450,6 +1469,7 @@ public struct FfiConverterTypeMobileOccurrence: FfiConverterRustBuffer {
         FfiConverterOptionString.write(value.start, into: &buf)
         FfiConverterOptionString.write(value.end, into: &buf)
         FfiConverterOptionString.write(value.localDate, into: &buf)
+        FfiConverterOptionString.write(value.repeatRule, into: &buf)
     }
 }
 
@@ -1490,9 +1510,9 @@ public struct MobileScheme: Equatable, Hashable {
         self.items = items
     }
 
+    
 
-
-
+    
 }
 
 #if compiler(>=6)
@@ -1506,12 +1526,12 @@ public struct FfiConverterTypeMobileScheme: FfiConverterRustBuffer {
     public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> MobileScheme {
         return
             try MobileScheme(
-                id: FfiConverterString.read(from: &buf),
-                name: FfiConverterString.read(from: &buf),
-                displayName: FfiConverterString.read(from: &buf),
-                colorIndex: FfiConverterInt32.read(from: &buf),
-                isDailyQueue: FfiConverterBool.read(from: &buf),
-                date: FfiConverterOptionString.read(from: &buf),
+                id: FfiConverterString.read(from: &buf), 
+                name: FfiConverterString.read(from: &buf), 
+                displayName: FfiConverterString.read(from: &buf), 
+                colorIndex: FfiConverterInt32.read(from: &buf), 
+                isDailyQueue: FfiConverterBool.read(from: &buf), 
+                date: FfiConverterOptionString.read(from: &buf), 
                 items: FfiConverterSequenceTypeMobileItem.read(from: &buf)
         )
     }
@@ -1566,9 +1586,9 @@ public struct MobileSearchHit: Equatable, Hashable {
         self.status = status
     }
 
+    
 
-
-
+    
 }
 
 #if compiler(>=6)
@@ -1582,13 +1602,13 @@ public struct FfiConverterTypeMobileSearchHit: FfiConverterRustBuffer {
     public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> MobileSearchHit {
         return
             try MobileSearchHit(
-                targetKind: FfiConverterString.read(from: &buf),
-                schemeId: FfiConverterOptionString.read(from: &buf),
-                itemId: FfiConverterOptionString.read(from: &buf),
-                schemeName: FfiConverterString.read(from: &buf),
-                colorIndex: FfiConverterOptionInt32.read(from: &buf),
-                title: FfiConverterString.read(from: &buf),
-                detail: FfiConverterString.read(from: &buf),
+                targetKind: FfiConverterString.read(from: &buf), 
+                schemeId: FfiConverterOptionString.read(from: &buf), 
+                itemId: FfiConverterOptionString.read(from: &buf), 
+                schemeName: FfiConverterString.read(from: &buf), 
+                colorIndex: FfiConverterOptionInt32.read(from: &buf), 
+                title: FfiConverterString.read(from: &buf), 
+                detail: FfiConverterString.read(from: &buf), 
                 status: FfiConverterString.read(from: &buf)
         )
     }
@@ -1632,9 +1652,9 @@ public struct MobileSettings: Equatable, Hashable {
         self.timeFormat = timeFormat
     }
 
+    
 
-
-
+    
 }
 
 #if compiler(>=6)
@@ -1648,7 +1668,7 @@ public struct FfiConverterTypeMobileSettings: FfiConverterRustBuffer {
     public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> MobileSettings {
         return
             try MobileSettings(
-                themeMode: FfiConverterString.read(from: &buf),
+                themeMode: FfiConverterString.read(from: &buf), 
                 timeFormat: FfiConverterString.read(from: &buf)
         )
     }
@@ -1696,9 +1716,9 @@ public struct MobileSnapshot: Equatable, Hashable {
         self.workspacePath = workspacePath
     }
 
+    
 
-
-
+    
 }
 
 #if compiler(>=6)
@@ -1712,12 +1732,12 @@ public struct FfiConverterTypeMobileSnapshot: FfiConverterRustBuffer {
     public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> MobileSnapshot {
         return
             try MobileSnapshot(
-                root: FfiConverterTypeMobileNode.read(from: &buf),
-                schemes: FfiConverterSequenceTypeMobileScheme.read(from: &buf),
-                archivedSchemes: FfiConverterSequenceTypeMobileScheme.read(from: &buf),
-                daily: FfiConverterSequenceTypeMobileDailyEntry.read(from: &buf),
-                calendar: FfiConverterTypeMobileCalendar.read(from: &buf),
-                settings: FfiConverterTypeMobileSettings.read(from: &buf),
+                root: FfiConverterTypeMobileNode.read(from: &buf), 
+                schemes: FfiConverterSequenceTypeMobileScheme.read(from: &buf), 
+                archivedSchemes: FfiConverterSequenceTypeMobileScheme.read(from: &buf), 
+                daily: FfiConverterSequenceTypeMobileDailyEntry.read(from: &buf), 
+                calendar: FfiConverterTypeMobileCalendar.read(from: &buf), 
+                settings: FfiConverterTypeMobileSettings.read(from: &buf), 
                 workspacePath: FfiConverterString.read(from: &buf)
         )
     }
@@ -1751,20 +1771,20 @@ public func FfiConverterTypeMobileSnapshot_lower(_ value: MobileSnapshot) -> Rus
 
 public enum MobileError: Swift.Error, Equatable, Hashable, Foundation.LocalizedError {
 
-
-
+    
+    
     case Core(reason: String
     )
 
+    
 
+    
 
-
-
-
+    
     public var errorDescription: String? {
         String(reflecting: self)
     }
-
+    
 }
 
 #if compiler(>=6)
@@ -1781,9 +1801,9 @@ public struct FfiConverterTypeMobileError: FfiConverterRustBuffer {
         let variant: Int32 = try readInt(&buf)
         switch variant {
 
+        
 
-
-
+        
         case 1: return .Core(
             reason: try FfiConverterString.read(from: &buf)
             )
@@ -1795,14 +1815,14 @@ public struct FfiConverterTypeMobileError: FfiConverterRustBuffer {
     public static func write(_ value: MobileError, into buf: inout [UInt8]) {
         switch value {
 
+        
 
-
-
-
+        
+        
         case let .Core(reason):
             writeInt(&buf, Int32(1))
             FfiConverterString.write(reason, into: &buf)
-
+            
         }
     }
 }
@@ -2174,6 +2194,9 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_knotq_mobile_core_checksum_method_mobilecore_set_item_marker() != 42698) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_knotq_mobile_core_checksum_method_mobilecore_set_item_recurrence() != 54120) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_knotq_mobile_core_checksum_method_mobilecore_set_scheme_color() != 60612) {

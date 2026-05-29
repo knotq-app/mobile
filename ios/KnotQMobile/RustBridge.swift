@@ -63,6 +63,10 @@ final class RustBridge {
         try core.setSchemeColor(schemeId: id, colorIndex: colorIndex)
     }
 
+    func moveNode(kind: String, id: String, folderID: String, position: Int32) throws {
+        try core.moveNode(kind: kind, id: id, folderId: folderID, position: position)
+    }
+
     func ensureDailyQueue(date: String) throws {
         try core.ensureDailyQueue(date: date)
     }
@@ -93,6 +97,10 @@ final class RustBridge {
 
     func setItemDate(schemeID: String, itemID: String, kind: String, date: String?) throws {
         try core.setItemDate(schemeId: schemeID, itemId: itemID, kind: kind, date: date)
+    }
+
+    func setItemRecurrence(schemeID: String, itemID: String, rrule: String?) throws {
+        try core.setItemRecurrence(schemeId: schemeID, itemId: itemID, rrule: rrule)
     }
 
     func toggleItem(schemeID: String, itemID: String) throws {

@@ -10,7 +10,7 @@ use knotq_index::query::{SearchHitStatus, SearchOptions, SearchTarget};
 use knotq_index::IndexedWorkspace;
 use knotq_model::{
     AppSettings, FolderId, ImageAssetFormat, Item, ItemId, ItemKind, ItemMarker, ItemMedia,
-    NodeRef, OccurrenceId, Scheme, SchemeId, ThemeMode, TimeFormat, Workspace,
+    NodeRef, OccurrenceId, Recurrence, Scheme, SchemeId, ThemeMode, TimeFormat, Workspace,
     DAILY_QUEUE_COLOR_INDEX,
 };
 use knotq_state::{daily_queue_scheme_name, make_default_workspace};
@@ -323,6 +323,31 @@ impl MobileCore {
                 item: parse_id(&item_id)?,
                 kind: parse_date_kind(&kind)?,
                 date: parse_datetime_opt(date.as_deref())?,
+            })
+            .map_err(Into::into)
+    }
+
+    /// Sets (or clears, when `rrule` is `None`/empty) the item's recurrence.
+    /// `rrule` is a bare RRULE body, e.g. `FREQ=WEEKLY;INTERVAL=1` — matching
+    /// the format stored in `CalendarRecurrence::rrules` elsewhere.
+    pub fn set_item_recurrence(
+        &self,
+        scheme_id: String,
+        item_id: String,
+        rrule: Option<String>,
+    ) -> Result<(), MobileError> {
+        let repeats = match rrule {
+            Some(rule) if !rule.trim().is_empty() => Some(Recurrence {
+                rrules: vec![rule.trim().to_string()],
+                ..Recurrence::default()
+            }),
+            _ => None,
+        };
+        self.lock()?
+            .apply(Command::SetItemRecurrence {
+                scheme: parse_id(&scheme_id)?,
+                item: parse_id(&item_id)?,
+                repeats,
             })
             .map_err(Into::into)
     }
@@ -876,6 +901,7 @@ pub struct MobileItem {
     pub done: bool,
     pub start: Option<String>,
     pub end: Option<String>,
+    pub repeat_rule: Option<String>,
     pub media: Vec<MobileItemMedia>,
 }
 
@@ -908,6 +934,7 @@ impl MobileItem {
             done: item.single_state().is_done(),
             start: item.start.map(format_datetime),
             end: item.end.map(format_datetime),
+            repeat_rule: recurrence_rule(item.repeats.as_ref()),
             media: item
                 .media
                 .iter()
@@ -915,6 +942,11 @@ impl MobileItem {
                 .collect(),
         }
     }
+}
+
+/// Extracts the first RRULE body from a recurrence for display on the client.
+fn recurrence_rule(repeats: Option<&Recurrence>) -> Option<String> {
+    repeats.and_then(|r| r.rrules.first().cloned())
 }
 
 impl MobileItemMedia {
@@ -973,6 +1005,7 @@ pub struct MobileOccurrence {
     pub start: Option<String>,
     pub end: Option<String>,
     pub local_date: Option<String>,
+    pub repeat_rule: Option<String>,
 }
 
 impl MobileOccurrence {
@@ -980,11 +1013,11 @@ impl MobileOccurrence {
         workspace: &Workspace,
         context: knotq_index::calendar::OccurrenceWithContext,
     ) -> Self {
-        let title = workspace
+        let item = workspace
             .scheme(context.scheme_id)
-            .and_then(|scheme| scheme.item(context.item_id))
-            .map(|item| item.text.clone())
-            .unwrap_or_default();
+            .and_then(|scheme| scheme.item(context.item_id));
+        let title = item.map(|item| item.text.clone()).unwrap_or_default();
+        let repeat_rule = item.and_then(|item| recurrence_rule(item.repeats.as_ref()));
         let local_date = context
             .occurrence
             .start
@@ -1001,6 +1034,7 @@ impl MobileOccurrence {
             start: context.occurrence.start.map(format_datetime),
             end: context.occurrence.end.map(format_datetime),
             local_date,
+            repeat_rule,
         }
     }
 }
