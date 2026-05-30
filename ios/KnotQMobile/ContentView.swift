@@ -195,15 +195,15 @@ struct ContentView: View {
         }
         .sheet(item: $addItemTarget) { target in
             AddItemSheet(schemeID: target.id)
-                .presentationDetents([.medium, .large])
+                .presentationDetents([.fraction(0.50)])
         }
         .sheet(item: $eventEditor) { target in
             EventEditorSheet(theme: theme, target: target)
-                .presentationDetents([.large])
+                .presentationDetents([.fraction(0.50)])
         }
         .sheet(isPresented: $showingCalendarAdd) {
             AddCalendarItemSheet()
-                .presentationDetents([.medium, .large])
+                .presentationDetents([.fraction(0.50)])
         }
         .sheet(isPresented: $showingNewFolder) {
             NameSheet(title: "New Folder", placeholder: "Folder name", validator: { name in
@@ -999,7 +999,7 @@ private struct HomeDashboardPane: View {
 
     var body: some View {
         GeometryReader { proxy in
-            let schemePreviewMaxHeight = max(235, proxy.size.height * 0.43)
+            let schemePreviewMaxHeight = max(260, proxy.size.height * 0.50)
             ZStack(alignment: .bottomTrailing) {
                 VStack(alignment: .leading, spacing: 16) {
                     HomeSchemesSection(
@@ -1025,7 +1025,7 @@ private struct HomeDashboardPane: View {
                 }
                 .frame(maxWidth: 720, maxHeight: .infinity, alignment: .topLeading)
                 .padding(14)
-                .padding(.bottom, 132)
+                .padding(.bottom, 92)
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
 
                 HomeQuickWriteButtons(theme: theme, onNewScheme: onNewScheme, onOpenDaily: onOpenDaily)
@@ -1086,12 +1086,13 @@ private struct HomeUpcomingSection: View {
             } else {
                 ScrollView {
                     LazyVStack(spacing: 2) {
-                        ForEach(Array(occurrences.enumerated()), id: \.element.id) { idx, occurrence in
+                            ForEach(Array(occurrences.enumerated()), id: \.element.id) { idx, occurrence in
                             OccurrenceCompactRow(
                                 occurrence: occurrence,
                                 theme: theme,
                                 timeFormat: timeFormat,
                                 striped: idx % 2 == 1,
+                                showDayLabel: true,
                                 moreAction: { onOpenOccurrence(occurrence) }
                             ) {
                                 onToggleOccurrence(occurrence)
@@ -1233,46 +1234,58 @@ private struct HomeSchemesSection: View {
                 .buttonStyle(.plain)
             }
             .padding(.horizontal, 2)
+            .padding(.bottom, 12)
 
-            ScrollView {
-                LazyVStack(alignment: .leading, spacing: 3) {
-                    if let root, !root.children.isEmpty {
-                        ForEach(Array(root.children.enumerated()), id: \.element.id) { index, node in
-                            HomeSchemeNodeRow(
-                                node: node,
-                                position: index,
-                                siblingCount: root.children.count,
-                                depth: 0,
-                                parentFolderID: root.id,
-                                root: root,
-                                theme: theme,
-                                onOpenScheme: onOpenScheme
-                            )
+            VStack(alignment: .leading, spacing: 0) {
+                ScrollView {
+                    LazyVStack(alignment: .leading, spacing: 3) {
+                        if let root, !root.children.isEmpty {
+                            ForEach(Array(root.children.enumerated()), id: \.element.id) { index, node in
+                                HomeSchemeNodeRow(
+                                    node: node,
+                                    position: index,
+                                    siblingCount: root.children.count,
+                                    depth: 0,
+                                    parentFolderID: root.id,
+                                    root: root,
+                                    theme: theme,
+                                    onOpenScheme: onOpenScheme
+                                )
+                            }
+                        } else {
+                            Text("No schemes yet")
+                                .font(.system(size: 14))
+                                .foregroundStyle(theme.textMuted)
+                                .frame(maxWidth: .infinity, minHeight: 38, alignment: .leading)
+                                .padding(.horizontal, 10)
                         }
-                    } else {
-                        Text("No schemes yet")
-                            .font(.system(size: 14))
-                            .foregroundStyle(theme.textMuted)
-                            .frame(maxWidth: .infinity, minHeight: 38, alignment: .leading)
-                            .padding(.horizontal, 10)
                     }
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 6)
                 }
-                .padding(8)
+                .scrollIndicators(.hidden)
+                .frame(maxHeight: maxHeight)
+
+                Rectangle()
+                    .fill(theme.dividerSoft)
+                    .frame(height: 0.5)
+                    .padding(.leading, 10)
+                    .padding(.trailing, 10)
+
+                HomeDailySchemeRow(
+                    entry: dailyEntry,
+                    selectedDate: selectedDate,
+                    theme: theme,
+                    onOpenDaily: onOpenDaily
+                )
+                .padding(.horizontal, 8)
+                .padding(.vertical, 6)
             }
-            .scrollIndicators(.hidden)
-            .frame(maxHeight: maxHeight)
-            .background(theme.bgSidebar, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+            .background(theme.rowSelected.opacity(theme.isDark ? 0.52 : 0.34), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
             .overlay {
                 RoundedRectangle(cornerRadius: 8, style: .continuous)
                     .stroke(theme.borderOverlay, lineWidth: 0.8)
             }
-
-            HomeDailySchemeRow(
-                entry: dailyEntry,
-                selectedDate: selectedDate,
-                theme: theme,
-                onOpenDaily: onOpenDaily
-            )
         }
     }
 }
@@ -1286,9 +1299,9 @@ private struct HomeDailySchemeRow: View {
     var body: some View {
         Button(action: onOpenDaily) {
             HStack(spacing: 9) {
-                RoundedRectangle(cornerRadius: 3, style: .continuous)
-                    .fill(theme.isDark ? Color(hex: 0xb8c9e8) : Color(hex: 0x5a7aad))
-                    .frame(width: 13, height: 13)
+                Image(systemName: "checklist")
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundStyle(theme.isDark ? Color(hex: 0xc0d6ff) : Color(hex: 0x4f71a6))
                 Text("Daily")
                     .font(.system(size: 15, weight: .medium))
                     .foregroundStyle(theme.textPrimary)
@@ -1310,11 +1323,6 @@ private struct HomeDailySchemeRow: View {
             .padding(.leading, 5)
             .padding(.horizontal, 8)
             .frame(minHeight: 38)
-            .background(theme.rowSelected.opacity(theme.isDark ? 0.52 : 0.34), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
-            .overlay {
-                RoundedRectangle(cornerRadius: 7, style: .continuous)
-                    .stroke(theme.borderOverlay.opacity(theme.isDark ? 0.9 : 0.7), lineWidth: 0.7)
-            }
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -2074,12 +2082,18 @@ private struct DayTimelinePane: View {
         GeometryReader { proxy in
             let visibleCount = visibleDayCount(for: proxy.size.width)
             let colWidth = max(1, (proxy.size.width - Self.gutterWidth) / CGFloat(visibleCount))
+            let contentOffsetX = swipePreviewX + eventDragRevealOffset(colWidth: colWidth)
             VStack(spacing: 0) {
                 dateBanner()
-                weekStrip(visibleCount: visibleCount, availableWidth: proxy.size.width)
-                    .offset(x: swipePreviewX * 0.55)
+                weekStrip(
+                    visibleCount: visibleCount,
+                    availableWidth: proxy.size.width,
+                    colWidth: colWidth,
+                    contentOffsetX: contentOffsetX
+                )
+                    .offset(x: contentOffsetX)
                 Divider().overlay(theme.dividerSoft)
-                timeline(colWidth: colWidth, visibleCount: visibleCount)
+                timeline(colWidth: colWidth, visibleCount: visibleCount, contentOffsetX: contentOffsetX)
             }
             .background(theme.bgApp)
             .clipped()
@@ -2096,7 +2110,12 @@ private struct DayTimelinePane: View {
             .padding(.bottom, 8)
     }
 
-    private func weekStrip(visibleCount: Int, availableWidth: CGFloat) -> some View {
+    private func weekStrip(
+        visibleCount: Int,
+        availableWidth: CGFloat,
+        colWidth: CGFloat,
+        contentOffsetX: CGFloat
+    ) -> some View {
         HStack(spacing: 0) {
             ForEach(0..<Self.weekStripDayCount, id: \.self) { index in
                 let date = weekDate(index)
@@ -2135,21 +2154,36 @@ private struct DayTimelinePane: View {
         .padding(.horizontal, 11)
         .padding(.bottom, 6)
         .contentShape(Rectangle())
-        .gesture(daySwipeGesture(visibleCount: visibleCount, availableWidth: availableWidth))
+        .simultaneousGesture(
+            daySwipeGesture(
+                visibleCount: visibleCount,
+                availableWidth: availableWidth,
+                colWidth: colWidth,
+                contentOffsetX: contentOffsetX
+            ),
+            including: .subviews
+        )
         .animation(.spring(response: 0.30, dampingFraction: 0.84), value: selectedDateKey)
     }
 
-    private func daySwipeGesture(visibleCount: Int, availableWidth: CGFloat, colWidth: CGFloat? = nil) -> some Gesture {
-        DragGesture(minimumDistance: 24)
+    private func daySwipeGesture(
+        visibleCount: Int,
+        availableWidth: CGFloat,
+        colWidth: CGFloat? = nil,
+        contentOffsetX: CGFloat = 0
+    ) -> some Gesture {
+        DragGesture(minimumDistance: 14)
             .updating($swipePreviewX) { value, state, _ in
                 let dx = value.translation.width
                 let dy = value.translation.height
+                let adjustedStart = CGPoint(x: value.startLocation.x - contentOffsetX, y: value.startLocation.y)
                 if let colWidth,
-                   pointHitsEvent(value.startLocation, colWidth: colWidth, visibleCount: visibleCount) {
+                   pointHitsEvent(adjustedStart, colWidth: colWidth, visibleCount: visibleCount) {
                     return
                 }
                 guard abs(dx) > abs(dy) * 1.35 else { return }
-                state = rubberBandDayOffset(dx, colWidth: colWidth ?? max(1, availableWidth / CGFloat(max(1, visibleCount))))
+                let limit = colWidth ?? max(1, availableWidth / CGFloat(max(1, visibleCount)))
+                state = rubberBandDayOffset(dx, colWidth: limit)
             }
             .onEnded { value in
                 let dx = value.translation.width
@@ -2157,13 +2191,14 @@ private struct DayTimelinePane: View {
                 let projected = abs(value.predictedEndTranslation.width) > abs(dx)
                     ? value.predictedEndTranslation.width
                     : dx
+                let adjustedStart = CGPoint(x: value.startLocation.x - contentOffsetX, y: value.startLocation.y)
                 if let colWidth,
-                   pointHitsEvent(value.startLocation, colWidth: colWidth, visibleCount: visibleCount) {
+                   pointHitsEvent(adjustedStart, colWidth: colWidth, visibleCount: visibleCount) {
                     return
                 }
                 guard abs(dx) > abs(dy) * 1.35,
-                      abs(projected) > max(52, availableWidth * 0.18) else { return }
-                withAnimation(.spring(response: 0.34, dampingFraction: 0.82)) {
+                      abs(projected) > max(48, min(availableWidth * 0.15, colWidth ?? max(1, availableWidth / CGFloat(max(1, visibleCount))) * 0.68)) else { return }
+                withAnimation(.interpolatingSpring(stiffness: 320, damping: 34)) {
                     onShiftDay(projected < 0 ? 1 : -1)
                 }
             }
@@ -2181,16 +2216,17 @@ private struct DayTimelinePane: View {
 
     // MARK: Timeline
 
-    private func timeline(colWidth: CGFloat, visibleCount: Int) -> some View {
+    private func timeline(colWidth: CGFloat, visibleCount: Int, contentOffsetX: CGFloat) -> some View {
         GeometryReader { viewport in
             ScrollViewReader { proxy in
                 ScrollView {
-                    let contentOffsetX = swipePreviewX + eventDragRevealOffset(colWidth: colWidth)
                     ZStack(alignment: .topLeading) {
                         scrollOffsetReader()
                         scrollAnchors()
                             .allowsHitTesting(false)
                             .accessibilityHidden(true)
+                        timeLegend()
+                            .allowsHitTesting(false)
                         hourGrid(colWidth: colWidth, visibleCount: visibleCount)
                             .offset(x: contentOffsetX)
                             .allowsHitTesting(false)
@@ -2204,8 +2240,19 @@ private struct DayTimelinePane: View {
                     .contentShape(Rectangle())
                     .frame(height: Self.timeYOffset + CGFloat(Self.hoursInDay) * Self.hourHeight)
                     .padding(.bottom, 88)
-                    .simultaneousGesture(createGesture(colWidth: colWidth, visibleCount: visibleCount))
-                    .simultaneousGesture(daySwipeGesture(visibleCount: visibleCount, availableWidth: viewport.size.width, colWidth: colWidth))
+                .simultaneousGesture(
+                        createGesture(colWidth: colWidth, visibleCount: visibleCount, contentOffsetX: contentOffsetX),
+                        including: .subviews
+                    )
+                    .simultaneousGesture(
+                        daySwipeGesture(
+                            visibleCount: visibleCount,
+                            availableWidth: viewport.size.width,
+                            colWidth: colWidth,
+                            contentOffsetX: contentOffsetX
+                        ),
+                        including: .subviews
+                    )
                 }
                 .coordinateSpace(name: Self.timelineCoordinateSpace)
                 .onAppear {
@@ -2253,17 +2300,25 @@ private struct DayTimelinePane: View {
         proxy.scrollTo("hour-\(focus)", anchor: .top)
     }
 
-    private func createGesture(colWidth: CGFloat, visibleCount: Int) -> some Gesture {
+    private func createGesture(colWidth: CGFloat, visibleCount: Int, contentOffsetX: CGFloat) -> some Gesture {
         LongPressGesture(minimumDuration: 0.5, maximumDistance: 10)
             .sequenced(before: DragGesture(minimumDistance: 0))
             .onChanged { value in
                 guard case let .second(_, drag?) = value else { return }
+                let adjusted = CGPoint(
+                    x: drag.startLocation.x - contentOffsetX,
+                    y: drag.startLocation.y
+                )
+                let moving = CGPoint(
+                    x: drag.location.x - contentOffsetX,
+                    y: drag.location.y
+                )
                 if createDraft == nil {
-                    guard !pointHitsEvent(drag.startLocation, colWidth: colWidth, visibleCount: visibleCount) else { return }
-                    createDraft = createTarget(point: drag.startLocation, colWidth: colWidth, visibleCount: visibleCount)
+                    guard !pointHitsEvent(adjusted, colWidth: colWidth, visibleCount: visibleCount) else { return }
+                    createDraft = createTarget(point: adjusted, colWidth: colWidth, visibleCount: visibleCount)
                     UIImpactFeedbackGenerator(style: .medium).impactOccurred()
                 } else {
-                    let moved = createTarget(point: drag.location, colWidth: colWidth, visibleCount: visibleCount)
+                    let moved = createTarget(point: moving, colWidth: colWidth, visibleCount: visibleCount)
                     if moved != createDraft {
                         createDraft = moved
                         UISelectionFeedbackGenerator().selectionChanged()
@@ -2334,6 +2389,24 @@ private struct DayTimelinePane: View {
         return formatter.string(from: start)
     }
 
+    private func timeLegend() -> some View {
+        ZStack(alignment: .topLeading) {
+            ForEach(0..<Self.hoursInDay, id: \.self) { hour in
+                let y = Self.timeYOffset + CGFloat(hour) * Self.hourHeight
+                Text(hourLabel(hour))
+                    .font(.system(size: 10, weight: .medium))
+                    .foregroundStyle(theme.textMuted)
+                    .frame(width: Self.gutterWidth - 8, alignment: .trailing)
+                    .offset(y: y - 6)
+            }
+            Rectangle()
+                .fill(theme.divider)
+                .frame(width: 0.75, height: Self.timeYOffset + CGFloat(Self.hoursInDay) * Self.hourHeight)
+                .offset(x: Self.gutterWidth - 0.5)
+        }
+        .frame(width: Self.gutterWidth)
+    }
+
     private func hourGrid(colWidth: CGFloat, visibleCount: Int) -> some View {
         ZStack(alignment: .topLeading) {
             ForEach(0..<Self.hoursInDay, id: \.self) { hour in
@@ -2341,13 +2414,9 @@ private struct DayTimelinePane: View {
                 Rectangle()
                     .fill(theme.dividerSoft)
                     .frame(height: 0.5)
-                    .padding(.leading, Self.gutterWidth)
+                    .frame(width: colWidth * CGFloat(visibleCount))
+                    .offset(x: Self.gutterWidth)
                     .offset(y: y)
-                Text(hourLabel(hour))
-                    .font(.system(size: 10, weight: .medium))
-                    .foregroundStyle(theme.textMuted)
-                    .frame(width: Self.gutterWidth - 8, alignment: .trailing)
-                    .offset(y: y - 6)
             }
             ForEach(1..<visibleCount, id: \.self) { index in
                 Rectangle()
@@ -2357,8 +2426,8 @@ private struct DayTimelinePane: View {
             }
             Rectangle()
                 .fill(theme.divider)
-                .frame(height: 1)
-                .padding(.leading, Self.gutterWidth)
+                .frame(width: colWidth * CGFloat(visibleCount), height: 1)
+                .offset(x: Self.gutterWidth)
                 .offset(y: Self.timeYOffset + CGFloat(Self.hoursInDay) * Self.hourHeight - 1)
         }
     }
@@ -2382,7 +2451,10 @@ private struct DayTimelinePane: View {
                 x: 0,
                 y: isDragging ? (theme.isDark ? 4 : 2) : 0
             )
-            .highPriorityGesture(eventDragGesture(for: laid, colWidth: colWidth, visibleCount: visibleCount))
+            .simultaneousGesture(
+                eventDragGesture(for: laid, colWidth: colWidth, visibleCount: visibleCount),
+                including: .subviews
+            )
             .animation(.spring(response: 0.24, dampingFraction: 0.82), value: draggingOccurrenceID)
         }
     }
@@ -2736,8 +2808,8 @@ private struct DayTimelinePane: View {
 
     private var currentDateTitle: String {
         let f = DateFormatter()
-        f.dateFormat = "MMMM d, yyyy"
-        return f.string(from: Date())
+        f.dateFormat = "MMMM yyyy"
+        return f.string(from: selectedDate)
     }
 
     private func monthName(for date: Date) -> String {
@@ -3211,12 +3283,14 @@ private struct OccurrenceCompactRow: View {
     let striped: Bool
     let moreAction: (() -> Void)?
     let action: () -> Void
+    let showDayLabel: Bool
 
     init(
         occurrence: MobileOccurrence,
         theme: KnotQTheme,
         timeFormat: String,
         striped: Bool,
+        showDayLabel: Bool = false,
         moreAction: (() -> Void)? = nil,
         action: @escaping () -> Void
     ) {
@@ -3226,18 +3300,19 @@ private struct OccurrenceCompactRow: View {
         self.striped = striped
         self.moreAction = moreAction
         self.action = action
+        self.showDayLabel = showDayLabel
     }
 
     var body: some View {
-        Button(action: action) {
-            rowContent
-        }
-        .buttonStyle(.plain)
+        rowContent
         .frame(maxWidth: .infinity, alignment: .leading)
         .contentShape(Rectangle())
-        .contextMenu {
+        .onTapGesture {
+            action()
+        }
+        .onLongPressGesture {
             if let moreAction {
-                Button("More About", systemImage: "info.circle", action: moreAction)
+                moreAction()
             }
         }
         .opacity(occurrence.done ? 0.45 : 1)
@@ -3256,7 +3331,7 @@ private struct OccurrenceCompactRow: View {
                         .foregroundStyle(schemeColor(occurrence.colorIndex, dark: theme.isDark))
                         .lineLimit(1)
                     Spacer(minLength: 6)
-                    Text(occurrenceTimeLabel(occurrence, timeFormat: timeFormat))
+                    Text(occurrenceTimeLabel(occurrence, timeFormat: timeFormat, showDay: showDayLabel))
                         .font(.system(size: 10, weight: .bold, design: .monospaced))
                         .foregroundStyle(occurrenceStatusTimeColor(occurrence, theme: theme))
                         .lineLimit(1)
@@ -3775,7 +3850,7 @@ private struct DesktopItemRow: View {
         }
         .sheet(isPresented: $showingDate) {
             ItemDateSheet(schemeID: schemeID, item: item)
-                .presentationDetents([.medium, .large])
+                .presentationDetents([.fraction(0.50)])
         }
         .confirmationDialog(
             "Delete item?",
@@ -3814,6 +3889,7 @@ private struct DesktopSearchPane: View {
     let onOpenScheme: (String) -> Void
     @State private var query = ""
     @FocusState private var searchFocused: Bool
+    @GestureState private var searchBarDragOffset: CGFloat = 0
 
     var body: some View {
         ScrollView {
@@ -3884,23 +3960,34 @@ private struct DesktopSearchPane: View {
                         .buttonStyle(.plain)
                     }
                 }
-                .frame(height: 48)
+                .frame(height: 44)
             }
-            .padding(.horizontal, 14)
-            .padding(.vertical, searchFocused ? 7 : 0)
+            .padding(.horizontal, 12)
             .background(theme.bgModal, in: RoundedRectangle(cornerRadius: 13))
             .overlay { RoundedRectangle(cornerRadius: 13).stroke(theme.borderOverlay, lineWidth: 1) }
             .padding(.horizontal, 12)
-            .padding(.top, 8)
-            .padding(.bottom, searchFocused ? (theme.isDark ? 28 : 18) : 64)
+            .padding(.top, 6)
+            .padding(.bottom, searchFocused ? 16 : 28)
+            .offset(y: max(0, searchBarDragOffset))
             .simultaneousGesture(
-                DragGesture(minimumDistance: 12).onEnded { value in
-                    if value.translation.height > 22,
-                       value.translation.height > abs(value.translation.width) * 1.25 {
-                        searchFocused = false
+                DragGesture(minimumDistance: 10)
+                    .updating($searchBarDragOffset) { value, state, _ in
+                        if value.translation.height > 0 &&
+                           abs(value.translation.width) < value.translation.height * 1.25 {
+                            state = min(112, value.translation.height)
+                        } else {
+                            state = 0
+                        }
                     }
-                }
+                    .onEnded { value in
+                        if value.translation.height > 28 &&
+                           value.translation.height > abs(value.translation.width) * 1.25 {
+                            searchFocused = false
+                        }
+                    },
+                including: .subviews
             )
+            .animation(.interactiveSpring(response: 0.24, dampingFraction: 0.85), value: searchBarDragOffset)
             .background(
                 LinearGradient(
                     colors: [theme.bgApp.opacity(0), theme.bgApp.opacity(0.95), theme.bgApp],
@@ -4119,17 +4206,92 @@ struct EmptyState: View {
 }
 
 private func occurrenceTimeLabel(_ occurrence: MobileOccurrence, timeFormat: String) -> String {
+    return occurrenceTimeLabel(occurrence, timeFormat: timeFormat, showDay: false)
+}
+
+private func occurrenceTimeLabel(_ occurrence: MobileOccurrence, timeFormat: String, showDay: Bool) -> String {
     let start = MobileDate.formatTime(occurrence.start, timeFormat: timeFormat)
     let end = MobileDate.formatTime(occurrence.end, timeFormat: timeFormat)
-    if occurrence.kind == "reminder", let start { return "At \(start)" }
-    if occurrence.kind == "assignment", let end { return "Due \(end)" }
-    if let start, let end { return "\(start) - \(end)" }
-    if let start { return start }
-    if let end { return "Due \(end)" }
+    if !showDay {
+        if occurrence.kind == "reminder", let start { return "At \(start)" }
+        if occurrence.kind == "assignment", let end { return "Due \(end)" }
+        if let start, let end { return "\(start) - \(end)" }
+        if let start { return start }
+        if let end { return "Due \(end)" }
+        return occurrence.kind.capitalized
+    }
+
+    if occurrence.kind == "reminder", let raw = occurrence.start, let date = MobileDate.parseDateTime(raw) {
+        if let rawTime = upcomingTimeLabel(raw: raw, timeFormat: timeFormat) {
+            let dayPrefix = upcomingDatePrefix(date: date)
+            return dayPrefix.isEmpty ? "At \(rawTime)" : "At \(dayPrefix) \(rawTime)"
+        }
+    }
+    if occurrence.kind == "assignment", let raw = occurrence.end, let date = MobileDate.parseDateTime(raw) {
+        if let rawTime = upcomingTimeLabel(raw: raw, timeFormat: timeFormat) {
+            let dayPrefix = upcomingDatePrefix(date: date)
+            return dayPrefix.isEmpty ? "Due \(rawTime)" : "Due \(dayPrefix) \(rawTime)"
+        }
+    }
+    if let rawStart = occurrence.start, let rawEnd = occurrence.end,
+       let startDate = MobileDate.parseDateTime(rawStart),
+       let endDate = MobileDate.parseDateTime(rawEnd),
+       let startTime = upcomingTimeLabel(raw: rawStart, timeFormat: timeFormat),
+       let endTime = upcomingTimeLabel(raw: rawEnd, timeFormat: timeFormat)
+    {
+        let from = upcomingDatePrefix(date: startDate)
+        let to = upcomingDatePrefix(date: endDate)
+        let fromText = from.isEmpty ? startTime : "\(from) \(startTime)"
+        let toText = to.isEmpty ? endTime : "\(to) \(endTime)"
+        return "\(fromText) → \(toText)"
+    }
+    if let rawStart = occurrence.start, let startDate = MobileDate.parseDateTime(rawStart), let startTime = upcomingTimeLabel(raw: rawStart, timeFormat: timeFormat) {
+        let dayPrefix = upcomingDatePrefix(date: startDate)
+        return dayPrefix.isEmpty ? startTime : "\(dayPrefix) \(startTime)"
+    }
+    if let rawEnd = occurrence.end, let endDate = MobileDate.parseDateTime(rawEnd), let endTime = upcomingTimeLabel(raw: rawEnd, timeFormat: timeFormat) {
+        let dayPrefix = upcomingDatePrefix(date: endDate)
+        return dayPrefix.isEmpty ? "Due \(endTime)" : "Due \(dayPrefix) \(endTime)"
+    }
     return occurrence.kind.capitalized
 }
 
-private func occurrenceStatusTimeColor(_ occurrence: MobileOccurrence, theme: KnotQTheme) -> Color {
+private func upcomingTimeLabel(raw: String, timeFormat: String) -> String? {
+    guard let date = MobileDate.parseDateTime(raw) else { return nil }
+    let formatter = DateFormatter()
+    formatter.calendar = Calendar(identifier: .gregorian)
+    formatter.locale = Locale(identifier: "en_US_POSIX")
+    if timeFormat == "twenty_four_hour" {
+        formatter.dateFormat = "HH:mm"
+    } else {
+        formatter.dateFormat = "h:mm a"
+    }
+    return formatter.string(from: date)
+}
+
+private func upcomingDatePrefix(date: Date) -> String {
+    let calendar = Calendar.current
+    let today = calendar.startOfDay(for: Date())
+    let target = calendar.startOfDay(for: date)
+    if target == today { return "" }
+    if let tomorrow = calendar.date(byAdding: .day, value: 1, to: today), target == tomorrow {
+        return "Tomorrow"
+    }
+    if let inAWeek = calendar.date(byAdding: .day, value: 7, to: today), target < inAWeek && target > today {
+        let formatter = DateFormatter()
+        formatter.calendar = Calendar(identifier: .gregorian)
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.dateFormat = "EEE"
+        return formatter.string(from: date)
+    }
+    let formatter = DateFormatter()
+    formatter.calendar = Calendar(identifier: .gregorian)
+    formatter.locale = Locale(identifier: "en_US_POSIX")
+    formatter.dateFormat = "MMM d"
+    return formatter.string(from: date)
+}
+
+    private func occurrenceStatusTimeColor(_ occurrence: MobileOccurrence, theme: KnotQTheme) -> Color {
     guard !occurrence.done else { return theme.textMuted }
     let now = Date()
     let anchorRaw = occurrence.kind == "assignment"

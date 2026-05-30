@@ -586,7 +586,7 @@ struct IntegratedSchemeEditorPane: View {
         .sheet(item: $dateTarget) { target in
             if let item = model.scheme(id: scheme.id)?.items.first(where: { $0.id == target.itemID }) {
                 ItemDateSheet(schemeID: scheme.id, item: item)
-                    .presentationDetents([.medium, .large])
+                    .presentationDetents([.fraction(0.50)])
             }
         }
     }
@@ -2158,8 +2158,6 @@ struct ItemDateSheet: View {
                     if hasEnd {
                         DatePicker(hasStart ? "End" : "Due", selection: $end, in: (hasStart ? start : Date.distantPast)...)
                     }
-                } footer: {
-                    Text(kindDescription)
                 }
 
                 Section {
@@ -2193,15 +2191,6 @@ struct ItemDateSheet: View {
                         .disabled(!hasStart && !hasEnd)
                 }
             }
-        }
-    }
-
-    private var kindDescription: String {
-        switch (hasStart, hasEnd) {
-        case (true, true): "Event — a time block on the calendar."
-        case (true, false): "Reminder — alerts at the start time."
-        case (false, true): "Assignment — due at the end time."
-        default: "Set a start or end time to place it on the calendar."
         }
     }
 

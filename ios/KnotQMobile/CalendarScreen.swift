@@ -68,6 +68,7 @@ struct CalendarScreen: View {
         }
         .sheet(isPresented: $showingAdd) {
             AddCalendarItemSheet()
+                .presentationDetents([.fraction(0.50)])
         }
         .refreshable { model.refresh() }
     }
@@ -233,8 +234,6 @@ struct EventEditorSheet: View {
                     if hasEnd {
                         DatePicker(hasStart ? "End" : "Due", selection: $end, in: (hasStart ? start : Date.distantPast)...)
                     }
-                } footer: {
-                    Text(kindDescription)
                 }
 
                 Section {
@@ -284,15 +283,6 @@ struct EventEditorSheet: View {
                 }
                 Button("Cancel", role: .cancel) {}
             }
-        }
-    }
-
-    private var kindDescription: String {
-        switch (hasStart, hasEnd) {
-        case (true, true): "Event — a time block on the calendar."
-        case (true, false): "Reminder — alerts at the start time."
-        case (false, true): "Assignment — due at the end time."
-        default: "Set a start or end time to place it on the calendar."
         }
     }
 
