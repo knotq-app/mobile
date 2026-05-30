@@ -1,3 +1,4 @@
+use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
@@ -9,19 +10,39 @@ use knotq_commands::{Command, DateKind, WorkspaceCommandExt};
 use knotq_index::query::{SearchHitStatus, SearchOptions, SearchTarget};
 use knotq_index::IndexedWorkspace;
 use knotq_model::{
-    AppSettings, FolderId, ImageAssetFormat, Item, ItemId, ItemKind, ItemMarker, ItemMedia,
-    NodeRef, OccurrenceId, Recurrence, Scheme, SchemeId, ThemeMode, TimeFormat, Workspace,
+    AppSettings, DocumentId, FolderId, ImageAssetFormat, Item, ItemId, ItemKind, ItemMarker,
+    ItemMedia, NodeRef, NotificationDefaults, OccurrenceId, OperationId, Recurrence, ReplicaId,
+    Scheme, SchemeId, SyncDocumentKind, ThemeMode, TimeFormat, Workspace, WorkspaceId,
     DAILY_QUEUE_COLOR_INDEX,
 };
+use knotq_notifications::{
+    compute_due_notifications_with_lead_times, NotificationLeadTimes, ScheduledNotification,
+    DEFAULT_DURABLE_NOTIFICATION_LIMIT,
+};
 use knotq_state::{daily_queue_scheme_name, make_default_workspace};
-use knotq_storage_json::{load_app_settings, load_workspace, save_app_settings, save_workspace};
+use knotq_storage_json::{
+    load_app_settings, load_local_sync_state, load_workspace, save_app_settings,
+    save_local_sync_state, save_workspace,
+};
+use knotq_sync::{
+    LocalSyncState, PendingCrdtEdit, PullUpdatesResponse, PushUpdatesRequest, PushUpdatesResponse,
+    StoredCrdtSnapshot, StoredCrdtUpdate, UpsertDocumentRequest, WorkspaceCrdtChangeSet,
+    WorkspaceCrdtDocuments,
+};
+use sha2::{Digest, Sha256};
 
 const DAILY_QUEUE_MARKER_COLOR: u32 = 0x42a5f5;
+const SYNC_BATCH_LIMIT: usize = 50;
+const NOTIFICATION_HORIZON_DAYS: i64 = 14;
+const ACTION_SNOOZE_10_MINUTES: &str = "knotq.snooze.10m";
+const ACTION_SNOOZE_1_HOUR: &str = "knotq.snooze.1h";
+const ACTION_MARK_DONE: &str = "knotq.mark_done";
+const SYNC_COMPACTED_SNAPSHOT_NOTICE: &str = "This device was far enough behind that the sync server had already compacted older CRDT changes. KnotQ applied the latest compacted snapshot and then continued syncing from there.";
 const EDITOR_IMAGE_FIXTURE_TEXT: &str = "Image layout test";
 const EDITOR_IMAGE_FIXTURE_PNG: &[u8] = &[
-    137, 80, 78, 71, 13, 10, 26, 10, 0, 0, 0, 13, 73, 72, 68, 82, 0, 0, 0, 1, 0, 0, 0, 1, 8,
-    4, 0, 0, 0, 181, 28, 12, 2, 0, 0, 0, 11, 73, 68, 65, 84, 120, 218, 99, 252, 255, 31, 0, 3,
-    3, 2, 0, 239, 191, 167, 219, 0, 0, 0, 0, 73, 69, 78, 68, 174, 66, 96, 130,
+    137, 80, 78, 71, 13, 10, 26, 10, 0, 0, 0, 13, 73, 72, 68, 82, 0, 0, 0, 1, 0, 0, 0, 1, 8, 4, 0,
+    0, 0, 181, 28, 12, 2, 0, 0, 0, 11, 73, 68, 65, 84, 120, 218, 99, 252, 255, 31, 0, 3, 3, 2, 0,
+    239, 191, 167, 219, 0, 0, 0, 0, 73, 69, 78, 68, 174, 66, 96, 130,
 ];
 
 #[derive(Debug, Clone, thiserror::Error)]
@@ -64,9 +85,18 @@ impl MobileCore {
         self.lock()?.search(&query).map_err(Into::into)
     }
 
-    pub fn create_folder(&self, name: String, position: Option<i32>) -> Result<(), MobileError> {
+    pub fn create_folder(
+        &self,
+        parent_id: Option<String>,
+        name: String,
+        position: Option<i32>,
+    ) -> Result<(), MobileError> {
         let mut inner = self.lock()?;
-        let parent = inner.workspace.root;
+        let parent = parent_id
+            .as_deref()
+            .map(parse_id)
+            .transpose()?
+            .unwrap_or(inner.workspace.root);
         inner
             .apply(Command::CreateFolder {
                 parent,
@@ -362,6 +392,23 @@ impl MobileCore {
             .map_err(Into::into)
     }
 
+    pub fn toggle_occurrence(
+        &self,
+        scheme_id: String,
+        item_id: String,
+        occurrence_json: String,
+    ) -> Result<(), MobileError> {
+        let occurrence = serde_json::from_str(&occurrence_json)
+            .with_context(|| "parse occurrence")?;
+        self.lock()?
+            .apply(Command::ToggleOccurrence {
+                scheme: parse_id(&scheme_id)?,
+                item: parse_id(&item_id)?,
+                occurrence,
+            })
+            .map_err(Into::into)
+    }
+
     pub fn delete_item(&self, scheme_id: String, item_id: String) -> Result<(), MobileError> {
         self.lock()?
             .apply(Command::DeleteItem {
@@ -407,7 +454,59 @@ impl MobileCore {
     pub fn reset_workspace(&self) -> Result<(), MobileError> {
         let mut inner = self.lock()?;
         inner.workspace = make_default_workspace();
+        inner.crdt = WorkspaceCrdtDocuments::empty(&inner.workspace);
+        let mut changes = WorkspaceCrdtChangeSet::default().workspace();
+        for id in inner.workspace.schemes.keys().copied().collect::<Vec<_>>() {
+            changes = changes.touch_scheme(id);
+        }
+        inner.record_crdt_changes(changes)?;
         inner.save_workspace().map_err(Into::into)
+    }
+
+    pub fn pending_notifications(
+        &self,
+        now: Option<String>,
+        horizon_days: i32,
+    ) -> Result<Vec<MobileNotificationRequest>, MobileError> {
+        let now = parse_datetime_opt(now.as_deref())?.unwrap_or_else(Utc::now);
+        let horizon_days = if horizon_days <= 0 {
+            NOTIFICATION_HORIZON_DAYS
+        } else {
+            i64::from(horizon_days)
+        };
+        self.lock()?
+            .pending_notifications(now, horizon_days)
+            .map_err(Into::into)
+    }
+
+    pub fn apply_notification_action(
+        &self,
+        action_id: String,
+        scheme_id: String,
+        item_id: String,
+        occurrence_json: String,
+        trigger_at: String,
+    ) -> Result<bool, MobileError> {
+        self.lock()?
+            .apply_notification_action(
+                &action_id,
+                parse_id(&scheme_id)?,
+                parse_id(&item_id)?,
+                serde_json::from_str(&occurrence_json)
+                    .with_context(|| "parse notification occurrence")?,
+                parse_datetime(&trigger_at)?,
+            )
+            .map_err(Into::into)
+    }
+
+    pub fn sync_once(&self, api_base: String, bearer_token: String) -> Result<bool, MobileError> {
+        self.lock()?
+            .sync_once(&api_base, &bearer_token)
+            .map_err(Into::into)
+    }
+
+    pub fn take_sync_notice(&self) -> Result<Option<String>, MobileError> {
+        Ok(self.lock()?.sync_notice.take())
     }
 
     pub fn seed_editor_image_fixture(&self) -> Result<(), MobileError> {
@@ -427,6 +526,9 @@ struct MobileCoreInner {
     image_assets_dir: PathBuf,
     workspace: Workspace,
     settings: AppSettings,
+    crdt: WorkspaceCrdtDocuments,
+    next_sequence: u64,
+    sync_notice: Option<String>,
 }
 
 impl MobileCoreInner {
@@ -453,19 +555,33 @@ impl MobileCoreInner {
         }
         save_workspace(&workspace_path, &workspace)?;
         save_app_settings(&settings_path, &settings)?;
+        let next_sequence = load_local_sync_state(&workspace_path)
+            .unwrap_or_default()
+            .pending
+            .iter()
+            .map(|edit| edit.local_sequence)
+            .max()
+            .unwrap_or(0)
+            + 1;
+        let crdt = WorkspaceCrdtDocuments::try_new(&workspace)?;
         Ok(Self {
             workspace_path,
             settings_path,
             image_assets_dir,
             workspace,
             settings,
+            crdt,
+            next_sequence,
+            sync_notice: None,
         })
     }
 
     fn apply(&mut self, command: Command) -> Result<()> {
+        let crdt_changes = mobile_crdt_change_set_for_command(&command);
         self.workspace.apply(command)?;
         self.workspace.normalize_one_level_folders();
         self.workspace.normalize_item_markers();
+        self.record_crdt_changes(crdt_changes)?;
         self.save_workspace()
     }
 
@@ -475,6 +591,209 @@ impl MobileCoreInner {
 
     fn save_settings(&self) -> Result<()> {
         save_app_settings(&self.settings_path, &self.settings)
+    }
+
+    fn pending_notifications(
+        &self,
+        now: DateTime<Utc>,
+        horizon_days: i64,
+    ) -> Result<Vec<MobileNotificationRequest>> {
+        let horizon_days = horizon_days.clamp(1, 60);
+        Ok(compute_due_notifications_with_lead_times(
+            &self.workspace,
+            mobile_notification_lead_times(self.settings.notification_defaults),
+            now,
+            now + Duration::days(horizon_days),
+        )
+        .into_iter()
+        .filter(|notification| notification.fire_at > now)
+        .take(DEFAULT_DURABLE_NOTIFICATION_LIMIT)
+        .map(MobileNotificationRequest::from_scheduled)
+        .collect())
+    }
+
+    fn apply_notification_action(
+        &mut self,
+        action_id: &str,
+        scheme_id: SchemeId,
+        item_id: ItemId,
+        occurrence: OccurrenceId,
+        trigger_at: DateTime<Utc>,
+    ) -> Result<bool> {
+        let item_done = self
+            .workspace
+            .scheme(scheme_id)
+            .and_then(|scheme| scheme.item(item_id))
+            .map(|item| item.state_for_occurrence(&occurrence).is_done())
+            .unwrap_or(true);
+        if item_done {
+            return Ok(false);
+        }
+
+        let command = match action_id {
+            ACTION_MARK_DONE => Command::ToggleOccurrence {
+                scheme: scheme_id,
+                item: item_id,
+                occurrence,
+            },
+            ACTION_SNOOZE_10_MINUTES => Command::SetOccurrenceNotificationOffset {
+                scheme: scheme_id,
+                item: item_id,
+                occurrence,
+                offset_secs: Some(
+                    (trigger_at - (Utc::now() + Duration::minutes(10))).num_seconds(),
+                ),
+            },
+            ACTION_SNOOZE_1_HOUR => Command::SetOccurrenceNotificationOffset {
+                scheme: scheme_id,
+                item: item_id,
+                occurrence,
+                offset_secs: Some((trigger_at - (Utc::now() + Duration::hours(1))).num_seconds()),
+            },
+            other => return Err(anyhow!("unknown notification action {other}")),
+        };
+        self.apply(command)?;
+        Ok(true)
+    }
+
+    fn record_crdt_changes(&mut self, changeset: WorkspaceCrdtChangeSet) -> Result<()> {
+        self.workspace.ensure_sync_metadata();
+        let outcome = self.crdt.sync_changes(&self.workspace, &changeset);
+        for error in &outcome.errors {
+            eprintln!("mobile CRDT update failed: {error}");
+        }
+        if outcome.updates.is_empty() {
+            return Ok(());
+        }
+
+        let mut sync_state = load_local_sync_state(&self.workspace_path).unwrap_or_default();
+        sync_state.workspace_id = Some(self.workspace.id);
+        sync_state.replica_id = Some(self.settings.replica_id);
+        let operation_id = OperationId::new();
+        let local_sequence = self.next_sequence;
+        self.next_sequence += 1;
+        for update in outcome.updates {
+            sync_state.push_pending(PendingCrdtEdit {
+                operation_id,
+                workspace_id: self.workspace.id,
+                replica_id: self.settings.replica_id,
+                local_sequence,
+                created_at: Utc::now(),
+                document: update.document,
+                kind: update.kind,
+                update_v1: update.update_v1,
+            });
+        }
+        save_local_sync_state(&self.workspace_path, &sync_state)
+    }
+
+    fn sync_once(&mut self, api_base: &str, bearer_token: &str) -> Result<bool> {
+        let client = MobileSyncHttpClient {
+            api_base: normalize_sync_api_base(api_base)?,
+            bearer_token: bearer_token.to_string(),
+        };
+        self.workspace.ensure_sync_metadata();
+
+        let mut sync_state = load_local_sync_state(&self.workspace_path).unwrap_or_default();
+        sync_state.workspace_id = Some(self.workspace.id);
+        sync_state.replica_id = Some(self.settings.replica_id);
+        sync_state.server_url = Some(client.api_base.clone());
+        sync_state.bearer_token = Some(client.bearer_token.clone());
+
+        let mut remote_latest = HashMap::new();
+        let mut remote_updates_applied = 0usize;
+        let mut pushed_any = false;
+        let mut forced_snapshot_applied = false;
+
+        mobile_upsert_documents(
+            &client,
+            self.workspace.id,
+            mobile_sync_documents(&self.workspace),
+        )?;
+
+        let workspace_doc = MobileSyncDocumentRef {
+            document: self.workspace.sync.id,
+            kind: SyncDocumentKind::PersonalWorkspace,
+        };
+        let workspace_pull = mobile_pull_document(
+            &client,
+            &sync_state,
+            self.workspace.id,
+            workspace_doc,
+            self.settings.replica_id,
+        )?;
+        remote_latest.insert(workspace_doc.document, workspace_pull.latest_sequence);
+        forced_snapshot_applied |= workspace_pull.forced_snapshot;
+        let workspace_updates = workspace_pull.updates;
+        if !workspace_updates.is_empty() {
+            let outcome = self
+                .crdt
+                .apply_remote_updates(&self.workspace, &workspace_updates);
+            if !outcome.is_ok() {
+                return Err(anyhow!("workspace CRDT apply failed: {:?}", outcome.errors));
+            }
+            remote_updates_applied += outcome.applied;
+            self.workspace = outcome.workspace;
+        }
+        sync_state.mark_pulled(
+            workspace_doc.document,
+            workspace_doc.kind,
+            workspace_pull.latest_sequence,
+        );
+
+        mobile_upsert_documents(
+            &client,
+            self.workspace.id,
+            mobile_sync_documents(&self.workspace),
+        )?;
+
+        let mut scheme_updates = Vec::new();
+        for doc in mobile_scheme_documents(&self.workspace) {
+            let pull = mobile_pull_document(
+                &client,
+                &sync_state,
+                self.workspace.id,
+                doc,
+                self.settings.replica_id,
+            )?;
+            remote_latest.insert(doc.document, pull.latest_sequence);
+            forced_snapshot_applied |= pull.forced_snapshot;
+            if !pull.updates.is_empty() {
+                scheme_updates.extend(pull.updates);
+            }
+            sync_state.mark_pulled(doc.document, doc.kind, pull.latest_sequence);
+        }
+        if !scheme_updates.is_empty() {
+            let outcome = self
+                .crdt
+                .apply_remote_updates(&self.workspace, &scheme_updates);
+            if !outcome.is_ok() {
+                return Err(anyhow!("scheme CRDT apply failed: {:?}", outcome.errors));
+            }
+            remote_updates_applied += outcome.applied;
+            self.workspace = outcome.workspace;
+        }
+
+        mobile_queue_bootstrap_updates(
+            &mut sync_state,
+            &self.workspace,
+            self.settings.replica_id,
+            &remote_latest,
+        );
+        pushed_any |= mobile_push_pending_documents(&client, &mut sync_state, self.workspace.id)?;
+
+        save_local_sync_state(&self.workspace_path, &sync_state)?;
+        if remote_updates_applied > 0 {
+            self.workspace.normalize_one_level_folders();
+            self.workspace.normalize_item_markers();
+            self.crdt = WorkspaceCrdtDocuments::try_new(&self.workspace)?;
+            self.save_workspace()?;
+        }
+        if forced_snapshot_applied {
+            self.sync_notice = Some(SYNC_COMPACTED_SNAPSHOT_NOTICE.to_string());
+        }
+
+        Ok(remote_updates_applied > 0 || pushed_any || forced_snapshot_applied)
     }
 
     fn ensure_daily_queue(&mut self, date: NaiveDate) -> Result<SchemeId> {
@@ -488,6 +807,11 @@ impl MobileCoreInner {
         let id = scheme.id;
         self.workspace.daily_queue.insert(date, id);
         self.workspace.schemes.insert(id, scheme);
+        self.record_crdt_changes(
+            WorkspaceCrdtChangeSet::default()
+                .workspace()
+                .touch_scheme(id),
+        )?;
         Ok(id)
     }
 
@@ -707,6 +1031,7 @@ impl MobileCoreInner {
         }
         let Some(scheme) = self.workspace.scheme(scheme_id).cloned() else {
             self.workspace.unmark_scheme_deleted(scheme_id);
+            self.record_crdt_changes(WorkspaceCrdtChangeSet::default().workspace())?;
             return self.save_workspace();
         };
         let (folder, position) = self.deleted_scheme_restore_target(scheme_id);
@@ -747,11 +1072,7 @@ impl MobileCoreInner {
     }
 
     fn is_valid_scheme_restore_folder(&self, folder: FolderId) -> bool {
-        folder == self.workspace.root
-            || self
-                .workspace
-                .folder(folder)
-                .is_some_and(|folder| folder.parent == Some(self.workspace.root))
+        self.workspace.folder(folder).is_some()
     }
 
     fn seed_editor_image_fixture(&mut self) -> Result<()> {
@@ -804,6 +1125,7 @@ impl MobileCoreInner {
             .scheme_mut(target_id)
             .ok_or_else(|| anyhow!("scheme {target_id} is missing"))?;
         scheme.items.push(item);
+        self.record_crdt_changes(WorkspaceCrdtChangeSet::default().touch_scheme(target_id))?;
         self.save_workspace()
     }
 
@@ -855,7 +1177,388 @@ impl MobileCoreInner {
             .ok_or_else(|| anyhow!("scheme {scheme_id} is missing"))?;
         scheme.items = next_items;
         self.workspace.normalize_item_markers();
+        self.record_crdt_changes(WorkspaceCrdtChangeSet::default().touch_scheme(scheme_id))?;
         self.save_workspace()
+    }
+}
+
+#[derive(Clone, Copy)]
+struct MobileSyncDocumentRef {
+    document: DocumentId,
+    kind: SyncDocumentKind,
+}
+
+struct MobileSyncHttpClient {
+    api_base: String,
+    bearer_token: String,
+}
+
+fn mobile_sync_documents(workspace: &Workspace) -> Vec<MobileSyncDocumentRef> {
+    let mut docs = vec![MobileSyncDocumentRef {
+        document: workspace.sync.id,
+        kind: SyncDocumentKind::PersonalWorkspace,
+    }];
+    docs.extend(mobile_scheme_documents(workspace));
+    docs
+}
+
+fn mobile_scheme_documents(workspace: &Workspace) -> Vec<MobileSyncDocumentRef> {
+    workspace
+        .scheme_sync
+        .values()
+        .filter(|meta| meta.kind == SyncDocumentKind::Scheme)
+        .map(|meta| MobileSyncDocumentRef {
+            document: meta.id,
+            kind: SyncDocumentKind::Scheme,
+        })
+        .collect()
+}
+
+fn mobile_upsert_documents(
+    client: &MobileSyncHttpClient,
+    workspace_id: WorkspaceId,
+    docs: Vec<MobileSyncDocumentRef>,
+) -> Result<()> {
+    let mut seen = HashSet::new();
+    for doc in docs {
+        if seen.insert(doc.document) {
+            client.upsert_document(workspace_id, doc)?;
+        }
+    }
+    Ok(())
+}
+
+struct MobileAccumulatedPull {
+    updates: Vec<StoredCrdtUpdate>,
+    latest_sequence: u64,
+    forced_snapshot: bool,
+}
+
+/// Pull a document one bounded page at a time, following the server's `has_more`
+/// flag until caught up. Without this loop a far-behind replica would receive
+/// only the first server page yet advance its cursor to `latest_sequence`,
+/// silently skipping every update beyond that page.
+fn mobile_pull_document(
+    client: &MobileSyncHttpClient,
+    sync_state: &LocalSyncState,
+    workspace_id: WorkspaceId,
+    doc: MobileSyncDocumentRef,
+    replica_id: ReplicaId,
+) -> Result<MobileAccumulatedPull> {
+    let mut after = sync_state
+        .document_cursors
+        .get(&doc.document)
+        .map(|cursor| cursor.last_pulled_sequence)
+        .unwrap_or(0);
+    let mut updates = Vec::new();
+    let mut latest_sequence;
+    let mut forced_snapshot = false;
+    loop {
+        let response = client.pull_updates(workspace_id, doc.document, after, replica_id)?;
+        latest_sequence = response.latest_sequence;
+        forced_snapshot |= response.forced_snapshot;
+        let page = mobile_pull_response_updates(&response);
+        let page_max = page.iter().map(|update| update.sequence).max();
+        updates.extend(page);
+        match page_max {
+            Some(max) if response.has_more && max > after => after = max,
+            _ => break,
+        }
+    }
+    Ok(MobileAccumulatedPull {
+        updates,
+        latest_sequence,
+        forced_snapshot,
+    })
+}
+
+fn mobile_pull_response_updates(response: &PullUpdatesResponse) -> Vec<StoredCrdtUpdate> {
+    let mut updates = Vec::new();
+    if let Some(snapshot) = &response.snapshot {
+        updates.push(mobile_snapshot_as_update(snapshot));
+    }
+    updates.extend(response.updates.iter().cloned());
+    updates
+}
+
+fn mobile_snapshot_as_update(snapshot: &StoredCrdtSnapshot) -> StoredCrdtUpdate {
+    StoredCrdtUpdate {
+        workspace_id: snapshot.workspace_id,
+        document: snapshot.document,
+        kind: snapshot.kind,
+        replica_id: ReplicaId::new(),
+        sequence: snapshot.sequence,
+        received_at: snapshot.compacted_at,
+        update_v1: snapshot.update_v1.clone(),
+    }
+}
+
+fn mobile_queue_bootstrap_updates(
+    sync_state: &mut LocalSyncState,
+    workspace: &Workspace,
+    replica_id: ReplicaId,
+    remote_latest: &HashMap<DocumentId, u64>,
+) {
+    let mut next_sequence = sync_state
+        .pending
+        .iter()
+        .map(|edit| edit.local_sequence)
+        .max()
+        .unwrap_or(0)
+        + 1;
+    for update in WorkspaceCrdtDocuments::snapshot_updates(workspace).updates {
+        if remote_latest.get(&update.document).copied().unwrap_or(0) != 0 {
+            continue;
+        }
+        if sync_state
+            .pending
+            .iter()
+            .any(|pending| pending.document == update.document)
+        {
+            continue;
+        }
+        if sync_state
+            .document_cursors
+            .get(&update.document)
+            .is_some_and(|cursor| cursor.last_pushed_sequence > 0)
+        {
+            continue;
+        }
+        sync_state.push_pending(PendingCrdtEdit {
+            operation_id: OperationId::new(),
+            workspace_id: workspace.id,
+            replica_id,
+            local_sequence: next_sequence,
+            created_at: Utc::now(),
+            document: update.document,
+            kind: update.kind,
+            update_v1: update.update_v1,
+        });
+        next_sequence += 1;
+    }
+}
+
+fn mobile_push_pending_documents(
+    client: &MobileSyncHttpClient,
+    sync_state: &mut LocalSyncState,
+    workspace_id: WorkspaceId,
+) -> Result<bool> {
+    let mut pushed_any = false;
+    loop {
+        let Some(document) = sync_state.pending.front().map(|edit| edit.document) else {
+            return Ok(pushed_any);
+        };
+        let pending = sync_state.pending_for_document(document, SYNC_BATCH_LIMIT);
+        if pending.is_empty() {
+            return Ok(pushed_any);
+        }
+        let kind = pending[0].kind;
+        client.upsert_document(workspace_id, MobileSyncDocumentRef { document, kind })?;
+        let request = sync_state
+            .next_push_request(document, SYNC_BATCH_LIMIT)
+            .ok_or_else(|| anyhow!("missing push request for pending document"))?;
+        let through_local_sequence = pending
+            .iter()
+            .map(|edit| edit.local_sequence)
+            .max()
+            .unwrap_or(0);
+        let response = client.push_updates(workspace_id, document, &request)?;
+        if response.accepted != request.updates.len() {
+            return Err(anyhow!(
+                "sync backend accepted {}/{} updates for {}",
+                response.accepted,
+                request.updates.len(),
+                document
+            ));
+        }
+        sync_state.mark_pushed(document, through_local_sequence);
+        pushed_any = true;
+    }
+}
+
+impl MobileSyncHttpClient {
+    fn upsert_document(&self, workspace_id: WorkspaceId, doc: MobileSyncDocumentRef) -> Result<()> {
+        let url = format!(
+            "{}/v1/workspaces/{}/documents/{}",
+            self.api_base, workspace_id, doc.document
+        );
+        self.put_json::<_, knotq_sync::DocumentResponse>(
+            &url,
+            &UpsertDocumentRequest { kind: doc.kind },
+        )
+        .map(|_| ())
+    }
+
+    fn pull_updates(
+        &self,
+        workspace_id: WorkspaceId,
+        document: DocumentId,
+        after: u64,
+        replica_id: ReplicaId,
+    ) -> Result<PullUpdatesResponse> {
+        let url = format!(
+            "{}/v1/workspaces/{}/documents/{}/updates?after={}&exclude_replica={}",
+            self.api_base, workspace_id, document, after, replica_id
+        );
+        self.get_json(&url)
+    }
+
+    fn push_updates(
+        &self,
+        workspace_id: WorkspaceId,
+        document: DocumentId,
+        request: &PushUpdatesRequest,
+    ) -> Result<PushUpdatesResponse> {
+        let url = format!(
+            "{}/v1/workspaces/{}/documents/{}/updates",
+            self.api_base, workspace_id, document
+        );
+        self.post_json(&url, request)
+    }
+
+    fn get_json<T: serde::de::DeserializeOwned>(&self, url: &str) -> Result<T> {
+        self.authorized(ureq::get(url))
+            .call()
+            .map_err(mobile_sync_http_error)?
+            .into_json()
+            .with_context(|| format!("parse sync response from {url}"))
+    }
+
+    fn post_json<T, R>(&self, url: &str, body: &T) -> Result<R>
+    where
+        T: serde::Serialize,
+        R: serde::de::DeserializeOwned,
+    {
+        self.authorized(ureq::post(url))
+            .send_json(serde_json::to_value(body)?)
+            .map_err(mobile_sync_http_error)?
+            .into_json()
+            .with_context(|| format!("parse sync response from {url}"))
+    }
+
+    fn put_json<T, R>(&self, url: &str, body: &T) -> Result<R>
+    where
+        T: serde::Serialize,
+        R: serde::de::DeserializeOwned,
+    {
+        self.authorized(ureq::put(url))
+            .send_json(serde_json::to_value(body)?)
+            .map_err(mobile_sync_http_error)?
+            .into_json()
+            .with_context(|| format!("parse sync response from {url}"))
+    }
+
+    fn authorized(&self, request: ureq::Request) -> ureq::Request {
+        request
+            .timeout(std::time::Duration::from_secs(30))
+            .set("authorization", &format!("Bearer {}", self.bearer_token))
+    }
+}
+
+fn mobile_sync_http_error(error: ureq::Error) -> anyhow::Error {
+    match error {
+        ureq::Error::Status(status, response) => {
+            let code = response
+                .into_json::<knotq_sync::ErrorResponse>()
+                .map(|error| error.code)
+                .unwrap_or_else(|_| status.to_string());
+            anyhow!("sync backend rejected request: {code}")
+        }
+        error => anyhow!("sync backend request failed: {error}"),
+    }
+}
+
+fn normalize_sync_api_base(raw: &str) -> Result<String> {
+    let trimmed = raw.trim().trim_end_matches('/');
+    if trimmed.is_empty() {
+        return Err(anyhow!("sync API URL is empty"));
+    }
+    // The bearer token and all workspace contents travel over this URL. Refuse
+    // plaintext HTTP to anything other than a loopback dev server so a misconfig
+    // can't silently leak credentials in the clear.
+    if !mobile_is_secure_api_base(trimmed) {
+        return Err(anyhow!("sync API URL must use https:// (got {trimmed})"));
+    }
+    Ok(trimmed.to_string())
+}
+
+fn mobile_is_secure_api_base(url: &str) -> bool {
+    if let Some(host) = url.strip_prefix("https://") {
+        return !host.is_empty();
+    }
+    if let Some(rest) = url.strip_prefix("http://") {
+        let host = rest
+            .split(['/', ':'])
+            .next()
+            .unwrap_or("")
+            .to_ascii_lowercase();
+        return matches!(host.as_str(), "127.0.0.1" | "localhost" | "[::1]" | "::1");
+    }
+    false
+}
+
+#[cfg(test)]
+mod sync_api_base_tests {
+    use super::normalize_sync_api_base;
+
+    #[test]
+    fn https_is_accepted_http_loopback_only() {
+        assert_eq!(
+            normalize_sync_api_base("https://sync.example.com/").unwrap(),
+            "https://sync.example.com"
+        );
+        assert!(normalize_sync_api_base("http://127.0.0.1:8787").is_ok());
+        assert!(normalize_sync_api_base("http://sync.example.com").is_err());
+        assert!(normalize_sync_api_base("").is_err());
+    }
+}
+
+fn mobile_crdt_change_set_for_command(command: &Command) -> WorkspaceCrdtChangeSet {
+    let mut changes = WorkspaceCrdtChangeSet::default();
+    mobile_collect_crdt_changes(command, &mut changes);
+    changes
+}
+
+fn mobile_collect_crdt_changes(command: &Command, out: &mut WorkspaceCrdtChangeSet) {
+    match command {
+        Command::CreateFolder { .. }
+        | Command::RestoreFolder { .. }
+        | Command::RenameFolder { .. }
+        | Command::SetFolderExpanded { .. }
+        | Command::DeleteFolder { .. }
+        | Command::CreateScheme { .. }
+        | Command::RenameScheme { .. }
+        | Command::SetSchemeColor { .. }
+        | Command::SetSchemeGsync { .. }
+        | Command::SetSchemeSource { .. }
+        | Command::DeleteScheme { .. }
+        | Command::PermanentlyDeleteScheme { .. }
+        | Command::MoveNode { .. } => {
+            out.workspace = true;
+        }
+        Command::RestoreScheme { scheme, .. } | Command::RestoreDeletedScheme { scheme, .. } => {
+            out.workspace = true;
+            out.schemes.insert(scheme.id);
+        }
+        Command::InsertItem { scheme, .. }
+        | Command::UpdateItemText { scheme, .. }
+        | Command::ReplaceItem { scheme, .. }
+        | Command::SetItemIndent { scheme, .. }
+        | Command::SetItemMarker { scheme, .. }
+        | Command::SetItemDate { scheme, .. }
+        | Command::SetItemRecurrence { scheme, .. }
+        | Command::SetItemPriority { scheme, .. }
+        | Command::SetOccurrenceNotificationOffset { scheme, .. }
+        | Command::ToggleOccurrence { scheme, .. }
+        | Command::DeleteItem { scheme, .. }
+        | Command::ReorderItem { scheme, .. } => {
+            out.schemes.insert(*scheme);
+        }
+        Command::Batch(commands) => {
+            for command in commands {
+                mobile_collect_crdt_changes(command, out);
+            }
+        }
     }
 }
 
@@ -997,6 +1700,7 @@ pub struct MobileCalendarDay {
 pub struct MobileOccurrence {
     pub scheme_id: String,
     pub item_id: String,
+    pub occurrence_json: String,
     pub scheme_name: String,
     pub color_index: i32,
     pub title: String,
@@ -1023,9 +1727,11 @@ impl MobileOccurrence {
             .start
             .or(context.occurrence.end)
             .map(|dt| dt.date_naive().to_string());
+        let occurrence_json = serde_json::to_string(&context.occurrence.id).unwrap_or_default();
         Self {
             scheme_id: context.scheme_id.to_string(),
             item_id: context.item_id.to_string(),
+            occurrence_json,
             scheme_name: context.scheme_name,
             color_index: i32::from(context.color_index),
             title,
@@ -1043,6 +1749,46 @@ impl MobileOccurrence {
 pub struct MobileSettings {
     pub theme_mode: String,
     pub time_format: String,
+}
+
+#[derive(Clone, Debug)]
+pub struct MobileNotificationRequest {
+    pub id: String,
+    pub notification_key: String,
+    pub fire_at: String,
+    pub expires_at: Option<String>,
+    pub title: String,
+    pub body: String,
+    pub kind: String,
+    pub scheme_id: String,
+    pub item_id: String,
+    pub occurrence_json: String,
+    pub trigger_at: String,
+}
+
+impl MobileNotificationRequest {
+    fn from_scheduled(notification: ScheduledNotification) -> Self {
+        let occurrence_json = serde_json::to_string(&notification.occurrence).unwrap_or_default();
+        let notification_key = notification.key;
+        Self {
+            id: mobile_notification_id(&notification_key),
+            notification_key,
+            fire_at: format_datetime(notification.fire_at),
+            expires_at: notification.expires_at.map(format_datetime),
+            title: notification.title,
+            body: notification.body,
+            kind: match notification.kind {
+                knotq_notifications::NotificationKind::Reminder => "reminder",
+                knotq_notifications::NotificationKind::Event => "event",
+                knotq_notifications::NotificationKind::Assignment => "assignment",
+            }
+            .to_string(),
+            scheme_id: notification.scheme_id.to_string(),
+            item_id: notification.item_id.to_string(),
+            occurrence_json,
+            trigger_at: format_datetime(notification.trigger_at),
+        }
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -1109,11 +1855,13 @@ fn parse_date_or_today(raw: Option<&str>) -> Result<NaiveDate> {
 
 fn parse_datetime_opt(raw: Option<&str>) -> Result<Option<DateTime<Utc>>> {
     match raw {
-        Some(raw) if !raw.is_empty() => {
-            Ok(Some(DateTime::parse_from_rfc3339(raw)?.with_timezone(&Utc)))
-        }
+        Some(raw) if !raw.is_empty() => Ok(Some(parse_datetime(raw)?)),
         _ => Ok(None),
     }
+}
+
+fn parse_datetime(raw: &str) -> Result<DateTime<Utc>> {
+    Ok(DateTime::parse_from_rfc3339(raw)?.with_timezone(&Utc))
 }
 
 fn default_today() -> NaiveDate {
@@ -1178,6 +1926,22 @@ fn time_format_str(time_format: TimeFormat) -> &'static str {
         TimeFormat::TwelveHour => "twelve_hour",
         TimeFormat::TwentyFourHour => "twenty_four_hour",
     }
+}
+
+fn mobile_notification_lead_times(defaults: NotificationDefaults) -> NotificationLeadTimes {
+    NotificationLeadTimes {
+        reminder_offset_secs: 0,
+        event_offset_secs: defaults.event_offset_secs,
+        assignment_offset_secs: defaults.assignment_offset_secs,
+    }
+}
+
+fn mobile_notification_id(key: &str) -> String {
+    let digest = Sha256::digest(key.as_bytes());
+    format!(
+        "knotq-{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}",
+        digest[0], digest[1], digest[2], digest[3], digest[4], digest[5], digest[6], digest[7]
+    )
 }
 
 fn next_color_index(workspace: &Workspace) -> u8 {
@@ -1323,6 +2087,50 @@ mod tests {
         );
         assert_eq!(scheme.items[1].marker, "bullet");
         assert_eq!(scheme.items[1].indent, 2);
+
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn pending_notifications_use_stable_mobile_ids_and_actions() {
+        let dir = std::env::temp_dir().join(format!("knotq-mobile-test-{}", uuid::Uuid::new_v4()));
+        let core = MobileCore::new(dir.display().to_string()).expect("open mobile core");
+
+        core.add_calendar_item(
+            None,
+            Some("2026-05-27".to_string()),
+            "Send deck".to_string(),
+            "reminder".to_string(),
+            Some("2026-05-27T15:00:00Z".to_string()),
+            None,
+        )
+        .expect("add reminder");
+
+        let requests = core
+            .pending_notifications(Some("2026-05-27T12:00:00Z".to_string()), 14)
+            .expect("pending notifications");
+        let request = requests
+            .iter()
+            .find(|request| request.title == "Send deck")
+            .expect("new reminder notification");
+        assert!(request.id.starts_with("knotq-"));
+        assert_eq!(request.kind, "reminder");
+
+        let changed = core
+            .apply_notification_action(
+                ACTION_MARK_DONE.to_string(),
+                request.scheme_id.clone(),
+                request.item_id.clone(),
+                request.occurrence_json.clone(),
+                request.trigger_at.clone(),
+            )
+            .expect("mark done");
+        assert!(changed);
+
+        let requests = core
+            .pending_notifications(Some("2026-05-27T12:00:00Z".to_string()), 14)
+            .expect("pending notifications after action");
+        assert!(!requests.iter().any(|request| request.title == "Send deck"));
 
         let _ = std::fs::remove_dir_all(dir);
     }

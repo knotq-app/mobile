@@ -9,6 +9,7 @@ import com.enigmadux.knotq.ffi.MobileItem
 import com.enigmadux.knotq.ffi.MobileItemEdit
 import com.enigmadux.knotq.ffi.MobileItemMedia
 import com.enigmadux.knotq.ffi.MobileNode
+import com.enigmadux.knotq.ffi.MobileNotificationRequest
 import com.enigmadux.knotq.ffi.MobileOccurrence
 import com.enigmadux.knotq.ffi.MobileScheme
 import com.enigmadux.knotq.ffi.MobileSearchHit
@@ -32,7 +33,7 @@ internal class RustBridge(context: Context) : AutoCloseable {
     fun request(body: JSONObject): JSONObject {
         when (body.getString("type")) {
             "snapshot" -> return core.snapshot(body.stringOrNull("today"), body.optInt("week_offset", 0)).toJson()
-            "create_folder" -> core.createFolder(body.getString("name"), body.intOrNull("position"))
+            "create_folder" -> core.createFolder(body.stringOrNull("parent_id"), body.getString("name"), body.intOrNull("position"))
             "rename_folder" -> core.renameFolder(body.getString("folder_id"), body.getString("name"))
             "delete_folder" -> core.deleteFolder(body.getString("folder_id"))
             "create_scheme" -> core.createScheme(
@@ -91,6 +92,11 @@ internal class RustBridge(context: Context) : AutoCloseable {
                 body.stringOrNull("date")
             )
             "toggle_item" -> core.toggleItem(body.getString("scheme_id"), body.getString("item_id"))
+            "toggle_occurrence" -> core.toggleOccurrence(
+                body.getString("scheme_id"),
+                body.getString("item_id"),
+                body.getString("occurrence_json")
+            )
             "delete_item" -> core.deleteItem(body.getString("scheme_id"), body.getString("item_id"))
             "reorder_item" -> core.reorderItem(
                 body.getString("scheme_id"),
@@ -104,6 +110,25 @@ internal class RustBridge(context: Context) : AutoCloseable {
             "set_theme_mode" -> core.setThemeMode(body.getString("theme_mode"))
             "set_time_format" -> core.setTimeFormat(body.getString("time_format"))
             "reset_workspace" -> core.resetWorkspace()
+            "apply_notification_action" -> return JSONObject().put(
+                "changed",
+                core.applyNotificationAction(
+                    body.getString("action_id"),
+                    body.getString("scheme_id"),
+                    body.getString("item_id"),
+                    body.getString("occurrence_json"),
+                    body.getString("trigger_at")
+                )
+            )
+            "sync_once" -> {
+                val changed = core.syncOnce(body.getString("api_base"), body.getString("bearer_token"))
+                val notice = core.takeSyncNotice()
+                val response = JSONObject().put("changed", changed)
+                if (notice != null) {
+                    response.put("notice", notice)
+                }
+                return response
+            }
             else -> error("Unknown Rust request: ${body.getString("type")}")
         }
         return JSONObject()
@@ -112,6 +137,7 @@ internal class RustBridge(context: Context) : AutoCloseable {
     fun requestArray(body: JSONObject): JSONArray {
         return when (body.getString("type")) {
             "search" -> core.search(body.getString("query")).toJsonArray { it.toJson() }
+            "pending_notifications" -> core.pendingNotifications(null, 14).toJsonArray { it.toJson() }
             else -> error("Unknown Rust array request: ${body.getString("type")}")
         }
     }
@@ -182,6 +208,7 @@ internal class RustBridge(context: Context) : AutoCloseable {
     private fun MobileOccurrence.toJson(): JSONObject = JSONObject()
         .put("scheme_id", schemeId)
         .put("item_id", itemId)
+        .put("occurrence_json", occurrenceJson)
         .put("scheme_name", schemeName)
         .put("color_index", colorIndex)
         .put("title", title)
@@ -190,10 +217,24 @@ internal class RustBridge(context: Context) : AutoCloseable {
         .put("start", start ?: JSONObject.NULL)
         .put("end", end ?: JSONObject.NULL)
         .put("local_date", localDate ?: JSONObject.NULL)
+        .put("repeat_rule", repeatRule ?: JSONObject.NULL)
 
     private fun MobileSettings.toJson(): JSONObject = JSONObject()
         .put("theme_mode", themeMode)
         .put("time_format", timeFormat)
+
+    private fun MobileNotificationRequest.toJson(): JSONObject = JSONObject()
+        .put("id", id)
+        .put("notification_key", notificationKey)
+        .put("fire_at", fireAt)
+        .put("expires_at", expiresAt ?: JSONObject.NULL)
+        .put("title", title)
+        .put("body", body)
+        .put("kind", kind)
+        .put("scheme_id", schemeId)
+        .put("item_id", itemId)
+        .put("occurrence_json", occurrenceJson)
+        .put("trigger_at", triggerAt)
 
     private fun MobileSearchHit.toJson(): JSONObject = JSONObject()
         .put("target_kind", targetKind)

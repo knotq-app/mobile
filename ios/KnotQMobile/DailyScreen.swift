@@ -3,6 +3,7 @@ import SwiftUI
 struct DailyScreen: View {
     @EnvironmentObject private var model: AppModel
     @Environment(\.colorScheme) private var systemScheme
+    @Environment(\.dismiss) private var dismiss
 
     private var theme: KnotQTheme {
         KnotQTheme.resolve(mode: model.snapshot?.settings.themeMode, systemScheme: systemScheme)
@@ -20,6 +21,7 @@ struct DailyScreen: View {
                     model.ensureDailyQueue(date: date)
                 }
             },
+            onBack: { dismiss() },
             onAdd: {
                 if let scheme = model.snapshot?.daily.first(where: { $0.date == AppModel.dateOnly(model.selectedDate) })?.scheme {
                     model.addItem(schemeID: scheme.id, text: "", marker: .checkbox)

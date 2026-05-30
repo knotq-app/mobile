@@ -29,6 +29,12 @@ android {
     kotlinOptions {
         jvmTarget = "17"
     }
+
+    packaging {
+        jniLibs {
+            keepDebugSymbols += ["**/libjnidispatch.so", "**/libknotq_mobile_core.so"]
+        }
+    }
 }
 
 dependencies {

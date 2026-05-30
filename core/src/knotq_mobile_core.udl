@@ -84,6 +84,7 @@ dictionary MobileCalendarDay {
 dictionary MobileOccurrence {
   string scheme_id;
   string item_id;
+  string occurrence_json;
   string scheme_name;
   i32 color_index;
   string title;
@@ -98,6 +99,20 @@ dictionary MobileOccurrence {
 dictionary MobileSettings {
   string theme_mode;
   string time_format;
+};
+
+dictionary MobileNotificationRequest {
+  string id;
+  string notification_key;
+  string fire_at;
+  string? expires_at;
+  string title;
+  string body;
+  string kind;
+  string scheme_id;
+  string item_id;
+  string occurrence_json;
+  string trigger_at;
 };
 
 dictionary MobileSearchHit {
@@ -122,7 +137,7 @@ interface MobileCore {
   sequence<MobileSearchHit> search(string query);
 
   [Throws=MobileError]
-  void create_folder(string name, i32? position);
+  void create_folder(string? parent_id, string name, i32? position);
 
   [Throws=MobileError]
   void rename_folder(string folder_id, string name);
@@ -182,6 +197,9 @@ interface MobileCore {
   void toggle_item(string scheme_id, string item_id);
 
   [Throws=MobileError]
+  void toggle_occurrence(string scheme_id, string item_id, string occurrence_json);
+
+  [Throws=MobileError]
   void delete_item(string scheme_id, string item_id);
 
   [Throws=MobileError]
@@ -198,6 +216,18 @@ interface MobileCore {
 
   [Throws=MobileError]
   void reset_workspace();
+
+  [Throws=MobileError]
+  sequence<MobileNotificationRequest> pending_notifications(string? now, i32 horizon_days);
+
+  [Throws=MobileError]
+  boolean apply_notification_action(string action_id, string scheme_id, string item_id, string occurrence_json, string trigger_at);
+
+  [Throws=MobileError]
+  boolean sync_once(string api_base, string bearer_token);
+
+  [Throws=MobileError]
+  string? take_sync_notice();
 
   [Throws=MobileError]
   void seed_editor_image_fixture();

@@ -1,6 +1,6 @@
 import Foundation
 
-final class RustBridge {
+final class RustBridge: @unchecked Sendable {
     private let core: MobileCore
 
     init() throws {
@@ -23,8 +23,8 @@ final class RustBridge {
         try core.search(query: query)
     }
 
-    func createFolder(name: String) throws {
-        try core.createFolder(name: name, position: nil)
+    func createFolder(name: String, parentID: String?) throws {
+        try core.createFolder(parentId: parentID, name: name, position: nil)
     }
 
     func renameFolder(id: String, name: String) throws {
@@ -107,6 +107,10 @@ final class RustBridge {
         try core.toggleItem(schemeId: schemeID, itemId: itemID)
     }
 
+    func toggleOccurrence(schemeID: String, itemID: String, occurrenceJSON: String) throws {
+        try core.toggleOccurrence(schemeId: schemeID, itemId: itemID, occurrenceJson: occurrenceJSON)
+    }
+
     func deleteItem(schemeID: String, itemID: String) throws {
         try core.deleteItem(schemeId: schemeID, itemId: itemID)
     }
@@ -125,6 +129,28 @@ final class RustBridge {
 
     func resetWorkspace() throws {
         try core.resetWorkspace()
+    }
+
+    func pendingNotifications() throws -> [MobileNotificationRequest] {
+        try core.pendingNotifications(now: nil, horizonDays: 14)
+    }
+
+    func applyNotificationAction(_ request: MobileNotificationActionRequest) throws -> Bool {
+        try core.applyNotificationAction(
+            actionId: request.actionID,
+            schemeId: request.schemeID,
+            itemId: request.itemID,
+            occurrenceJson: request.occurrenceJSON,
+            triggerAt: request.triggerAt
+        )
+    }
+
+    func syncOnce(apiBase: String, bearerToken: String) throws -> Bool {
+        try core.syncOnce(apiBase: apiBase, bearerToken: bearerToken)
+    }
+
+    func takeSyncNotice() throws -> String? {
+        try core.takeSyncNotice()
     }
 
     func seedEditorImageFixture() throws {

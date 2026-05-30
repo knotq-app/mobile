@@ -449,6 +449,10 @@ final class EditorController: ObservableObject {
         guard let view, !view.isFirstResponder else { return }
         view.becomeFirstResponder()
     }
+
+    func focusTitle() {
+        view?.focusTitle()
+    }
 }
 
 struct IntegratedSchemeEditorPane: View {
@@ -467,7 +471,6 @@ struct IntegratedSchemeEditorPane: View {
     @State private var schemeSignature = ""
     @State private var dateTarget: EditorDateTarget?
     @State private var loadedSchemeID: String?
-    @State private var archiveTarget: ArchiveTarget?
 
     private var accent: Color {
         schemeColor(scheme.colorIndex, dark: theme.isDark)
@@ -487,6 +490,8 @@ struct IntegratedSchemeEditorPane: View {
     }
 
     let autoFocusOnAppear: Bool
+    let autoFocusTitleOnAppear: Bool
+    let onAutoFocusTitleConsumed: () -> Void
 
     init(
         scheme: MobileScheme,
@@ -497,7 +502,9 @@ struct IntegratedSchemeEditorPane: View {
         showsEditorNavigation: Bool = true,
         editorScrollEnabled: Bool = true,
         editorInsets: UIEdgeInsets = UIEdgeInsets(top: 6, left: DesktopEditorMetrics.textLeftPad, bottom: 180, right: 24),
-        autoFocusOnAppear: Bool = false
+        autoFocusOnAppear: Bool = false,
+        autoFocusTitleOnAppear: Bool = false,
+        onAutoFocusTitleConsumed: @escaping () -> Void = {}
     ) {
         self.scheme = scheme
         self.theme = theme
@@ -508,6 +515,8 @@ struct IntegratedSchemeEditorPane: View {
         self.editorScrollEnabled = editorScrollEnabled
         self.editorInsets = editorInsets
         self.autoFocusOnAppear = autoFocusOnAppear
+        self.autoFocusTitleOnAppear = autoFocusTitleOnAppear
+        self.onAutoFocusTitleConsumed = onAutoFocusTitleConsumed
     }
 
     var body: some View {
@@ -563,7 +572,7 @@ struct IntegratedSchemeEditorPane: View {
                         ColorMenu(nodeID: scheme.id, colorIndex: scheme.colorIndex, theme: theme)
                         Button("Save", systemImage: "checkmark") { commitDocument() }
                         Button("Archive", systemImage: "archivebox") {
-                            archiveTarget = .scheme(scheme)
+                            archiveCurrentScheme()
                         }
                             .disabled(scheme.isDailyQueue)
                     } label: {
@@ -576,7 +585,12 @@ struct IntegratedSchemeEditorPane: View {
         }
         .onAppear {
             loadDocument(force: true)
-            if autoFocusOnAppear {
+            if autoFocusTitleOnAppear {
+                DispatchQueue.main.async {
+                    controller.focusTitle()
+                    onAutoFocusTitleConsumed()
+                }
+            } else if autoFocusOnAppear {
                 // Focus on the next runloop tick (once the text view is in the
                 // window) rather than after a fixed delay, so the caret + scroll
                 // land immediately instead of a beat later.
@@ -596,9 +610,6 @@ struct IntegratedSchemeEditorPane: View {
                 ItemDateSheet(schemeID: scheme.id, item: item)
                     .presentationDetents([.medium, .large])
             }
-        }
-        .archiveConfirmation(target: $archiveTarget) { _ in
-            archiveCurrentScheme()
         }
     }
 
@@ -627,7 +638,7 @@ struct IntegratedSchemeEditorPane: View {
                 ColorMenu(nodeID: scheme.id, colorIndex: scheme.colorIndex, theme: theme)
                 Button("Commit Edits", systemImage: "checkmark") { commitDocument() }
                 Button("Archive", systemImage: "archivebox") {
-                    archiveTarget = .scheme(scheme)
+                    archiveCurrentScheme()
                 }
                     .disabled(scheme.isDailyQueue)
             } label: {
@@ -1292,6 +1303,12 @@ private final class EditorInlineTitleView: UIView, UITextFieldDelegate {
         updateError()
     }
 
+    func focusAndSelectTitle() {
+        guard textField.isUserInteractionEnabled else { return }
+        textField.becomeFirstResponder()
+        textField.selectAll(nil)
+    }
+
     override func layoutSubviews() {
         super.layoutSubviews()
         textField.frame = CGRect(x: 0, y: 0, width: bounds.width, height: DesktopEditorMetrics.titleLineHeight)
@@ -1389,6 +1406,10 @@ private final class EditorTextView: UITextView {
     func configureTitle(title: String, theme: KnotQTheme, editable: Bool, validator: @escaping (String) -> String?, onCommit: @escaping (String) -> Void) {
         inlineTitleView.configure(title: title, theme: theme, editable: editable, validator: validator, onCommit: onCommit)
         setNeedsLayout()
+    }
+
+    func focusTitle() {
+        inlineTitleView.focusAndSelectTitle()
     }
 
     private func layoutInlineTitleView() {

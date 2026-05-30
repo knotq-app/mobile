@@ -4,16 +4,24 @@ resolver = "2"
 
 [workspace.dependencies]
 anyhow = "1"
+async-trait = "0.1"
 chrono = { version = "0.4", features = ["serde"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sha2 = "0.10"
 thiserror = "1"
+ureq = { version = "2", default-features = false, features = ["json"] }
 uuid = { version = "1", features = ["v4", "serde"] }
 
 knotq-commands = { path = "../desktop/commands" }
 knotq-date-util = { path = "../desktop/date-util" }
 knotq-index = { path = "../desktop/index" }
 knotq-model = { path = "../shared/model" }
+knotq-notifications = { path = "../desktop/notifications" }
+knotq-rrule = { path = "../desktop/rrule" }
 knotq-state = { path = "../desktop/state" }
 knotq-storage-json = { path = "../desktop/storage-json" }
+knotq-sync = { path = "../shared/sync" }
 
 [profile.release]
 lto = true

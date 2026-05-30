@@ -53,8 +53,10 @@ export CARGO_TARGET_X86_64_LINUX_ANDROID_LINKER="$TOOLCHAIN/x86_64-linux-android
 
 cargo run --manifest-path "$MOBILE_ROOT/Cargo.toml" -p knotq-mobile-core --features bindgen-cli --bin uniffi-bindgen -- \
   generate "$MOBILE_ROOT/core/src/knotq_mobile_core.udl" \
+  --config "$MOBILE_ROOT/core/uniffi.toml" \
   --language kotlin \
-  --out-dir "$KOTLIN_DIR"
+  --out-dir "$KOTLIN_DIR" \
+  --no-format
 
 ABIS=("arm64-v8a" "armeabi-v7a" "x86" "x86_64")
 TARGETS=("aarch64-linux-android" "armv7-linux-androideabi" "i686-linux-android" "x86_64-linux-android")

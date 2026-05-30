@@ -13,11 +13,65 @@ extension MobileCalendarDay: Identifiable {
 }
 
 extension MobileOccurrence: Identifiable {
-    public var id: String { "\(schemeId)-\(itemId)-\(start ?? end ?? kind)" }
+    public var id: String { "\(schemeId)-\(itemId)-\(occurrenceJson)-\(start ?? end ?? kind)" }
 }
+
+extension MobileNotificationRequest: Identifiable {}
 
 extension MobileSearchHit: Identifiable {
     public var id: String { "\(targetKind)-\(schemeId ?? "")-\(itemId ?? "")-\(title)-\(detail)" }
+}
+
+struct MobileNotificationActionRequest: Sendable {
+    let actionID: String
+    let schemeID: String
+    let itemID: String
+    let occurrenceJSON: String
+    let triggerAt: String
+}
+
+struct LocalSyncSession: Codable, Equatable, Sendable {
+    var apiBase: String
+    var userId: String
+    var email: String
+    var supportsSync: Bool = true
+    var bearerToken: String
+    var expiresAt: String
+
+    enum CodingKeys: String, CodingKey {
+        case apiBase
+        case userId
+        case email
+        case supportsSync
+        case bearerToken
+        case expiresAt
+    }
+
+    init(
+        apiBase: String,
+        userId: String,
+        email: String,
+        supportsSync: Bool = true,
+        bearerToken: String,
+        expiresAt: String
+    ) {
+        self.apiBase = apiBase
+        self.userId = userId
+        self.email = email
+        self.supportsSync = supportsSync
+        self.bearerToken = bearerToken
+        self.expiresAt = expiresAt
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        apiBase = try container.decode(String.self, forKey: .apiBase)
+        userId = try container.decode(String.self, forKey: .userId)
+        email = try container.decode(String.self, forKey: .email)
+        supportsSync = try container.decodeIfPresent(Bool.self, forKey: .supportsSync) ?? true
+        bearerToken = try container.decode(String.self, forKey: .bearerToken)
+        expiresAt = try container.decode(String.self, forKey: .expiresAt)
+    }
 }
 
 enum Marker: String, CaseIterable, Identifiable {
@@ -67,7 +121,7 @@ enum CalendarKind: String, CaseIterable, Identifiable {
 
 let schemeColors: [Color] = [
     .blue, .green, .orange, .purple, .pink,
-    .teal, .red, .indigo, .mint, .yellow
+    .teal, .red, .indigo, .mint, Color(red: 0.878, green: 0.659, blue: 0.0)
 ]
 
 func colorForIndex(_ index: Int32?) -> Color {

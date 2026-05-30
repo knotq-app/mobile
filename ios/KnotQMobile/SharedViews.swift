@@ -52,7 +52,7 @@ struct NameSheet: View {
                         onSave(text)
                         dismiss()
                     }
-                    .disabled(text.isEmpty || error != nil)
+                    .disabled(error != nil)
                 }
             }
         }
@@ -195,33 +195,18 @@ extension View {
 
 enum WorkspaceNameValidation {
     static func schemeError(_ name: String) -> String? {
-        nodeError(name, label: "Scheme", disallowKnotqExtension: true)
+        nil
     }
 
     static func schemeError(_ name: String, root: MobileNode?, folderID: String? = nil, excludingID: String? = nil) -> String? {
-        if let error = schemeError(name) {
-            return error
-        }
-        guard let root else { return nil }
-        let parentID = folderID ?? parentFolderID(containingSchemeID: excludingID, root: root) ?? root.id
-        if siblingExists(named: name, kind: "scheme", parentID: parentID, root: root, excludingID: excludingID) {
-            return "A scheme named \"\(name)\" already exists here."
-        }
         return nil
     }
 
     static func folderError(_ name: String) -> String? {
-        nodeError(name, label: "Folder", disallowKnotqExtension: false)
+        nil
     }
 
     static func folderError(_ name: String, root: MobileNode?, excludingID: String? = nil) -> String? {
-        if let error = folderError(name) {
-            return error
-        }
-        guard let root else { return nil }
-        if siblingExists(named: name, kind: "folder", parentID: root.id, root: root, excludingID: excludingID) {
-            return "A folder named \"\(name)\" already exists here."
-        }
         return nil
     }
 
@@ -230,70 +215,12 @@ enum WorkspaceNameValidation {
         return parentFolderID(containingSchemeID: schemeID, in: root)
     }
 
-    private static func nodeError(_ name: String, label: String, disallowKnotqExtension: Bool) -> String? {
-        if name.isEmpty {
-            return "\(label) name cannot be empty."
-        }
-        if name.trimmingCharacters(in: .whitespacesAndNewlines) != name {
-            return "File or directory name contains leading or trailing whitespace."
-        }
-        if name == "." || name == ".." {
-            return "File or directory name cannot be . or ..."
-        }
-        if name.hasSuffix(".") {
-            return "File or directory name cannot end with a period."
-        }
-        if name.contains("/") || name.contains("\\") {
-            return "File or directory name cannot contain path separators."
-        }
-        let reservedCharacters = CharacterSet(charactersIn: ":*?\"<>|")
-        if let scalar = name.unicodeScalars.first(where: { reservedCharacters.contains($0) }) {
-            return "File or directory name cannot contain \"\(Character(scalar))\"."
-        }
-        if name.unicodeScalars.contains(where: { CharacterSet.controlCharacters.contains($0) }) {
-            return "File or directory name cannot contain control characters."
-        }
-        let reservedNames: Set<String> = [
-            "CON", "PRN", "AUX", "NUL",
-            "COM1", "COM2", "COM3", "COM4", "COM5", "COM6", "COM7", "COM8", "COM9",
-            "LPT1", "LPT2", "LPT3", "LPT4", "LPT5", "LPT6", "LPT7", "LPT8", "LPT9"
-        ]
-        if name.hasPrefix(".") || reservedNames.contains(name.uppercased()) {
-            return "\"\(name)\" is reserved by the operating system."
-        }
-        if disallowKnotqExtension && name.lowercased().hasSuffix(".knotq") {
-            return "Item names cannot end in .knotq."
-        }
-        return nil
-    }
-
     private static func parentFolderID(containingSchemeID schemeID: String, in node: MobileNode) -> String? {
         for child in node.children {
             if child.kind == "scheme", child.id == schemeID {
                 return node.id
             }
             if child.kind == "folder", let found = parentFolderID(containingSchemeID: schemeID, in: child) {
-                return found
-            }
-        }
-        return nil
-    }
-
-    private static func siblingExists(named name: String, kind: String, parentID: String, root: MobileNode, excludingID: String?) -> Bool {
-        guard let parent = node(id: parentID, in: root) else { return false }
-        return parent.children.contains { child in
-            child.kind == kind
-                && child.id != excludingID
-                && child.name.compare(name, options: [.caseInsensitive, .diacriticInsensitive]) == .orderedSame
-        }
-    }
-
-    private static func node(id: String, in node: MobileNode) -> MobileNode? {
-        if node.id == id {
-            return node
-        }
-        for child in node.children {
-            if let found = self.node(id: id, in: child) {
                 return found
             }
         }

@@ -14,7 +14,10 @@ import android.graphics.Rect
 import android.graphics.RectF
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
+import android.os.Build
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.text.Editable
 import android.text.InputType
 import android.text.Spannable
@@ -57,6 +60,8 @@ import java.time.format.DateTimeFormatter
 import java.time.format.TextStyle
 import java.util.Locale
 import java.util.WeakHashMap
+import java.net.HttpURLConnection
+import java.net.URL
 import kotlin.math.abs
 import kotlin.math.max
 import kotlin.math.min
@@ -75,6 +80,17 @@ private const val EDITOR_IMAGE_STACK_GAP_DP = 7
 private const val EDITOR_IMAGE_MAX_HEIGHT_DP = 300
 private const val EDITOR_IMAGE_FALLBACK_WIDTH_DP = 320
 private const val EDITOR_IMAGE_FALLBACK_HEIGHT_DP = 180
+private const val SYNC_SESSION_PREF = "knotq.localSyncSession"
+private const val DEFAULT_SYNC_API_BASE = "http://10.0.2.2:8787"
+
+private data class SyncSession(
+    val apiBase: String,
+    val userId: String,
+    val email: String,
+    val supportsSync: Boolean,
+    val bearerToken: String,
+    val expiresAt: String
+)
 
 class MainActivity : Activity() {
     private lateinit var bridge: RustBridge
@@ -91,15 +107,29 @@ class MainActivity : Activity() {
     private var selectedSchemeId: String? = null
     private var keyboardActive = false
     private val editorSchemeIds = WeakHashMap<EditText, String>()
+    private var syncSession: SyncSession? = null
+    private var syncAuthInProgress = false
+    private var syncInProgress = false
+    private val syncPollHandler = Handler(Looper.getMainLooper())
+    private val syncPollRunnable = object : Runnable {
+        override fun run() {
+            syncOnce()
+            syncPollHandler.postDelayed(this, 30_000)
+        }
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         try {
             bridge = RustBridge(this)
+            syncSession = loadSyncSession()
             loadSnapshot()
             applyTheme()
             buildShell()
             render()
+            MobileNotificationScheduler.requestPermission(this)
+            rescheduleNotifications()
+            startSyncPolling()
         } catch (error: Throwable) {
             theme = UiTheme.dark
             showFatal(error.message)
@@ -107,10 +137,22 @@ class MainActivity : Activity() {
     }
 
     override fun onDestroy() {
+        syncPollHandler.removeCallbacks(syncPollRunnable)
         if (::bridge.isInitialized) {
             bridge.close()
         }
         super.onDestroy()
+    }
+
+    override fun onRequestPermissionsResult(
+        requestCode: Int,
+        permissions: Array<out String>,
+        grantResults: IntArray
+    ) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        if (MobileNotificationScheduler.isNotificationPermissionRequest(requestCode)) {
+            rescheduleNotifications()
+        }
     }
 
     private fun buildShell() {
@@ -170,6 +212,9 @@ class MainActivity : Activity() {
             selectedSchemeId = null
             render()
         }, marginRight(dp(6), -2, dp(28)))
+        titleBar.addView(chip(syncSession?.email ?: "Sign in") {
+            showSyncAccountDialog()
+        }, marginRight(dp(6), dp(104), dp(28)))
         titleBar.addView(chip("+") { showNewMenu() }, LinearLayout.LayoutParams(dp(32), dp(28)))
     }
 
@@ -430,15 +475,23 @@ class MainActivity : Activity() {
         return LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             background = underline(theme.bgApp)
-            addView(text(selectedDateTitle(), theme.textPrimary, 20f, true).apply {
-                gravity = Gravity.CENTER
-                setPadding(dp(12), dp(8), dp(12), dp(4))
-            }, LinearLayout.LayoutParams(-1, dp(46)))
+            addView(calendarTitleView(), LinearLayout.LayoutParams(-1, dp(44)))
             addView(calendarWeekStrip(), LinearLayout.LayoutParams(-1, dp(56)))
         }.also {
-            it.layoutParams = LinearLayout.LayoutParams(-1, dp(102))
+            it.layoutParams = LinearLayout.LayoutParams(-1, dp(100))
         }
     }
+
+    private fun calendarTitleView(): View =
+        LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = Gravity.CENTER
+            setPadding(dp(12), dp(8), dp(12), dp(4))
+            addView(text(selectedDateTitle(), theme.textPrimary, 23f, true).apply {
+                gravity = Gravity.CENTER
+                includeFontPadding = false
+            }, LinearLayout.LayoutParams(-1, dp(32)))
+        }
 
     private fun calendarWeekStrip(): View =
         LinearLayout(this).apply {
@@ -885,6 +938,220 @@ class MainActivity : Activity() {
         }
     }
 
+    private fun showSyncAccountDialog() {
+        if (syncSession != null) {
+            val session = syncSession ?: return
+            AlertDialog.Builder(this)
+                .setTitle("Sync account")
+                .setMessage("Signed in as ${session.email}\n${session.apiBase}")
+                .setNegativeButton("Close", null)
+                .setPositiveButton("Sign out") { _, _ ->
+                    syncSession = null
+                    saveSyncSession(null)
+                    startSyncPolling()
+                    render()
+                }
+                .show()
+            return
+        }
+
+        val form = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(20), dp(8), dp(20), 0)
+        }
+        val api = EditText(this).apply {
+            setText(DEFAULT_SYNC_API_BASE)
+            hint = "Sync API"
+            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_URI
+            setSingleLine(true)
+        }
+        val email = EditText(this).apply {
+            hint = "Email"
+            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_EMAIL_ADDRESS
+            setSingleLine(true)
+        }
+        val password = EditText(this).apply {
+            hint = "Password"
+            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
+            setSingleLine(true)
+        }
+        form.addView(api)
+        form.addView(email)
+        form.addView(password)
+
+        AlertDialog.Builder(this)
+            .setTitle("Sign in")
+            .setView(form)
+            .setNegativeButton("Cancel", null)
+            .setPositiveButton("Sign in") { _, _ ->
+                signInToSync(api.text.toString(), email.text.toString(), password.text.toString())
+            }
+            .show()
+    }
+
+    private fun signInToSync(apiBaseRaw: String, emailRaw: String, password: String) {
+        if (syncAuthInProgress) return
+        val apiBase = migrateSyncApiBase(apiBaseRaw)
+        val email = emailRaw.trim()
+        if (apiBase.isEmpty() || email.isEmpty() || password.isEmpty()) {
+            showError("Sign in failed", "Enter your sync API, email, and password")
+            return
+        }
+        syncAuthInProgress = true
+        Thread {
+            val result = runCatching { loginToSyncBackend(apiBase, email, password) }
+            runOnUiThread {
+                syncAuthInProgress = false
+                result.onSuccess { session ->
+                    syncSession = session
+                    saveSyncSession(session)
+                    Toast.makeText(this, "Signed in as ${session.email}", Toast.LENGTH_SHORT).show()
+                    startSyncPolling()
+                    render()
+                }.onFailure { error ->
+                    showError("Sign in failed", error.message)
+                }
+            }
+        }.start()
+    }
+
+    private fun startSyncPolling() {
+        syncPollHandler.removeCallbacks(syncPollRunnable)
+        if (syncSession != null) {
+            syncOnce()
+            syncPollHandler.postDelayed(syncPollRunnable, 30_000)
+        }
+    }
+
+    private fun syncOnce() {
+        if (syncInProgress) return
+        val session = syncSession ?: return
+        if (!session.supportsSync) return
+        syncInProgress = true
+        Thread {
+            val result = runCatching {
+                bridge.request(
+                    obj(
+                        "type" to "sync_once",
+                        "api_base" to session.apiBase,
+                        "bearer_token" to session.bearerToken
+                    )
+                )
+            }
+            runOnUiThread {
+                syncInProgress = false
+                result.onSuccess { response ->
+                    val changed = response.optBoolean("changed", false)
+                    if (changed) {
+                        loadSnapshot()
+                        rescheduleNotifications()
+                        render()
+                    }
+                    val notice = response.optString("notice", "")
+                    if (notice.isNotEmpty()) {
+                        showError("Sync snapshot applied", notice)
+                    }
+                }.onFailure { error ->
+                    showError("Sync failed", error.message)
+                }
+            }
+        }.start()
+    }
+
+    private fun loginToSyncBackend(apiBase: String, email: String, password: String): SyncSession {
+        val connection = (URL("$apiBase/v1/auth/login").openConnection() as HttpURLConnection).apply {
+            requestMethod = "POST"
+            connectTimeout = 10_000
+            readTimeout = 10_000
+            doOutput = true
+            setRequestProperty("Content-Type", "application/json")
+        }
+        val body = JSONObject()
+            .put("email", email)
+            .put("password", password)
+            .toString()
+            .toByteArray(Charsets.UTF_8)
+        connection.outputStream.use { it.write(body) }
+        val status = connection.responseCode
+        val raw = if (status in 200..299) {
+            connection.inputStream.bufferedReader().use { it.readText() }
+        } else {
+            connection.errorStream?.bufferedReader()?.use { it.readText() }.orEmpty()
+        }
+        if (status !in 200..299) {
+            val code = runCatching { JSONObject(raw).optString("code") }.getOrDefault("")
+            throw RuntimeException(syncErrorMessage(code))
+        }
+        val json = JSONObject(raw)
+        return SyncSession(
+            apiBase = apiBase,
+            userId = json.optString("user_id"),
+            email = json.optString("email"),
+            supportsSync = json.optBoolean("supports_sync", true),
+            bearerToken = json.optString("bearer_token"),
+            expiresAt = json.optString("expires_at")
+        )
+    }
+
+    private fun loadSyncSession(): SyncSession? {
+        val raw = getSharedPreferences("knotq", MODE_PRIVATE).getString(SYNC_SESSION_PREF, null)
+            ?: return null
+        return runCatching {
+            val json = JSONObject(raw)
+            val rawApiBase = json.optString("api_base")
+            val session = SyncSession(
+                apiBase = migrateSyncApiBase(rawApiBase),
+                userId = json.optString("user_id"),
+                email = json.optString("email"),
+                supportsSync = json.optBoolean("supports_sync", true),
+                bearerToken = json.optString("bearer_token"),
+                expiresAt = json.optString("expires_at")
+            )
+            if (session.apiBase != rawApiBase) {
+                saveSyncSession(session)
+            }
+            session
+        }.getOrNull()
+    }
+
+    private fun migrateSyncApiBase(apiBase: String): String {
+        return when (val normalized = normalizeApiBase(apiBase)) {
+            "http://10.0.2.2:7878" -> DEFAULT_SYNC_API_BASE
+            "http://127.0.0.1:7878" -> "http://127.0.0.1:8787"
+            "http://localhost:7878" -> "http://localhost:8787"
+            else -> normalized
+        }
+    }
+
+    private fun saveSyncSession(session: SyncSession?) {
+        val prefs = getSharedPreferences("knotq", MODE_PRIVATE).edit()
+        if (session == null) {
+            prefs.remove(SYNC_SESSION_PREF)
+        } else {
+            prefs.putString(
+                SYNC_SESSION_PREF,
+                JSONObject()
+                    .put("api_base", session.apiBase)
+                    .put("user_id", session.userId)
+                    .put("email", session.email)
+                    .put("supports_sync", session.supportsSync)
+                    .put("bearer_token", session.bearerToken)
+                    .put("expires_at", session.expiresAt)
+                    .toString()
+            )
+        }
+        prefs.apply()
+    }
+
+    private fun normalizeApiBase(raw: String): String =
+        raw.trim().trimEnd('/')
+
+    private fun syncErrorMessage(code: String): String = when (code) {
+        "invalid_email", "unauthorized" -> "Email or password is incorrect."
+        "password_too_long" -> "Password is too long."
+        else -> "Could not sign in to the local sync Worker."
+    }
+
     private fun renderSettings(): LinearLayout {
         val root = page()
         root.addView(sectionHeader("Settings"))
@@ -902,20 +1169,9 @@ class MainActivity : Activity() {
         root.addView(choiceRow("12-hour", timeFormat == "twelve_hour") { mutate(obj("type" to "set_time_format", "time_format" to "twelve_hour")) })
         root.addView(choiceRow("24-hour", timeFormat == "twenty_four_hour") { mutate(obj("type" to "set_time_format", "time_format" to "twenty_four_hour")) })
 
-        root.addView(settingsSection("Storage"))
-        root.addView(text(snapshot.optString("workspace_path"), theme.textSoft, 11f, false).apply {
-            typeface = Typeface.MONOSPACE
-            setTextIsSelectable(true)
-        }, spaced())
-        root.addView(text("Reset Workspace", theme.danger, 13f, true).apply {
-            setPadding(dp(8), dp(10), dp(8), dp(10))
-            setOnClickListener {
-                AlertDialog.Builder(this@MainActivity)
-                    .setTitle("Reset Workspace")
-                    .setPositiveButton("Reset") { _, _ -> mutate(obj("type" to "reset_workspace")) }
-                    .setNegativeButton("Cancel", null)
-                    .show()
-            }
+        root.addView(settingsSection("Sync"))
+        root.addView(choiceRow(syncSession?.email ?: "Sign in to local backend", syncSession != null) {
+            showSyncAccountDialog()
         })
         return root
     }
@@ -1246,6 +1502,7 @@ class MainActivity : Activity() {
         try {
             bridge.request(obj("type" to "replace_scheme_items", "scheme_id" to schemeId, "items" to array))
             loadSnapshot()
+            rescheduleNotifications()
             val refreshed = findScheme(schemeId)
             editor.tag = refreshed?.let(::documentLines) ?: nextLines
             if (editor is SchemeEditText && refreshed != null) {
@@ -1275,7 +1532,21 @@ class MainActivity : Activity() {
                 })
                 addView(text(occurrence.optString("title").ifEmpty { occurrence.optString("kind").replaceFirstChar(Char::titlecase) }, theme.textPrimary, 13f, false))
             }, LinearLayout.LayoutParams(0, -2, 1f))
-            setOnClickListener { openScheme(occurrence.optString("scheme_id")) }
+            setOnClickListener {
+                mutate(obj(
+                    "type" to "toggle_occurrence",
+                    "scheme_id" to occurrence.optString("scheme_id"),
+                    "item_id" to occurrence.optString("item_id"),
+                    "occurrence_json" to occurrence.optString("occurrence_json", "{\"kind\":\"single\"}")
+                ))
+            }
+            setOnLongClickListener {
+                AlertDialog.Builder(this@MainActivity)
+                    .setTitle(occurrence.optString("title").ifEmpty { occurrence.optString("kind").replaceFirstChar(Char::titlecase) })
+                    .setItems(arrayOf("More About")) { _, _ -> openScheme(occurrence.optString("scheme_id")) }
+                    .show()
+                true
+            }
         }
     }
 
@@ -1425,7 +1696,7 @@ class MainActivity : Activity() {
         val isDaily = nodeOrScheme.optBoolean("is_daily_queue", false)
         AlertDialog.Builder(this)
             .setTitle(nodeOrScheme.optString("name", nodeOrScheme.optString("display_name")))
-            .setItems(arrayOf("Rename", "Color", "Move Up", "Move Down", "Delete")) { _, which ->
+            .setItems(arrayOf("Rename", "Color", "Move Up", "Move Down", "Archive")) { _, which ->
                 when (which) {
                     0 -> showNameDialog(
                         "Rename Scheme",
@@ -1454,17 +1725,20 @@ class MainActivity : Activity() {
     private fun showFolderActions(node: JSONObject) {
         AlertDialog.Builder(this)
             .setTitle(node.optString("name"))
-            .setItems(arrayOf("New Scheme", "Rename", "Move Up", "Move Down", "Delete")) { _, which ->
+            .setItems(arrayOf("New Scheme", "New Folder", "Rename", "Move Up", "Move Down", "Archive")) { _, which ->
                 when (which) {
                     0 -> showNameDialog("New Scheme", "", { validateSchemeName(it, folderId = node.optString("id")) }) { name ->
                         mutate(obj("type" to "create_scheme", "folder_id" to node.optString("id"), "name" to name))
                     }
-                    1 -> showNameDialog("Rename Folder", node.optString("name"), { validateFolderName(it, excludingId = node.optString("id")) }) { name ->
+                    1 -> showNameDialog("New Folder", "", { validateFolderName(it) }) { name ->
+                        mutate(obj("type" to "create_folder", "parent_id" to node.optString("id"), "name" to name))
+                    }
+                    2 -> showNameDialog("Rename Folder", node.optString("name"), { validateFolderName(it, excludingId = node.optString("id")) }) { name ->
                         mutate(obj("type" to "rename_folder", "folder_id" to node.optString("id"), "name" to name))
                     }
-                    2 -> moveNavigatorNode("folder", node.optString("id"), -1)
-                    3 -> moveNavigatorNode("folder", node.optString("id"), 1)
-                    4 -> mutate(obj("type" to "delete_folder", "folder_id" to node.optString("id")))
+                    3 -> moveNavigatorNode("folder", node.optString("id"), -1)
+                    4 -> moveNavigatorNode("folder", node.optString("id"), 1)
+                    5 -> mutate(obj("type" to "delete_folder", "folder_id" to node.optString("id")))
                 }
             }
             .show()
@@ -1558,6 +1832,7 @@ class MainActivity : Activity() {
         try {
             bridge.request(body)
             loadSnapshot()
+            rescheduleNotifications()
             render()
         } catch (error: RuntimeException) {
             showError("Could not save", error.message)
@@ -1568,6 +1843,18 @@ class MainActivity : Activity() {
         snapshot = bridge.request(obj("type" to "snapshot", "today" to selectedDate.toString(), "week_offset" to weekOffset))
     }
 
+    private fun rescheduleNotifications() {
+        if (!::bridge.isInitialized) return
+        try {
+            MobileNotificationScheduler.reschedule(
+                this,
+                bridge.requestArray(obj("type" to "pending_notifications"))
+            )
+        } catch (error: RuntimeException) {
+            showError("Notifications unavailable", error.message)
+        }
+    }
+
     private fun applyTheme() {
         val mode = snapshot.optJSONObject("settings")?.optString("theme_mode", "dark") ?: "dark"
         val darkSystem = (resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK) == Configuration.UI_MODE_NIGHT_YES
@@ -1576,8 +1863,15 @@ class MainActivity : Activity() {
             "system" -> if (darkSystem) UiTheme.dark else UiTheme.light
             else -> UiTheme.dark
         }
-        window.statusBarColor = theme.bgToolbar
-        window.navigationBarColor = theme.bgSidebar
+        applySystemBarColors()
+    }
+
+    @Suppress("DEPRECATION")
+    private fun applySystemBarColors() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.VANILLA_ICE_CREAM) {
+            window.statusBarColor = theme.bgToolbar
+            window.navigationBarColor = theme.bgSidebar
+        }
     }
 
     private fun calendar(): JSONObject = snapshot.optJSONObject("calendar") ?: JSONObject()
@@ -1698,52 +1992,11 @@ class MainActivity : Activity() {
     }
 
     private fun validateSchemeName(name: String, folderId: String? = null, excludingId: String? = null, checkDuplicates: Boolean = true): String? {
-        validateNodeName(name, "Scheme", disallowKnotqExtension = true)?.let { return it }
-        if (!checkDuplicates) return null
-        val parent = nodeById(folderId ?: rootFolderId(), snapshot.optJSONObject("root")) ?: return null
-        if (siblingExists(parent, name, "scheme", excludingId)) {
-            return "A scheme named \"$name\" already exists here."
-        }
         return null
     }
 
     private fun validateFolderName(name: String, excludingId: String? = null): String? {
-        validateNodeName(name, "Folder", disallowKnotqExtension = false)?.let { return it }
-        val parent = snapshot.optJSONObject("root") ?: return null
-        if (siblingExists(parent, name, "folder", excludingId)) {
-            return "A folder named \"$name\" already exists here."
-        }
         return null
-    }
-
-    private fun validateNodeName(name: String, label: String, disallowKnotqExtension: Boolean): String? {
-        if (name.isEmpty()) return "$label name cannot be empty."
-        if (name.trim() != name) return "File or directory name contains leading or trailing whitespace."
-        if (name == "." || name == "..") return "File or directory name cannot be . or ..."
-        if (name.endsWith(".")) return "File or directory name cannot end with a period."
-        if (name.contains("/") || name.contains("\\")) return "File or directory name cannot contain path separators."
-        val reservedCharacters = setOf(':', '*', '?', '"', '<', '>', '|')
-        name.firstOrNull { it in reservedCharacters }?.let { return "File or directory name cannot contain \"$it\"." }
-        if (name.any { it.code < 32 || it.code == 127 }) return "File or directory name cannot contain control characters."
-        val reservedNames = setOf("CON", "PRN", "AUX", "NUL", "COM1", "COM2", "COM3", "COM4", "COM5", "COM6", "COM7", "COM8", "COM9", "LPT1", "LPT2", "LPT3", "LPT4", "LPT5", "LPT6", "LPT7", "LPT8", "LPT9")
-        if (name.startsWith(".") || name.uppercase(Locale.US) in reservedNames) return "\"$name\" is reserved by the operating system."
-        if (disallowKnotqExtension && name.lowercase(Locale.US).endsWith(".knotq")) return "Scheme names cannot end in .knotq."
-        return null
-    }
-
-    private fun siblingExists(parent: JSONObject, name: String, kind: String, excludingId: String?): Boolean {
-        val normalized = name.lowercase(Locale.US)
-        val children = parent.optJSONArray("children") ?: return false
-        for (index in 0 until children.length()) {
-            val child = children.optJSONObject(index) ?: continue
-            if (child.optString("kind") == kind &&
-                child.optString("id") != excludingId &&
-                child.optString("name").lowercase(Locale.US) == normalized
-            ) {
-                return true
-            }
-        }
-        return false
     }
 
     private fun nodeById(id: String?, node: JSONObject?): JSONObject? {
@@ -2081,7 +2334,7 @@ class MainActivity : Activity() {
 
     private fun schemeColor(index: Int): Int {
         val darkPalette = intArrayOf(rgb(0xff453a), rgb(0xff9f0a), rgb(0x30d158), rgb(0x0a84ff), rgb(0xbf5af2), rgb(0xffd60a))
-        val lightPalette = intArrayOf(rgb(0xd4271c), rgb(0xc47400), rgb(0x1e9e40), rgb(0x0064d2), rgb(0x8a3db5), rgb(0xb89400))
+        val lightPalette = intArrayOf(rgb(0xd4271c), rgb(0xc47400), rgb(0x1e9e40), rgb(0x0064d2), rgb(0x8a3db5), rgb(0xe0a800))
         val palette = if (theme.isDark) darkPalette else lightPalette
         return palette[index.floorMod(palette.size)]
     }
