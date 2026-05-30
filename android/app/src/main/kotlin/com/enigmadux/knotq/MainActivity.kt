@@ -92,6 +92,8 @@ private data class SyncSession(
     val expiresAt: String
 )
 
+private data class FolderDestination(val id: String, val name: String, val depth: Int)
+
 class MainActivity : Activity() {
     private lateinit var bridge: RustBridge
     private lateinit var shell: LinearLayout
@@ -327,10 +329,6 @@ class MainActivity : Activity() {
         val tree = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         snapshot.optJSONObject("root")?.optJSONArray("children")?.forEachObject { addNode(tree, it, 0) }
         panel.addView(scroll(tree), LinearLayout.LayoutParams(-1, 0, 1f))
-        panel.addView(archiveNavigatorSection(compact = true), LinearLayout.LayoutParams(-1, -2).apply {
-            setMargins(0, dp(4), 0, dp(5))
-        })
-
         panel.addView(LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
@@ -362,9 +360,6 @@ class MainActivity : Activity() {
             addNode(list, it, 0, spacious = true)
         }
         body.addView(list)
-        body.addView(archiveNavigatorSection(compact = false), LinearLayout.LayoutParams(-1, -2).apply {
-            setMargins(0, dp(12), 0, 0)
-        })
         root.addView(scroll(body), LinearLayout.LayoutParams(-1, 0, 1f))
         return root
     }
@@ -425,6 +420,11 @@ class MainActivity : Activity() {
             }, LinearLayout.LayoutParams(0, -1, 1f).apply {
                 setMargins(dp(if (compact) 7 else 10), 0, 0, 0)
             })
+            if (!compact) {
+                addView(chip("Restore") {
+                    mutate(obj("type" to "restore_scheme", "scheme_id" to scheme.optString("id")))
+                }, LinearLayout.LayoutParams(dp(78), dp(28)))
+            }
             setOnClickListener { showArchivedSchemeActions(scheme) }
             setOnLongClickListener {
                 showArchivedSchemeActions(scheme)
@@ -538,7 +538,7 @@ class MainActivity : Activity() {
         val column = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(8), dp(8), dp(8), dp(8))
-            background = rounded(adjust(theme.bgModal, if (theme.isDark) 0.42f else 0.88f), dp(6), theme.dividerSoft)
+            background = rounded(if (theme.isDark) adjust(theme.bgModal, 0.42f) else theme.bgModal, dp(6), theme.dividerSoft)
         }
         column.addView(text(formatFullDay(day.optString("date")), if (day.optString("date") == LocalDate.now().toString()) theme.textToday else theme.textDim, 12f, true), spaced())
         val occurrences = day.optJSONArray("occurrences")
@@ -1169,6 +1169,12 @@ class MainActivity : Activity() {
         root.addView(choiceRow("12-hour", timeFormat == "twelve_hour") { mutate(obj("type" to "set_time_format", "time_format" to "twelve_hour")) })
         root.addView(choiceRow("24-hour", timeFormat == "twenty_four_hour") { mutate(obj("type" to "set_time_format", "time_format" to "twenty_four_hour")) })
 
+        root.addView(settingsSection("Archive"))
+        val schemes = archivedSchemes()
+        root.addView(choiceRow("Archived schemes ${schemes.length()}", false) {
+            showArchiveSettingsDialog()
+        })
+
         root.addView(settingsSection("Sync"))
         root.addView(choiceRow(syncSession?.email ?: "Sign in to local backend", syncSession != null) {
             showSyncAccountDialog()
@@ -1205,11 +1211,18 @@ class MainActivity : Activity() {
     }
 
     private fun folderRow(node: JSONObject, depth: Int, spacious: Boolean = false): View {
-        val label = if (spacious) "⌄  ${node.optString("name")}" else "▾ ${node.optString("name")}"
-        return text(label, theme.textPrimary, if (spacious) 15f else 12f, false).apply {
-            textSize = if (spacious) 13f else 12f
-            setPadding(dp((if (spacious) 8 else 6) + depth * if (spacious) 10 else 8), 0, dp(7), 0)
+        return LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
+            setPadding(dp((if (spacious) 8 else 6) + depth * if (spacious) 10 else 8), 0, dp(7), 0)
+            addView(text(if (spacious) "⌄" else "▾", theme.textMuted, if (spacious) 13f else 12f, true).apply {
+                gravity = Gravity.CENTER
+            }, LinearLayout.LayoutParams(dp(if (spacious) 14 else 12), -1))
+            addView(text(node.optString("name"), theme.textPrimary, if (spacious) 13f else 12f, false).apply {
+                maxLines = 1
+            }, LinearLayout.LayoutParams(0, -1, 1f).apply {
+                setMargins(dp(if (spacious) 7 else 6), 0, 0, 0)
+            })
             setOnLongClickListener {
                 showFolderActions(node)
                 true
@@ -1696,7 +1709,7 @@ class MainActivity : Activity() {
         val isDaily = nodeOrScheme.optBoolean("is_daily_queue", false)
         AlertDialog.Builder(this)
             .setTitle(nodeOrScheme.optString("name", nodeOrScheme.optString("display_name")))
-            .setItems(arrayOf("Rename", "Color", "Move Up", "Move Down", "Archive")) { _, which ->
+            .setItems(arrayOf("Rename", "Color", "Move Up", "Move Down", "Move To Folder", "Archive")) { _, which ->
                 when (which) {
                     0 -> showNameDialog(
                         "Rename Scheme",
@@ -1706,7 +1719,8 @@ class MainActivity : Activity() {
                     1 -> showColorDialog(id)
                     2 -> moveNavigatorNode("scheme", id, -1)
                     3 -> moveNavigatorNode("scheme", id, 1)
-                    4 -> if (!isDaily) mutate(obj("type" to "delete_scheme", "scheme_id" to id))
+                    4 -> showMoveToFolderDialog("scheme", id)
+                    5 -> if (!isDaily) mutate(obj("type" to "delete_scheme", "scheme_id" to id))
                 }
             }
             .show()
@@ -1725,7 +1739,7 @@ class MainActivity : Activity() {
     private fun showFolderActions(node: JSONObject) {
         AlertDialog.Builder(this)
             .setTitle(node.optString("name"))
-            .setItems(arrayOf("New Scheme", "New Folder", "Rename", "Move Up", "Move Down", "Archive")) { _, which ->
+            .setItems(arrayOf("New Scheme", "New Folder", "Rename", "Move Up", "Move Down", "Move To Folder", "Archive")) { _, which ->
                 when (which) {
                     0 -> showNameDialog("New Scheme", "", { validateSchemeName(it, folderId = node.optString("id")) }) { name ->
                         mutate(obj("type" to "create_scheme", "folder_id" to node.optString("id"), "name" to name))
@@ -1738,7 +1752,8 @@ class MainActivity : Activity() {
                     }
                     3 -> moveNavigatorNode("folder", node.optString("id"), -1)
                     4 -> moveNavigatorNode("folder", node.optString("id"), 1)
-                    5 -> mutate(obj("type" to "delete_folder", "folder_id" to node.optString("id")))
+                    5 -> showMoveToFolderDialog("folder", node.optString("id"), excludedFolderId = node.optString("id"))
+                    6 -> mutate(obj("type" to "delete_folder", "folder_id" to node.optString("id")))
                 }
             }
             .show()
@@ -1749,6 +1764,31 @@ class MainActivity : Activity() {
             .setTitle("Archive")
             .setItems(arrayOf("Empty Archive")) { _, which ->
                 if (which == 0) mutate(obj("type" to "empty_archive"))
+            }
+            .show()
+    }
+
+    private fun showArchiveSettingsDialog() {
+        val schemes = archivedSchemes()
+        if (schemes.length() == 0) {
+            AlertDialog.Builder(this)
+                .setTitle("Archive")
+                .setMessage("No archived schemes")
+                .setPositiveButton("OK", null)
+                .show()
+            return
+        }
+        val labels = mutableListOf<String>()
+        schemes.forEachObject { scheme -> labels.add(scheme.optString("display_name")) }
+        labels.add("Empty Archive")
+        AlertDialog.Builder(this)
+            .setTitle("Archive")
+            .setItems(labels.toTypedArray()) { _, which ->
+                if (which < schemes.length()) {
+                    showArchivedSchemeActions(schemes.getJSONObject(which))
+                } else {
+                    mutate(obj("type" to "empty_archive"))
+                }
             }
             .show()
     }
@@ -1989,6 +2029,34 @@ class MainActivity : Activity() {
         val position = if (delta < 0) index - 1 else index + 2
         if (position < 0 || position > children.length()) return toast("Already there")
         mutate(obj("type" to "move_node", "kind" to kind, "id" to nodeId, "folder_id" to parentId, "position" to position))
+    }
+
+    private fun showMoveToFolderDialog(kind: String, nodeId: String, excludedFolderId: String? = null) {
+        val root = snapshot.optJSONObject("root") ?: return toast("Cannot move this item")
+        val currentParentId = parentFolderIdForNode(nodeId) ?: return toast("Cannot move this item")
+        val destinations = mutableListOf(FolderDestination(root.optString("id"), "Home", 0))
+        collectFolderDestinations(root.optJSONArray("children"), 1, excludedFolderId, destinations)
+        AlertDialog.Builder(this)
+            .setTitle("Move To Folder")
+            .setItems(destinations.map { destination ->
+                "${"  ".repeat(destination.depth)}${destination.name}${if (destination.id == currentParentId) " ✓" else ""}"
+            }.toTypedArray()) { _, which ->
+                val destination = destinations[which]
+                if (destination.id == currentParentId) return@setItems toast("Already there")
+                val target = nodeById(destination.id, root) ?: return@setItems toast("Cannot find folder")
+                val position = target.optJSONArray("children")?.length() ?: 0
+                mutate(obj("type" to "move_node", "kind" to kind, "id" to nodeId, "folder_id" to destination.id, "position" to position))
+            }
+            .show()
+    }
+
+    private fun collectFolderDestinations(nodes: JSONArray?, depth: Int, excludedFolderId: String?, destinations: MutableList<FolderDestination>) {
+        nodes?.forEachObject { node ->
+            if (node.optString("kind") == "folder" && node.optString("id") != excludedFolderId) {
+                destinations.add(FolderDestination(node.optString("id"), node.optString("name"), depth))
+                collectFolderDestinations(node.optJSONArray("children"), depth + 1, excludedFolderId, destinations)
+            }
+        }
     }
 
     private fun validateSchemeName(name: String, folderId: String? = null, excludingId: String? = null, checkDuplicates: Boolean = true): String? {

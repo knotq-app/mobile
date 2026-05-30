@@ -541,18 +541,6 @@ struct IntegratedSchemeEditorPane: View {
                     onDate: openDateForLine
                 )
 
-                // Suppress the "Start typing" placeholder in inline (Daily)
-                // contexts — empty days are filtered upstream, and the
-                // placeholder adds visual noise inside the day row.
-                if controller.isEmpty && editorScrollEnabled {
-                    Text("Start typing")
-                        .font(.system(size: 16))
-                        .foregroundStyle(theme.textMuted)
-                        .padding(.top, editorTextInsets.top + 4)
-                        .padding(.leading, editorTextInsets.left + 2)
-                        .allowsHitTesting(false)
-                }
-
             }
             .clipped()
         }
@@ -562,12 +550,6 @@ struct IntegratedSchemeEditorPane: View {
         .toolbar {
             if usesNativeNavigation && showsEditorNavigation {
                 ToolbarItemGroup(placement: .topBarTrailing) {
-                    Button {
-                        controller.appendTaskLine(theme: theme)
-                    } label: {
-                        Image(systemName: "plus")
-                    }
-
                     Menu {
                         ColorMenu(nodeID: scheme.id, colorIndex: scheme.colorIndex, theme: theme)
                         Button("Save", systemImage: "checkmark") { commitDocument() }
@@ -626,13 +608,6 @@ struct IntegratedSchemeEditorPane: View {
             }
 
             Spacer()
-
-            Button {
-                controller.appendTaskLine(theme: theme)
-            } label: {
-                Image(systemName: "plus")
-            }
-            .buttonStyle(TitleIconButton(theme: theme))
 
             Menu {
                 ColorMenu(nodeID: scheme.id, colorIndex: scheme.colorIndex, theme: theme)

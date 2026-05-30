@@ -24,7 +24,7 @@ private enum MobilePane: String, CaseIterable, Identifiable {
 
     var icon: String {
         switch self {
-        case .home: "house"
+        case .home: "square.stack.3d.up"
         case .calendar: "calendar"
         case .scheme: "list.bullet.rectangle"
         case .daily: "checklist"
@@ -36,6 +36,11 @@ private enum MobilePane: String, CaseIterable, Identifiable {
 
 private struct SheetID: Identifiable {
     let id: String
+}
+
+private enum HomeRoute: Hashable {
+    case scheme(String)
+    case daily
 }
 
 struct ContentView: View {
@@ -50,6 +55,7 @@ struct ContentView: View {
     @State private var eventEditor: EventEditorTarget?
     @State private var keyboardVisible = false
     @State private var titleFocusSchemeID: String?
+    @State private var homeNavigationDepth = 0
 
     private var theme: KnotQTheme {
         KnotQTheme.resolve(mode: model.snapshot?.settings.themeMode, systemScheme: systemScheme)
@@ -92,7 +98,6 @@ struct ContentView: View {
                     if wide {
                         DesktopNavigator(
                             root: model.snapshot?.root,
-                            archivedSchemes: model.snapshot?.archivedSchemes ?? [],
                             selectedPane: pane,
                             selectedSchemeID: selectedSchemeID,
                             theme: theme,
@@ -127,7 +132,7 @@ struct ContentView: View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .overlay(alignment: .bottom) {
-                if !wide && !keyboardVisible {
+                if !wide && !keyboardVisible && homeNavigationDepth == 0 {
                     // Floating liquid-glass nav. It hovers over the content
                     // rather than reserving a strip.
                     MobileDock(
@@ -154,7 +159,7 @@ struct ContentView: View {
             // top shadow keeps that boundary clean instead of letting content
             // collide with the clock/battery.
             .overlay(alignment: .top) {
-                if !wide && pane != .scheme && pane != .daily && pane != .settings && !keyboardVisible {
+                if !wide && pane != .scheme && pane != .daily && pane != .settings && homeNavigationDepth == 0 && !keyboardVisible {
                     LinearGradient(
                         colors: [Color.black.opacity(theme.isDark ? 0.30 : 0.12), .clear],
                         startPoint: .top,
@@ -216,17 +221,34 @@ struct ContentView: View {
     private func mainPane(wide: Bool) -> some View {
         switch pane {
         case .home:
-            HomeDashboardPane(
-                snapshot: model.snapshot,
-                selectedDate: model.selectedDate,
-                theme: theme,
-                onOpenDaily: openDaily,
-                onOpenScheme: selectScheme,
-                onToggleOccurrence: model.toggleOccurrence,
-                onOpenOccurrence: { eventEditor = .edit($0) },
-                onNewScheme: quickCreateScheme,
-                onNewFolder: { showingNewFolder = true }
-            )
+            if wide {
+                HomeDashboardPane(
+                    snapshot: model.snapshot,
+                    selectedDate: model.selectedDate,
+                    theme: theme,
+                    onOpenDaily: openDaily,
+                    onOpenScheme: selectScheme,
+                    onToggleOccurrence: model.toggleOccurrence,
+                    onOpenOccurrence: { eventEditor = .edit($0) },
+                    onNewScheme: quickCreateScheme,
+                    onNewFolder: { showingNewFolder = true }
+                )
+            } else {
+                HomeNavigationPane(
+                    snapshot: model.snapshot,
+                    selectedDate: model.selectedDate,
+                    theme: theme,
+                    onToggleOccurrence: model.toggleOccurrence,
+                    onOpenOccurrence: { eventEditor = .edit($0) },
+                    onCreateScheme: quickCreateSchemeID,
+                    onNewFolder: { showingNewFolder = true },
+                    onAddItem: { addItemTarget = SheetID(id: $0) },
+                    onPrepareDaily: prepareDaily,
+                    onSelectDailyDate: selectDailyDate,
+                    titleFocusSchemeID: $titleFocusSchemeID,
+                    navigationDepth: $homeNavigationDepth
+                )
+            }
         case .calendar:
             if wide {
                 DesktopCalendarPane(
@@ -261,6 +283,7 @@ struct ContentView: View {
                         model.weekOffset = 0
                         model.refresh()
                     },
+                    onCreate: { date in eventEditor = .create(date) },
                     onOpenOccurrence: { occ in eventEditor = .edit(occ) },
                     onMoveOccurrence: moveOccurrence
                 )
@@ -309,9 +332,13 @@ struct ContentView: View {
     }
 
     private func openDaily() {
+        prepareDaily()
+        pane = .daily
+    }
+
+    private func prepareDaily() {
         model.ensureDailyQueue(date: model.selectedDate)
         selectedSchemeID = nil
-        pane = .daily
     }
 
     private func selectScheme(_ id: String) {
@@ -324,13 +351,20 @@ struct ContentView: View {
         pane = .home
     }
 
-    private func quickCreateScheme() {
+    private func quickCreateSchemeID() -> String? {
         let name = nextUntitledSchemeName()
         guard let id = model.createScheme(name: name) else {
+            return nil
+        }
+        titleFocusSchemeID = id
+        return id
+    }
+
+    private func quickCreateScheme() {
+        guard let id = quickCreateSchemeID() else {
             pane = .home
             return
         }
-        titleFocusSchemeID = id
         selectScheme(id)
     }
 
@@ -381,6 +415,7 @@ struct ContentView: View {
             model.setItemDate(schemeID: occurrence.schemeId, itemID: occurrence.itemId, kind: "end", date: end)
         }
     }
+
 }
 
 struct KnotQTheme {
@@ -614,7 +649,6 @@ struct SyncSignInSheet: View {
 
 private struct DesktopNavigator: View {
     let root: MobileNode?
-    let archivedSchemes: [MobileScheme]
     let selectedPane: MobilePane
     let selectedSchemeID: String?
     let theme: KnotQTheme
@@ -658,9 +692,6 @@ private struct DesktopNavigator: View {
                 }
                 .padding(.bottom, 8)
             }
-
-            ArchiveNavigatorSection(schemes: archivedSchemes, theme: theme, compact: true)
-                .padding(.top, 4)
 
             HStack(spacing: 6) {
                 Menu {
@@ -721,6 +752,81 @@ private struct NavigatorSpecialRow: View {
     }
 }
 
+private struct FolderDestination: Identifiable {
+    let id: String
+    let title: String
+    let depth: Int
+}
+
+private struct MoveToFolderMenu: View {
+    @EnvironmentObject private var model: AppModel
+    let nodeKind: String
+    let nodeID: String
+    let currentParentID: String
+    let root: MobileNode
+    var excludingFolderID: String?
+
+    private var destinations: [FolderDestination] {
+        var values = [FolderDestination(id: root.id, title: "Home", depth: 0)]
+        appendFolderDestinations(from: root.children, depth: 1, excludingFolderID: excludingFolderID, into: &values)
+        return values
+    }
+
+    var body: some View {
+        Menu {
+            ForEach(destinations) { destination in
+                Button {
+                    model.moveNode(
+                        kind: nodeKind,
+                        id: nodeID,
+                        folderID: destination.id,
+                        position: childrenCount(for: destination.id)
+                    )
+                } label: {
+                    Label(
+                        String(repeating: "  ", count: destination.depth) + destination.title,
+                        systemImage: destination.id == root.id ? "square.stack.3d.up" : "folder"
+                    )
+                }
+                .disabled(destination.id == currentParentID)
+            }
+        } label: {
+            Label("Move To Folder", systemImage: "folder")
+        }
+    }
+
+    private func childrenCount(for folderID: String) -> Int {
+        findNode(id: folderID, in: root)?.children.count ?? 0
+    }
+}
+
+private func appendFolderDestinations(
+    from nodes: [MobileNode],
+    depth: Int,
+    excludingFolderID: String?,
+    into destinations: inout [FolderDestination]
+) {
+    for node in nodes where node.kind == "folder" {
+        if node.id == excludingFolderID {
+            continue
+        }
+        destinations.append(FolderDestination(id: node.id, title: node.name, depth: depth))
+        appendFolderDestinations(from: node.children, depth: depth + 1, excludingFolderID: excludingFolderID, into: &destinations)
+    }
+}
+
+private func findNode(id: String, in node: MobileNode) -> MobileNode? {
+    if node.id == id {
+        return node
+    }
+    for child in node.children {
+        if let found = findNode(id: id, in: child) {
+            return found
+        }
+    }
+    return nil
+}
+
 private struct NavigatorNodeRow: View {
     @EnvironmentObject private var model: AppModel
     let node: MobileNode
@@ -731,44 +837,58 @@ private struct NavigatorNodeRow: View {
     let theme: KnotQTheme
     let onSelectScheme: (String) -> Void
 
+    @State private var expanded = true
     @State private var renameNode: MobileNode?
     @State private var newSchemeInFolder = false
     @State private var newFolderInFolder = false
 
     var body: some View {
         if node.kind == "folder" {
-            DisclosureGroup {
-                VStack(alignment: .leading, spacing: 2) {
-                    ForEach(node.children) { child in
-                        NavigatorNodeRow(
-                            node: child,
-                            depth: depth + 1,
-                            parentFolderID: node.id,
-                            root: root,
-                            selectedSchemeID: selectedSchemeID,
-                            theme: theme,
-                            onSelectScheme: onSelectScheme
-                        )
+            VStack(alignment: .leading, spacing: 2) {
+                Button {
+                    expanded.toggle()
+                } label: {
+                    HStack(spacing: 8) {
+                        Image(systemName: expanded ? "chevron.down" : "chevron.right")
+                            .font(.system(size: 9, weight: .bold))
+                            .foregroundStyle(theme.textMuted)
+                            .frame(width: 10)
+                        Image(systemName: "folder")
+                            .font(.system(size: 12, weight: .semibold))
+                            .frame(width: 15)
+                        Text(node.name)
+                            .font(.system(size: 13, weight: .medium))
+                            .lineLimit(1)
+                        Spacer(minLength: 0)
+                    }
+                    .padding(.leading, CGFloat(depth) * 10)
+                    .padding(.horizontal, 6)
+                    .frame(height: 25)
+                    .foregroundStyle(theme.textPrimary)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+
+                if expanded {
+                    VStack(alignment: .leading, spacing: 2) {
+                        ForEach(node.children) { child in
+                            NavigatorNodeRow(
+                                node: child,
+                                depth: depth + 1,
+                                parentFolderID: node.id,
+                                root: root,
+                                selectedSchemeID: selectedSchemeID,
+                                theme: theme,
+                                onSelectScheme: onSelectScheme
+                            )
+                        }
                     }
                 }
-            } label: {
-                HStack(spacing: 8) {
-                    Image(systemName: "folder")
-                        .font(.system(size: 12, weight: .semibold))
-                        .frame(width: 15)
-                    Text(node.name)
-                        .font(.system(size: 13, weight: .medium))
-                        .lineLimit(1)
-                    Spacer(minLength: 0)
-                }
-                .padding(.leading, CGFloat(depth) * 10)
-                .frame(height: 25)
-                .foregroundStyle(theme.textPrimary)
             }
-            .tint(theme.textDim)
             .contextMenu {
                 Button("New Scheme") { newSchemeInFolder = true }
                 Button("New Folder") { newFolderInFolder = true }
+                MoveToFolderMenu(nodeKind: "folder", nodeID: node.id, currentParentID: parentFolderID, root: root, excludingFolderID: node.id)
                 Button("Rename") { renameNode = node }
                 Button("Archive", systemImage: "archivebox") {
                     model.archiveFolder(id: node.id)
@@ -820,6 +940,7 @@ private struct NavigatorNodeRow: View {
             .buttonStyle(.plain)
             .contextMenu {
                 Button("Rename") { renameNode = node }
+                MoveToFolderMenu(nodeKind: "scheme", nodeID: node.id, currentParentID: parentFolderID, root: root)
                 ColorMenu(nodeID: node.id, colorIndex: node.colorIndex ?? 0, theme: theme)
                 Button("Archive", systemImage: "archivebox") {
                     model.archiveScheme(id: node.id)
@@ -877,68 +998,66 @@ private struct HomeDashboardPane: View {
     let onNewFolder: () -> Void
 
     var body: some View {
-        ZStack(alignment: .bottomTrailing) {
-            ScrollView {
-                VStack(alignment: .leading, spacing: 18) {
-                    HomeSchemesSection(
-                        root: snapshot?.root,
-                        theme: theme,
-                        onOpenScheme: onOpenScheme,
-                        onNewScheme: onNewScheme,
-                        onNewFolder: onNewFolder
-                    )
+        GeometryReader { proxy in
+            let schemePreviewMaxHeight = max(280, proxy.size.height * 0.56)
+            ZStack(alignment: .bottomTrailing) {
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 18) {
+                        HomeSchemesSection(
+                            root: snapshot?.root,
+                            dailyEntry: dailyEntry,
+                            selectedDate: selectedDate,
+                            maxHeight: schemePreviewMaxHeight,
+                            theme: theme,
+                            onOpenDaily: onOpenDaily,
+                            onOpenScheme: onOpenScheme,
+                            onNewScheme: onNewScheme,
+                            onNewFolder: onNewFolder
+                        )
 
-                    HomeDailyPreview(
-                        entry: dailyEntry,
-                        selectedDate: selectedDate,
-                        theme: theme,
-                        timeFormat: timeFormat,
-                        onOpenDaily: onOpenDaily
-                    )
-
-                    // A single unified Upcoming list — overdue items lead (their
-                    // time stamps render in the overdue colour) followed by what's
-                    // next, instead of separate Overdue/Next sections.
-                    VStack(alignment: .leading, spacing: 6) {
-                        Text("Upcoming")
-                            .font(.system(size: 22, weight: .bold))
-                            .foregroundStyle(theme.textPrimary)
-                            .padding(.horizontal, 2)
-
-                        if upcomingOccurrences.isEmpty {
-                            Text("Nothing scheduled")
-                                .font(.system(size: 14))
-                                .foregroundStyle(theme.textMuted)
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                                .padding(.vertical, 10)
+                        // A single unified Upcoming list: overdue items lead,
+                        // followed by what's next.
+                        VStack(alignment: .leading, spacing: 6) {
+                            Text("Upcoming")
+                                .font(.system(size: 22, weight: .bold))
+                                .foregroundStyle(theme.textPrimary)
                                 .padding(.horizontal, 2)
-                        } else {
-                            ForEach(Array(upcomingOccurrences.enumerated()), id: \.element.id) { idx, occurrence in
-                                OccurrenceCompactRow(
-                                    occurrence: occurrence,
-                                    theme: theme,
-                                    timeFormat: timeFormat,
-                                    striped: idx % 2 == 1,
-                                    moreAction: { onOpenOccurrence(occurrence) }
-                                ) {
-                                    onToggleOccurrence(occurrence)
+
+                            if upcomingOccurrences.isEmpty {
+                                Text("Nothing scheduled")
+                                    .font(.system(size: 14))
+                                    .foregroundStyle(theme.textMuted)
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                                    .padding(.vertical, 10)
+                                    .padding(.horizontal, 2)
+                            } else {
+                                ForEach(Array(upcomingOccurrences.enumerated()), id: \.element.id) { idx, occurrence in
+                                    OccurrenceCompactRow(
+                                        occurrence: occurrence,
+                                        theme: theme,
+                                        timeFormat: timeFormat,
+                                        striped: idx % 2 == 1,
+                                        moreAction: { onOpenOccurrence(occurrence) }
+                                    ) {
+                                        onToggleOccurrence(occurrence)
+                                    }
                                 }
                             }
                         }
                     }
+                    .frame(maxWidth: 720, alignment: .leading)
+                    .padding(14)
+                    .padding(.bottom, 132)
+                    .frame(maxWidth: .infinity, alignment: .leading)
                 }
-                .frame(maxWidth: 720, alignment: .leading)
-                .padding(14)
-                .padding(.bottom, 132)
-                .frame(maxWidth: .infinity, alignment: .leading)
-            }
-            .scrollDismissesKeyboard(.never)
+                .scrollDismissesKeyboard(.never)
 
-            HomeNewSchemeButton(theme: theme, onNewScheme: onNewScheme, onOpenDaily: onOpenDaily)
-                .padding(.trailing, 22)
-                .padding(.bottom, 74)
+                HomeQuickWriteButtons(theme: theme, onNewScheme: onNewScheme, onOpenDaily: onOpenDaily)
+                    .padding(.trailing, 22)
+                    .padding(.bottom, 74)
+            }
+            .background(theme.bgApp)
         }
-        .background(theme.bgApp)
     }
 
     private var selectedDateKey: String {
@@ -966,9 +1085,105 @@ private struct HomeDashboardPane: View {
     }
 }
 
+private struct HomeNavigationPane: View {
+    @EnvironmentObject private var model: AppModel
+    let snapshot: MobileSnapshot?
+    let selectedDate: Date
+    let theme: KnotQTheme
+    let onToggleOccurrence: (MobileOccurrence) -> Void
+    let onOpenOccurrence: (MobileOccurrence) -> Void
+    let onCreateScheme: () -> String?
+    let onNewFolder: () -> Void
+    let onAddItem: (String) -> Void
+    let onPrepareDaily: () -> Void
+    let onSelectDailyDate: @MainActor (Date) -> Void
+    @Binding var titleFocusSchemeID: String?
+    @Binding var navigationDepth: Int
+    @State private var path: [HomeRoute] = []
+
+    var body: some View {
+        NavigationStack(path: $path) {
+            HomeDashboardPane(
+                snapshot: snapshot,
+                selectedDate: selectedDate,
+                theme: theme,
+                onOpenDaily: openDailyInStack,
+                onOpenScheme: { path.append(.scheme($0)) },
+                onToggleOccurrence: onToggleOccurrence,
+                onOpenOccurrence: onOpenOccurrence,
+                onNewScheme: createSchemeInStack,
+                onNewFolder: onNewFolder
+            )
+            .navigationTitle("Home")
+            .navigationBarTitleDisplayMode(.inline)
+            .navigationDestination(for: HomeRoute.self) { route in
+                switch route {
+                case .scheme(let id):
+                    if let scheme = model.scheme(id: id) {
+                        IntegratedSchemeEditorPane(
+                            scheme: scheme,
+                            theme: theme,
+                            onBack: nil,
+                            onAdd: { onAddItem(scheme.id) },
+                            usesNativeNavigation: true,
+                            showsEditorNavigation: true,
+                            autoFocusTitleOnAppear: titleFocusSchemeID == scheme.id,
+                            onAutoFocusTitleConsumed: { consumeTitleFocus(for: scheme.id) }
+                        )
+                    } else {
+                        EmptyState(title: "Scheme missing", detail: "It may have been archived or deleted.", theme: theme)
+                    }
+                case .daily:
+                    DailyFeedPane(
+                        entries: model.snapshot?.daily ?? [],
+                        selectedDate: model.selectedDate,
+                        theme: theme,
+                        onPrevious: { model.ensureDailyQueue(date: Calendar.current.date(byAdding: .day, value: -1, to: model.selectedDate) ?? model.selectedDate) },
+                        onNext: { model.ensureDailyQueue(date: Calendar.current.date(byAdding: .day, value: 1, to: model.selectedDate) ?? model.selectedDate) },
+                        onDate: onSelectDailyDate,
+                        onBack: {},
+                        onAdd: {
+                            if let daily = model.snapshot?.daily.first(where: { $0.date == AppModel.dateOnly(model.selectedDate) })?.scheme {
+                                onAddItem(daily.id)
+                            }
+                        },
+                        usesNativeNavigation: true
+                    )
+                }
+            }
+        }
+        .onChange(of: path) { _, newPath in
+            navigationDepth = newPath.count
+        }
+        .onDisappear {
+            navigationDepth = 0
+        }
+    }
+
+    private func consumeTitleFocus(for id: String) {
+        if titleFocusSchemeID == id {
+            titleFocusSchemeID = nil
+        }
+    }
+
+    private func createSchemeInStack() {
+        guard let id = onCreateScheme() else { return }
+        path.append(.scheme(id))
+    }
+
+    private func openDailyInStack() {
+        onPrepareDaily()
+        path.append(.daily)
+    }
+}
+
 private struct HomeSchemesSection: View {
     let root: MobileNode?
+    let dailyEntry: MobileDailyEntry?
+    let selectedDate: Date
+    let maxHeight: CGFloat
     let theme: KnotQTheme
+    let onOpenDaily: () -> Void
     let onOpenScheme: (String) -> Void
     let onNewScheme: () -> Void
     let onNewFolder: () -> Void
@@ -994,33 +1209,91 @@ private struct HomeSchemesSection: View {
             }
             .padding(.horizontal, 2)
 
-            VStack(alignment: .leading, spacing: 3) {
-                if let root, !root.children.isEmpty {
-                    ForEach(root.children) { node in
-                        HomeSchemeNodeRow(
-                            node: node,
-                            depth: 0,
-                            parentFolderID: root.id,
-                            root: root,
-                            theme: theme,
-                            onOpenScheme: onOpenScheme
-                        )
+            ScrollView {
+                LazyVStack(alignment: .leading, spacing: 3) {
+                    HomeDailySchemeRow(
+                        entry: dailyEntry,
+                        selectedDate: selectedDate,
+                        theme: theme,
+                        onOpenDaily: onOpenDaily
+                    )
+
+                    if let root, !root.children.isEmpty {
+                        ForEach(root.children) { node in
+                            HomeSchemeNodeRow(
+                                node: node,
+                                depth: 0,
+                                parentFolderID: root.id,
+                                root: root,
+                                theme: theme,
+                                onOpenScheme: onOpenScheme
+                            )
+                        }
+                    } else {
+                        Text("No schemes yet")
+                            .font(.system(size: 14))
+                            .foregroundStyle(theme.textMuted)
+                            .frame(maxWidth: .infinity, minHeight: 38, alignment: .leading)
+                            .padding(.horizontal, 10)
                     }
-                } else {
-                    Text("No schemes yet")
-                        .font(.system(size: 14))
-                        .foregroundStyle(theme.textMuted)
-                        .frame(maxWidth: .infinity, minHeight: 38, alignment: .leading)
-                        .padding(.horizontal, 10)
                 }
+                .padding(8)
             }
-            .padding(8)
+            .scrollIndicators(.hidden)
+            .frame(maxHeight: maxHeight)
             .background(theme.bgSidebar, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
             .overlay {
                 RoundedRectangle(cornerRadius: 8, style: .continuous)
                     .stroke(theme.borderOverlay, lineWidth: 0.8)
             }
         }
+    }
+}
+
+private struct HomeDailySchemeRow: View {
+    let entry: MobileDailyEntry?
+    let selectedDate: Date
+    let theme: KnotQTheme
+    let onOpenDaily: () -> Void
+
+    var body: some View {
+        Button(action: onOpenDaily) {
+            HStack(spacing: 9) {
+                RoundedRectangle(cornerRadius: 3, style: .continuous)
+                    .fill(theme.isDark ? Color(hex: 0xb8c9e8) : Color(hex: 0x5a7aad))
+                    .frame(width: 13, height: 13)
+                Text("Daily")
+                    .font(.system(size: 15, weight: .medium))
+                    .foregroundStyle(theme.textPrimary)
+                    .lineLimit(1)
+                Text(AppModel.displayDate(entry?.date ?? AppModel.dateOnly(selectedDate)))
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(theme.textSoft)
+                    .lineLimit(1)
+                Spacer(minLength: 0)
+                if openCount > 0 {
+                    Text("\(openCount)")
+                        .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                        .foregroundStyle(theme.textMuted)
+                }
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 10, weight: .bold))
+                    .foregroundStyle(theme.textMuted)
+            }
+            .padding(.leading, 5)
+            .padding(.horizontal, 8)
+            .frame(minHeight: 34)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Daily")
+    }
+
+    private var openCount: Int {
+        guard let entry else { return 0 }
+        return entry.scheme.items.filter { item in
+            !item.done && !item.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        }.count
     }
 }
 
@@ -1040,39 +1313,51 @@ private struct HomeSchemeNodeRow: View {
 
     var body: some View {
         if node.kind == "folder" {
-            DisclosureGroup(isExpanded: $expanded) {
-                VStack(alignment: .leading, spacing: 2) {
-                    ForEach(node.children) { child in
-                        HomeSchemeNodeRow(
-                            node: child,
-                            depth: depth + 1,
-                            parentFolderID: node.id,
-                            root: root,
-                            theme: theme,
-                            onOpenScheme: onOpenScheme
-                        )
+            VStack(alignment: .leading, spacing: 2) {
+                Button {
+                    expanded.toggle()
+                } label: {
+                    HStack(spacing: 9) {
+                        Image(systemName: expanded ? "chevron.down" : "chevron.right")
+                            .font(.system(size: 10, weight: .bold))
+                            .foregroundStyle(theme.textMuted)
+                            .frame(width: 12)
+                        Image(systemName: "folder")
+                            .font(.system(size: 15, weight: .semibold))
+                            .foregroundStyle(theme.textMuted)
+                            .frame(width: 18)
+                        Text(node.name)
+                            .font(.system(size: 15, weight: .semibold))
+                            .foregroundStyle(theme.textPrimary)
+                            .lineLimit(1)
+                        Spacer(minLength: 0)
+                    }
+                    .padding(.leading, CGFloat(depth) * 14)
+                    .padding(.horizontal, 8)
+                    .frame(minHeight: 34)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+
+                if expanded {
+                    VStack(alignment: .leading, spacing: 2) {
+                        ForEach(node.children) { child in
+                            HomeSchemeNodeRow(
+                                node: child,
+                                depth: depth + 1,
+                                parentFolderID: node.id,
+                                root: root,
+                                theme: theme,
+                                onOpenScheme: onOpenScheme
+                            )
+                        }
                     }
                 }
-            } label: {
-                HStack(spacing: 9) {
-                    Image(systemName: "folder")
-                        .font(.system(size: 14, weight: .semibold))
-                        .foregroundStyle(theme.textMuted)
-                        .frame(width: 18)
-                    Text(node.name)
-                        .font(.system(size: 15, weight: .semibold))
-                        .foregroundStyle(theme.textPrimary)
-                        .lineLimit(1)
-                    Spacer(minLength: 0)
-                }
-                .padding(.leading, CGFloat(depth) * 14)
-                .frame(minHeight: 34)
-                .contentShape(Rectangle())
             }
-            .tint(theme.textDim)
             .contextMenu {
                 Button("New Scheme") { newSchemeInFolder = true }
                 Button("New Folder") { newFolderInFolder = true }
+                MoveToFolderMenu(nodeKind: "folder", nodeID: node.id, currentParentID: parentFolderID, root: root, excludingFolderID: node.id)
                 Button("Rename") { renameNode = node }
                 Button("Archive", systemImage: "archivebox") {
                     model.archiveFolder(id: node.id)
@@ -1125,11 +1410,11 @@ private struct HomeSchemeNodeRow: View {
                 .padding(.horizontal, 8)
                 .frame(minHeight: 34)
                 .contentShape(Rectangle())
-                .background(theme.rowAlt.opacity(0.55), in: RoundedRectangle(cornerRadius: 5, style: .continuous))
             }
             .buttonStyle(.plain)
             .contextMenu {
                 Button("Rename") { renameNode = node }
+                MoveToFolderMenu(nodeKind: "scheme", nodeID: node.id, currentParentID: parentFolderID, root: root)
                 ColorMenu(nodeID: node.id, colorIndex: node.colorIndex ?? 0, theme: theme)
                 Button("Archive", systemImage: "archivebox") {
                     model.archiveScheme(id: node.id)
@@ -1157,15 +1442,15 @@ private struct HomeGlassSurface: ViewModifier {
         content
             .background {
                 ZStack {
-                    shape.fill(.ultraThinMaterial)
-                    shape.fill(theme.isDark ? Color.white.opacity(0.035) : Color.white.opacity(0.46))
+                    shape.fill(theme.isDark ? AnyShapeStyle(.ultraThinMaterial) : AnyShapeStyle(theme.bgModal))
+                    shape.fill(theme.isDark ? Color.white.opacity(0.035) : Color.clear)
                 }
             }
             .overlay {
                 shape.strokeBorder(
                     LinearGradient(
                         colors: [
-                            Color.white.opacity(theme.isDark ? 0.20 : 0.68),
+                            Color.white.opacity(theme.isDark ? 0.20 : 0.16),
                             theme.borderOverlay.opacity(theme.isDark ? 0.55 : 0.85)
                         ],
                         startPoint: .topLeading,
@@ -1174,7 +1459,7 @@ private struct HomeGlassSurface: ViewModifier {
                     lineWidth: 0.8
                 )
             }
-            .shadow(color: .black.opacity(shadow ? (theme.isDark ? 0.20 : 0.032) : 0), radius: shadow ? (theme.isDark ? 12 : 6) : 0, x: 0, y: shadow ? (theme.isDark ? 5 : 2) : 0)
+            .shadow(color: .black.opacity(shadow ? (theme.isDark ? 0.20 : 0.018) : 0), radius: shadow ? (theme.isDark ? 12 : 4) : 0, x: 0, y: shadow ? (theme.isDark ? 5 : 1) : 0)
     }
 }
 
@@ -1205,7 +1490,7 @@ private struct HomeQuickActions: View {
             }
             .frame(maxWidth: .infinity)
             .frame(height: 40)
-            .background(.ultraThinMaterial, in: Capsule())
+            .background(theme.isDark ? AnyShapeStyle(.ultraThinMaterial) : AnyShapeStyle(theme.buttonBg), in: Capsule())
             .overlay { Capsule().stroke(theme.borderOverlay, lineWidth: 0.7) }
             .shadow(color: .black.opacity(theme.isDark ? 0.20 : 0.035), radius: theme.isDark ? 10 : 5, x: 0, y: theme.isDark ? 4 : 2)
         }
@@ -1213,26 +1498,30 @@ private struct HomeQuickActions: View {
     }
 }
 
-private struct HomeNewSchemeButton: View {
+private struct HomeQuickWriteButtons: View {
     let theme: KnotQTheme
     let onNewScheme: () -> Void
     let onOpenDaily: () -> Void
 
     var body: some View {
-        Menu {
-            Button("New Scheme", systemImage: "doc.badge.plus", action: onNewScheme)
-            Button("Daily", systemImage: "checklist", action: onOpenDaily)
-        } label: {
-            Image(systemName: "pencil")
+        HStack(spacing: 10) {
+            quickButton(icon: "checklist", label: "Daily", action: onOpenDaily)
+            quickButton(icon: "pencil", label: "New Scheme", action: onNewScheme)
+        }
+    }
+
+    private func quickButton(icon: String, label: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: icon)
                 .font(.system(size: 20, weight: .semibold))
                 .foregroundStyle(theme.textPrimary)
                 .frame(width: 56, height: 56)
-                .background(.ultraThinMaterial, in: Circle())
+                .background(theme.isDark ? AnyShapeStyle(.ultraThinMaterial) : AnyShapeStyle(theme.bgToolbar), in: Circle())
                 .overlay {
                     Circle().strokeBorder(
                         LinearGradient(
                             colors: [
-                                Color.white.opacity(theme.isDark ? 0.24 : 0.72),
+                                Color.white.opacity(theme.isDark ? 0.24 : 0.16),
                                 theme.borderOverlay.opacity(theme.isDark ? 0.60 : 0.90)
                             ],
                             startPoint: .topLeading,
@@ -1244,7 +1533,7 @@ private struct HomeNewSchemeButton: View {
                 .shadow(color: .black.opacity(theme.isDark ? 0.28 : 0.06), radius: theme.isDark ? 14 : 7, x: 0, y: theme.isDark ? 6 : 3)
         }
         .buttonStyle(.plain)
-        .accessibilityLabel("Write")
+        .accessibilityLabel(label)
     }
 }
 
@@ -1700,6 +1989,7 @@ private struct DayTimelinePane: View {
     let timeFormat: String
     let onSetDate: (Date) -> Void
     let onShiftDay: (Int) -> Void
+    let onCreate: (Date) -> Void
     let onOpenOccurrence: (MobileOccurrence) -> Void
     let onMoveOccurrence: (MobileOccurrence, Date?, Date?) -> Void
 
@@ -1710,6 +2000,12 @@ private struct DayTimelinePane: View {
     @State private var ignoredEventDragID: String?
     @State private var timelineScrollY: CGFloat = 0
     @State private var timelineViewportHeight: CGFloat = 0
+    @State private var createDraft: CreateDraft?
+
+    private struct CreateDraft: Equatable {
+        let dayIndex: Int
+        let startMinute: CGFloat
+    }
 
     private static let hourHeight: CGFloat = 44
     private static let gutterWidth: CGFloat = 50
@@ -1829,11 +2125,13 @@ private struct DayTimelinePane: View {
                         hourGrid(colWidth: colWidth, visibleCount: visibleCount)
                             .allowsHitTesting(false)
                         eventsLayer(colWidth: colWidth, visibleCount: visibleCount)
+                        createDraftLayer(colWidth: colWidth)
                         nowLine(colWidth: colWidth, visibleCount: visibleCount).allowsHitTesting(false)
                     }
                     .contentShape(Rectangle())
                     .frame(height: Self.timeYOffset + CGFloat(Self.hoursInDay) * Self.hourHeight)
                     .padding(.bottom, 88)
+                    .simultaneousGesture(createGesture(colWidth: colWidth, visibleCount: visibleCount))
                 }
                 .coordinateSpace(name: Self.timelineCoordinateSpace)
                 .onAppear {
@@ -1881,6 +2179,87 @@ private struct DayTimelinePane: View {
         proxy.scrollTo("hour-\(focus)", anchor: .top)
     }
 
+    private func createGesture(colWidth: CGFloat, visibleCount: Int) -> some Gesture {
+        LongPressGesture(minimumDuration: 0.5, maximumDistance: 10)
+            .sequenced(before: DragGesture(minimumDistance: 0))
+            .onChanged { value in
+                guard case let .second(_, drag?) = value else { return }
+                if createDraft == nil {
+                    guard !pointHitsEvent(drag.startLocation, colWidth: colWidth, visibleCount: visibleCount) else { return }
+                    createDraft = createTarget(point: drag.startLocation, colWidth: colWidth, visibleCount: visibleCount)
+                    UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+                } else {
+                    let moved = createTarget(point: drag.location, colWidth: colWidth, visibleCount: visibleCount)
+                    if moved != createDraft {
+                        createDraft = moved
+                        UISelectionFeedbackGenerator().selectionChanged()
+                    }
+                }
+            }
+            .onEnded { _ in
+                let draft = createDraft
+                createDraft = nil
+                if let draft, let date = createDate(for: draft) {
+                    onCreate(date)
+                }
+            }
+    }
+
+    private func pointHitsEvent(_ point: CGPoint, colWidth: CGFloat, visibleCount: Int) -> Bool {
+        allLaidEvents(colWidth: colWidth, visibleCount: visibleCount).contains { laid in
+            point.x >= laid.x
+                && point.x <= laid.x + laid.width
+                && point.y >= laid.y
+                && point.y <= laid.y + laid.height
+        }
+    }
+
+    private func createTarget(point: CGPoint, colWidth: CGFloat, visibleCount: Int) -> CreateDraft {
+        let dayIndex = max(0, min(visibleCount - 1, Int((point.x - Self.gutterWidth) / colWidth)))
+        let rawMinute = (point.y - Self.timeYOffset) / Self.hourHeight * 60
+        let snapped = (rawMinute / 15).rounded() * 15
+        let clamped = max(0, min(CGFloat(Self.hoursInDay * 60 - 60), snapped))
+        return CreateDraft(dayIndex: dayIndex, startMinute: clamped)
+    }
+
+    private func createDate(for draft: CreateDraft) -> Date? {
+        let base = Calendar.current.startOfDay(for: dayDate(draft.dayIndex))
+        return Calendar.current.date(byAdding: .minute, value: Int(draft.startMinute), to: base)
+    }
+
+    @ViewBuilder
+    private func createDraftLayer(colWidth: CGFloat) -> some View {
+        if let draft = createDraft {
+            let y = Self.timeYOffset + draft.startMinute / 60.0 * Self.hourHeight
+            let x = Self.gutterWidth + CGFloat(draft.dayIndex) * colWidth
+            VStack(spacing: 1) {
+                Text(draftTimeLabel(draft))
+                    .font(.system(size: 9, weight: .regular, design: .monospaced))
+                Text("New Event")
+                    .font(.system(size: 11, weight: .bold))
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+            .padding(.top, 3)
+            .foregroundStyle(theme.isDark ? Color.white : Color(hex: 0x24272d))
+            .frame(width: colWidth - 2, height: Self.hourHeight - 2)
+            .background(RoundedRectangle(cornerRadius: 3).fill(theme.accent.opacity(theme.isDark ? 0.32 : 0.22)))
+            .overlay(RoundedRectangle(cornerRadius: 3).stroke(theme.accent, lineWidth: 1.5))
+            .offset(x: x + 1, y: y)
+            .allowsHitTesting(false)
+            .shadow(color: .black.opacity(theme.isDark ? 0.32 : 0.12), radius: theme.isDark ? 7 : 4, x: 0, y: theme.isDark ? 4 : 2)
+            .animation(.spring(response: 0.2, dampingFraction: 0.82), value: draft)
+        }
+    }
+
+    private func draftTimeLabel(_ draft: CreateDraft) -> String {
+        guard let start = createDate(for: draft) else { return "" }
+        let formatter = DateFormatter()
+        formatter.calendar = Calendar(identifier: .gregorian)
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.dateFormat = timeFormat == "twenty_four_hour" ? "HH:mm" : "h:mm a"
+        return formatter.string(from: start)
+    }
+
     private func hourGrid(colWidth: CGFloat, visibleCount: Int) -> some View {
         ZStack(alignment: .topLeading) {
             ForEach(0..<Self.hoursInDay, id: \.self) { hour in
@@ -1896,11 +2275,17 @@ private struct DayTimelinePane: View {
                     .frame(width: Self.gutterWidth - 8, alignment: .trailing)
                     .offset(y: y - 6)
             }
+            ForEach(1..<visibleCount, id: \.self) { index in
+                Rectangle()
+                    .fill(theme.divider.opacity(theme.isDark ? 0.95 : 0.85))
+                    .frame(width: 1, height: Self.timeYOffset + CGFloat(Self.hoursInDay) * Self.hourHeight)
+                    .offset(x: Self.gutterWidth + CGFloat(index) * colWidth - 0.5)
+            }
             Rectangle()
-                .fill(theme.dividerSoft)
-                .frame(height: 0.5)
+                .fill(theme.divider)
+                .frame(height: 1)
                 .padding(.leading, Self.gutterWidth)
-                .offset(y: Self.timeYOffset + CGFloat(Self.hoursInDay) * Self.hourHeight - 0.5)
+                .offset(y: Self.timeYOffset + CGFloat(Self.hoursInDay) * Self.hourHeight - 1)
         }
     }
 
@@ -2913,6 +3298,100 @@ private struct ArchiveSchemeRow: View {
     }
 }
 
+private struct SettingsArchiveSection: View {
+    let schemes: [MobileScheme]
+    let theme: KnotQTheme
+
+    var body: some View {
+        Section {
+            NavigationLink {
+                SettingsArchiveList(theme: theme)
+            } label: {
+                HStack(spacing: 10) {
+                    Label("Archived Schemes", systemImage: "archivebox")
+                    Spacer(minLength: 0)
+                    Text("\(schemes.count)")
+                        .foregroundStyle(theme.textMuted)
+                }
+            }
+        } header: {
+            Text("Archive")
+        } footer: {
+            if !schemes.isEmpty {
+                Text("Open Archive to restore schemes.")
+            }
+        }
+    }
+}
+
+private struct SettingsArchiveList: View {
+    @EnvironmentObject private var model: AppModel
+    let theme: KnotQTheme
+    @State private var confirmEmptyArchive: DestructiveConfirmationTarget?
+
+    var body: some View {
+        Form {
+            Section {
+                if schemes.isEmpty {
+                    Text("No archived schemes")
+                        .foregroundStyle(theme.textMuted)
+                } else {
+                    ForEach(schemes) { scheme in
+                        SettingsArchiveRow(scheme: scheme, theme: theme)
+                    }
+                    Button("Empty Archive", systemImage: "trash", role: .destructive) {
+                        confirmEmptyArchive = .emptyArchive(count: schemes.count)
+                    }
+                }
+            }
+        }
+        .scrollContentBackground(.hidden)
+        .background(theme.bgApp)
+        .navigationTitle("Archive")
+        .destructiveConfirmation(target: $confirmEmptyArchive) { _ in
+            model.emptyArchive()
+        }
+    }
+
+    private var schemes: [MobileScheme] {
+        model.snapshot?.archivedSchemes ?? []
+    }
+}
+
+private struct SettingsArchiveRow: View {
+    @EnvironmentObject private var model: AppModel
+    let scheme: MobileScheme
+    let theme: KnotQTheme
+    @State private var confirmPermanentDelete: DestructiveConfirmationTarget?
+
+    var body: some View {
+        HStack(spacing: 10) {
+            RoundedRectangle(cornerRadius: 2)
+                .fill(schemeColor(scheme.colorIndex, dark: theme.isDark).opacity(0.72))
+                .frame(width: 11, height: 11)
+            Text(scheme.displayName)
+                .foregroundStyle(theme.textPrimary)
+                .lineLimit(1)
+            Spacer(minLength: 0)
+            Button("Restore") {
+                model.restoreScheme(id: scheme.id)
+            }
+            .buttonStyle(.borderless)
+        }
+        .contextMenu {
+            Button("Restore", systemImage: "arrow.uturn.backward") {
+                model.restoreScheme(id: scheme.id)
+            }
+            Button("Delete Permanently", systemImage: "trash", role: .destructive) {
+                confirmPermanentDelete = .permanentlyDeleteScheme(scheme)
+            }
+        }
+        .destructiveConfirmation(target: $confirmPermanentDelete) { _ in
+            model.permanentlyDeleteScheme(id: scheme.id)
+        }
+    }
+}
+
 private struct DesktopSchemePane: View {
     let scheme: MobileScheme
     let theme: KnotQTheme
@@ -2942,10 +3421,13 @@ struct DailyFeedPane: View {
     let onDate: @MainActor (Date) -> Void
     let onBack: () -> Void
     let onAdd: () -> Void
+    var usesNativeNavigation: Bool = false
 
     var body: some View {
         VStack(spacing: 0) {
-            DailyEditorNavigationBar(theme: theme, onBack: onBack, onAdd: onAdd)
+            if !usesNativeNavigation {
+                DailyEditorNavigationBar(theme: theme, onBack: onBack, onAdd: onAdd)
+            }
 
             Group {
                 if visibleEntries.isEmpty {
@@ -2988,6 +3470,17 @@ struct DailyFeedPane: View {
             }
         }
         .background(theme.bgApp)
+        .navigationTitle(usesNativeNavigation ? "Daily" : "")
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            if usesNativeNavigation {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button(action: onAdd) {
+                        Image(systemName: "plus")
+                    }
+                }
+            }
+        }
     }
 
     private var selectedDateKey: String {
@@ -3292,13 +3785,6 @@ private struct DesktopSearchPane: View {
         // keyboard. It clears the floating dock when the keyboard is down.
         .safeAreaInset(edge: .bottom) {
             VStack(spacing: 6) {
-                if searchFocused {
-                    Capsule()
-                        .fill(theme.textMuted.opacity(0.45))
-                        .frame(width: 34, height: 4)
-                        .padding(.top, 2)
-                }
-
                 HStack(spacing: 8) {
                     Image(systemName: "magnifyingglass")
                         .foregroundStyle(theme.textMuted)
@@ -3329,7 +3815,7 @@ private struct DesktopSearchPane: View {
             .overlay { RoundedRectangle(cornerRadius: 13).stroke(theme.borderOverlay, lineWidth: 1) }
             .padding(.horizontal, 12)
             .padding(.top, 8)
-            .padding(.bottom, searchFocused ? 8 : 64)
+            .padding(.bottom, searchFocused ? (theme.isDark ? 28 : 18) : 64)
             .simultaneousGesture(
                 DragGesture(minimumDistance: 12).onEnded { value in
                     if value.translation.height > 22,
@@ -3383,6 +3869,8 @@ private struct DesktopSettingsPane: View {
                 } header: {
                     Text("Time")
                 }
+
+                SettingsArchiveSection(schemes: model.snapshot?.archivedSchemes ?? [], theme: theme)
 
                 Section {
                     if let session = model.syncSession {
@@ -3474,9 +3962,9 @@ private struct MobileDock: View {
         }
         .padding(.horizontal, 6)
         .padding(.vertical, 5)
-        .background(.ultraThinMaterial, in: Capsule())
+        .background(theme.isDark ? AnyShapeStyle(.ultraThinMaterial) : AnyShapeStyle(theme.bgToolbar), in: Capsule())
         .overlay(Capsule().strokeBorder(theme.borderOverlay, lineWidth: 0.5))
-        .shadow(color: Color.black.opacity(theme.isDark ? 0.28 : 0.06), radius: theme.isDark ? 12 : 6, y: theme.isDark ? 4 : 2)
+        .shadow(color: Color.black.opacity(theme.isDark ? 0.28 : 0.025), radius: theme.isDark ? 12 : 4, y: theme.isDark ? 4 : 1)
     }
 }
 
