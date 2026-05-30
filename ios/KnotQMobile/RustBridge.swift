@@ -35,8 +35,8 @@ final class RustBridge: @unchecked Sendable {
         try core.deleteFolder(folderId: id)
     }
 
-    func createScheme(name: String, folderID: String?) throws {
-        try core.createScheme(folderId: folderID, name: name, colorIndex: nil, position: nil)
+    func createScheme(name: String, folderID: String?, position: Int32?) throws {
+        try core.createScheme(folderId: folderID, name: name, colorIndex: nil, position: position)
     }
 
     func renameScheme(id: String, name: String) throws {

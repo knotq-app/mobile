@@ -1573,7 +1573,9 @@ class MainActivity : Activity() {
                         val schemeId = if (selectedTab == 2) dailyScheme()?.optString("id") else selectedSchemeId
                         if (schemeId != null) showItemDialog(schemeId, null) else toast("Pick a scheme first")
                     }
-                    2 -> showNameDialog("New Scheme", "", { validateSchemeName(it, folderId = rootFolderId()) }) { name -> mutate(obj("type" to "create_scheme", "name" to name)) }
+                    2 -> showNameDialog("New Scheme", "", { validateSchemeName(it, folderId = rootFolderId()) }) { name ->
+                        mutate(obj("type" to "create_scheme", "name" to name, "position" to 0))
+                    }
                     3 -> showNameDialog("New Folder", "", { validateFolderName(it) }) { name -> mutate(obj("type" to "create_folder", "name" to name)) }
                 }
             }
@@ -1742,7 +1744,7 @@ class MainActivity : Activity() {
             .setItems(arrayOf("New Scheme", "New Folder", "Rename", "Move Up", "Move Down", "Move To Folder", "Archive")) { _, which ->
                 when (which) {
                     0 -> showNameDialog("New Scheme", "", { validateSchemeName(it, folderId = node.optString("id")) }) { name ->
-                        mutate(obj("type" to "create_scheme", "folder_id" to node.optString("id"), "name" to name))
+                        mutate(obj("type" to "create_scheme", "folder_id" to node.optString("id"), "name" to name, "position" to 0))
                     }
                     1 -> showNameDialog("New Folder", "", { validateFolderName(it) }) { name ->
                         mutate(obj("type" to "create_folder", "parent_id" to node.optString("id"), "name" to name))

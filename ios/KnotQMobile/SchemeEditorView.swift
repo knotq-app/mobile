@@ -396,7 +396,7 @@ struct SchemeEditorView: View {
 
     var body: some View {
         if let scheme = model.scheme(id: schemeID) {
-            IntegratedSchemeEditorPane(scheme: scheme, theme: theme, onBack: nil, onAdd: {}, usesNativeNavigation: true)
+            IntegratedSchemeEditorPane(scheme: scheme, theme: theme, onBack: nil, onAdd: {}, usesNativeNavigation: true, autoFocusOnAppear: true)
         } else {
             EmptyState(title: "Scheme missing", detail: "It may have been archived or moved.", theme: theme)
         }
@@ -550,17 +550,13 @@ struct IntegratedSchemeEditorPane: View {
         .toolbar {
             if usesNativeNavigation && showsEditorNavigation {
                 ToolbarItemGroup(placement: .topBarTrailing) {
-                    Menu {
-                        ColorMenu(nodeID: scheme.id, colorIndex: scheme.colorIndex, theme: theme)
-                        Button("Save", systemImage: "checkmark") { commitDocument() }
-                        Button("Archive", systemImage: "archivebox") {
+                    SchemeColorPickerButton(scheme: scheme, theme: theme, accent: accent)
+                    if !scheme.isDailyQueue {
+                        Button {
                             archiveCurrentScheme()
+                        } label: {
+                            Image(systemName: "archivebox")
                         }
-                            .disabled(scheme.isDailyQueue)
-                    } label: {
-                        RoundedRectangle(cornerRadius: 3)
-                            .fill(accent)
-                            .frame(width: 18, height: 18)
                     }
                 }
             }
@@ -609,17 +605,16 @@ struct IntegratedSchemeEditorPane: View {
 
             Spacer()
 
-            Menu {
-                ColorMenu(nodeID: scheme.id, colorIndex: scheme.colorIndex, theme: theme)
-                Button("Commit Edits", systemImage: "checkmark") { commitDocument() }
-                Button("Archive", systemImage: "archivebox") {
+            SchemeColorPickerButton(scheme: scheme, theme: theme, accent: accent)
+
+            if !scheme.isDailyQueue {
+                Button {
                     archiveCurrentScheme()
+                } label: {
+                    Image(systemName: "archivebox")
                 }
-                    .disabled(scheme.isDailyQueue)
-            } label: {
-                Image(systemName: "ellipsis")
+                .buttonStyle(TitleIconButton(theme: theme))
             }
-            .buttonStyle(TitleIconButton(theme: theme))
         }
         .padding(.horizontal, 12)
         .frame(height: 50)
@@ -679,6 +674,64 @@ struct IntegratedSchemeEditorPane: View {
         let root = model.snapshot?.root
         let folderID = WorkspaceNameValidation.parentFolderID(containingSchemeID: scheme.id, root: root)
         return WorkspaceNameValidation.schemeError(name, root: root, folderID: folderID, excludingID: scheme.id)
+    }
+}
+
+private struct SchemeColorPickerButton: View {
+    @EnvironmentObject private var model: AppModel
+    let scheme: MobileScheme
+    let theme: KnotQTheme
+    let accent: Color
+    @State private var showingPicker = false
+
+    private let colorOrder: [Int32] = [0, 1, 5, 2, 3, 4]
+
+    var body: some View {
+        Button {
+            showingPicker = true
+        } label: {
+            RoundedRectangle(cornerRadius: 4, style: .continuous)
+                .fill(accent)
+                .frame(width: 22, height: 22)
+                .overlay {
+                    RoundedRectangle(cornerRadius: 4, style: .continuous)
+                        .stroke(theme.borderOverlay, lineWidth: 1)
+                }
+                .frame(width: 34, height: 34)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Color")
+        .popover(isPresented: $showingPicker, arrowEdge: .top) {
+            HStack(spacing: 8) {
+                ForEach(colorOrder, id: \.self) { index in
+                    Button {
+                        model.setSchemeColor(id: scheme.id, colorIndex: index)
+                        showingPicker = false
+                    } label: {
+                        RoundedRectangle(cornerRadius: 5, style: .continuous)
+                            .fill(schemeColor(index, dark: theme.isDark))
+                            .frame(width: 34, height: 34)
+                            .overlay {
+                                RoundedRectangle(cornerRadius: 5, style: .continuous)
+                                    .stroke(index == scheme.colorIndex ? theme.textPrimary : theme.borderOverlay, lineWidth: index == scheme.colorIndex ? 2 : 0.8)
+                            }
+                            .overlay {
+                                if index == scheme.colorIndex {
+                                    Image(systemName: "checkmark")
+                                        .font(.system(size: 13, weight: .bold))
+                                        .foregroundStyle(theme.isDark ? Color.black.opacity(0.82) : Color.white)
+                                }
+                            }
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Color")
+                }
+            }
+            .padding(12)
+            .background(theme.bgModal)
+            .presentationCompactAdaptation(.popover)
+        }
     }
 }
 
@@ -1373,8 +1426,10 @@ private final class EditorTextView: UITextView {
         var rect = super.caretRect(for: position)
         let maxHeight = DesktopEditorMetrics.textLineHeight
         if rect.height > maxHeight {
+            rect.origin.y += (rect.height - maxHeight) / 2
             rect.size.height = maxHeight
         }
+        rect.size.width = max(2, min(rect.width, 2))
         return rect
     }
 

@@ -999,58 +999,34 @@ private struct HomeDashboardPane: View {
 
     var body: some View {
         GeometryReader { proxy in
-            let schemePreviewMaxHeight = max(280, proxy.size.height * 0.56)
+            let schemePreviewMaxHeight = max(235, proxy.size.height * 0.43)
             ZStack(alignment: .bottomTrailing) {
-                ScrollView {
-                    VStack(alignment: .leading, spacing: 18) {
-                        HomeSchemesSection(
-                            root: snapshot?.root,
-                            dailyEntry: dailyEntry,
-                            selectedDate: selectedDate,
-                            maxHeight: schemePreviewMaxHeight,
-                            theme: theme,
-                            onOpenDaily: onOpenDaily,
-                            onOpenScheme: onOpenScheme,
-                            onNewScheme: onNewScheme,
-                            onNewFolder: onNewFolder
-                        )
+                VStack(alignment: .leading, spacing: 16) {
+                    HomeSchemesSection(
+                        root: snapshot?.root,
+                        dailyEntry: dailyEntry,
+                        selectedDate: selectedDate,
+                        maxHeight: schemePreviewMaxHeight,
+                        theme: theme,
+                        onOpenDaily: onOpenDaily,
+                        onOpenScheme: onOpenScheme,
+                        onNewScheme: onNewScheme,
+                        onNewFolder: onNewFolder
+                    )
 
-                        // A single unified Upcoming list: overdue items lead,
-                        // followed by what's next.
-                        VStack(alignment: .leading, spacing: 6) {
-                            Text("Upcoming")
-                                .font(.system(size: 22, weight: .bold))
-                                .foregroundStyle(theme.textPrimary)
-                                .padding(.horizontal, 2)
-
-                            if upcomingOccurrences.isEmpty {
-                                Text("Nothing scheduled")
-                                    .font(.system(size: 14))
-                                    .foregroundStyle(theme.textMuted)
-                                    .frame(maxWidth: .infinity, alignment: .leading)
-                                    .padding(.vertical, 10)
-                                    .padding(.horizontal, 2)
-                            } else {
-                                ForEach(Array(upcomingOccurrences.enumerated()), id: \.element.id) { idx, occurrence in
-                                    OccurrenceCompactRow(
-                                        occurrence: occurrence,
-                                        theme: theme,
-                                        timeFormat: timeFormat,
-                                        striped: idx % 2 == 1,
-                                        moreAction: { onOpenOccurrence(occurrence) }
-                                    ) {
-                                        onToggleOccurrence(occurrence)
-                                    }
-                                }
-                            }
-                        }
-                    }
-                    .frame(maxWidth: 720, alignment: .leading)
-                    .padding(14)
-                    .padding(.bottom, 132)
-                    .frame(maxWidth: .infinity, alignment: .leading)
+                    HomeUpcomingSection(
+                        occurrences: upcomingOccurrences,
+                        theme: theme,
+                        timeFormat: timeFormat,
+                        onToggleOccurrence: onToggleOccurrence,
+                        onOpenOccurrence: onOpenOccurrence
+                    )
+                    .frame(maxHeight: .infinity)
                 }
-                .scrollDismissesKeyboard(.never)
+                .frame(maxWidth: 720, maxHeight: .infinity, alignment: .topLeading)
+                .padding(14)
+                .padding(.bottom, 132)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
 
                 HomeQuickWriteButtons(theme: theme, onNewScheme: onNewScheme, onOpenDaily: onOpenDaily)
                     .padding(.trailing, 22)
@@ -1085,6 +1061,52 @@ private struct HomeDashboardPane: View {
     }
 }
 
+private struct HomeUpcomingSection: View {
+    let occurrences: [MobileOccurrence]
+    let theme: KnotQTheme
+    let timeFormat: String
+    let onToggleOccurrence: (MobileOccurrence) -> Void
+    let onOpenOccurrence: (MobileOccurrence) -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text("Upcoming")
+                .font(.system(size: 22, weight: .bold))
+                .foregroundStyle(theme.textPrimary)
+                .padding(.horizontal, 2)
+
+            if occurrences.isEmpty {
+                Text("Nothing scheduled")
+                    .font(.system(size: 14))
+                    .foregroundStyle(theme.textMuted)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.vertical, 10)
+                    .padding(.horizontal, 2)
+                Spacer(minLength: 0)
+            } else {
+                ScrollView {
+                    LazyVStack(spacing: 2) {
+                        ForEach(Array(occurrences.enumerated()), id: \.element.id) { idx, occurrence in
+                            OccurrenceCompactRow(
+                                occurrence: occurrence,
+                                theme: theme,
+                                timeFormat: timeFormat,
+                                striped: idx % 2 == 1,
+                                moreAction: { onOpenOccurrence(occurrence) }
+                            ) {
+                                onToggleOccurrence(occurrence)
+                            }
+                        }
+                    }
+                    .padding(.bottom, 8)
+                }
+                .scrollDismissesKeyboard(.never)
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+    }
+}
+
 private struct HomeNavigationPane: View {
     @EnvironmentObject private var model: AppModel
     let snapshot: MobileSnapshot?
@@ -1114,8 +1136,7 @@ private struct HomeNavigationPane: View {
                 onNewScheme: createSchemeInStack,
                 onNewFolder: onNewFolder
             )
-            .navigationTitle("Home")
-            .navigationBarTitleDisplayMode(.inline)
+            .toolbar(.hidden, for: .navigationBar)
             .navigationDestination(for: HomeRoute.self) { route in
                 switch route {
                 case .scheme(let id):
@@ -1127,11 +1148,14 @@ private struct HomeNavigationPane: View {
                             onAdd: { onAddItem(scheme.id) },
                             usesNativeNavigation: true,
                             showsEditorNavigation: true,
+                            autoFocusOnAppear: titleFocusSchemeID != scheme.id,
                             autoFocusTitleOnAppear: titleFocusSchemeID == scheme.id,
                             onAutoFocusTitleConsumed: { consumeTitleFocus(for: scheme.id) }
                         )
+                        .toolbar(.visible, for: .navigationBar)
                     } else {
                         EmptyState(title: "Scheme missing", detail: "It may have been archived or deleted.", theme: theme)
+                            .toolbar(.visible, for: .navigationBar)
                     }
                 case .daily:
                     DailyFeedPane(
@@ -1149,6 +1173,7 @@ private struct HomeNavigationPane: View {
                         },
                         usesNativeNavigation: true
                     )
+                    .toolbar(.visible, for: .navigationBar)
                 }
             }
         }
@@ -1211,17 +1236,12 @@ private struct HomeSchemesSection: View {
 
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 3) {
-                    HomeDailySchemeRow(
-                        entry: dailyEntry,
-                        selectedDate: selectedDate,
-                        theme: theme,
-                        onOpenDaily: onOpenDaily
-                    )
-
                     if let root, !root.children.isEmpty {
-                        ForEach(root.children) { node in
+                        ForEach(Array(root.children.enumerated()), id: \.element.id) { index, node in
                             HomeSchemeNodeRow(
                                 node: node,
+                                position: index,
+                                siblingCount: root.children.count,
                                 depth: 0,
                                 parentFolderID: root.id,
                                 root: root,
@@ -1246,6 +1266,13 @@ private struct HomeSchemesSection: View {
                 RoundedRectangle(cornerRadius: 8, style: .continuous)
                     .stroke(theme.borderOverlay, lineWidth: 0.8)
             }
+
+            HomeDailySchemeRow(
+                entry: dailyEntry,
+                selectedDate: selectedDate,
+                theme: theme,
+                onOpenDaily: onOpenDaily
+            )
         }
     }
 }
@@ -1282,7 +1309,12 @@ private struct HomeDailySchemeRow: View {
             }
             .padding(.leading, 5)
             .padding(.horizontal, 8)
-            .frame(minHeight: 34)
+            .frame(minHeight: 38)
+            .background(theme.rowSelected.opacity(theme.isDark ? 0.52 : 0.34), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+            .overlay {
+                RoundedRectangle(cornerRadius: 7, style: .continuous)
+                    .stroke(theme.borderOverlay.opacity(theme.isDark ? 0.9 : 0.7), lineWidth: 0.7)
+            }
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -1300,6 +1332,8 @@ private struct HomeDailySchemeRow: View {
 private struct HomeSchemeNodeRow: View {
     @EnvironmentObject private var model: AppModel
     let node: MobileNode
+    let position: Int
+    let siblingCount: Int
     let depth: Int
     let parentFolderID: String
     let root: MobileNode
@@ -1341,9 +1375,11 @@ private struct HomeSchemeNodeRow: View {
 
                 if expanded {
                     VStack(alignment: .leading, spacing: 2) {
-                        ForEach(node.children) { child in
+                        ForEach(Array(node.children.enumerated()), id: \.element.id) { index, child in
                             HomeSchemeNodeRow(
                                 node: child,
+                                position: index,
+                                siblingCount: node.children.count,
                                 depth: depth + 1,
                                 parentFolderID: node.id,
                                 root: root,
@@ -1358,6 +1394,14 @@ private struct HomeSchemeNodeRow: View {
                 Button("New Scheme") { newSchemeInFolder = true }
                 Button("New Folder") { newFolderInFolder = true }
                 MoveToFolderMenu(nodeKind: "folder", nodeID: node.id, currentParentID: parentFolderID, root: root, excludingFolderID: node.id)
+                Button("Move Up", systemImage: "arrow.up") {
+                    model.moveNode(kind: "folder", id: node.id, folderID: parentFolderID, position: max(position - 1, 0))
+                }
+                .disabled(position == 0)
+                Button("Move Down", systemImage: "arrow.down") {
+                    model.moveNode(kind: "folder", id: node.id, folderID: parentFolderID, position: min(position + 2, siblingCount))
+                }
+                .disabled(position >= siblingCount - 1)
                 Button("Rename") { renameNode = node }
                 Button("Archive", systemImage: "archivebox") {
                     model.archiveFolder(id: node.id)
@@ -1415,6 +1459,14 @@ private struct HomeSchemeNodeRow: View {
             .contextMenu {
                 Button("Rename") { renameNode = node }
                 MoveToFolderMenu(nodeKind: "scheme", nodeID: node.id, currentParentID: parentFolderID, root: root)
+                Button("Move Up", systemImage: "arrow.up") {
+                    model.moveNode(kind: "scheme", id: node.id, folderID: parentFolderID, position: max(position - 1, 0))
+                }
+                .disabled(position == 0)
+                Button("Move Down", systemImage: "arrow.down") {
+                    model.moveNode(kind: "scheme", id: node.id, folderID: parentFolderID, position: min(position + 2, siblingCount))
+                }
+                .disabled(position >= siblingCount - 1)
                 ColorMenu(nodeID: node.id, colorIndex: node.colorIndex ?? 0, theme: theme)
                 Button("Archive", systemImage: "archivebox") {
                     model.archiveScheme(id: node.id)
@@ -3182,7 +3234,7 @@ private struct OccurrenceCompactRow: View {
                     Spacer(minLength: 6)
                     Text(occurrenceTimeLabel(occurrence, timeFormat: timeFormat))
                         .font(.system(size: 10, weight: .bold, design: .monospaced))
-                        .foregroundStyle(theme.textSoft)
+                        .foregroundStyle(occurrenceStatusTimeColor(occurrence, theme: theme))
                         .lineLimit(1)
                 }
                 Text(occurrence.title.isEmpty ? occurrence.kind.capitalized : occurrence.title)
@@ -3453,20 +3505,20 @@ struct DailyFeedPane: View {
                             .frame(maxWidth: .infinity, alignment: .leading)
                         }
                         .scrollDismissesKeyboard(.never)
-                        .onAppear {
-                            // Land on the selected day immediately, then re-pin once
-                            // the editor rows have measured their height so the day
-                            // settles in place instead of drifting a beat later.
-                            proxy.scrollTo(selectedDateKey, anchor: .center)
-                            DispatchQueue.main.async {
-                                proxy.scrollTo(selectedDateKey, anchor: .center)
+                            .onAppear {
+                                // Land on the selected day immediately, then re-pin once
+                                // the editor rows have measured their height so the day
+                                // settles in place instead of drifting a beat later.
+                                proxy.scrollTo(selectedDateKey, anchor: .bottom)
+                                DispatchQueue.main.async {
+                                    proxy.scrollTo(selectedDateKey, anchor: .bottom)
+                                }
+                            }
+                            .onChange(of: selectedDateKey) { _, value in
+                                proxy.scrollTo(value, anchor: .bottom)
                             }
                         }
-                        .onChange(of: selectedDateKey) { _, value in
-                            proxy.scrollTo(value, anchor: .center)
-                        }
                     }
-                }
             }
         }
         .background(theme.bgApp)
@@ -3566,7 +3618,7 @@ private struct DailyDayEditorSection: View {
             showsEditorNavigation: false,
             editorScrollEnabled: false,
             editorInsets: UIEdgeInsets(top: 3, left: 14, bottom: 5, right: 14),
-            autoFocusOnAppear: false
+            autoFocusOnAppear: selected
         )
         .frame(minHeight: editorHeight)
         .background(selected ? theme.rowSelected.opacity(0.42) : Color.clear)
@@ -4000,14 +4052,25 @@ struct ColorMenu: View {
     let theme: KnotQTheme
 
     var body: some View {
-        Menu("Color") {
+        Menu {
             ForEach(0..<6, id: \.self) { index in
                 Button {
                     model.setSchemeColor(id: nodeID, colorIndex: Int32(index))
                 } label: {
-                    Label("Color \(index + 1)", systemImage: colorIndex == Int32(index) ? "checkmark" : "circle.fill")
+                    Label {
+                        Text(index == Int(colorIndex) ? "Selected" : "")
+                    } icon: {
+                        Image(systemName: colorIndex == Int32(index) ? "checkmark.circle.fill" : "circle.fill")
+                            .symbolRenderingMode(.palette)
+                            .foregroundStyle(
+                                colorIndex == Int32(index) ? theme.textPrimary : schemeColor(Int32(index), dark: theme.isDark),
+                                schemeColor(Int32(index), dark: theme.isDark)
+                            )
+                    }
                 }
             }
+        } label: {
+            Label("Color", systemImage: "paintpalette")
         }
     }
 }
@@ -4039,6 +4102,36 @@ private func occurrenceTimeLabel(_ occurrence: MobileOccurrence, timeFormat: Str
     if let start { return start }
     if let end { return "Due \(end)" }
     return occurrence.kind.capitalized
+}
+
+private func occurrenceStatusTimeColor(_ occurrence: MobileOccurrence, theme: KnotQTheme) -> Color {
+    guard !occurrence.done else { return theme.textMuted }
+    let now = Date()
+    let anchorRaw = occurrence.kind == "assignment"
+        ? occurrence.end
+        : (occurrence.start ?? occurrence.end)
+    guard let anchorRaw, let anchor = MobileDate.parseDateTime(anchorRaw) else {
+        return theme.textSoft
+    }
+    if occurrence.kind == "event",
+       let end = MobileDate.parseDateTime(occurrence.end),
+       anchor <= now,
+       end > now {
+        return theme.isDark ? Color(hex: 0xbfbfff) : Color(hex: 0x2f67cf)
+    }
+    if anchor < now {
+        return theme.isDark ? Color(hex: 0xff5a53) : Color(hex: 0xd20f39)
+    }
+    let startDay = Calendar.current.startOfDay(for: anchor)
+    let today = Calendar.current.startOfDay(for: now)
+    let dayDiff = Calendar.current.dateComponents([.day], from: today, to: startDay).day ?? 0
+    if dayDiff <= 0 {
+        return theme.isDark ? Color(hex: 0xbfbfff) : Color(hex: 0x2f67cf)
+    }
+    if dayDiff <= 1 {
+        return theme.isDark ? Color(hex: 0xe5e5ff) : Color(hex: 0x4f5f8f)
+    }
+    return theme.textSoft
 }
 
 func schemeColor(_ index: Int32, dark: Bool) -> Color {

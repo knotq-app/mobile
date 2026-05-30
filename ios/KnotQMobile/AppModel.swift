@@ -85,9 +85,9 @@ final class AppModel: ObservableObject {
     }
 
     @discardableResult
-    func createScheme(name: String, folderID: String? = nil) -> String? {
+    func createScheme(name: String, folderID: String? = nil, position: Int32? = 0) -> String? {
         let before = Set(snapshot?.schemes.map(\.id) ?? [])
-        mutate { try $0.createScheme(name: name, folderID: folderID) }
+        mutate { try $0.createScheme(name: name, folderID: folderID, position: position) }
         return snapshot?.schemes.first { !before.contains($0.id) && $0.name == name }?.id
             ?? snapshot?.schemes.first { !before.contains($0.id) }?.id
     }
