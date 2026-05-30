@@ -2049,7 +2049,6 @@ private struct DayTimelinePane: View {
     @State private var draggingOccurrenceID: String?
     @State private var draggingTranslation: CGSize = .zero
     @State private var lastDragSnap: Int?
-    @State private var ignoredEventDragID: String?
     @State private var timelineScrollY: CGFloat = 0
     @State private var timelineViewportHeight: CGFloat = 0
     @State private var createDraft: CreateDraft?
@@ -2081,7 +2080,6 @@ private struct DayTimelinePane: View {
                     .offset(x: swipePreviewX * 0.55)
                 Divider().overlay(theme.dividerSoft)
                 timeline(colWidth: colWidth, visibleCount: visibleCount)
-                    .offset(x: swipePreviewX)
             }
             .background(theme.bgApp)
             .clipped()
@@ -2141,13 +2139,17 @@ private struct DayTimelinePane: View {
         .animation(.spring(response: 0.30, dampingFraction: 0.84), value: selectedDateKey)
     }
 
-    private func daySwipeGesture(visibleCount: Int, availableWidth: CGFloat) -> some Gesture {
+    private func daySwipeGesture(visibleCount: Int, availableWidth: CGFloat, colWidth: CGFloat? = nil) -> some Gesture {
         DragGesture(minimumDistance: 24)
             .updating($swipePreviewX) { value, state, _ in
                 let dx = value.translation.width
                 let dy = value.translation.height
+                if let colWidth,
+                   pointHitsEvent(value.startLocation, colWidth: colWidth, visibleCount: visibleCount) {
+                    return
+                }
                 guard abs(dx) > abs(dy) * 1.35 else { return }
-                state = dx * 0.32
+                state = rubberBandDayOffset(dx, colWidth: colWidth ?? max(1, availableWidth / CGFloat(max(1, visibleCount))))
             }
             .onEnded { value in
                 let dx = value.translation.width
@@ -2155,12 +2157,26 @@ private struct DayTimelinePane: View {
                 let projected = abs(value.predictedEndTranslation.width) > abs(dx)
                     ? value.predictedEndTranslation.width
                     : dx
+                if let colWidth,
+                   pointHitsEvent(value.startLocation, colWidth: colWidth, visibleCount: visibleCount) {
+                    return
+                }
                 guard abs(dx) > abs(dy) * 1.35,
                       abs(projected) > max(52, availableWidth * 0.18) else { return }
                 withAnimation(.spring(response: 0.34, dampingFraction: 0.82)) {
-                    onShiftDay(projected < 0 ? visibleCount : -visibleCount)
+                    onShiftDay(projected < 0 ? 1 : -1)
                 }
             }
+    }
+
+    private func rubberBandDayOffset(_ value: CGFloat, colWidth: CGFloat) -> CGFloat {
+        let limit = colWidth * 0.92
+        let magnitude = abs(value)
+        let sign: CGFloat = value < 0 ? -1 : 1
+        if magnitude <= limit {
+            return value
+        }
+        return sign * (limit + (magnitude - limit) * 0.18)
     }
 
     // MARK: Timeline
@@ -2169,21 +2185,27 @@ private struct DayTimelinePane: View {
         GeometryReader { viewport in
             ScrollViewReader { proxy in
                 ScrollView {
+                    let contentOffsetX = swipePreviewX + eventDragRevealOffset(colWidth: colWidth)
                     ZStack(alignment: .topLeading) {
                         scrollOffsetReader()
                         scrollAnchors()
                             .allowsHitTesting(false)
                             .accessibilityHidden(true)
                         hourGrid(colWidth: colWidth, visibleCount: visibleCount)
+                            .offset(x: contentOffsetX)
                             .allowsHitTesting(false)
-                        eventsLayer(colWidth: colWidth, visibleCount: visibleCount)
+                        eventsLayer(colWidth: colWidth, visibleCount: visibleCount, contentOffsetX: contentOffsetX)
                         createDraftLayer(colWidth: colWidth)
-                        nowLine(colWidth: colWidth, visibleCount: visibleCount).allowsHitTesting(false)
+                            .offset(x: contentOffsetX)
+                        nowLine(colWidth: colWidth, visibleCount: visibleCount)
+                            .offset(x: contentOffsetX)
+                            .allowsHitTesting(false)
                     }
                     .contentShape(Rectangle())
                     .frame(height: Self.timeYOffset + CGFloat(Self.hoursInDay) * Self.hourHeight)
                     .padding(.bottom, 88)
                     .simultaneousGesture(createGesture(colWidth: colWidth, visibleCount: visibleCount))
+                    .simultaneousGesture(daySwipeGesture(visibleCount: visibleCount, availableWidth: viewport.size.width, colWidth: colWidth))
                 }
                 .coordinateSpace(name: Self.timelineCoordinateSpace)
                 .onAppear {
@@ -2341,9 +2363,10 @@ private struct DayTimelinePane: View {
         }
     }
 
-    private func eventsLayer(colWidth: CGFloat, visibleCount: Int) -> some View {
+    private func eventsLayer(colWidth: CGFloat, visibleCount: Int, contentOffsetX: CGFloat) -> some View {
         ForEach(allLaidEvents(colWidth: colWidth, visibleCount: visibleCount)) { laid in
-            let dragOffset = eventDragOffset(for: laid, colWidth: colWidth)
+            let dragOffset = eventDragOffset(for: laid, colWidth: colWidth, visibleCount: visibleCount)
+            let isDragging = draggingOccurrenceID == laid.id
             TimelineEventBlock(
                 occurrence: laid.occurrence,
                 theme: theme,
@@ -2351,15 +2374,15 @@ private struct DayTimelinePane: View {
                 onTap: { onOpenOccurrence(laid.occurrence) }
             )
             .frame(width: laid.width, height: laid.height)
-            .offset(x: laid.x + dragOffset.width, y: laid.y + dragOffset.height)
-            .zIndex(draggingOccurrenceID == laid.id ? 10 : 0)
+            .offset(x: laid.x + dragOffset.width + (isDragging ? 0 : contentOffsetX), y: laid.y + dragOffset.height)
+            .zIndex(isDragging ? 10 : 0)
             .shadow(
-                color: .black.opacity(draggingOccurrenceID == laid.id ? (theme.isDark ? 0.32 : 0.07) : 0),
-                radius: draggingOccurrenceID == laid.id ? (theme.isDark ? 7 : 4) : 0,
+                color: .black.opacity(isDragging ? (theme.isDark ? 0.32 : 0.07) : 0),
+                radius: isDragging ? (theme.isDark ? 7 : 4) : 0,
                 x: 0,
-                y: draggingOccurrenceID == laid.id ? (theme.isDark ? 4 : 2) : 0
+                y: isDragging ? (theme.isDark ? 4 : 2) : 0
             )
-            .highPriorityGesture(eventDragGesture(for: laid, colWidth: colWidth))
+            .highPriorityGesture(eventDragGesture(for: laid, colWidth: colWidth, visibleCount: visibleCount))
             .animation(.spring(response: 0.24, dampingFraction: 0.82), value: draggingOccurrenceID)
         }
     }
@@ -2547,7 +2570,7 @@ private struct DayTimelinePane: View {
 
     /// Long-press to "pick up" the event, then drag to reschedule. A plain tap
     /// still falls through to the block's button (opens the editor).
-    private func eventDragGesture(for laid: LaidOccurrence, colWidth: CGFloat) -> some Gesture {
+    private func eventDragGesture(for laid: LaidOccurrence, colWidth: CGFloat, visibleCount: Int) -> some Gesture {
         LongPressGesture(minimumDuration: 0.3)
             .sequenced(before: DragGesture(minimumDistance: 0))
             .onChanged { value in
@@ -2557,24 +2580,11 @@ private struct DayTimelinePane: View {
                         draggingOccurrenceID = laid.id
                         draggingTranslation = .zero
                         lastDragSnap = nil
-                        ignoredEventDragID = nil
                         UIImpactFeedbackGenerator(style: .medium).impactOccurred()
                     }
                 case let .second(_, drag?):
-                    let dx = abs(drag.translation.width)
-                    let dy = abs(drag.translation.height)
-                    if ignoredEventDragID == laid.id {
-                        return
-                    }
-                    if dx > 16, dx > dy * 1.25 {
-                        ignoredEventDragID = laid.id
-                        draggingOccurrenceID = nil
-                        draggingTranslation = .zero
-                        lastDragSnap = nil
-                        return
-                    }
                     draggingTranslation = drag.translation
-                    let snap = eventSnapIndex(for: laid, translation: drag.translation, colWidth: colWidth)
+                    let snap = eventSnapIndex(for: laid, translation: drag.translation, colWidth: colWidth, visibleCount: visibleCount)
                     if let snap, snap != lastDragSnap {
                         lastDragSnap = snap
                         UISelectionFeedbackGenerator().selectionChanged()
@@ -2585,16 +2595,14 @@ private struct DayTimelinePane: View {
             }
             .onEnded { value in
                 var moveTarget: OccurrenceMoveTarget?
-                if ignoredEventDragID != laid.id,
-                   case let .second(_, drag?) = value,
+                if case let .second(_, drag?) = value,
                    abs(drag.translation.width) > 2 || abs(drag.translation.height) > 2 {
-                    moveTarget = occurrenceMoveTarget(for: laid, translation: drag.translation, colWidth: colWidth)
+                    moveTarget = occurrenceMoveTarget(for: laid, translation: drag.translation, colWidth: colWidth, visibleCount: visibleCount)
                 }
                 withAnimation(.spring(response: 0.24, dampingFraction: 0.84)) {
                     draggingOccurrenceID = nil
                     draggingTranslation = .zero
                     lastDragSnap = nil
-                    ignoredEventDragID = nil
                 }
                 if let moveTarget {
                     UIImpactFeedbackGenerator(style: .light).impactOccurred()
@@ -2603,24 +2611,25 @@ private struct DayTimelinePane: View {
             }
     }
 
-    private func eventDragOffset(for laid: LaidOccurrence, colWidth: CGFloat) -> CGSize {
+    private func eventDragOffset(for laid: LaidOccurrence, colWidth: CGFloat, visibleCount: Int) -> CGSize {
         guard draggingOccurrenceID == laid.id,
-              let target = occurrenceMoveTarget(for: laid, translation: draggingTranslation, colWidth: colWidth) else {
+              let target = occurrenceMoveTarget(for: laid, translation: draggingTranslation, colWidth: colWidth, visibleCount: visibleCount) else {
             return .zero
         }
         let y = Self.timeYOffset + target.startMinute / 60.0 * Self.hourHeight - laid.y
-        let x = CGFloat(target.dayIndex - laid.dayIndex) * colWidth
-        return CGSize(width: x, height: y)
+        return CGSize(width: draggingTranslation.width, height: y)
     }
 
-    private func eventSnapIndex(for laid: LaidOccurrence, translation: CGSize, colWidth: CGFloat) -> Int? {
-        occurrenceMoveTarget(for: laid, translation: translation, colWidth: colWidth).map {
+    private func eventSnapIndex(for laid: LaidOccurrence, translation: CGSize, colWidth: CGFloat, visibleCount: Int) -> Int? {
+        occurrenceMoveTarget(for: laid, translation: translation, colWidth: colWidth, visibleCount: visibleCount).map {
             $0.dayIndex * 96 + Int($0.startMinute / 15.0)
         }
     }
 
-    private func occurrenceMoveTarget(for laid: LaidOccurrence, translation: CGSize, colWidth: CGFloat) -> OccurrenceMoveTarget? {
-        let dayIndex = laid.dayIndex + Int((translation.width / colWidth).rounded())
+    private func occurrenceMoveTarget(for laid: LaidOccurrence, translation: CGSize, colWidth: CGFloat, visibleCount: Int) -> OccurrenceMoveTarget? {
+        let movingCenterX = laid.x + laid.width / 2 + translation.width
+        let rawDayIndex = Int(floor((movingCenterX - Self.gutterWidth) / colWidth))
+        let dayIndex = min(visibleCount, max(-1, rawDayIndex))
         let duration = max(15, laid.endMinute - laid.startMinute)
         let maxStart = laid.occurrence.kind == "event"
             ? CGFloat(Self.hoursInDay * 60) - duration
@@ -2640,6 +2649,19 @@ private struct DayTimelinePane: View {
         }
         let end = Calendar.current.date(byAdding: .minute, value: Int(duration), to: anchor) ?? anchor.addingTimeInterval(TimeInterval(duration * 60))
         return OccurrenceMoveTarget(dayIndex: dayIndex, startMinute: startMinute, start: anchor, end: end)
+    }
+
+    private func eventDragRevealOffset(colWidth: CGFloat) -> CGFloat {
+        guard draggingOccurrenceID != nil else { return 0 }
+        let threshold = colWidth * 0.20
+        let dx = draggingTranslation.width
+        if dx < -threshold {
+            return min(colWidth * 0.72, (-dx - threshold) * 0.55)
+        }
+        if dx > threshold {
+            return -min(colWidth * 0.72, (dx - threshold) * 0.55)
+        }
+        return 0
     }
 
     // MARK: Data helpers
@@ -3211,6 +3233,8 @@ private struct OccurrenceCompactRow: View {
             rowContent
         }
         .buttonStyle(.plain)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .contentShape(Rectangle())
         .contextMenu {
             if let moreAction {
                 Button("More About", systemImage: "info.circle", action: moreAction)
@@ -3247,6 +3271,7 @@ private struct OccurrenceCompactRow: View {
             .padding(.trailing, 8)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+        .contentShape(Rectangle())
         .background(striped ? theme.rowAlt : Color.clear, in: RoundedRectangle(cornerRadius: 3))
     }
 }
