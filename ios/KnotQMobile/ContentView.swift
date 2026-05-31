@@ -928,23 +928,29 @@ private struct NavigatorNodeRow: View {
                 .presentationDetents([.height(220)])
             }
         } else {
-            Button { onSelectScheme(node.id) } label: {
-                HStack(spacing: 8) {
-                    RoundedRectangle(cornerRadius: 2)
-                        .fill(schemeColor(node.colorIndex ?? 0, dark: theme.isDark))
-                        .frame(width: 11, height: 11)
-                    Text(node.name)
-                        .font(.system(size: 13, weight: .medium))
-                        .lineLimit(1)
-                    Spacer(minLength: 0)
+            SwipeActionRow(actionTint: theme.danger, action: {
+                model.archiveScheme(id: node.id)
+            }) {
+                Label("Archive", systemImage: "archivebox")
+            } content: {
+                Button { onSelectScheme(node.id) } label: {
+                    HStack(spacing: 8) {
+                        RoundedRectangle(cornerRadius: 2)
+                            .fill(schemeColor(node.colorIndex ?? 0, dark: theme.isDark))
+                            .frame(width: 11, height: 11)
+                        Text(node.name)
+                            .font(.system(size: 13, weight: .medium))
+                            .lineLimit(1)
+                        Spacer(minLength: 0)
+                    }
+                    .padding(.leading, CGFloat(depth) * 10)
+                    .padding(.horizontal, 6)
+                    .frame(height: 25)
+                    .foregroundStyle(theme.textPrimary)
+                    .background(selectedSchemeID == node.id ? theme.rowSelected : Color.clear, in: RoundedRectangle(cornerRadius: 4))
                 }
-                .padding(.leading, CGFloat(depth) * 10)
-                .padding(.horizontal, 6)
-                .frame(height: 25)
-                .foregroundStyle(theme.textPrimary)
-                .background(selectedSchemeID == node.id ? theme.rowSelected : Color.clear, in: RoundedRectangle(cornerRadius: 4))
+                .buttonStyle(.plain)
             }
-            .buttonStyle(.plain)
             .contextMenu {
                 Button("Rename") { renameNode = node }
                 MoveToFolderMenu(nodeKind: "scheme", nodeID: node.id, currentParentID: parentFolderID, root: root)
@@ -1450,28 +1456,34 @@ private struct HomeSchemeNodeRow: View {
                 .presentationDetents([.height(220)])
             }
         } else {
-            Button {
-                onOpenScheme(node.id)
-            } label: {
-                HStack(spacing: 9) {
-                    RoundedRectangle(cornerRadius: 3, style: .continuous)
-                        .fill(schemeColor(node.colorIndex ?? 0, dark: theme.isDark))
-                        .frame(width: 13, height: 13)
-                    Text(node.name)
-                        .font(.system(size: 15, weight: .medium))
-                        .foregroundStyle(theme.textPrimary)
-                        .lineLimit(1)
-                    Spacer(minLength: 0)
-                    Image(systemName: "chevron.right")
-                        .font(.system(size: 10, weight: .bold))
-                        .foregroundStyle(theme.textMuted)
+            SwipeActionRow(actionTint: theme.danger, action: {
+                model.archiveScheme(id: node.id)
+            }) {
+                Label("Archive", systemImage: "archivebox")
+            } content: {
+                Button {
+                    onOpenScheme(node.id)
+                } label: {
+                    HStack(spacing: 9) {
+                        RoundedRectangle(cornerRadius: 3, style: .continuous)
+                            .fill(schemeColor(node.colorIndex ?? 0, dark: theme.isDark))
+                            .frame(width: 13, height: 13)
+                        Text(node.name)
+                            .font(.system(size: 15, weight: .medium))
+                            .foregroundStyle(theme.textPrimary)
+                            .lineLimit(1)
+                        Spacer(minLength: 0)
+                        Image(systemName: "chevron.right")
+                            .font(.system(size: 10, weight: .bold))
+                            .foregroundStyle(theme.textMuted)
+                    }
+                    .padding(.leading, CGFloat(depth) * 14 + 5)
+                    .padding(.horizontal, 8)
+                    .frame(minHeight: 34)
+                    .contentShape(Rectangle())
                 }
-                .padding(.leading, CGFloat(depth) * 14 + 5)
-                .padding(.horizontal, 8)
-                .frame(minHeight: 34)
-                .contentShape(Rectangle())
+                .buttonStyle(.plain)
             }
-            .buttonStyle(.plain)
             .contextMenu {
                 Button("Rename") { renameNode = node }
                 MoveToFolderMenu(nodeKind: "scheme", nodeID: node.id, currentParentID: parentFolderID, root: root)
@@ -1497,6 +1509,94 @@ private struct HomeSchemeNodeRow: View {
                 .presentationDetents([.height(220)])
             }
         }
+    }
+}
+
+private struct SwipeActionRow<Content: View, ActionLabel: View>: View {
+    let actionWidth: CGFloat
+    let actionTint: Color
+    let allowsFullSwipe: Bool
+    let action: () -> Void
+    let actionLabel: () -> ActionLabel
+    let content: () -> Content
+
+    @State private var restingOffset: CGFloat = 0
+    @GestureState private var dragOffset: CGFloat = 0
+
+    init(
+        actionWidth: CGFloat = 88,
+        actionTint: Color,
+        allowsFullSwipe: Bool = true,
+        action: @escaping () -> Void,
+        @ViewBuilder actionLabel: @escaping () -> ActionLabel,
+        @ViewBuilder content: @escaping () -> Content
+    ) {
+        self.actionWidth = actionWidth
+        self.actionTint = actionTint
+        self.allowsFullSwipe = allowsFullSwipe
+        self.action = action
+        self.actionLabel = actionLabel
+        self.content = content
+    }
+
+    var body: some View {
+        ZStack(alignment: .trailing) {
+            Button(action: performAction) {
+                actionLabel()
+                    .font(.system(size: 11, weight: .bold))
+                    .foregroundStyle(Color.white)
+                    .labelStyle(.iconOnly)
+                    .frame(width: actionWidth)
+                    .frame(maxHeight: .infinity)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .background(actionTint)
+            .opacity(currentOffset < -1 ? 1 : 0)
+
+            content()
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(Color.clear)
+                .offset(x: currentOffset)
+        }
+        .clipped()
+        .contentShape(Rectangle())
+        .simultaneousGesture(rowDragGesture)
+        .animation(.snappy(duration: 0.18), value: restingOffset)
+    }
+
+    private var currentOffset: CGFloat {
+        max(-actionWidth, min(0, restingOffset + dragOffset))
+    }
+
+    private var rowDragGesture: some Gesture {
+        DragGesture(minimumDistance: 12, coordinateSpace: .local)
+            .updating($dragOffset) { value, state, _ in
+                let dx = value.translation.width
+                let dy = value.translation.height
+                guard abs(dx) > abs(dy) * 1.18 else { return }
+                state = dx
+            }
+            .onEnded { value in
+                let dx = value.translation.width
+                let dy = value.translation.height
+                guard abs(dx) > abs(dy) * 1.18 else { return }
+                let projected = restingOffset + value.predictedEndTranslation.width
+                if allowsFullSwipe && projected < -actionWidth * 1.35 {
+                    performAction()
+                    return
+                }
+                withAnimation(.snappy(duration: 0.18)) {
+                    restingOffset = projected < -actionWidth * 0.42 ? -actionWidth : 0
+                }
+            }
+    }
+
+    private func performAction() {
+        withAnimation(.snappy(duration: 0.14)) {
+            restingOffset = 0
+        }
+        action()
     }
 }
 
@@ -3434,19 +3534,28 @@ private struct ArchiveSchemeRow: View {
     @State private var confirmPermanentDelete: DestructiveConfirmationTarget?
 
     var body: some View {
-        HStack(spacing: 7) {
-            RoundedRectangle(cornerRadius: 2)
-                .fill(schemeColor(scheme.colorIndex, dark: theme.isDark).opacity(0.7))
-                .frame(width: compact ? 9 : 10, height: compact ? 9 : 10)
-            Text(scheme.displayName)
-                .font(.system(size: compact ? 12 : 13))
-                .foregroundStyle(theme.textMuted)
-                .lineLimit(1)
-            Spacer(minLength: 0)
+        SwipeActionRow(
+            actionWidth: compact ? 70 : 82,
+            actionTint: theme.danger,
+            allowsFullSwipe: false,
+            action: { confirmPermanentDelete = .permanentlyDeleteScheme(scheme) }
+        ) {
+            Label("Delete", systemImage: "trash")
+        } content: {
+            HStack(spacing: 7) {
+                RoundedRectangle(cornerRadius: 2)
+                    .fill(schemeColor(scheme.colorIndex, dark: theme.isDark).opacity(0.7))
+                    .frame(width: compact ? 9 : 10, height: compact ? 9 : 10)
+                Text(scheme.displayName)
+                    .font(.system(size: compact ? 12 : 13))
+                    .foregroundStyle(theme.textMuted)
+                    .lineLimit(1)
+                Spacer(minLength: 0)
+            }
+            .padding(.leading, compact ? 22 : 26)
+            .padding(.trailing, compact ? 6 : 8)
+            .frame(height: compact ? 22 : 25)
         }
-        .padding(.leading, compact ? 22 : 26)
-        .padding(.trailing, compact ? 6 : 8)
-        .frame(height: compact ? 22 : 25)
         .contextMenu {
             Button("Restore", systemImage: "arrow.uturn.backward") {
                 model.restoreScheme(id: scheme.id)
@@ -3547,6 +3656,13 @@ private struct SettingsArchiveRow: View {
             }
             Button("Delete Permanently", systemImage: "trash", role: .destructive) {
                 confirmPermanentDelete = .permanentlyDeleteScheme(scheme)
+            }
+        }
+        .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+            Button(role: .destructive) {
+                confirmPermanentDelete = .permanentlyDeleteScheme(scheme)
+            } label: {
+                Label("Delete", systemImage: "trash")
             }
         }
         .destructiveConfirmation(target: $confirmPermanentDelete) { _ in
