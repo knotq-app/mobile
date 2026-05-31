@@ -1653,6 +1653,7 @@ private struct SwipeActionRow<Content: View, ActionLabel: View>: View {
     let actionWidth: CGFloat
     let actionTint: Color
     let allowsFullSwipe: Bool
+    private let openThreshold: CGFloat = 0.38
     let action: () -> Void
     let actionLabel: () -> ActionLabel
     let content: () -> Content
@@ -1699,38 +1700,57 @@ private struct SwipeActionRow<Content: View, ActionLabel: View>: View {
         .clipped()
         .contentShape(Rectangle())
         .simultaneousGesture(rowDragGesture)
-        .animation(.snappy(duration: 0.18), value: restingOffset)
+        .animation(.interactiveSpring(response: 0.24, dampingFraction: 0.88, blendDuration: 0.17), value: restingOffset)
     }
 
     private var currentOffset: CGFloat {
-        max(-actionWidth, min(0, restingOffset + dragOffset))
+        let raw = restingOffset + dragOffset
+        if raw <= -actionWidth {
+            // Give a tiny overscroll feel after reveal instead of a hard stop.
+            let overdraw = raw + actionWidth
+            return -actionWidth + overdraw * 0.28
+        }
+        return max(-actionWidth * 1.2, min(0, raw))
     }
 
     private var rowDragGesture: some Gesture {
-        DragGesture(minimumDistance: 12, coordinateSpace: .local)
+        DragGesture(minimumDistance: 10, coordinateSpace: .local)
             .updating($dragOffset) { value, state, _ in
                 let dx = value.translation.width
                 let dy = value.translation.height
                 guard abs(dx) > abs(dy) * 1.18 else { return }
-                state = dx
+                let raw = restingOffset + dx
+                if raw <= -actionWidth {
+                    state = -actionWidth + (raw + actionWidth) * 0.28 - restingOffset
+                } else {
+                    state = dx
+                }
             }
             .onEnded { value in
                 let dx = value.translation.width
                 let dy = value.translation.height
                 guard abs(dx) > abs(dy) * 1.18 else { return }
                 let projected = restingOffset + value.predictedEndTranslation.width
-                if allowsFullSwipe && projected < -actionWidth * 1.35 {
+                let velocity = value.velocity.width
+                if allowsFullSwipe && (
+                    projected < -actionWidth * 1.35
+                    || (velocity < -1100 && projected < -actionWidth * 0.55)
+                ) {
                     performAction()
                     return
                 }
-                withAnimation(.snappy(duration: 0.18)) {
-                    restingOffset = projected < -actionWidth * 0.42 ? -actionWidth : 0
+                withAnimation(.interactiveSpring(response: 0.27, dampingFraction: 0.9, blendDuration: 0.16)) {
+                    if projected < -actionWidth * openThreshold {
+                        restingOffset = -actionWidth
+                    } else {
+                        restingOffset = 0
+                    }
                 }
             }
     }
 
     private func performAction() {
-        withAnimation(.snappy(duration: 0.14)) {
+        withAnimation(.interactiveSpring(response: 0.2, dampingFraction: 0.86, blendDuration: 0.16)) {
             restingOffset = 0
         }
         action()
