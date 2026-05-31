@@ -916,10 +916,10 @@ private struct SchemeTreePrefix: View {
         .frame(height: rowHeight)
     }
 
-    private var indentUnit: CGFloat { compact ? 12 : 15 }
+    private var indentUnit: CGFloat { compact ? 8 : 10 }
     private var disclosureWidth: CGFloat { compact ? 12 : 14 }
     private var rowHeight: CGFloat { compact ? 25 : 34 }
-    private var visibleDepth: Int { max(0, depth) }
+    private var visibleDepth: Int { max(0, depth - 1) }
 }
 
 private struct SchemeTreeIconSlot<Content: View>: View {
@@ -1027,9 +1027,9 @@ private struct NavigatorNodeRow: View {
 
     private var folderRow: some View {
         HStack(spacing: 7) {
-            SchemeTreePrefix(depth: depth, showsDisclosure: true, expanded: expanded, compact: true, theme: theme)
+            SchemeTreePrefix(depth: depth, showsDisclosure: false, expanded: expanded, compact: true, theme: theme)
             SchemeTreeIconSlot(compact: true) {
-                Image(systemName: "folder.fill")
+                Image(systemName: expanded ? "folder.fill" : "folder")
                     .font(.system(size: 12, weight: .semibold))
                     .foregroundStyle(theme.textMuted)
             }
@@ -1049,9 +1049,7 @@ private struct NavigatorNodeRow: View {
             guard !isReordering else { return }
             expanded.toggle()
         }
-        .onLongPressGesture(minimumDuration: 0.35) {
-            beginReorder()
-        }
+        .simultaneousGesture(rowReorderGesture)
     }
 
     private func schemeRow(compact: Bool) -> some View {
@@ -1079,9 +1077,7 @@ private struct NavigatorNodeRow: View {
             guard !isReordering else { return }
             onSelectScheme(node.id)
         }
-        .onLongPressGesture(minimumDuration: 0.35) {
-            beginReorder()
-        }
+        .simultaneousGesture(rowReorderGesture)
     }
 
     private func reorderControls(compact: Bool) -> some View {
@@ -1102,6 +1098,11 @@ private struct NavigatorNodeRow: View {
     private func beginReorder() {
         onBeginReorder()
         UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+    }
+
+    private var rowReorderGesture: some Gesture {
+        LongPressGesture(minimumDuration: 0.38, maximumDistance: 8)
+            .onEnded { _ in beginReorder() }
     }
 
     private func moveNodeUp() {
@@ -1482,7 +1483,9 @@ private struct HomeSchemesSection: View {
                     .padding(.vertical, 6)
                 }
                 .scrollIndicators(.hidden)
-                .frame(maxHeight: maxHeight)
+                .frame(height: maxHeight)
+                .scrollDismissesKeyboard(.never)
+                .scrollBounceBehavior(.basedOnSize)
 
                 Rectangle()
                     .fill(theme.dividerSoft)
@@ -1617,9 +1620,9 @@ private struct HomeSchemeNodeRow: View {
 
     private var folderRow: some View {
         HStack(spacing: 8) {
-            SchemeTreePrefix(depth: depth, showsDisclosure: true, expanded: expanded, compact: false, theme: theme)
+            SchemeTreePrefix(depth: depth, showsDisclosure: false, expanded: expanded, compact: false, theme: theme)
             SchemeTreeIconSlot(compact: false) {
-                Image(systemName: "folder.fill")
+                Image(systemName: expanded ? "folder.fill" : "folder")
                     .font(.system(size: 15, weight: .semibold))
                     .foregroundStyle(theme.textMuted)
             }
@@ -1639,9 +1642,7 @@ private struct HomeSchemeNodeRow: View {
             guard !isReordering else { return }
             expanded.toggle()
         }
-        .onLongPressGesture(minimumDuration: 0.35) {
-            beginReorder()
-        }
+        .simultaneousGesture(rowReorderGesture)
     }
 
     private var schemeRow: some View {
@@ -1672,9 +1673,7 @@ private struct HomeSchemeNodeRow: View {
             guard !isReordering else { return }
             onOpenScheme(node.id)
         }
-        .onLongPressGesture(minimumDuration: 0.35) {
-            beginReorder()
-        }
+        .simultaneousGesture(rowReorderGesture)
     }
 
     private var reorderControls: some View {
@@ -1695,6 +1694,11 @@ private struct HomeSchemeNodeRow: View {
     private func beginReorder() {
         onBeginReorder()
         UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+    }
+
+    private var rowReorderGesture: some Gesture {
+        LongPressGesture(minimumDuration: 0.38, maximumDistance: 8)
+            .onEnded { _ in beginReorder() }
     }
 
     private func moveNodeUp() {
@@ -2422,15 +2426,16 @@ private struct DayTimelinePane: View {
             let visibleCount = visibleDayCount(for: proxy.size.width)
             let colWidth = max(1, (proxy.size.width - Self.gutterWidth) / CGFloat(visibleCount))
             let contentOffsetX = swipePreviewX + eventDragRevealOffset(colWidth: colWidth)
+            let weekStripOffsetX = swipePreviewX * 0.22
             VStack(spacing: 0) {
                 dateBanner()
                 weekStrip(
                     visibleCount: visibleCount,
                     availableWidth: proxy.size.width,
                     colWidth: colWidth,
-                    contentOffsetX: contentOffsetX
+                    contentOffsetX: weekStripOffsetX
                 )
-                    .offset(x: contentOffsetX)
+                    .offset(x: weekStripOffsetX)
                 Divider().overlay(theme.dividerSoft)
                 timeline(colWidth: colWidth, visibleCount: visibleCount, contentOffsetX: contentOffsetX)
             }
@@ -2621,8 +2626,6 @@ private struct DayTimelinePane: View {
                         scrollAnchors()
                             .allowsHitTesting(false)
                             .accessibilityHidden(true)
-                        timeLegend()
-                            .allowsHitTesting(false)
                         hourGrid(colWidth: colWidth, visibleCount: visibleCount)
                             .offset(x: contentOffsetX)
                             .allowsHitTesting(false)
@@ -2632,11 +2635,15 @@ private struct DayTimelinePane: View {
                         nowLine(colWidth: colWidth, visibleCount: visibleCount)
                             .offset(x: contentOffsetX)
                             .allowsHitTesting(false)
+                        timeLegend()
+                            .allowsHitTesting(false)
+                            .zIndex(100)
                     }
                     .contentShape(Rectangle())
                     .frame(height: Self.timelineContentHeight)
                     .padding(.bottom, 88)
                 }
+                .scrollDisabled(createDraft != nil || draggingOccurrenceID != nil)
                 .coordinateSpace(name: Self.timelineCoordinateSpace)
                 .onAppear {
                     timelineViewportHeight = viewport.size.height
@@ -2809,6 +2816,9 @@ private struct DayTimelinePane: View {
 
     private func timeLegend() -> some View {
         ZStack(alignment: .topLeading) {
+            Rectangle()
+                .fill(theme.bgApp)
+                .frame(width: Self.gutterWidth, height: Self.timelineContentHeight)
             ForEach(0..<Self.hoursInDay, id: \.self) { hour in
                 let y = Self.timeYOffset + CGFloat(hour) * Self.hourHeight
                 Text(hourLabel(hour))
@@ -2827,16 +2837,19 @@ private struct DayTimelinePane: View {
 
     private func hourGrid(colWidth: CGFloat, visibleCount: Int) -> some View {
         ZStack(alignment: .topLeading) {
+            let renderRange = renderedDayOffsets(visibleCount: visibleCount)
+            let gridX = Self.gutterWidth + CGFloat(renderRange.lowerBound) * colWidth
+            let gridWidth = colWidth * CGFloat(renderRange.count)
             ForEach(0..<Self.hoursInDay, id: \.self) { hour in
                 let y = Self.timeYOffset + CGFloat(hour) * Self.hourHeight
                 Rectangle()
                     .fill(theme.dividerSoft)
                     .frame(height: 0.5)
-                    .frame(width: colWidth * CGFloat(visibleCount))
-                    .offset(x: Self.gutterWidth)
+                    .frame(width: gridWidth)
+                    .offset(x: gridX)
                     .offset(y: y)
             }
-            ForEach(1..<visibleCount, id: \.self) { index in
+            ForEach(Array((renderRange.lowerBound + 1)..<renderRange.upperBound), id: \.self) { index in
                 Rectangle()
                     .fill(theme.divider.opacity(theme.isDark ? 0.95 : 0.85))
                     .frame(width: 1, height: Self.timeYOffset + CGFloat(Self.hoursInDay) * Self.hourHeight)
@@ -2844,8 +2857,8 @@ private struct DayTimelinePane: View {
             }
             Rectangle()
                 .fill(theme.divider)
-                .frame(width: colWidth * CGFloat(visibleCount), height: 1)
-                .offset(x: Self.gutterWidth)
+                .frame(width: gridWidth, height: 1)
+                .offset(x: gridX)
                 .offset(y: Self.timeYOffset + CGFloat(Self.hoursInDay) * Self.hourHeight - 1)
         }
     }
@@ -3350,6 +3363,8 @@ private struct TimelineGestureInstaller: UIViewRepresentable {
         private var onLongPressCancelled: () -> Void = {}
 
         private weak var installedView: UIView?
+        private weak var suppressedScrollView: UIScrollView?
+        private var suppressedScrollWasEnabled = true
         private lazy var panRecognizer: UIPanGestureRecognizer = {
             let recognizer = UIPanGestureRecognizer(target: self, action: #selector(handlePan(_:)))
             recognizer.delegate = self
@@ -3389,6 +3404,7 @@ private struct TimelineGestureInstaller: UIViewRepresentable {
         }
 
         func uninstall() {
+            restoreScrollIfNeeded()
             if let installedView {
                 installedView.removeGestureRecognizer(panRecognizer)
                 installedView.removeGestureRecognizer(longPressRecognizer)
@@ -3421,6 +3437,21 @@ private struct TimelineGestureInstaller: UIViewRepresentable {
             )
         }
 
+        private func suppressScrollIfNeeded(for target: UIView) {
+            guard suppressedScrollView == nil, let scrollView = target as? UIScrollView else { return }
+            suppressedScrollWasEnabled = scrollView.isScrollEnabled
+            scrollView.isScrollEnabled = false
+            suppressedScrollView = scrollView
+        }
+
+        private func restoreScrollIfNeeded() {
+            if let suppressedScrollView {
+                suppressedScrollView.isScrollEnabled = suppressedScrollWasEnabled
+            }
+            suppressedScrollView = nil
+            suppressedScrollWasEnabled = true
+        }
+
         @objc private func handlePan(_ recognizer: UIPanGestureRecognizer) {
             guard let target = installedView else { return }
             switch recognizer.state {
@@ -3441,12 +3472,17 @@ private struct TimelineGestureInstaller: UIViewRepresentable {
             guard let target = installedView else { return }
             let point = contentPoint(recognizer, in: target)
             switch recognizer.state {
-            case .began, .changed:
+            case .began:
+                suppressScrollIfNeeded(for: target)
+                onLongPressChanged(point)
+            case .changed:
                 onLongPressChanged(point)
             case .ended:
                 onLongPressEnded()
+                restoreScrollIfNeeded()
             case .cancelled, .failed:
                 onLongPressCancelled()
+                restoreScrollIfNeeded()
             default:
                 break
             }
