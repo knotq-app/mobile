@@ -318,6 +318,11 @@ void uniffi_knotq_mobile_core_fn_method_mobilecore_ensure_daily_queue(uint64_t p
 RustBuffer uniffi_knotq_mobile_core_fn_method_mobilecore_google_auth_request(uint64_t ptr, RustBuffer client_id, RustBuffer redirect_uri, RustCallStatus *_Nonnull out_status
 );
 #endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_KNOTQ_MOBILE_CORE_FN_METHOD_MOBILECORE_MONTH_DAYS
+#define UNIFFI_FFIDEF_UNIFFI_KNOTQ_MOBILE_CORE_FN_METHOD_MOBILECORE_MONTH_DAYS
+RustBuffer uniffi_knotq_mobile_core_fn_method_mobilecore_month_days(uint64_t ptr, int32_t year, uint32_t month, RustCallStatus *_Nonnull out_status
+);
+#endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_KNOTQ_MOBILE_CORE_FN_METHOD_MOBILECORE_MOVE_NODE
 #define UNIFFI_FFIDEF_UNIFFI_KNOTQ_MOBILE_CORE_FN_METHOD_MOBILECORE_MOVE_NODE
 void uniffi_knotq_mobile_core_fn_method_mobilecore_move_node(uint64_t ptr, RustBuffer kind, RustBuffer id, RustBuffer folder_id, int32_t position, RustCallStatus *_Nonnull out_status
@@ -772,6 +777,12 @@ uint16_t uniffi_knotq_mobile_core_checksum_method_mobilecore_ensure_daily_queue(
 #ifndef UNIFFI_FFIDEF_UNIFFI_KNOTQ_MOBILE_CORE_CHECKSUM_METHOD_MOBILECORE_GOOGLE_AUTH_REQUEST
 #define UNIFFI_FFIDEF_UNIFFI_KNOTQ_MOBILE_CORE_CHECKSUM_METHOD_MOBILECORE_GOOGLE_AUTH_REQUEST
 uint16_t uniffi_knotq_mobile_core_checksum_method_mobilecore_google_auth_request(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_KNOTQ_MOBILE_CORE_CHECKSUM_METHOD_MOBILECORE_MONTH_DAYS
+#define UNIFFI_FFIDEF_UNIFFI_KNOTQ_MOBILE_CORE_CHECKSUM_METHOD_MOBILECORE_MONTH_DAYS
+uint16_t uniffi_knotq_mobile_core_checksum_method_mobilecore_month_days(void
     
 );
 #endif

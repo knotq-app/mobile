@@ -52,6 +52,7 @@ struct ContentView: View {
     @State private var selectedSchemeID: String?
     @State private var addItemTarget: SheetID?
     @State private var showingCalendarAdd = false
+    @State private var showingMonthView = false
     @State private var showingNewFolder = false
     @State private var eventEditor: EventEditorTarget?
     @State private var keyboardVisible = false
@@ -206,6 +207,16 @@ struct ContentView: View {
             AddCalendarItemSheet()
                 .presentationDetents([.fraction(0.50)])
         }
+        .sheet(isPresented: $showingMonthView) {
+            MonthGridView(theme: theme, initialDate: model.selectedDate) { date in
+                model.selectedDate = date
+                model.weekOffset = 0
+                model.refresh()
+                showingMonthView = false
+            }
+            .presentationDetents([.fraction(0.62), .large])
+            .presentationDragIndicator(.visible)
+        }
         .sheet(isPresented: $showingNewFolder) {
             NameSheet(title: "New Folder", placeholder: "Folder name", validator: { name in
                 WorkspaceNameValidation.folderError(name, root: model.snapshot?.root)
@@ -282,7 +293,9 @@ struct ContentView: View {
                     },
                     onCreate: { date in eventEditor = .create(date) },
                     onOpenOccurrence: { occ in eventEditor = .edit(occ) },
-                    onMoveOccurrence: moveOccurrence
+                    onMoveOccurrence: moveOccurrence,
+                    onTapTitle: { showingMonthView = true },
+                    isCreatingEvent: isCreatingEventDraft
                 )
             }
         case .scheme:
@@ -326,6 +339,13 @@ struct ContentView: View {
 
     private var currentTimeFormat: String {
         model.snapshot?.settings.timeFormat ?? "twelve_hour"
+    }
+
+    /// True while the new-event editor popover is open, so the calendar keeps
+    /// its create-draft block visible until the popover is dismissed.
+    private var isCreatingEventDraft: Bool {
+        if case .create = eventEditor { return true }
+        return false
     }
 
     private func openDaily() {

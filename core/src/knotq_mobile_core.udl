@@ -154,6 +154,9 @@ interface MobileCore {
   MobileSnapshot snapshot(string? today, i32 week_offset);
 
   [Throws=MobileError]
+  sequence<MobileCalendarDay> month_days(i32 year, u32 month);
+
+  [Throws=MobileError]
   sequence<MobileSearchHit> search(string query);
 
   [Throws=MobileError]

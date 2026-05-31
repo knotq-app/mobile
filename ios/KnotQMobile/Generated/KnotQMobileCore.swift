@@ -419,6 +419,22 @@ fileprivate final class UniffiHandleMap<T>: @unchecked Sendable {
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
+fileprivate struct FfiConverterUInt32: FfiConverterPrimitive {
+    typealias FfiType = UInt32
+    typealias SwiftType = UInt32
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> UInt32 {
+        return try lift(readInt(&buf))
+    }
+
+    public static func write(_ value: SwiftType, into buf: inout [UInt8]) {
+        writeInt(&buf, lower(value))
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
 fileprivate struct FfiConverterInt32: FfiConverterPrimitive {
     typealias FfiType = Int32
     typealias SwiftType = Int32
@@ -525,6 +541,8 @@ public protocol MobileCoreProtocol: AnyObject, Sendable {
     func ensureDailyQueue(date: String?) throws 
     
     func googleAuthRequest(clientId: String, redirectUri: String) throws  -> MobileGoogleAuthRequest
+    
+    func monthDays(year: Int32, month: UInt32) throws  -> [MobileCalendarDay]
     
     func moveNode(kind: String, id: String, folderId: String, position: Int32) throws 
     
@@ -758,6 +776,16 @@ open func googleAuthRequest(clientId: String, redirectUri: String)throws  -> Mob
             self.uniffiCloneHandle(),
         FfiConverterString.lower(clientId),
         FfiConverterString.lower(redirectUri),$0
+    )
+})
+}
+    
+open func monthDays(year: Int32, month: UInt32)throws  -> [MobileCalendarDay]  {
+    return try  FfiConverterSequenceTypeMobileCalendarDay.lift(try rustCallWithError(FfiConverterTypeMobileError_lift) {
+    uniffi_knotq_mobile_core_fn_method_mobilecore_month_days(
+            self.uniffiCloneHandle(),
+        FfiConverterInt32.lower(year),
+        FfiConverterUInt32.lower(month),$0
     )
 })
 }
@@ -2534,6 +2562,9 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_knotq_mobile_core_checksum_method_mobilecore_google_auth_request() != 56614) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_knotq_mobile_core_checksum_method_mobilecore_month_days() != 13384) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_knotq_mobile_core_checksum_method_mobilecore_move_node() != 12044) {

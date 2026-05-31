@@ -19,6 +19,10 @@ final class RustBridge: @unchecked Sendable {
         try core.snapshot(today: today, weekOffset: Int32(weekOffset))
     }
 
+    func monthDays(year: Int, month: Int) throws -> [MobileCalendarDay] {
+        try core.monthDays(year: Int32(year), month: UInt32(month))
+    }
+
     func search(_ query: String) throws -> [MobileSearchHit] {
         try core.search(query: query)
     }

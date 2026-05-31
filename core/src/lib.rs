@@ -84,6 +84,14 @@ impl MobileCore {
             .map_err(Into::into)
     }
 
+    pub fn month_days(
+        &self,
+        year: i32,
+        month: u32,
+    ) -> Result<Vec<MobileCalendarDay>, MobileError> {
+        self.lock()?.month_days(year, month).map_err(Into::into)
+    }
+
     pub fn search(&self, query: String) -> Result<Vec<MobileSearchHit>, MobileError> {
         self.lock()?.search(&query).map_err(Into::into)
     }
@@ -1154,6 +1162,52 @@ impl MobileCoreInner {
             },
             workspace_path: self.workspace_path.display().to_string(),
         })
+    }
+
+    fn month_days(&self, year: i32, month: u32) -> Result<Vec<MobileCalendarDay>> {
+        let first = NaiveDate::from_ymd_opt(year, month, 1)
+            .ok_or_else(|| anyhow!("invalid month {month}/{year}"))?;
+        let next_month_first = if month >= 12 {
+            NaiveDate::from_ymd_opt(year + 1, 1, 1)
+        } else {
+            NaiveDate::from_ymd_opt(year, month + 1, 1)
+        }
+        .ok_or_else(|| anyhow!("invalid month {month}/{year}"))?;
+        // Pad the range so the leading/trailing spillover cells the grid shows
+        // for the adjacent months still carry their event dots.
+        let grid_start = first - Duration::days(7);
+        let grid_end = next_month_first + Duration::days(7);
+
+        let indexed = IndexedWorkspace::build(self.workspace.clone());
+        let range = knotq_date_util::DateRange {
+            start: midnight_utc(grid_start)?,
+            end: midnight_utc(grid_end)?,
+        };
+        let occurrences = indexed
+            .calendar_query()
+            .range(range)
+            .into_iter()
+            .map(|context| MobileOccurrence::from_context(&self.workspace, context))
+            .collect::<Vec<_>>();
+
+        let total_days = (grid_end - grid_start).num_days();
+        let days = (0..total_days)
+            .map(|offset| {
+                let date = grid_start + Duration::days(offset);
+                let date_string = date.to_string();
+                MobileCalendarDay {
+                    occurrences: occurrences
+                        .iter()
+                        .filter(|occurrence| {
+                            occurrence.local_date.as_deref() == Some(&date_string)
+                        })
+                        .cloned()
+                        .collect(),
+                    date: date_string,
+                }
+            })
+            .collect();
+        Ok(days)
     }
 
     fn folder_node(&self, id: FolderId) -> Result<MobileNode> {

@@ -78,6 +78,11 @@ final class AppModel: ObservableObject {
         }
     }
 
+    func monthDays(year: Int, month: Int) -> [MobileCalendarDay] {
+        guard let bridge else { return [] }
+        return (try? bridge.monthDays(year: year, month: month)) ?? []
+    }
+
     func createFolder(name: String, parentID: String? = nil) {
         mutate { try $0.createFolder(name: name, parentID: parentID) }
     }

@@ -2153,6 +2153,8 @@ struct DayTimelinePane: UIViewRepresentable {
     let onCreate: (Date) -> Void
     let onOpenOccurrence: (MobileOccurrence) -> Void
     let onMoveOccurrence: (MobileOccurrence, Date?, Date?) -> Void
+    let onTapTitle: () -> Void
+    let isCreatingEvent: Bool
 
     func makeUIView(context: Context) -> DayTimelineUIKitView {
         DayTimelineUIKitView()
@@ -2167,7 +2169,9 @@ struct DayTimelinePane: UIViewRepresentable {
             onSetDate: onSetDate,
             onCreate: onCreate,
             onOpenOccurrence: onOpenOccurrence,
-            onMoveOccurrence: onMoveOccurrence
+            onMoveOccurrence: onMoveOccurrence,
+            onTapTitle: onTapTitle,
+            isCreatingEvent: isCreatingEvent
         )
     }
 }
@@ -2389,6 +2393,14 @@ final class DayTimelineUIKitView: UIView, UIGestureRecognizerDelegate, UIScrollV
     }
 
     private let titleLabel = UILabel()
+    private let titleButton = UIButton(type: .custom)
+    private let titleChevron = UIImageView()
+    private let titleBackdrop: UIVisualEffectView = {
+        if #available(iOS 26.0, *) {
+            return UIVisualEffectView(effect: UIGlassEffect())
+        }
+        return UIVisualEffectView(effect: UIBlurEffect(style: .systemUltraThinMaterial))
+    }()
     private let weekStrip = UIView()
     private let separator = UIView()
     private let scrollView = UIScrollView()
@@ -2408,6 +2420,7 @@ final class DayTimelineUIKitView: UIView, UIGestureRecognizerDelegate, UIScrollV
     private var onCreate: (Date) -> Void = { _ in }
     private var onOpenOccurrence: (MobileOccurrence) -> Void = { _ in }
     private var onMoveOccurrence: (MobileOccurrence, Date?, Date?) -> Void = { _, _, _ in }
+    private var onTapTitle: () -> Void = {}
 
     private var swipeOffset: CGFloat = 0
     private var didInitialScroll = false
@@ -2418,6 +2431,7 @@ final class DayTimelineUIKitView: UIView, UIGestureRecognizerDelegate, UIScrollV
     private var activeDragStartLocation: CGPoint = .zero
     private var activeDragTarget: MoveTarget?
     private var activeDragSnapKey: String?
+    private var creatingEvent = false
 
     private static let titleHeight: CGFloat = 47
     private static let weekHeight: CGFloat = 63
@@ -2434,7 +2448,7 @@ final class DayTimelineUIKitView: UIView, UIGestureRecognizerDelegate, UIScrollV
     override init(frame: CGRect) {
         super.init(frame: frame)
         clipsToBounds = true
-        addSubview(titleLabel)
+        addSubview(titleButton)
         addSubview(weekStrip)
         addSubview(separator)
         addSubview(scrollView)
@@ -2443,8 +2457,32 @@ final class DayTimelineUIKitView: UIView, UIGestureRecognizerDelegate, UIScrollV
         contentView.addSubview(timeGutter)
         dayClip.addSubview(dayCanvas)
         dayCanvas.addSubview(draftView)
+
+        // The month/year title is a tappable liquid-glass capsule that opens
+        // the month overview. Glass falls back to an ultra-thin material below
+        // iOS 26 so the pill still reads on older OSes.
+        titleBackdrop.isUserInteractionEnabled = false
+        titleBackdrop.clipsToBounds = true
+        titleBackdrop.layer.borderWidth = 1
+        titleButton.addSubview(titleBackdrop)
+        titleButton.addSubview(titleLabel)
+        titleButton.addSubview(titleChevron)
+        titleLabel.isUserInteractionEnabled = false
         titleLabel.textAlignment = .center
-        titleLabel.font = .systemFont(ofSize: 24, weight: .bold)
+        titleLabel.font = .systemFont(ofSize: 21, weight: .bold)
+        titleChevron.isUserInteractionEnabled = false
+        titleChevron.contentMode = .center
+        titleChevron.image = UIImage(
+            systemName: "chevron.down",
+            withConfiguration: UIImage.SymbolConfiguration(pointSize: 12, weight: .bold)
+        )
+        titleButton.addTarget(self, action: #selector(handleTitleTap), for: .touchUpInside)
+        titleButton.addTarget(self, action: #selector(handleTitlePressDown), for: [.touchDown, .touchDragEnter])
+        titleButton.addTarget(
+            self,
+            action: #selector(handleTitlePressUp),
+            for: [.touchUpInside, .touchUpOutside, .touchDragExit, .touchCancel]
+        )
         separator.isUserInteractionEnabled = false
         scrollView.alwaysBounceVertical = true
         scrollView.showsHorizontalScrollIndicator = false
@@ -2486,7 +2524,9 @@ final class DayTimelineUIKitView: UIView, UIGestureRecognizerDelegate, UIScrollV
         onSetDate: @escaping (Date) -> Void,
         onCreate: @escaping (Date) -> Void,
         onOpenOccurrence: @escaping (MobileOccurrence) -> Void,
-        onMoveOccurrence: @escaping (MobileOccurrence, Date?, Date?) -> Void
+        onMoveOccurrence: @escaping (MobileOccurrence, Date?, Date?) -> Void,
+        onTapTitle: @escaping () -> Void,
+        isCreatingEvent: Bool
     ) {
         self.calendarSnapshot = calendar
         self.selectedDate = Calendar.current.startOfDay(for: selectedDate)
@@ -2496,8 +2536,17 @@ final class DayTimelineUIKitView: UIView, UIGestureRecognizerDelegate, UIScrollV
         self.onCreate = onCreate
         self.onOpenOccurrence = onOpenOccurrence
         self.onMoveOccurrence = onMoveOccurrence
+        self.onTapTitle = onTapTitle
+        // The create draft is held on screen while its editor popover is open;
+        // clear it on the true->false transition (the popover just closed).
+        if creatingEvent && !isCreatingEvent {
+            activeCreateDraft = nil
+        }
+        creatingEvent = isCreatingEvent
         backgroundColor = UIColor(theme.bgApp)
         titleLabel.textColor = UIColor(theme.textPrimary)
+        titleChevron.tintColor = UIColor(theme.textMuted)
+        titleBackdrop.layer.borderColor = UIColor(theme.borderOverlay).cgColor
         separator.backgroundColor = UIColor(theme.dividerSoft)
         setNeedsLayout()
         renderAllIfReady()
@@ -2505,7 +2554,6 @@ final class DayTimelineUIKitView: UIView, UIGestureRecognizerDelegate, UIScrollV
 
     override func layoutSubviews() {
         super.layoutSubviews()
-        titleLabel.frame = CGRect(x: 0, y: 0, width: bounds.width, height: Self.titleHeight)
         weekStrip.frame = CGRect(x: 0, y: Self.titleHeight, width: bounds.width, height: Self.weekHeight)
         separator.frame = CGRect(x: 0, y: Self.titleHeight + Self.weekHeight, width: bounds.width, height: Self.separatorHeight)
         scrollView.frame = CGRect(
@@ -2516,6 +2564,43 @@ final class DayTimelineUIKitView: UIView, UIGestureRecognizerDelegate, UIScrollV
         )
         renderAllIfReady(force: renderedBoundsSize != bounds.size)
         renderedBoundsSize = bounds.size
+        layoutTitleButton()
+    }
+
+    private func layoutTitleButton() {
+        titleLabel.sizeToFit()
+        let textWidth = ceil(titleLabel.bounds.width)
+        let chevronWidth: CGFloat = 16
+        let gap: CGFloat = 3
+        let hPad: CGFloat = 15
+        let capsuleHeight: CGFloat = 34
+        let capsuleWidth = textWidth + gap + chevronWidth + hPad * 2
+        let capsuleX = ((bounds.width - capsuleWidth) / 2).rounded()
+        let capsuleY = ((Self.titleHeight - capsuleHeight) / 2).rounded()
+        titleButton.frame = CGRect(x: capsuleX, y: capsuleY, width: capsuleWidth, height: capsuleHeight)
+        titleBackdrop.frame = titleButton.bounds
+        titleBackdrop.layer.cornerRadius = capsuleHeight / 2
+        titleLabel.frame = CGRect(x: hPad, y: 0, width: textWidth, height: capsuleHeight)
+        titleChevron.frame = CGRect(x: hPad + textWidth + gap, y: 0, width: chevronWidth, height: capsuleHeight)
+    }
+
+    @objc private func handleTitleTap() {
+        UIImpactFeedbackGenerator(style: .light).impactOccurred()
+        onTapTitle()
+    }
+
+    @objc private func handleTitlePressDown() {
+        UIView.animate(withDuration: 0.12, delay: 0, options: [.allowUserInteraction]) {
+            self.titleButton.transform = CGAffineTransform(scaleX: 0.94, y: 0.94)
+            self.titleButton.alpha = 0.85
+        }
+    }
+
+    @objc private func handleTitlePressUp() {
+        UIView.animate(withDuration: 0.16, delay: 0, options: [.allowUserInteraction]) {
+            self.titleButton.transform = .identity
+            self.titleButton.alpha = 1
+        }
     }
 
     private func renderAllIfReady(force: Bool = true) {
@@ -2745,6 +2830,7 @@ final class DayTimelineUIKitView: UIView, UIGestureRecognizerDelegate, UIScrollV
 
     @objc private func handleWeekdayTap(_ sender: UIControl) {
         guard let sender = sender as? DayCell else { return }
+        UIImpactFeedbackGenerator(style: .light).impactOccurred()
         selectedDate = Calendar.current.startOfDay(for: sender.date)
         swipeOffset = 0
         renderAllIfReady()
@@ -2755,6 +2841,7 @@ final class DayTimelineUIKitView: UIView, UIGestureRecognizerDelegate, UIScrollV
     }
 
     @objc private func handleDayPan(_ recognizer: UIPanGestureRecognizer) {
+        guard activeDragView == nil else { return }
         let visibleCount = visibleDayCount()
         let colWidth = max(1, (bounds.width - Self.gutterWidth) / CGFloat(visibleCount))
         switch recognizer.state {
@@ -2782,6 +2869,7 @@ final class DayTimelineUIKitView: UIView, UIGestureRecognizerDelegate, UIScrollV
     }
 
     private func completeSwipe(dayDelta: Int, colWidth: CGFloat) {
+        UIImpactFeedbackGenerator(style: .light).impactOccurred()
         let targetDate = Calendar.current.date(byAdding: .day, value: dayDelta, to: selectedDate) ?? selectedDate
         swipeOffset = dayDelta > 0 ? -colWidth : colWidth
         UIView.animate(withDuration: 0.22, delay: 0, usingSpringWithDamping: 0.86, initialSpringVelocity: 0.2, options: [.beginFromCurrentState, .allowUserInteraction]) {
@@ -2824,14 +2912,17 @@ final class DayTimelineUIKitView: UIView, UIGestureRecognizerDelegate, UIScrollV
                 updateDraftView(colWidth: colWidth)
             }
         case .ended:
-            let draft = activeCreateDraft
-            activeCreateDraft = nil
-            draftView.isHidden = true
             scrollView.isScrollEnabled = true
-            if let draft, let date = createDate(for: draft) {
+            // Leave the draft block on screen so it marks the new event's slot
+            // while the editor popover is open; it clears when the popover is
+            // dismissed (see `configure`). If no date resolves, drop it now.
+            if let draft = activeCreateDraft, let date = createDate(for: draft) {
                 DispatchQueue.main.async {
                     self.onCreate(date)
                 }
+            } else {
+                activeCreateDraft = nil
+                draftView.isHidden = true
             }
         case .cancelled, .failed:
             activeCreateDraft = nil
@@ -2992,6 +3083,9 @@ final class DayTimelineUIKitView: UIView, UIGestureRecognizerDelegate, UIScrollV
 
     override func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
         if gestureRecognizer is UIPanGestureRecognizer {
+            // The day-switch swipe must not begin while an event is being
+            // dragged (the drag owns horizontal motion as a day-peek reveal).
+            guard activeDragView == nil else { return false }
             let velocity = (gestureRecognizer as? UIPanGestureRecognizer)?.velocity(in: scrollView) ?? .zero
             let point = contentPoint(from: gestureRecognizer.location(in: scrollView))
             return point.x >= Self.gutterWidth
@@ -4359,5 +4453,187 @@ extension Color {
             green: Double((hex >> 8) & 0xff) / 255.0,
             blue: Double(hex & 0xff) / 255.0
         )
+    }
+}
+
+// MARK: - Month overview
+
+/// Full-month grid presented when the calendar's liquid-glass title is tapped.
+/// Each day shows colored dots for its events (fetched via `model.monthDays`);
+/// tapping a day jumps the timeline to it.
+struct MonthGridView: View {
+    @EnvironmentObject private var model: AppModel
+    let theme: KnotQTheme
+    let initialDate: Date
+    let onSelect: (Date) -> Void
+
+    @State private var displayMonth = Date()
+    @State private var dayOccurrences: [String: [MobileOccurrence]] = [:]
+
+    private var calendar: Calendar {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.firstWeekday = 1
+        return calendar
+    }
+
+    var body: some View {
+        VStack(spacing: 0) {
+            header
+            weekdayRow
+            grid
+            Spacer(minLength: 0)
+        }
+        .padding(.top, 10)
+        .background(theme.bgApp.ignoresSafeArea())
+        .onAppear {
+            displayMonth = startOfMonth(initialDate)
+            loadMonth()
+        }
+    }
+
+    private var header: some View {
+        HStack {
+            Button { shiftMonth(-1) } label: {
+                Image(systemName: "chevron.left").font(.system(size: 16, weight: .semibold))
+            }
+            Spacer()
+            VStack(spacing: 1) {
+                Text(monthTitle)
+                    .font(.system(size: 19, weight: .bold))
+                    .foregroundStyle(theme.textPrimary)
+                Button("Today") { goToToday() }
+                    .font(.caption)
+                    .foregroundStyle(theme.accent)
+            }
+            Spacer()
+            Button { shiftMonth(1) } label: {
+                Image(systemName: "chevron.right").font(.system(size: 16, weight: .semibold))
+            }
+        }
+        .foregroundStyle(theme.textPrimary)
+        .padding(.horizontal, 20)
+        .padding(.bottom, 10)
+    }
+
+    private var weekdayRow: some View {
+        HStack(spacing: 0) {
+            ForEach(Array(calendar.veryShortStandaloneWeekdaySymbols.enumerated()), id: \.offset) { _, symbol in
+                Text(symbol)
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(theme.textMuted)
+                    .frame(maxWidth: .infinity)
+            }
+        }
+        .padding(.horizontal, 8)
+        .padding(.bottom, 4)
+    }
+
+    private var grid: some View {
+        let cells = monthCells
+        return VStack(spacing: 0) {
+            ForEach(0..<6, id: \.self) { row in
+                HStack(spacing: 0) {
+                    ForEach(0..<7, id: \.self) { col in
+                        dayCell(cells[row * 7 + col])
+                    }
+                }
+            }
+        }
+        .padding(.horizontal, 8)
+    }
+
+    private func dayCell(_ date: Date) -> some View {
+        let inMonth = calendar.isDate(date, equalTo: displayMonth, toGranularity: .month)
+        let isToday = calendar.isDateInToday(date)
+        let isSelected = calendar.isDate(date, inSameDayAs: initialDate)
+        let occurrences = dayOccurrences[AppModel.dateOnly(date)] ?? []
+        return Button {
+            UIImpactFeedbackGenerator(style: .light).impactOccurred()
+            onSelect(calendar.startOfDay(for: date))
+        } label: {
+            VStack(spacing: 3) {
+                Text("\(calendar.component(.day, from: date))")
+                    .font(.system(size: 15, weight: isToday ? .bold : .regular))
+                    .foregroundStyle(dayColor(inMonth: inMonth, isToday: isToday))
+                    .frame(width: 30, height: 30)
+                    .background(Circle().fill(isToday ? theme.accent : Color.clear))
+                dots(for: occurrences)
+            }
+            .frame(maxWidth: .infinity)
+            .frame(height: 50)
+            .background(
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .stroke(isSelected && !isToday ? theme.accent : Color.clear, lineWidth: 1.5)
+            )
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func dots(for occurrences: [MobileOccurrence]) -> some View {
+        let colorIndices = orderedDistinctColorIndices(occurrences, limit: 4)
+        return HStack(spacing: 3) {
+            ForEach(Array(colorIndices.enumerated()), id: \.offset) { _, index in
+                Circle()
+                    .fill(schemeColor(index, dark: theme.isDark))
+                    .frame(width: 5, height: 5)
+            }
+        }
+        .frame(height: 6)
+    }
+
+    private func orderedDistinctColorIndices(_ occurrences: [MobileOccurrence], limit: Int) -> [Int32] {
+        var seen = Set<Int32>()
+        var result: [Int32] = []
+        for occurrence in occurrences where seen.insert(occurrence.colorIndex).inserted {
+            result.append(occurrence.colorIndex)
+            if result.count >= limit { break }
+        }
+        return result
+    }
+
+    private func dayColor(inMonth: Bool, isToday: Bool) -> Color {
+        if isToday { return theme.isDark ? .black : .white }
+        return inMonth ? theme.textPrimary : theme.textMuted.opacity(0.45)
+    }
+
+    private var monthCells: [Date] {
+        let first = startOfMonth(displayMonth)
+        let weekday = calendar.component(.weekday, from: first)
+        let gridStart = calendar.date(byAdding: .day, value: -(weekday - 1), to: first) ?? first
+        return (0..<42).compactMap { calendar.date(byAdding: .day, value: $0, to: gridStart) }
+    }
+
+    private var monthTitle: String {
+        let formatter = DateFormatter()
+        formatter.calendar = calendar
+        formatter.dateFormat = "MMMM yyyy"
+        return formatter.string(from: displayMonth)
+    }
+
+    private func startOfMonth(_ date: Date) -> Date {
+        calendar.date(from: calendar.dateComponents([.year, .month], from: date)) ?? date
+    }
+
+    private func shiftMonth(_ delta: Int) {
+        if let next = calendar.date(byAdding: .month, value: delta, to: displayMonth) {
+            displayMonth = startOfMonth(next)
+            loadMonth()
+        }
+    }
+
+    private func goToToday() {
+        displayMonth = startOfMonth(Date())
+        loadMonth()
+    }
+
+    private func loadMonth() {
+        let components = calendar.dateComponents([.year, .month], from: displayMonth)
+        guard let year = components.year, let month = components.month else { return }
+        var map: [String: [MobileOccurrence]] = [:]
+        for day in model.monthDays(year: year, month: month) {
+            map[day.date] = day.occurrences
+        }
+        dayOccurrences = map
     }
 }
