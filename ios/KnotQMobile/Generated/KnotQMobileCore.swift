@@ -508,7 +508,7 @@ public protocol MobileCoreProtocol: AnyObject, Sendable {
     
     func applyNotificationAction(actionId: String, schemeId: String, itemId: String, occurrenceJson: String, triggerAt: String) throws  -> Bool
     
-    func completeGoogleCalendarImport(clientId: String, clientSecret: String?, redirectUri: String, state: String, codeVerifier: String, callbackUrl: String) throws  -> MobileGoogleSyncResult
+    func completeGoogleCalendarImport(clientId: String, clientSecret: String?, redirectUri: String, state: String, codeVerifier: String, callbackUrl: String, parentId: String?) throws  -> MobileGoogleSyncResult
     
     func createFolder(parentId: String?, name: String, position: Int32?) throws 
     
@@ -676,7 +676,7 @@ open func applyNotificationAction(actionId: String, schemeId: String, itemId: St
 })
 }
     
-open func completeGoogleCalendarImport(clientId: String, clientSecret: String?, redirectUri: String, state: String, codeVerifier: String, callbackUrl: String)throws  -> MobileGoogleSyncResult  {
+open func completeGoogleCalendarImport(clientId: String, clientSecret: String?, redirectUri: String, state: String, codeVerifier: String, callbackUrl: String, parentId: String?)throws  -> MobileGoogleSyncResult  {
     return try  FfiConverterTypeMobileGoogleSyncResult_lift(try rustCallWithError(FfiConverterTypeMobileError_lift) {
     uniffi_knotq_mobile_core_fn_method_mobilecore_complete_google_calendar_import(
             self.uniffiCloneHandle(),
@@ -685,7 +685,8 @@ open func completeGoogleCalendarImport(clientId: String, clientSecret: String?, 
         FfiConverterString.lower(redirectUri),
         FfiConverterString.lower(state),
         FfiConverterString.lower(codeVerifier),
-        FfiConverterString.lower(callbackUrl),$0
+        FfiConverterString.lower(callbackUrl),
+        FfiConverterOptionString.lower(parentId),$0
     )
 })
 }
@@ -2508,7 +2509,7 @@ private let initializationResult: InitializationResult = {
     if (uniffi_knotq_mobile_core_checksum_method_mobilecore_apply_notification_action() != 6490) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_knotq_mobile_core_checksum_method_mobilecore_complete_google_calendar_import() != 39378) {
+    if (uniffi_knotq_mobile_core_checksum_method_mobilecore_complete_google_calendar_import() != 63128) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_knotq_mobile_core_checksum_method_mobilecore_create_folder() != 49482) {

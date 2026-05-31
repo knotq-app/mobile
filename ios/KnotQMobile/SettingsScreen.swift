@@ -22,6 +22,7 @@ struct SettingsScreen: View {
                 }
                 .pickerStyle(.menu)
             }
+            .listRowBackground(theme.bgModal)
 
             Section("Time") {
                 Picker("Clock", selection: Binding(
@@ -32,6 +33,7 @@ struct SettingsScreen: View {
                     Text("24-hour").tag("twenty_four_hour")
                 }
             }
+            .listRowBackground(theme.bgModal)
 
             GoogleCalendarSettingsSection(theme: theme)
 
@@ -55,7 +57,10 @@ struct SettingsScreen: View {
                     }
                 }
             }
+            .listRowBackground(theme.bgModal)
         }
+        .scrollContentBackground(.hidden)
+        .background(theme.bgApp)
         .navigationTitle("Settings")
         .sheet(isPresented: $showingSyncSignIn) {
             SyncSignInSheet(theme: theme)
@@ -115,5 +120,6 @@ struct GoogleCalendarSettingsSection: View {
                 .disabled(model.googleAuthInProgress || model.googleSyncInProgress)
             }
         }
+        .listRowBackground(theme.bgModal)
     }
 }

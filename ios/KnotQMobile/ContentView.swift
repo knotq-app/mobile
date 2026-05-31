@@ -90,6 +90,7 @@ struct ContentView: View {
                         },
                         onNewScheme: quickCreateScheme,
                         onNewFolder: { showingNewFolder = true },
+                        onGoogleCalendar: { startGoogleCalendarImport() },
                         onSettings: { pane = .settings }
                     )
                 }
@@ -104,7 +105,8 @@ struct ContentView: View {
                             onSelectPane: { pane = $0 },
                             onSelectScheme: selectScheme,
                             onNewScheme: quickCreateScheme,
-                            onNewFolder: { showingNewFolder = true }
+                            onNewFolder: { showingNewFolder = true },
+                            onGoogleCalendar: { startGoogleCalendarImport(parentID: $0) }
                         )
                         .frame(width: 168)
                         .padding(.leading, 6)
@@ -229,7 +231,8 @@ struct ContentView: View {
                     onToggleOccurrence: handleOccurrenceTap,
                     onOpenOccurrence: { eventEditor = .edit($0) },
                     onNewScheme: quickCreateScheme,
-                    onNewFolder: { showingNewFolder = true }
+                    onNewFolder: { showingNewFolder = true },
+                    onGoogleCalendar: { startGoogleCalendarImport(parentID: $0) }
                 )
             } else {
                 HomeNavigationPane(
@@ -240,6 +243,7 @@ struct ContentView: View {
                     onOpenOccurrence: { eventEditor = .edit($0) },
                     onCreateScheme: quickCreateSchemeID,
                     onNewFolder: { showingNewFolder = true },
+                    onGoogleCalendar: { startGoogleCalendarImport(parentID: $0) },
                     onAddItem: { addItemTarget = SheetID(id: $0) },
                     onPrepareDaily: prepareDaily,
                     onSelectDailyDate: selectDailyDate,
@@ -423,6 +427,12 @@ struct ContentView: View {
         }
     }
 
+    private func startGoogleCalendarImport(parentID: String? = nil) {
+        Task {
+            await model.connectGoogleCalendar(parentID: parentID)
+        }
+    }
+
 }
 
 struct KnotQTheme {
@@ -514,6 +524,7 @@ private struct DesktopTitleBar: View {
     let onAddItem: () -> Void
     let onNewScheme: () -> Void
     let onNewFolder: () -> Void
+    let onGoogleCalendar: () -> Void
     let onSettings: () -> Void
 
     var body: some View {
@@ -539,6 +550,7 @@ private struct DesktopTitleBar: View {
                         .disabled(!(pane == .daily || (pane == .scheme && scheme?.isReadOnly != true)))
                     Button("New Scheme", systemImage: "doc.badge.plus", action: onNewScheme)
                     Button("Folder", systemImage: "folder.badge.plus", action: onNewFolder)
+                    Button("Google Calendar", systemImage: "calendar.badge.plus", action: onGoogleCalendar)
                 } label: {
                     Image(systemName: "plus")
                 }
@@ -608,6 +620,7 @@ struct SyncSignInSheet: View {
                             password = ""
                         }
                     }
+                    .listRowBackground(theme.bgModal)
                 }
 
                 Section("Local sync backend") {
@@ -636,6 +649,7 @@ struct SyncSignInSheet: View {
                     }
                     .disabled(model.syncAuthInProgress)
                 }
+                .listRowBackground(theme.bgModal)
             }
             .scrollContentBackground(.hidden)
             .background(theme.bgApp)
@@ -663,6 +677,7 @@ private struct DesktopNavigator: View {
     let onSelectScheme: (String) -> Void
     let onNewScheme: () -> Void
     let onNewFolder: () -> Void
+    let onGoogleCalendar: (String?) -> Void
 
     var body: some View {
         VStack(spacing: 0) {
@@ -692,6 +707,7 @@ private struct DesktopNavigator: View {
                                 root: root,
                                 selectedSchemeID: selectedSchemeID,
                                 theme: theme,
+                                onGoogleCalendar: onGoogleCalendar,
                                 onSelectScheme: onSelectScheme
                             )
                         }
@@ -704,6 +720,9 @@ private struct DesktopNavigator: View {
                 Menu {
                     Button("New Scheme", systemImage: "doc.badge.plus", action: onNewScheme)
                     Button("Folder", systemImage: "folder.badge.plus", action: onNewFolder)
+                    Button("Google Calendar", systemImage: "calendar.badge.plus") {
+                        onGoogleCalendar(nil)
+                    }
                 } label: {
                     Label("New", systemImage: "plus")
                         .font(.system(size: 12, weight: .semibold))
@@ -881,6 +900,7 @@ private struct NavigatorNodeRow: View {
     let root: MobileNode
     let selectedSchemeID: String?
     let theme: KnotQTheme
+    let onGoogleCalendar: (String?) -> Void
     let onSelectScheme: (String) -> Void
 
     @State private var expanded = true
@@ -918,6 +938,7 @@ private struct NavigatorNodeRow: View {
                                 root: root,
                                 selectedSchemeID: selectedSchemeID,
                                 theme: theme,
+                                onGoogleCalendar: onGoogleCalendar,
                                 onSelectScheme: onSelectScheme
                             )
                         }
@@ -927,6 +948,9 @@ private struct NavigatorNodeRow: View {
             .contextMenu {
                 Button("New Scheme") { newSchemeInFolder = true }
                 Button("New Folder") { newFolderInFolder = true }
+                Button("Google Calendar", systemImage: "calendar.badge.plus") {
+                    onGoogleCalendar(node.id)
+                }
                 MoveToFolderMenu(nodeKind: "folder", nodeID: node.id, currentParentID: parentFolderID, root: root, excludingFolderID: node.id)
                 Button("Rename") { renameNode = node }
                 Button("Archive", systemImage: "archivebox") {
@@ -1041,6 +1065,7 @@ private struct HomeDashboardPane: View {
     let onOpenOccurrence: (MobileOccurrence) -> Void
     let onNewScheme: () -> Void
     let onNewFolder: () -> Void
+    let onGoogleCalendar: (String?) -> Void
 
     var body: some View {
         GeometryReader { proxy in
@@ -1056,7 +1081,8 @@ private struct HomeDashboardPane: View {
                         onOpenDaily: onOpenDaily,
                         onOpenScheme: onOpenScheme,
                         onNewScheme: onNewScheme,
-                        onNewFolder: onNewFolder
+                        onNewFolder: onNewFolder,
+                        onGoogleCalendar: onGoogleCalendar
                     )
 
                     HomeUpcomingSection(
@@ -1162,6 +1188,7 @@ private struct HomeNavigationPane: View {
     let onOpenOccurrence: (MobileOccurrence) -> Void
     let onCreateScheme: () -> String?
     let onNewFolder: () -> Void
+    let onGoogleCalendar: (String?) -> Void
     let onAddItem: (String) -> Void
     let onPrepareDaily: () -> Void
     let onSelectDailyDate: @MainActor (Date) -> Void
@@ -1180,7 +1207,8 @@ private struct HomeNavigationPane: View {
                 onToggleOccurrence: onToggleOccurrence,
                 onOpenOccurrence: onOpenOccurrence,
                 onNewScheme: createSchemeInStack,
-                onNewFolder: onNewFolder
+                onNewFolder: onNewFolder,
+                onGoogleCalendar: onGoogleCalendar
             )
             .toolbar(.hidden, for: .navigationBar)
             .ignoresSafeArea(.keyboard, edges: .bottom)
@@ -1259,6 +1287,7 @@ private struct HomeSchemesSection: View {
     let onOpenScheme: (String) -> Void
     let onNewScheme: () -> Void
     let onNewFolder: () -> Void
+    let onGoogleCalendar: (String?) -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -1270,6 +1299,9 @@ private struct HomeSchemesSection: View {
                 Menu {
                     Button("New Scheme", systemImage: "doc.badge.plus", action: onNewScheme)
                     Button("Folder", systemImage: "folder.badge.plus", action: onNewFolder)
+                    Button("Google Calendar", systemImage: "calendar.badge.plus") {
+                        onGoogleCalendar(nil)
+                    }
                 } label: {
                     Image(systemName: "plus")
                         .font(.system(size: 15, weight: .bold))
@@ -1295,6 +1327,7 @@ private struct HomeSchemesSection: View {
                                     parentFolderID: root.id,
                                     root: root,
                                     theme: theme,
+                                    onGoogleCalendar: onGoogleCalendar,
                                     onOpenScheme: onOpenScheme
                                 )
                             }
@@ -1392,6 +1425,7 @@ private struct HomeSchemeNodeRow: View {
     let parentFolderID: String
     let root: MobileNode
     let theme: KnotQTheme
+    let onGoogleCalendar: (String?) -> Void
     let onOpenScheme: (String) -> Void
 
     @State private var expanded = true
@@ -1430,6 +1464,7 @@ private struct HomeSchemeNodeRow: View {
                                 parentFolderID: node.id,
                                 root: root,
                                 theme: theme,
+                                onGoogleCalendar: onGoogleCalendar,
                                 onOpenScheme: onOpenScheme
                             )
                         }
@@ -1439,6 +1474,9 @@ private struct HomeSchemeNodeRow: View {
             .contextMenu {
                 Button("New Scheme") { newSchemeInFolder = true }
                 Button("New Folder") { newFolderInFolder = true }
+                Button("Google Calendar", systemImage: "calendar.badge.plus") {
+                    onGoogleCalendar(node.id)
+                }
                 MoveToFolderMenu(nodeKind: "folder", nodeID: node.id, currentParentID: parentFolderID, root: root, excludingFolderID: node.id)
                 Button("Move Up", systemImage: "arrow.up") {
                     model.moveNode(kind: "folder", id: node.id, folderID: parentFolderID, position: max(position - 1, 0))
@@ -3878,6 +3916,7 @@ private struct SettingsArchiveSection: View {
         } header: {
             Text("Archive")
         }
+        .listRowBackground(theme.bgModal)
     }
 }
 
@@ -3901,6 +3940,7 @@ private struct SettingsArchiveList: View {
                     }
                 }
             }
+            .listRowBackground(theme.bgModal)
         }
         .scrollContentBackground(.hidden)
         .background(theme.bgApp)
@@ -4448,6 +4488,7 @@ private struct DesktopSettingsPane: View {
                 } header: {
                     Text("Appearance")
                 }
+                .listRowBackground(theme.bgModal)
 
                 Section {
                     Picker("Clock", selection: timeBinding) {
@@ -4458,6 +4499,7 @@ private struct DesktopSettingsPane: View {
                 } header: {
                     Text("Time")
                 }
+                .listRowBackground(theme.bgModal)
 
                 SettingsArchiveSection(schemes: model.snapshot?.archivedSchemes ?? [], theme: theme)
 
@@ -4493,6 +4535,7 @@ private struct DesktopSettingsPane: View {
                 } header: {
                     Text("Sync")
                 }
+                .listRowBackground(theme.bgModal)
 
             }
             .scrollContentBackground(.hidden)

@@ -260,7 +260,7 @@ final class AppModel: ObservableObject {
         mutate { try $0.resetWorkspace() }
     }
 
-    func connectGoogleCalendar() async {
+    func connectGoogleCalendar(parentID: String? = nil) async {
         guard !googleAuthInProgress, let bridge else { return }
         googleAuthInProgress = true
         defer {
@@ -282,7 +282,8 @@ final class AppModel: ObservableObject {
                 try bridge.completeGoogleCalendarImport(
                     request: request,
                     callbackURL: callbackURL.absoluteString,
-                    clientSecret: config.clientSecret
+                    clientSecret: config.clientSecret,
+                    parentID: parentID
                 )
             }.value
             googleCalendarStatus = result.message

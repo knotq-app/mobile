@@ -246,18 +246,26 @@ impl MobileCore {
         state: String,
         code_verifier: String,
         callback_url: String,
+        parent_id: Option<String>,
     ) -> Result<MobileGoogleSyncResult, MobileError> {
         let config = GoogleOAuthConfig {
             client_id: non_empty(client_id, "Google client id")?,
             client_secret: non_empty_opt(client_secret),
         };
-        self.lock()?
+        let mut inner = self.lock()?;
+        let parent = parent_id
+            .as_deref()
+            .map(parse_id)
+            .transpose()?
+            .unwrap_or(inner.workspace.root);
+        inner
             .complete_google_calendar_import(
                 config,
                 non_empty(redirect_uri, "Google redirect URI")?,
                 non_empty(state, "Google OAuth state")?,
                 non_empty(code_verifier, "Google OAuth code verifier")?,
                 non_empty(callback_url, "Google OAuth callback URL")?,
+                parent,
             )
             .map_err(Into::into)
     }
@@ -876,6 +884,7 @@ impl MobileCoreInner {
         state: String,
         code_verifier: String,
         callback_url: String,
+        parent: FolderId,
     ) -> Result<MobileGoogleSyncResult> {
         let sources = google_calendar::google_calendar_sources(&self.workspace);
         let result = google_calendar::run_google_calendar_import_from_callback(
@@ -886,7 +895,7 @@ impl MobileCoreInner {
             &callback_url,
             sources,
         )?;
-        self.finish_google_calendar_sync(result, true)
+        self.finish_google_calendar_sync(result, true, parent)
     }
 
     fn sync_google_calendars(
@@ -918,17 +927,18 @@ impl MobileCoreInner {
         let sources = google_calendar::google_calendar_sources(&self.workspace);
         let result =
             google_calendar::run_google_calendar_background_sync(config, accounts, sources)?;
-        self.finish_google_calendar_sync(result, false)
+        self.finish_google_calendar_sync(result, false, self.workspace.root)
     }
 
     fn finish_google_calendar_sync(
         &mut self,
         result: GoogleCalendarImportResult,
         create_missing: bool,
+        parent: FolderId,
     ) -> Result<MobileGoogleSyncResult> {
         let accounts_changed = self.upsert_google_accounts(result.accounts);
         let synced_count = result.calendars.len() as i32;
-        let applied = self.apply_imported_google_calendars(result.calendars, create_missing)?;
+        let applied = self.apply_imported_google_calendars(result.calendars, create_missing, parent)?;
 
         if accounts_changed {
             self.save_settings()?;
@@ -983,10 +993,17 @@ impl MobileCoreInner {
         &mut self,
         calendars: Vec<google_calendar::ImportedGoogleCalendar>,
         create_missing: bool,
+        parent: FolderId,
     ) -> Result<GoogleCalendarApplyResult> {
+        let parent = if self.workspace.folder(parent).is_some() {
+            parent
+        } else {
+            self.workspace.root
+        };
         let mut changes = WorkspaceCrdtChangeSet::default();
         let mut content_changed = false;
         let mut created_count = 0;
+        let mut insert_position = 0usize;
 
         for calendar in calendars {
             let existing_scheme_id = google_calendar::find_google_calendar_scheme(
@@ -1003,10 +1020,11 @@ impl MobileCoreInner {
                     self.workspace.schemes.insert(id, scheme);
                     self.workspace
                         .folders
-                        .get_mut(&self.workspace.root)
-                        .ok_or_else(|| anyhow!("root folder is missing"))?
+                        .get_mut(&parent)
+                        .ok_or_else(|| anyhow!("target folder is missing"))?
                         .children
-                        .push(NodeRef::Scheme(id));
+                        .insert(insert_position, NodeRef::Scheme(id));
+                    insert_position += 1;
                     changes.workspace = true;
                     changes.schemes.insert(id);
                     content_changed = true;

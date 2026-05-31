@@ -196,7 +196,7 @@ interface MobileCore {
   MobileGoogleAuthRequest google_auth_request(string client_id, string redirect_uri);
 
   [Throws=MobileError]
-  MobileGoogleSyncResult complete_google_calendar_import(string client_id, string? client_secret, string redirect_uri, string state, string code_verifier, string callback_url);
+  MobileGoogleSyncResult complete_google_calendar_import(string client_id, string? client_secret, string redirect_uri, string state, string code_verifier, string callback_url, string? parent_id);
 
   [Throws=MobileError]
   MobileGoogleSyncResult sync_google_calendars(string? client_id, string? client_secret);

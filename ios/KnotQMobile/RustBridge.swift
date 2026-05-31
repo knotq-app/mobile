@@ -126,7 +126,8 @@ final class RustBridge: @unchecked Sendable {
     func completeGoogleCalendarImport(
         request: MobileGoogleAuthRequest,
         callbackURL: String,
-        clientSecret: String?
+        clientSecret: String?,
+        parentID: String?
     ) throws -> MobileGoogleSyncResult {
         try core.completeGoogleCalendarImport(
             clientId: request.clientId,
@@ -134,7 +135,8 @@ final class RustBridge: @unchecked Sendable {
             redirectUri: request.redirectUri,
             state: request.state,
             codeVerifier: request.codeVerifier,
-            callbackUrl: callbackURL
+            callbackUrl: callbackURL,
+            parentId: parentID
         )
     }
 
