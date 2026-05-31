@@ -2312,6 +2312,8 @@ final class DayTimelineUIKitView: UIView, UIGestureRecognizerDelegate, UIScrollV
     private static let hoursInDay = 24
     private static let bottomPadding: CGFloat = 88
     private static let timelineHeight = timeYOffset + CGFloat(hoursInDay) * hourHeight
+    private static let dayDecorationLayerName = "knotq.dayTimeline.decoration"
+    private static let gutterDecorationLayerName = "knotq.dayTimeline.gutterDecoration"
 
     override init(frame: CGRect) {
         super.init(frame: frame)
@@ -2443,9 +2445,12 @@ final class DayTimelineUIKitView: UIView, UIGestureRecognizerDelegate, UIScrollV
         dayCanvas.frame = CGRect(x: -colWidth + swipeOffset, y: 0, width: dayCanvasWidth, height: Self.timelineHeight)
 
         timeGutter.subviews.forEach { $0.removeFromSuperview() }
-        timeGutter.layer.sublayers?.forEach { $0.removeFromSuperlayer() }
+        removeDecorationLayers(from: timeGutter.layer, named: Self.gutterDecorationLayerName)
         dayCanvas.subviews.filter { $0 !== draftView }.forEach { $0.removeFromSuperview() }
-        dayCanvas.layer.sublayers?.forEach { $0.removeFromSuperlayer() }
+        removeDecorationLayers(from: dayCanvas.layer, named: Self.dayDecorationLayerName)
+        if draftView.superview !== dayCanvas {
+            dayCanvas.addSubview(draftView)
+        }
 
         drawTimeGutter(theme: theme)
         drawGrid(theme: theme, colWidth: colWidth, visibleCount: visibleCount)
@@ -2464,6 +2469,12 @@ final class DayTimelineUIKitView: UIView, UIGestureRecognizerDelegate, UIScrollV
         }
     }
 
+    private func removeDecorationLayers(from layer: CALayer, named name: String) {
+        layer.sublayers?
+            .filter { $0.name == name }
+            .forEach { $0.removeFromSuperlayer() }
+    }
+
     private func drawTimeGutter(theme: KnotQTheme) {
         timeGutter.backgroundColor = UIColor(theme.bgApp)
         for hour in 0..<Self.hoursInDay {
@@ -2475,6 +2486,7 @@ final class DayTimelineUIKitView: UIView, UIGestureRecognizerDelegate, UIScrollV
             timeGutter.addSubview(label)
         }
         let divider = CALayer()
+        divider.name = Self.gutterDecorationLayerName
         divider.backgroundColor = UIColor(theme.divider).cgColor
         divider.frame = CGRect(x: Self.gutterWidth - 0.75, y: 0, width: 0.75, height: Self.timelineHeight)
         timeGutter.layer.addSublayer(divider)
@@ -2494,6 +2506,7 @@ final class DayTimelineUIKitView: UIView, UIGestureRecognizerDelegate, UIScrollV
             path.addLine(to: CGPoint(x: x, y: Self.timelineHeight))
         }
         let layer = CAShapeLayer()
+        layer.name = Self.dayDecorationLayerName
         layer.path = path.cgPath
         layer.strokeColor = UIColor(theme.dividerSoft).cgColor
         layer.lineWidth = 0.5
@@ -2510,11 +2523,13 @@ final class DayTimelineUIKitView: UIView, UIGestureRecognizerDelegate, UIScrollV
         path.move(to: CGPoint(x: x, y: y))
         path.addLine(to: CGPoint(x: x + colWidth, y: y))
         let line = CAShapeLayer()
+        line.name = Self.dayDecorationLayerName
         line.path = path.cgPath
         line.strokeColor = UIColor(theme.danger).cgColor
         line.lineWidth = 1.5
         dayCanvas.layer.addSublayer(line)
         let dot = CAShapeLayer()
+        dot.name = Self.dayDecorationLayerName
         dot.path = UIBezierPath(ovalIn: CGRect(x: x - 3.5, y: y - 3.5, width: 7, height: 7)).cgPath
         dot.fillColor = UIColor(theme.danger).cgColor
         dayCanvas.layer.addSublayer(dot)
