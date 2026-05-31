@@ -913,7 +913,7 @@ private struct SchemeTreePrefix: View {
 
     private var indentUnit: CGFloat { compact ? 8 : 10 }
     private var disclosureWidth: CGFloat { compact ? 12 : 14 }
-    private var rowHeight: CGFloat { compact ? 25 : 34 }
+    private var rowHeight: CGFloat { compact ? 25 : 30 }
     private var visibleDepth: Int { max(0, depth - 1) }
 }
 
@@ -928,7 +928,7 @@ private struct SchemeTreeIconSlot<Content: View>: View {
 
     var body: some View {
         content
-            .frame(width: compact ? 15 : 18, height: compact ? 15 : 18)
+            .frame(width: compact ? 14 : 17, height: compact ? 14 : 17)
     }
 }
 
@@ -1132,7 +1132,7 @@ private struct HomeDashboardPane: View {
 
     var body: some View {
         GeometryReader { proxy in
-            let schemePreviewMaxHeight = max(260, proxy.size.height * 0.50)
+            let schemePreviewMaxHeight = max(180, proxy.size.height * 0.34)
             ZStack(alignment: .bottomTrailing) {
             VStack(alignment: .leading, spacing: 16) {
                 HomeSchemesSection(
@@ -1352,10 +1352,10 @@ private struct HomeSchemesSection: View {
     let onGoogleCalendar: (String?) -> Void
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack(alignment: .center, spacing: 8) {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(alignment: .center, spacing: 6) {
                 Text("Schemes")
-                    .font(.system(size: 22, weight: .bold))
+                    .font(.system(size: 20, weight: .bold))
                     .foregroundStyle(theme.textPrimary)
                 Spacer(minLength: 0)
                 Menu {
@@ -1366,9 +1366,9 @@ private struct HomeSchemesSection: View {
                     }
                 } label: {
                     Image(systemName: "plus")
-                        .font(.system(size: 15, weight: .bold))
+                        .font(.system(size: 14, weight: .bold))
                         .foregroundStyle(theme.textPrimary)
-                        .frame(width: 32, height: 32)
+                        .frame(width: 30, height: 30)
                         .background(theme.buttonBg, in: RoundedRectangle(cornerRadius: 7, style: .continuous))
                 }
                 .buttonStyle(.plain)
@@ -1378,7 +1378,7 @@ private struct HomeSchemesSection: View {
 
             VStack(alignment: .leading, spacing: 0) {
                 ScrollView {
-                    LazyVStack(alignment: .leading, spacing: 3) {
+                    LazyVStack(alignment: .leading, spacing: 1) {
                         if let root, !root.children.isEmpty {
                             ForEach(Array(root.children.enumerated()), id: \.element.id) { index, node in
                                 HomeSchemeNodeRow(
@@ -1398,12 +1398,13 @@ private struct HomeSchemesSection: View {
                             Text("No schemes yet")
                                 .font(.system(size: 14))
                                 .foregroundStyle(theme.textMuted)
-                                .frame(maxWidth: .infinity, minHeight: 38, alignment: .leading)
+                                .frame(maxWidth: .infinity, minHeight: 30, alignment: .leading)
+                                .padding(.vertical, 4)
                                 .padding(.horizontal, 10)
                         }
                     }
                     .padding(.horizontal, 8)
-                    .padding(.vertical, 6)
+                    .padding(.vertical, 4)
                 }
                 .scrollIndicators(.hidden)
                 .frame(height: maxHeight)
@@ -1423,7 +1424,7 @@ private struct HomeSchemesSection: View {
                     onOpenDaily: onOpenDaily
                 )
                 .padding(.horizontal, 8)
-                .padding(.vertical, 6)
+                .padding(.vertical, 3)
             }
             .background(theme.rowSelected.opacity(theme.isDark ? 0.52 : 0.34), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
             .overlay {
@@ -1446,11 +1447,11 @@ private struct HomeDailySchemeRow: View {
                 SchemeTreePrefix(depth: 0, showsDisclosure: false, expanded: false, compact: false, theme: theme)
                 SchemeTreeIconSlot(compact: false) {
                     Image(systemName: "checklist")
-                        .font(.system(size: 15, weight: .semibold))
+                        .font(.system(size: 13, weight: .semibold))
                         .foregroundStyle(theme.isDark ? Color(hex: 0xc0d6ff) : Color(hex: 0x4f71a6))
                 }
                 Text("Daily")
-                    .font(.system(size: 15, weight: .medium))
+                    .font(.system(size: 14, weight: .medium))
                     .foregroundStyle(theme.textPrimary)
                     .lineLimit(1)
                 Text(AppModel.displayDate(entry?.date ?? AppModel.dateOnly(selectedDate)))
@@ -1468,9 +1469,10 @@ private struct HomeDailySchemeRow: View {
                     .foregroundStyle(theme.textMuted)
             }
             .padding(.horizontal, 8)
-            .frame(minHeight: 38)
+            .frame(minHeight: 28)
+            .padding(.vertical, 3)
             .contentShape(Rectangle())
-        }
+            }
         .buttonStyle(.plain)
         .accessibilityLabel("Daily")
     }
@@ -1545,18 +1547,18 @@ private struct HomeSchemeNodeRow: View {
             SchemeTreePrefix(depth: depth, showsDisclosure: false, expanded: expanded, compact: false, theme: theme)
             SchemeTreeIconSlot(compact: false) {
                 Image(systemName: expanded ? "folder.fill" : "folder")
-                    .font(.system(size: 15, weight: .semibold))
+                    .font(.system(size: 14, weight: .semibold))
                     .foregroundStyle(theme.textMuted)
             }
             Text(node.name)
-                .font(.system(size: 15, weight: .semibold))
+                .font(.system(size: 14, weight: .semibold))
                 .foregroundStyle(theme.textPrimary)
                 .lineLimit(1)
             Spacer(minLength: 0)
         }
         .padding(.leading, leadingInset)
         .padding(.trailing, 8)
-        .frame(minHeight: 34)
+        .frame(minHeight: 28)
         .background(isDropTarget ? theme.rowSelected : Color.clear, in: RoundedRectangle(cornerRadius: 4))
         .contentShape(Rectangle())
         .onTapGesture {
@@ -1574,10 +1576,10 @@ private struct HomeSchemeNodeRow: View {
             SchemeTreeIconSlot(compact: false) {
                 RoundedRectangle(cornerRadius: 3, style: .continuous)
                     .fill(schemeColor(node.colorIndex ?? 0, dark: theme.isDark))
-                    .frame(width: 13, height: 13)
+                    .frame(width: 12, height: 12)
             }
             Text(node.name)
-                .font(.system(size: 15, weight: .medium))
+                .font(.system(size: 14, weight: .medium))
                 .foregroundStyle(theme.textPrimary)
                 .lineLimit(1)
             Spacer(minLength: 0)
@@ -1587,7 +1589,7 @@ private struct HomeSchemeNodeRow: View {
         }
         .padding(.leading, leadingInset)
         .padding(.trailing, 8)
-        .frame(minHeight: 34)
+        .frame(minHeight: 28)
         .contentShape(Rectangle())
         .onTapGesture {
             onOpenScheme(node.id)
