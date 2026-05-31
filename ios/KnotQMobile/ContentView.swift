@@ -2161,7 +2161,7 @@ private struct DayTimelinePane: View {
     let onOpenOccurrence: (MobileOccurrence) -> Void
     let onMoveOccurrence: (MobileOccurrence, Date?, Date?) -> Void
 
-    @GestureState private var swipePreviewX: CGFloat = 0
+    @State private var swipePreviewX: CGFloat = 0
     @State private var draggingOccurrenceID: String?
     @State private var draggingTranslation: CGSize = .zero
     @State private var lastDragSnap: Int?
@@ -2185,6 +2185,7 @@ private struct DayTimelinePane: View {
     private static let stickyBottomPadding: CGFloat = 82
     private static let stickySpacing: CGFloat = 4
     private static let maxStickyPerEdge = 3
+    private static let timelineContentHeight: CGFloat = timeYOffset + CGFloat(hoursInDay) * hourHeight
 
     var body: some View {
         GeometryReader { proxy in
@@ -2262,12 +2263,12 @@ private struct DayTimelinePane: View {
         .padding(.horizontal, 11)
         .padding(.bottom, 6)
         .contentShape(Rectangle())
-        .simultaneousGesture(
+        .highPriorityGesture(
             daySwipeGesture(
                 visibleCount: visibleCount,
                 availableWidth: availableWidth,
-                colWidth: colWidth,
-                contentOffsetX: contentOffsetX
+                colWidth: nil,
+                contentOffsetX: 0
             ),
             including: .subviews
         )
@@ -2281,7 +2282,7 @@ private struct DayTimelinePane: View {
         contentOffsetX: CGFloat = 0
     ) -> some Gesture {
         DragGesture(minimumDistance: 14)
-            .updating($swipePreviewX) { value, state, _ in
+            .onChanged { value in
                 let dx = value.translation.width
                 let dy = value.translation.height
                 let adjustedStart = CGPoint(x: value.startLocation.x - contentOffsetX, y: value.startLocation.y)
@@ -2290,8 +2291,12 @@ private struct DayTimelinePane: View {
                     return
                 }
                 guard abs(dx) > abs(dy) * 1.35 else { return }
-                let limit = colWidth ?? max(1, availableWidth / CGFloat(max(1, visibleCount)))
-                state = rubberBandDayOffset(dx, colWidth: limit)
+                updateDaySwipePreview(
+                    translation: dx,
+                    availableWidth: availableWidth,
+                    colWidth: colWidth,
+                    visibleCount: visibleCount
+                )
             }
             .onEnded { value in
                 let dx = value.translation.width
@@ -2302,14 +2307,59 @@ private struct DayTimelinePane: View {
                 let adjustedStart = CGPoint(x: value.startLocation.x - contentOffsetX, y: value.startLocation.y)
                 if let colWidth,
                    pointHitsEvent(adjustedStart, colWidth: colWidth, visibleCount: visibleCount) {
+                    resetDaySwipePreview()
                     return
                 }
-                guard abs(dx) > abs(dy) * 1.35,
-                      abs(projected) > max(48, min(availableWidth * 0.15, colWidth ?? max(1, availableWidth / CGFloat(max(1, visibleCount))) * 0.68)) else { return }
-                withAnimation(.interpolatingSpring(stiffness: 320, damping: 34)) {
-                    onShiftDay(projected < 0 ? 1 : -1)
+                guard abs(dx) > abs(dy) * 1.35 else {
+                    resetDaySwipePreview()
+                    return
                 }
+                finishDaySwipe(
+                    translation: dx,
+                    projectedTranslation: projected,
+                    availableWidth: availableWidth,
+                    colWidth: colWidth,
+                    visibleCount: visibleCount
+                )
             }
+    }
+
+    private func updateDaySwipePreview(
+        translation: CGFloat,
+        availableWidth: CGFloat,
+        colWidth: CGFloat?,
+        visibleCount: Int
+    ) {
+        let width = colWidth ?? max(1, availableWidth / CGFloat(max(1, visibleCount)))
+        var transaction = Transaction()
+        transaction.disablesAnimations = true
+        withTransaction(transaction) {
+            swipePreviewX = rubberBandDayOffset(translation, colWidth: width)
+        }
+    }
+
+    private func finishDaySwipe(
+        translation: CGFloat,
+        projectedTranslation: CGFloat,
+        availableWidth: CGFloat,
+        colWidth: CGFloat?,
+        visibleCount: Int
+    ) {
+        let width = colWidth ?? max(1, availableWidth / CGFloat(max(1, visibleCount)))
+        let threshold = max(48, min(availableWidth * 0.15, width * 0.68))
+        let shouldShift = abs(projectedTranslation) > threshold || abs(translation) > width * 0.42
+        withAnimation(.interpolatingSpring(stiffness: 320, damping: 34)) {
+            swipePreviewX = 0
+            if shouldShift {
+                onShiftDay(projectedTranslation < 0 ? 1 : -1)
+            }
+        }
+    }
+
+    private func resetDaySwipePreview() {
+        withAnimation(.interpolatingSpring(stiffness: 320, damping: 34)) {
+            swipePreviewX = 0
+        }
     }
 
     private func rubberBandDayOffset(_ value: CGFloat, colWidth: CGFloat) -> CGFloat {
@@ -2329,6 +2379,14 @@ private struct DayTimelinePane: View {
             ScrollViewReader { proxy in
                 ScrollView {
                     ZStack(alignment: .topLeading) {
+                        timelineGestureInstaller(
+                            colWidth: colWidth,
+                            visibleCount: visibleCount,
+                            availableWidth: viewport.size.width,
+                            contentOffsetX: contentOffsetX
+                        )
+                        .frame(width: viewport.size.width, height: Self.timelineContentHeight)
+                        .allowsHitTesting(false)
                         scrollOffsetReader()
                         scrollAnchors()
                             .allowsHitTesting(false)
@@ -2346,21 +2404,8 @@ private struct DayTimelinePane: View {
                             .allowsHitTesting(false)
                     }
                     .contentShape(Rectangle())
-                    .frame(height: Self.timeYOffset + CGFloat(Self.hoursInDay) * Self.hourHeight)
+                    .frame(height: Self.timelineContentHeight)
                     .padding(.bottom, 88)
-                .simultaneousGesture(
-                        createGesture(colWidth: colWidth, visibleCount: visibleCount, contentOffsetX: contentOffsetX),
-                        including: .subviews
-                    )
-                    .simultaneousGesture(
-                        daySwipeGesture(
-                            visibleCount: visibleCount,
-                            availableWidth: viewport.size.width,
-                            colWidth: colWidth,
-                            contentOffsetX: contentOffsetX
-                        ),
-                        including: .subviews
-                    )
                 }
                 .coordinateSpace(name: Self.timelineCoordinateSpace)
                 .onAppear {
@@ -2408,38 +2453,73 @@ private struct DayTimelinePane: View {
         proxy.scrollTo("hour-\(focus)", anchor: .top)
     }
 
-    private func createGesture(colWidth: CGFloat, visibleCount: Int, contentOffsetX: CGFloat) -> some Gesture {
-        LongPressGesture(minimumDuration: 0.5, maximumDistance: 10)
-            .sequenced(before: DragGesture(minimumDistance: 0))
-            .onChanged { value in
-                guard case let .second(_, drag?) = value else { return }
-                let adjusted = CGPoint(
-                    x: drag.startLocation.x - contentOffsetX,
-                    y: drag.startLocation.y
+    private func timelineGestureInstaller(
+        colWidth: CGFloat,
+        visibleCount: Int,
+        availableWidth: CGFloat,
+        contentOffsetX: CGFloat
+    ) -> some View {
+        TimelineGestureInstaller(
+            shouldBeginAt: { point in
+                let adjusted = CGPoint(x: point.x - contentOffsetX, y: point.y)
+                return adjusted.x >= Self.gutterWidth
+                    && !pointHitsEvent(adjusted, colWidth: colWidth, visibleCount: visibleCount)
+            },
+            onSwipeChanged: { translation in
+                updateDaySwipePreview(
+                    translation: translation,
+                    availableWidth: availableWidth,
+                    colWidth: colWidth,
+                    visibleCount: visibleCount
                 )
-                let moving = CGPoint(
-                    x: drag.location.x - contentOffsetX,
-                    y: drag.location.y
+            },
+            onSwipeEnded: { translation, velocity in
+                let projected = abs(translation + velocity * 0.18) > abs(translation)
+                    ? translation + velocity * 0.18
+                    : translation
+                finishDaySwipe(
+                    translation: translation,
+                    projectedTranslation: projected,
+                    availableWidth: availableWidth,
+                    colWidth: colWidth,
+                    visibleCount: visibleCount
                 )
-                if createDraft == nil {
-                    guard !pointHitsEvent(adjusted, colWidth: colWidth, visibleCount: visibleCount) else { return }
-                    createDraft = createTarget(point: adjusted, colWidth: colWidth, visibleCount: visibleCount)
-                    UIImpactFeedbackGenerator(style: .medium).impactOccurred()
-                } else {
-                    let moved = createTarget(point: moving, colWidth: colWidth, visibleCount: visibleCount)
-                    if moved != createDraft {
-                        createDraft = moved
-                        UISelectionFeedbackGenerator().selectionChanged()
-                    }
-                }
-            }
-            .onEnded { _ in
-                let draft = createDraft
+            },
+            onLongPressChanged: { point in
+                let adjusted = CGPoint(x: point.x - contentOffsetX, y: point.y)
+                updateCreateDraft(at: adjusted, colWidth: colWidth, visibleCount: visibleCount)
+            },
+            onLongPressEnded: {
+                finishCreateDraft()
+            },
+            onLongPressCancelled: {
                 createDraft = nil
-                if let draft, let date = createDate(for: draft) {
-                    onCreate(date)
-                }
             }
+        )
+    }
+
+    private func updateCreateDraft(at point: CGPoint, colWidth: CGFloat, visibleCount: Int) {
+        guard point.x >= Self.gutterWidth else { return }
+        if createDraft == nil {
+            guard !pointHitsEvent(point, colWidth: colWidth, visibleCount: visibleCount) else { return }
+            createDraft = createTarget(point: point, colWidth: colWidth, visibleCount: visibleCount)
+            UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+            return
+        }
+
+        let moved = createTarget(point: point, colWidth: colWidth, visibleCount: visibleCount)
+        if moved != createDraft {
+            createDraft = moved
+            UISelectionFeedbackGenerator().selectionChanged()
+        }
+    }
+
+    private func finishCreateDraft() {
+        let draft = createDraft
+        createDraft = nil
+        if let draft, let date = createDate(for: draft) {
+            onCreate(date)
+        }
     }
 
     private func pointHitsEvent(_ point: CGPoint, colWidth: CGFloat, visibleCount: Int) -> Bool {
@@ -2559,7 +2639,7 @@ private struct DayTimelinePane: View {
                 x: 0,
                 y: isDragging ? (theme.isDark ? 4 : 2) : 0
             )
-            .simultaneousGesture(
+            .highPriorityGesture(
                 eventDragGesture(for: laid, colWidth: colWidth, visibleCount: visibleCount),
                 including: .subviews
             )
@@ -2973,6 +3053,191 @@ private struct DayTimelinePane: View {
 
     private var hasToday: Bool {
         (0..<3).contains { isToday(dayDate($0)) }
+    }
+}
+
+private struct TimelineGestureInstaller: UIViewRepresentable {
+    let shouldBeginAt: (CGPoint) -> Bool
+    let onSwipeChanged: (CGFloat) -> Void
+    let onSwipeEnded: (CGFloat, CGFloat) -> Void
+    let onLongPressChanged: (CGPoint) -> Void
+    let onLongPressEnded: () -> Void
+    let onLongPressCancelled: () -> Void
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator()
+    }
+
+    func makeUIView(context: Context) -> InstallerView {
+        let view = InstallerView()
+        view.coordinator = context.coordinator
+        context.coordinator.update(from: self)
+        return view
+    }
+
+    func updateUIView(_ uiView: InstallerView, context: Context) {
+        uiView.coordinator = context.coordinator
+        context.coordinator.update(from: self)
+        DispatchQueue.main.async {
+            context.coordinator.install(from: uiView)
+        }
+    }
+
+    static func dismantleUIView(_ uiView: InstallerView, coordinator: Coordinator) {
+        coordinator.uninstall()
+    }
+
+    final class InstallerView: UIView {
+        weak var coordinator: Coordinator?
+
+        override init(frame: CGRect) {
+            super.init(frame: frame)
+            backgroundColor = .clear
+            isOpaque = false
+            isUserInteractionEnabled = false
+        }
+
+        @available(*, unavailable)
+        required init?(coder: NSCoder) {
+            fatalError("init(coder:) has not been implemented")
+        }
+
+        override func didMoveToWindow() {
+            super.didMoveToWindow()
+            DispatchQueue.main.async { [weak self] in
+                guard let self else { return }
+                coordinator?.install(from: self)
+            }
+        }
+    }
+
+    final class Coordinator: NSObject, UIGestureRecognizerDelegate {
+        private var shouldBeginAt: (CGPoint) -> Bool = { _ in true }
+        private var onSwipeChanged: (CGFloat) -> Void = { _ in }
+        private var onSwipeEnded: (CGFloat, CGFloat) -> Void = { _, _ in }
+        private var onLongPressChanged: (CGPoint) -> Void = { _ in }
+        private var onLongPressEnded: () -> Void = {}
+        private var onLongPressCancelled: () -> Void = {}
+
+        private weak var installedView: UIView?
+        private lazy var panRecognizer: UIPanGestureRecognizer = {
+            let recognizer = UIPanGestureRecognizer(target: self, action: #selector(handlePan(_:)))
+            recognizer.delegate = self
+            recognizer.maximumNumberOfTouches = 1
+            recognizer.cancelsTouchesInView = false
+            recognizer.delaysTouchesBegan = false
+            recognizer.delaysTouchesEnded = false
+            return recognizer
+        }()
+        private lazy var longPressRecognizer: UILongPressGestureRecognizer = {
+            let recognizer = UILongPressGestureRecognizer(target: self, action: #selector(handleLongPress(_:)))
+            recognizer.delegate = self
+            recognizer.minimumPressDuration = 0.45
+            recognizer.allowableMovement = 18
+            recognizer.cancelsTouchesInView = false
+            recognizer.delaysTouchesBegan = false
+            recognizer.delaysTouchesEnded = false
+            return recognizer
+        }()
+
+        func update(from installer: TimelineGestureInstaller) {
+            shouldBeginAt = installer.shouldBeginAt
+            onSwipeChanged = installer.onSwipeChanged
+            onSwipeEnded = installer.onSwipeEnded
+            onLongPressChanged = installer.onLongPressChanged
+            onLongPressEnded = installer.onLongPressEnded
+            onLongPressCancelled = installer.onLongPressCancelled
+        }
+
+        func install(from view: UIView) {
+            guard let target = installTarget(from: view) else { return }
+            guard installedView !== target else { return }
+            uninstall()
+            target.addGestureRecognizer(panRecognizer)
+            target.addGestureRecognizer(longPressRecognizer)
+            installedView = target
+        }
+
+        func uninstall() {
+            if let installedView {
+                installedView.removeGestureRecognizer(panRecognizer)
+                installedView.removeGestureRecognizer(longPressRecognizer)
+            }
+            installedView = nil
+        }
+
+        private func installTarget(from view: UIView) -> UIView? {
+            var candidate = view.superview
+            var fallback: UIView?
+            while let current = candidate {
+                if current is UIScrollView {
+                    return current
+                }
+                if fallback == nil, current.bounds.width > 80, current.bounds.height > 200 {
+                    fallback = current
+                }
+                candidate = current.superview
+            }
+            return fallback ?? view.superview
+        }
+
+        private func contentPoint(_ recognizer: UIGestureRecognizer, in target: UIView) -> CGPoint {
+            let point = recognizer.location(in: target)
+            guard let scrollView = target as? UIScrollView else { return point }
+            return CGPoint(
+                x: point.x + scrollView.contentOffset.x,
+                y: point.y + scrollView.contentOffset.y
+            )
+        }
+
+        @objc private func handlePan(_ recognizer: UIPanGestureRecognizer) {
+            guard let target = installedView else { return }
+            switch recognizer.state {
+            case .began, .changed:
+                onSwipeChanged(recognizer.translation(in: target).x)
+            case .ended:
+                onSwipeEnded(recognizer.translation(in: target).x, recognizer.velocity(in: target).x)
+                recognizer.setTranslation(.zero, in: target)
+            case .cancelled, .failed:
+                onSwipeEnded(0, 0)
+                recognizer.setTranslation(.zero, in: target)
+            default:
+                break
+            }
+        }
+
+        @objc private func handleLongPress(_ recognizer: UILongPressGestureRecognizer) {
+            guard let target = installedView else { return }
+            let point = contentPoint(recognizer, in: target)
+            switch recognizer.state {
+            case .began, .changed:
+                onLongPressChanged(point)
+            case .ended:
+                onLongPressEnded()
+            case .cancelled, .failed:
+                onLongPressCancelled()
+            default:
+                break
+            }
+        }
+
+        func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
+            guard let target = installedView else { return false }
+            let point = contentPoint(gestureRecognizer, in: target)
+            guard shouldBeginAt(point) else { return false }
+            if gestureRecognizer === panRecognizer {
+                let velocity = panRecognizer.velocity(in: target)
+                return abs(velocity.x) > 30 && abs(velocity.x) > abs(velocity.y) * 1.12
+            }
+            return true
+        }
+
+        func gestureRecognizer(
+            _ gestureRecognizer: UIGestureRecognizer,
+            shouldRecognizeSimultaneouslyWith otherGestureRecognizer: UIGestureRecognizer
+        ) -> Bool {
+            true
+        }
     }
 }
 
