@@ -450,6 +450,10 @@ final class EditorController: ObservableObject {
         view.becomeFirstResponder()
     }
 
+    func blur() {
+        view?.resignFirstResponder()
+    }
+
     func focusTitle() {
         view?.focusTitle()
     }
@@ -582,7 +586,10 @@ struct IntegratedSchemeEditorPane: View {
             loadDocument(force: false)
         }
         .onChange(of: timeFormat) { _, _ in loadDocument(force: true) }
-        .onDisappear { commitDocument() }
+        .onDisappear {
+            controller.blur()
+            commitDocument()
+        }
         .sheet(item: $dateTarget) { target in
             if let item = model.scheme(id: scheme.id)?.items.first(where: { $0.id == target.itemID }) {
                 ItemDateSheet(schemeID: scheme.id, item: item)
@@ -1157,9 +1164,10 @@ private final class EditorCoordinator: NSObject, UITextViewDelegate, @preconcurr
     func makeToolbar(for textView: UITextView) -> UIView {
         markerButtons.removeAll()
         let width = UIScreen.main.bounds.width
-        let container = UIInputView(frame: CGRect(x: 0, y: 0, width: width, height: 50), inputViewStyle: .keyboard)
+        let container = UIView(frame: CGRect(x: 0, y: 0, width: width, height: 50))
+        container.backgroundColor = .clear
+        container.isOpaque = false
         container.autoresizingMask = [.flexibleWidth]
-        container.allowsSelfSizing = true
         let dismissPan = UIPanGestureRecognizer(target: self, action: #selector(handleToolbarPan(_:)))
         dismissPan.cancelsTouchesInView = false
         container.addGestureRecognizer(dismissPan)

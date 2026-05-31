@@ -154,14 +154,12 @@ struct ContentView: View {
                     .padding(.bottom, 6)
                 }
             }
-            // Panes without a navigation bar (Home, Calendar, Search,
-            // Settings) let content scroll right up to the status bar. A soft
-            // top shadow keeps that boundary clean instead of letting content
-            // collide with the clock/battery.
+            // Dark panes without a navigation bar can use a soft status-bar
+            // shadow; in light mode it reads as an unintended drop shadow.
             .overlay(alignment: .top) {
-                if !wide && pane != .scheme && pane != .daily && pane != .settings && homeNavigationDepth == 0 && !keyboardVisible {
+                if theme.isDark && !wide && pane != .scheme && pane != .daily && pane != .settings && homeNavigationDepth == 0 && !keyboardVisible {
                     LinearGradient(
-                        colors: [Color.black.opacity(theme.isDark ? 0.30 : 0.12), .clear],
+                        colors: [Color.black.opacity(0.30), .clear],
                         startPoint: .top,
                         endPoint: .bottom
                     )
@@ -1138,6 +1136,7 @@ private struct HomeNavigationPane: View {
                 onNewFolder: onNewFolder
             )
             .toolbar(.hidden, for: .navigationBar)
+            .ignoresSafeArea(.keyboard, edges: .bottom)
             .navigationDestination(for: HomeRoute.self) { route in
                 switch route {
                 case .scheme(let id):
@@ -1234,7 +1233,7 @@ private struct HomeSchemesSection: View {
                 .buttonStyle(.plain)
             }
             .padding(.horizontal, 2)
-            .padding(.bottom, 12)
+            .padding(.bottom, 3)
 
             VStack(alignment: .leading, spacing: 0) {
                 ScrollView {
