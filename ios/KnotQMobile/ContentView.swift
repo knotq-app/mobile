@@ -678,6 +678,7 @@ private struct DesktopNavigator: View {
     let onNewScheme: () -> Void
     let onNewFolder: () -> Void
     let onGoogleCalendar: (String?) -> Void
+    @State private var isReorderingNodes = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -699,14 +700,18 @@ private struct DesktopNavigator: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 2) {
                     if let root {
-                        ForEach(root.children) { node in
+                        ForEach(Array(root.children.enumerated()), id: \.element.id) { index, node in
                             NavigatorNodeRow(
                                 node: node,
+                                position: index,
+                                siblingCount: root.children.count,
                                 depth: 0,
                                 parentFolderID: root.id,
                                 root: root,
                                 selectedSchemeID: selectedSchemeID,
                                 theme: theme,
+                                isReordering: isReorderingNodes,
+                                onBeginReorder: { isReorderingNodes = true },
                                 onGoogleCalendar: onGoogleCalendar,
                                 onSelectScheme: onSelectScheme
                             )
@@ -717,19 +722,31 @@ private struct DesktopNavigator: View {
             }
 
             HStack(spacing: 6) {
-                Menu {
-                    Button("New Scheme", systemImage: "doc.badge.plus", action: onNewScheme)
-                    Button("Folder", systemImage: "folder.badge.plus", action: onNewFolder)
-                    Button("Google Calendar", systemImage: "calendar.badge.plus") {
-                        onGoogleCalendar(nil)
+                if isReorderingNodes {
+                    Button {
+                        isReorderingNodes = false
+                    } label: {
+                        Label("Done", systemImage: "checkmark")
+                            .font(.system(size: 12, weight: .semibold))
+                            .frame(maxWidth: .infinity, alignment: .leading)
                     }
-                } label: {
-                    Label("New", systemImage: "plus")
-                        .font(.system(size: 12, weight: .semibold))
-                        .frame(maxWidth: .infinity, alignment: .leading)
+                    .buttonStyle(.plain)
+                    .foregroundStyle(theme.textDim)
+                } else {
+                    Menu {
+                        Button("New Scheme", systemImage: "doc.badge.plus", action: onNewScheme)
+                        Button("Folder", systemImage: "folder.badge.plus", action: onNewFolder)
+                        Button("Google Calendar", systemImage: "calendar.badge.plus") {
+                            onGoogleCalendar(nil)
+                        }
+                    } label: {
+                        Label("New", systemImage: "plus")
+                            .font(.system(size: 12, weight: .semibold))
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                    .buttonStyle(.plain)
+                    .foregroundStyle(theme.textDim)
                 }
-                .buttonStyle(.plain)
-                .foregroundStyle(theme.textDim)
 
                 Button {
                     onSelectPane(.settings)
@@ -853,6 +870,18 @@ private func findNode(id: String, in node: MobileNode) -> MobileNode? {
     return nil
 }
 
+private func findChildPlacement(childID: String, in node: MobileNode) -> (parentID: String, position: Int)? {
+    for (index, child) in node.children.enumerated() {
+        if child.id == childID {
+            return (node.id, index)
+        }
+        if let found = findChildPlacement(childID: childID, in: child) {
+            return found
+        }
+    }
+    return nil
+}
+
 private struct SchemeTreePrefix: View {
     let depth: Int
     let showsDisclosure: Bool
@@ -862,13 +891,13 @@ private struct SchemeTreePrefix: View {
 
     var body: some View {
         HStack(spacing: 0) {
-            ForEach(0..<depth, id: \.self) { _ in
+            ForEach(0..<visibleDepth, id: \.self) { _ in
                 Rectangle()
                     .fill(theme.dividerSoft.opacity(0.82))
                     .frame(width: 1, height: rowHeight)
                     .frame(width: indentUnit, height: rowHeight)
             }
-            if depth > 0 {
+            if visibleDepth > 0 {
                 Rectangle()
                     .fill(theme.dividerSoft.opacity(0.82))
                     .frame(width: compact ? 8 : 10, height: 1)
@@ -890,54 +919,94 @@ private struct SchemeTreePrefix: View {
     private var indentUnit: CGFloat { compact ? 12 : 15 }
     private var disclosureWidth: CGFloat { compact ? 12 : 14 }
     private var rowHeight: CGFloat { compact ? 25 : 34 }
+    private var visibleDepth: Int { max(0, depth) }
+}
+
+private struct SchemeTreeIconSlot<Content: View>: View {
+    let compact: Bool
+    let content: Content
+
+    init(compact: Bool, @ViewBuilder content: () -> Content) {
+        self.compact = compact
+        self.content = content()
+    }
+
+    var body: some View {
+        content
+            .frame(width: compact ? 15 : 18, height: compact ? 15 : 18)
+    }
+}
+
+private struct NodeReorderControls: View {
+    let compact: Bool
+    let canPromote: Bool
+    let canDemote: Bool
+    let canMoveUp: Bool
+    let canMoveDown: Bool
+    let theme: KnotQTheme
+    let onPromote: () -> Void
+    let onDemote: () -> Void
+    let onMoveUp: () -> Void
+    let onMoveDown: () -> Void
+
+    var body: some View {
+        HStack(spacing: compact ? 2 : 3) {
+            reorderButton("decrease.indent", enabled: canPromote, action: onPromote)
+            reorderButton("increase.indent", enabled: canDemote, action: onDemote)
+            reorderButton("chevron.up", enabled: canMoveUp, action: onMoveUp)
+            reorderButton("chevron.down", enabled: canMoveDown, action: onMoveDown)
+        }
+    }
+
+    private func reorderButton(_ icon: String, enabled: Bool, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: icon)
+                .font(.system(size: compact ? 9 : 10, weight: .bold))
+                .foregroundStyle(enabled ? theme.textPrimary : theme.textMuted.opacity(0.45))
+                .frame(width: compact ? 22 : 25, height: compact ? 22 : 25)
+                .background(enabled ? theme.buttonBg : Color.clear, in: RoundedRectangle(cornerRadius: 5, style: .continuous))
+        }
+        .disabled(!enabled)
+        .buttonStyle(.plain)
+    }
 }
 
 private struct NavigatorNodeRow: View {
     @EnvironmentObject private var model: AppModel
     let node: MobileNode
+    let position: Int
+    let siblingCount: Int
     let depth: Int
     let parentFolderID: String
     let root: MobileNode
     let selectedSchemeID: String?
     let theme: KnotQTheme
+    let isReordering: Bool
+    let onBeginReorder: () -> Void
     let onGoogleCalendar: (String?) -> Void
     let onSelectScheme: (String) -> Void
 
     @State private var expanded = true
-    @State private var renameNode: MobileNode?
-    @State private var newSchemeInFolder = false
-    @State private var newFolderInFolder = false
 
     var body: some View {
         if node.kind == "folder" {
             VStack(alignment: .leading, spacing: 2) {
-                Button {
-                    expanded.toggle()
-                } label: {
-                    HStack(spacing: 7) {
-                        SchemeTreePrefix(depth: depth, showsDisclosure: true, expanded: expanded, compact: true, theme: theme)
-                        Text(node.name)
-                            .font(.system(size: 13, weight: .medium))
-                            .lineLimit(1)
-                        Spacer(minLength: 0)
-                    }
-                    .padding(.horizontal, 6)
-                    .frame(height: 25)
-                    .foregroundStyle(theme.textPrimary)
-                    .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
+                folderRow
 
                 if expanded {
                     VStack(alignment: .leading, spacing: 2) {
-                        ForEach(node.children) { child in
+                        ForEach(Array(node.children.enumerated()), id: \.element.id) { index, child in
                             NavigatorNodeRow(
                                 node: child,
+                                position: index,
+                                siblingCount: node.children.count,
                                 depth: depth + 1,
                                 parentFolderID: node.id,
                                 root: root,
                                 selectedSchemeID: selectedSchemeID,
                                 theme: theme,
+                                isReordering: isReordering,
+                                onBeginReorder: onBeginReorder,
                                 onGoogleCalendar: onGoogleCalendar,
                                 onSelectScheme: onSelectScheme
                             )
@@ -945,85 +1014,138 @@ private struct NavigatorNodeRow: View {
                     }
                 }
             }
-            .contextMenu {
-                Button("New Scheme") { newSchemeInFolder = true }
-                Button("New Folder") { newFolderInFolder = true }
-                Button("Google Calendar", systemImage: "calendar.badge.plus") {
-                    onGoogleCalendar(node.id)
-                }
-                MoveToFolderMenu(nodeKind: "folder", nodeID: node.id, currentParentID: parentFolderID, root: root, excludingFolderID: node.id)
-                Button("Rename") { renameNode = node }
-                Button("Archive", systemImage: "archivebox") {
-                    model.archiveFolder(id: node.id)
-                }
-            }
-            .sheet(item: $renameNode) { target in
-                NameSheet(title: "Rename Folder", placeholder: "Folder name", initialText: target.name, validator: { name in
-                    WorkspaceNameValidation.folderError(name, root: root, excludingID: target.id)
-                }) { name in
-                    model.renameFolder(id: target.id, name: name)
-                }
-                .presentationDetents([.height(220)])
-            }
-            .sheet(isPresented: $newSchemeInFolder) {
-                NameSheet(title: "New Scheme", placeholder: "Scheme name", validator: { name in
-                    WorkspaceNameValidation.schemeError(name, root: root, folderID: node.id)
-                }) { name in
-                    if let id = model.createScheme(name: name, folderID: node.id) {
-                        onSelectScheme(id)
-                    }
-                }
-                .presentationDetents([.height(220)])
-            }
-            .sheet(isPresented: $newFolderInFolder) {
-                NameSheet(title: "New Folder", placeholder: "Folder name", validator: { name in
-                    WorkspaceNameValidation.folderError(name, root: root)
-                }) { name in
-                    model.createFolder(name: name, parentID: node.id)
-                }
-                .presentationDetents([.height(220)])
-            }
         } else {
             SwipeActionRow(actionTint: theme.danger, action: {
                 model.archiveScheme(id: node.id)
             }) {
                 Label("Archive", systemImage: "archivebox")
             } content: {
-                Button { onSelectScheme(node.id) } label: {
-                    HStack(spacing: 7) {
-                        SchemeTreePrefix(depth: depth, showsDisclosure: false, expanded: false, compact: true, theme: theme)
-                        RoundedRectangle(cornerRadius: 2)
-                            .fill(schemeColor(node.colorIndex ?? 0, dark: theme.isDark))
-                            .frame(width: 11, height: 11)
-                        Text(node.name)
-                            .font(.system(size: 13, weight: .medium))
-                            .lineLimit(1)
-                        Spacer(minLength: 0)
-                    }
-                    .padding(.horizontal, 6)
-                    .frame(height: 25)
-                    .foregroundStyle(theme.textPrimary)
-                    .background(selectedSchemeID == node.id ? theme.rowSelected : Color.clear, in: RoundedRectangle(cornerRadius: 4))
-                }
-                .buttonStyle(.plain)
-            }
-            .contextMenu {
-                Button("Rename") { renameNode = node }
-                MoveToFolderMenu(nodeKind: "scheme", nodeID: node.id, currentParentID: parentFolderID, root: root)
-                ColorMenu(nodeID: node.id, colorIndex: node.colorIndex ?? 0, theme: theme)
-                Button("Archive", systemImage: "archivebox") {
-                    model.archiveScheme(id: node.id)
-                }
-            }
-            .sheet(item: $renameNode) { target in
-                NameSheet(title: "Rename Scheme", placeholder: "Scheme name", initialText: target.name, validator: { name in
-                    WorkspaceNameValidation.schemeError(name, root: root, folderID: parentFolderID, excludingID: target.id)
-                }) { name in
-                    model.renameScheme(id: target.id, name: name)
-                }
-                .presentationDetents([.height(220)])
+                schemeRow(compact: true)
             }
         }
+    }
+
+    private var folderRow: some View {
+        HStack(spacing: 7) {
+            SchemeTreePrefix(depth: depth, showsDisclosure: true, expanded: expanded, compact: true, theme: theme)
+            SchemeTreeIconSlot(compact: true) {
+                Image(systemName: "folder.fill")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(theme.textMuted)
+            }
+            Text(node.name)
+                .font(.system(size: 13, weight: .medium))
+                .lineLimit(1)
+            Spacer(minLength: 0)
+            if isReordering {
+                reorderControls(compact: true)
+            }
+        }
+        .padding(.horizontal, 6)
+        .frame(height: 25)
+        .foregroundStyle(theme.textPrimary)
+        .contentShape(Rectangle())
+        .onTapGesture {
+            guard !isReordering else { return }
+            expanded.toggle()
+        }
+        .onLongPressGesture(minimumDuration: 0.35) {
+            beginReorder()
+        }
+    }
+
+    private func schemeRow(compact: Bool) -> some View {
+        HStack(spacing: 7) {
+            SchemeTreePrefix(depth: depth, showsDisclosure: false, expanded: false, compact: compact, theme: theme)
+            SchemeTreeIconSlot(compact: compact) {
+                RoundedRectangle(cornerRadius: compact ? 2 : 3, style: .continuous)
+                    .fill(schemeColor(node.colorIndex ?? 0, dark: theme.isDark))
+                    .frame(width: compact ? 11 : 13, height: compact ? 11 : 13)
+            }
+            Text(node.name)
+                .font(.system(size: compact ? 13 : 15, weight: .medium))
+                .lineLimit(1)
+            Spacer(minLength: 0)
+            if isReordering {
+                reorderControls(compact: compact)
+            }
+        }
+        .padding(.horizontal, compact ? 6 : 8)
+        .frame(height: compact ? 25 : 34)
+        .foregroundStyle(theme.textPrimary)
+        .background(selectedSchemeID == node.id ? theme.rowSelected : Color.clear, in: RoundedRectangle(cornerRadius: 4))
+        .contentShape(Rectangle())
+        .onTapGesture {
+            guard !isReordering else { return }
+            onSelectScheme(node.id)
+        }
+        .onLongPressGesture(minimumDuration: 0.35) {
+            beginReorder()
+        }
+    }
+
+    private func reorderControls(compact: Bool) -> some View {
+        NodeReorderControls(
+            compact: compact,
+            canPromote: canPromote,
+            canDemote: canDemote,
+            canMoveUp: position > 0,
+            canMoveDown: position < siblingCount - 1,
+            theme: theme,
+            onPromote: promoteNode,
+            onDemote: demoteNode,
+            onMoveUp: moveNodeUp,
+            onMoveDown: moveNodeDown
+        )
+    }
+
+    private func beginReorder() {
+        onBeginReorder()
+        UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+    }
+
+    private func moveNodeUp() {
+        model.moveNode(kind: movableKind, id: node.id, folderID: parentFolderID, position: max(position - 1, 0))
+    }
+
+    private func moveNodeDown() {
+        model.moveNode(kind: movableKind, id: node.id, folderID: parentFolderID, position: min(position + 2, siblingCount))
+    }
+
+    private func promoteNode() {
+        guard let placement = parentPlacement else { return }
+        model.moveNode(kind: movableKind, id: node.id, folderID: placement.parentID, position: placement.position + 1)
+    }
+
+    private func demoteNode() {
+        guard let destination = previousSiblingFolder else { return }
+        model.moveNode(kind: movableKind, id: node.id, folderID: destination.id, position: destination.children.count)
+    }
+
+    private var movableKind: String {
+        node.kind == "folder" ? "folder" : "scheme"
+    }
+
+    private var previousSiblingFolder: MobileNode? {
+        guard position > 0,
+              let parent = findNode(id: parentFolderID, in: root),
+              parent.children.indices.contains(position - 1)
+        else { return nil }
+        let previous = parent.children[position - 1]
+        return previous.kind == "folder" ? previous : nil
+    }
+
+    private var parentPlacement: (parentID: String, position: Int)? {
+        guard parentFolderID != root.id else { return nil }
+        return findChildPlacement(childID: parentFolderID, in: root)
+    }
+
+    private var canPromote: Bool {
+        parentPlacement != nil
+    }
+
+    private var canDemote: Bool {
+        previousSiblingFolder != nil
     }
 }
 
@@ -1288,6 +1410,7 @@ private struct HomeSchemesSection: View {
     let onNewScheme: () -> Void
     let onNewFolder: () -> Void
     let onGoogleCalendar: (String?) -> Void
+    @State private var isReorderingNodes = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -1296,20 +1419,34 @@ private struct HomeSchemesSection: View {
                     .font(.system(size: 22, weight: .bold))
                     .foregroundStyle(theme.textPrimary)
                 Spacer(minLength: 0)
-                Menu {
-                    Button("New Scheme", systemImage: "doc.badge.plus", action: onNewScheme)
-                    Button("Folder", systemImage: "folder.badge.plus", action: onNewFolder)
-                    Button("Google Calendar", systemImage: "calendar.badge.plus") {
-                        onGoogleCalendar(nil)
+                if isReorderingNodes {
+                    Button {
+                        isReorderingNodes = false
+                    } label: {
+                        Text("Done")
+                            .font(.system(size: 13, weight: .semibold))
+                            .foregroundStyle(theme.textPrimary)
+                            .frame(height: 32)
+                            .padding(.horizontal, 10)
+                            .background(theme.buttonBg, in: RoundedRectangle(cornerRadius: 7, style: .continuous))
                     }
-                } label: {
-                    Image(systemName: "plus")
-                        .font(.system(size: 15, weight: .bold))
-                        .foregroundStyle(theme.textPrimary)
-                        .frame(width: 32, height: 32)
-                        .background(theme.buttonBg, in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+                    .buttonStyle(.plain)
+                } else {
+                    Menu {
+                        Button("New Scheme", systemImage: "doc.badge.plus", action: onNewScheme)
+                        Button("Folder", systemImage: "folder.badge.plus", action: onNewFolder)
+                        Button("Google Calendar", systemImage: "calendar.badge.plus") {
+                            onGoogleCalendar(nil)
+                        }
+                    } label: {
+                        Image(systemName: "plus")
+                            .font(.system(size: 15, weight: .bold))
+                            .foregroundStyle(theme.textPrimary)
+                            .frame(width: 32, height: 32)
+                            .background(theme.buttonBg, in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+                    }
+                    .buttonStyle(.plain)
                 }
-                .buttonStyle(.plain)
             }
             .padding(.horizontal, 2)
             .padding(.bottom, 3)
@@ -1327,6 +1464,8 @@ private struct HomeSchemesSection: View {
                                     parentFolderID: root.id,
                                     root: root,
                                     theme: theme,
+                                    isReordering: isReorderingNodes,
+                                    onBeginReorder: { isReorderingNodes = true },
                                     onGoogleCalendar: onGoogleCalendar,
                                     onOpenScheme: onOpenScheme
                                 )
@@ -1377,10 +1516,13 @@ private struct HomeDailySchemeRow: View {
 
     var body: some View {
         Button(action: onOpenDaily) {
-            HStack(spacing: 9) {
-                Image(systemName: "checklist")
-                    .font(.system(size: 14, weight: .semibold))
-                    .foregroundStyle(theme.isDark ? Color(hex: 0xc0d6ff) : Color(hex: 0x4f71a6))
+            HStack(spacing: 8) {
+                SchemeTreePrefix(depth: 0, showsDisclosure: false, expanded: false, compact: false, theme: theme)
+                SchemeTreeIconSlot(compact: false) {
+                    Image(systemName: "checklist")
+                        .font(.system(size: 15, weight: .semibold))
+                        .foregroundStyle(theme.isDark ? Color(hex: 0xc0d6ff) : Color(hex: 0x4f71a6))
+                }
                 Text("Daily")
                     .font(.system(size: 15, weight: .medium))
                     .foregroundStyle(theme.textPrimary)
@@ -1399,7 +1541,6 @@ private struct HomeDailySchemeRow: View {
                     .font(.system(size: 10, weight: .bold))
                     .foregroundStyle(theme.textMuted)
             }
-            .padding(.leading, 5)
             .padding(.horizontal, 8)
             .frame(minHeight: 38)
             .contentShape(Rectangle())
@@ -1425,33 +1566,23 @@ private struct HomeSchemeNodeRow: View {
     let parentFolderID: String
     let root: MobileNode
     let theme: KnotQTheme
+    let isReordering: Bool
+    let onBeginReorder: () -> Void
     let onGoogleCalendar: (String?) -> Void
     let onOpenScheme: (String) -> Void
 
     @State private var expanded = true
-    @State private var renameNode: MobileNode?
-    @State private var newSchemeInFolder = false
-    @State private var newFolderInFolder = false
 
     var body: some View {
         if node.kind == "folder" {
             VStack(alignment: .leading, spacing: 2) {
-                Button {
-                    expanded.toggle()
-                } label: {
-                    HStack(spacing: 8) {
-                        SchemeTreePrefix(depth: depth, showsDisclosure: true, expanded: expanded, compact: false, theme: theme)
-                        Text(node.name)
-                            .font(.system(size: 15, weight: .semibold))
-                            .foregroundStyle(theme.textPrimary)
-                            .lineLimit(1)
-                        Spacer(minLength: 0)
-                    }
-                    .padding(.horizontal, 8)
-                    .frame(minHeight: 34)
-                    .contentShape(Rectangle())
+                SwipeActionRow(actionTint: theme.danger, action: {
+                    model.archiveFolder(id: node.id)
+                }) {
+                    Label("Archive", systemImage: "archivebox")
+                } content: {
+                    folderRow
                 }
-                .buttonStyle(.plain)
 
                 if expanded {
                     VStack(alignment: .leading, spacing: 2) {
@@ -1464,6 +1595,8 @@ private struct HomeSchemeNodeRow: View {
                                 parentFolderID: node.id,
                                 root: root,
                                 theme: theme,
+                                isReordering: isReordering,
+                                onBeginReorder: onBeginReorder,
                                 onGoogleCalendar: onGoogleCalendar,
                                 onOpenScheme: onOpenScheme
                             )
@@ -1471,106 +1604,141 @@ private struct HomeSchemeNodeRow: View {
                     }
                 }
             }
-            .contextMenu {
-                Button("New Scheme") { newSchemeInFolder = true }
-                Button("New Folder") { newFolderInFolder = true }
-                Button("Google Calendar", systemImage: "calendar.badge.plus") {
-                    onGoogleCalendar(node.id)
-                }
-                MoveToFolderMenu(nodeKind: "folder", nodeID: node.id, currentParentID: parentFolderID, root: root, excludingFolderID: node.id)
-                Button("Move Up", systemImage: "arrow.up") {
-                    model.moveNode(kind: "folder", id: node.id, folderID: parentFolderID, position: max(position - 1, 0))
-                }
-                .disabled(position == 0)
-                Button("Move Down", systemImage: "arrow.down") {
-                    model.moveNode(kind: "folder", id: node.id, folderID: parentFolderID, position: min(position + 2, siblingCount))
-                }
-                .disabled(position >= siblingCount - 1)
-                Button("Rename") { renameNode = node }
-                Button("Archive", systemImage: "archivebox") {
-                    model.archiveFolder(id: node.id)
-                }
-            }
-            .sheet(item: $renameNode) { target in
-                NameSheet(title: "Rename Folder", placeholder: "Folder name", initialText: target.name, validator: { name in
-                    WorkspaceNameValidation.folderError(name, root: root, excludingID: target.id)
-                }) { name in
-                    model.renameFolder(id: target.id, name: name)
-                }
-                .presentationDetents([.height(220)])
-            }
-            .sheet(isPresented: $newSchemeInFolder) {
-                NameSheet(title: "New Scheme", placeholder: "Scheme name", validator: { name in
-                    WorkspaceNameValidation.schemeError(name, root: root, folderID: node.id)
-                }) { name in
-                    if let id = model.createScheme(name: name, folderID: node.id) {
-                        onOpenScheme(id)
-                    }
-                }
-                .presentationDetents([.height(220)])
-            }
-            .sheet(isPresented: $newFolderInFolder) {
-                NameSheet(title: "New Folder", placeholder: "Folder name", validator: { name in
-                    WorkspaceNameValidation.folderError(name, root: root)
-                }) { name in
-                    model.createFolder(name: name, parentID: node.id)
-                }
-                .presentationDetents([.height(220)])
-            }
         } else {
             SwipeActionRow(actionTint: theme.danger, action: {
                 model.archiveScheme(id: node.id)
             }) {
                 Label("Archive", systemImage: "archivebox")
             } content: {
-                Button {
-                    onOpenScheme(node.id)
-                } label: {
-                    HStack(spacing: 8) {
-                        SchemeTreePrefix(depth: depth, showsDisclosure: false, expanded: false, compact: false, theme: theme)
-                        RoundedRectangle(cornerRadius: 3, style: .continuous)
-                            .fill(schemeColor(node.colorIndex ?? 0, dark: theme.isDark))
-                            .frame(width: 13, height: 13)
-                        Text(node.name)
-                            .font(.system(size: 15, weight: .medium))
-                            .foregroundStyle(theme.textPrimary)
-                            .lineLimit(1)
-                        Spacer(minLength: 0)
-                        Image(systemName: "chevron.right")
-                            .font(.system(size: 10, weight: .bold))
-                            .foregroundStyle(theme.textMuted)
-                    }
-                    .padding(.horizontal, 8)
-                    .frame(minHeight: 34)
-                    .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-            }
-            .contextMenu {
-                Button("Rename") { renameNode = node }
-                MoveToFolderMenu(nodeKind: "scheme", nodeID: node.id, currentParentID: parentFolderID, root: root)
-                Button("Move Up", systemImage: "arrow.up") {
-                    model.moveNode(kind: "scheme", id: node.id, folderID: parentFolderID, position: max(position - 1, 0))
-                }
-                .disabled(position == 0)
-                Button("Move Down", systemImage: "arrow.down") {
-                    model.moveNode(kind: "scheme", id: node.id, folderID: parentFolderID, position: min(position + 2, siblingCount))
-                }
-                .disabled(position >= siblingCount - 1)
-                ColorMenu(nodeID: node.id, colorIndex: node.colorIndex ?? 0, theme: theme)
-                Button("Archive", systemImage: "archivebox") {
-                    model.archiveScheme(id: node.id)
-                }
-            }
-            .sheet(item: $renameNode) { target in
-                NameSheet(title: "Rename Scheme", placeholder: "Scheme name", initialText: target.name, validator: { name in
-                    WorkspaceNameValidation.schemeError(name, root: root, folderID: parentFolderID, excludingID: target.id)
-                }) { name in
-                    model.renameScheme(id: target.id, name: name)
-                }
-                .presentationDetents([.height(220)])
+                schemeRow
             }
         }
+    }
+
+    private var folderRow: some View {
+        HStack(spacing: 8) {
+            SchemeTreePrefix(depth: depth, showsDisclosure: true, expanded: expanded, compact: false, theme: theme)
+            SchemeTreeIconSlot(compact: false) {
+                Image(systemName: "folder.fill")
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundStyle(theme.textMuted)
+            }
+            Text(node.name)
+                .font(.system(size: 15, weight: .semibold))
+                .foregroundStyle(theme.textPrimary)
+                .lineLimit(1)
+            Spacer(minLength: 0)
+            if isReordering {
+                reorderControls
+            }
+        }
+        .padding(.horizontal, 8)
+        .frame(minHeight: 34)
+        .contentShape(Rectangle())
+        .onTapGesture {
+            guard !isReordering else { return }
+            expanded.toggle()
+        }
+        .onLongPressGesture(minimumDuration: 0.35) {
+            beginReorder()
+        }
+    }
+
+    private var schemeRow: some View {
+        HStack(spacing: 8) {
+            SchemeTreePrefix(depth: depth, showsDisclosure: false, expanded: false, compact: false, theme: theme)
+            SchemeTreeIconSlot(compact: false) {
+                RoundedRectangle(cornerRadius: 3, style: .continuous)
+                    .fill(schemeColor(node.colorIndex ?? 0, dark: theme.isDark))
+                    .frame(width: 13, height: 13)
+            }
+            Text(node.name)
+                .font(.system(size: 15, weight: .medium))
+                .foregroundStyle(theme.textPrimary)
+                .lineLimit(1)
+            Spacer(minLength: 0)
+            if isReordering {
+                reorderControls
+            } else {
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 10, weight: .bold))
+                    .foregroundStyle(theme.textMuted)
+            }
+        }
+        .padding(.horizontal, 8)
+        .frame(minHeight: 34)
+        .contentShape(Rectangle())
+        .onTapGesture {
+            guard !isReordering else { return }
+            onOpenScheme(node.id)
+        }
+        .onLongPressGesture(minimumDuration: 0.35) {
+            beginReorder()
+        }
+    }
+
+    private var reorderControls: some View {
+        NodeReorderControls(
+            compact: false,
+            canPromote: canPromote,
+            canDemote: canDemote,
+            canMoveUp: position > 0,
+            canMoveDown: position < siblingCount - 1,
+            theme: theme,
+            onPromote: promoteNode,
+            onDemote: demoteNode,
+            onMoveUp: moveNodeUp,
+            onMoveDown: moveNodeDown
+        )
+    }
+
+    private func beginReorder() {
+        onBeginReorder()
+        UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+    }
+
+    private func moveNodeUp() {
+        model.moveNode(kind: movableKind, id: node.id, folderID: parentFolderID, position: max(position - 1, 0))
+    }
+
+    private func moveNodeDown() {
+        model.moveNode(kind: movableKind, id: node.id, folderID: parentFolderID, position: min(position + 2, siblingCount))
+    }
+
+    private func promoteNode() {
+        guard let placement = parentPlacement else { return }
+        model.moveNode(kind: movableKind, id: node.id, folderID: placement.parentID, position: placement.position + 1)
+    }
+
+    private func demoteNode() {
+        guard let destination = previousSiblingFolder else { return }
+        model.moveNode(kind: movableKind, id: node.id, folderID: destination.id, position: destination.children.count)
+    }
+
+    private var movableKind: String {
+        node.kind == "folder" ? "folder" : "scheme"
+    }
+
+    private var previousSiblingFolder: MobileNode? {
+        guard position > 0,
+              let parent = findNode(id: parentFolderID, in: root),
+              parent.children.indices.contains(position - 1)
+        else { return nil }
+        let previous = parent.children[position - 1]
+        return previous.kind == "folder" ? previous : nil
+    }
+
+    private var parentPlacement: (parentID: String, position: Int)? {
+        guard parentFolderID != root.id else { return nil }
+        return findChildPlacement(childID: parentFolderID, in: root)
+    }
+
+    private var canPromote: Bool {
+        parentPlacement != nil
+    }
+
+    private var canDemote: Bool {
+        previousSiblingFolder != nil
     }
 }
 
@@ -2595,8 +2763,8 @@ private struct DayTimelinePane: View {
 
     private func createTarget(point: CGPoint, colWidth: CGFloat, visibleCount: Int) -> CreateDraft {
         let dayIndex = max(0, min(visibleCount - 1, Int((point.x - Self.gutterWidth) / colWidth)))
-        let rawMinute = (point.y - Self.timeYOffset) / Self.hourHeight * 60
-        let snapped = (rawMinute / 15).rounded() * 15
+        let rawMinute = max(0, (point.y - Self.timeYOffset) / Self.hourHeight * 60)
+        let snapped = (rawMinute / 5).rounded(.down) * 5
         let clamped = max(0, min(CGFloat(Self.hoursInDay * 60 - 60), snapped))
         return CreateDraft(dayIndex: dayIndex, startMinute: clamped)
     }
@@ -3246,9 +3414,10 @@ private struct TimelineGestureInstaller: UIViewRepresentable {
         private func contentPoint(_ recognizer: UIGestureRecognizer, in target: UIView) -> CGPoint {
             let point = recognizer.location(in: target)
             guard let scrollView = target as? UIScrollView else { return point }
+            let inset = scrollView.adjustedContentInset
             return CGPoint(
-                x: point.x + scrollView.contentOffset.x,
-                y: point.y + scrollView.contentOffset.y
+                x: point.x + scrollView.contentOffset.x + inset.left,
+                y: point.y + scrollView.contentOffset.y + inset.top
             )
         }
 
@@ -4712,7 +4881,7 @@ private func occurrenceTimeLabel(_ occurrence: MobileOccurrence, timeFormat: Str
         let from = upcomingDatePrefix(date: startDate)
         let to = upcomingDatePrefix(date: endDate)
         let fromText = from.isEmpty ? startTime : "\(from) \(startTime)"
-        let toText = to.isEmpty ? endTime : "\(to) \(endTime)"
+        let toText = from == to ? endTime : (to.isEmpty ? endTime : "\(to) \(endTime)")
         return "\(fromText) → \(toText)"
     }
     if let rawStart = occurrence.start, let startDate = MobileDate.parseDateTime(rawStart), let startTime = upcomingTimeLabel(raw: rawStart, timeFormat: timeFormat) {
