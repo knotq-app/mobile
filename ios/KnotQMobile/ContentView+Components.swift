@@ -2004,7 +2004,7 @@ struct DesktopCalendarPane: View {
 
                     if wide {
                         HStack(alignment: .top, spacing: 8) {
-                            ForEach(calendar?.days ?? []) { day in
+                            ForEach(calendar?.visibleDays ?? []) { day in
                                 CalendarDayColumn(day: day, theme: theme, timeFormat: timeFormat, onOpenScheme: onOpenScheme)
                                     .frame(width: 132)
                             }
@@ -2012,7 +2012,7 @@ struct DesktopCalendarPane: View {
                         .padding(.horizontal, 12)
                     } else {
                         VStack(spacing: 10) {
-                            ForEach(calendar?.days ?? []) { day in
+                            ForEach(calendar?.visibleDays ?? []) { day in
                                 CalendarDayColumn(day: day, theme: theme, timeFormat: timeFormat, onOpenScheme: onOpenScheme)
                                     .frame(maxWidth: .infinity, alignment: .leading)
                             }
@@ -2104,8 +2104,9 @@ final class DayTimelineUIKitView: UIView, UIGestureRecognizerDelegate, UIScrollV
         override func layoutSubviews() {
             super.layoutSubviews()
             weekdayLabel.frame = CGRect(x: 0, y: 3, width: bounds.width, height: 14)
-            rangeBackground.frame = CGRect(x: 2, y: 23, width: max(0, bounds.width - 4), height: 34)
-            rangeBackground.layer.cornerRadius = 9
+            rangeBackground.frame = CGRect(x: 5, y: 23, width: max(0, bounds.width - 10), height: 34)
+            rangeBackground.layer.cornerRadius = 17
+            rangeBackground.layer.cornerCurve = .continuous
             dayLabel.frame = CGRect(x: 0, y: 23, width: bounds.width, height: 34)
         }
     }
@@ -2563,7 +2564,8 @@ final class DayTimelineUIKitView: UIView, UIGestureRecognizerDelegate, UIScrollV
         var slots: [Slot] = []
         for occurrence in occurrences(forDayIndex: dayIndex) {
             guard let startMinute = minuteOfDay(occurrence.start) ?? minuteOfDay(occurrence.end) else { continue }
-            let endMinute = max(startMinute + 30, minuteOfDay(occurrence.end) ?? startMinute + 30)
+            let minimumDuration: CGFloat = occurrence.kind == "event" ? 30 : 60
+            let endMinute = max(startMinute + minimumDuration, minuteOfDay(occurrence.end) ?? startMinute + minimumDuration)
             slots.append(Slot(occurrence: occurrence, startMinute: startMinute, endMinute: endMinute))
         }
         slots.sort { $0.startMinute < $1.startMinute }
@@ -2589,7 +2591,8 @@ final class DayTimelineUIKitView: UIView, UIGestureRecognizerDelegate, UIScrollV
         let columnX = CGFloat(dayIndex + 1) * colWidth
         return slots.enumerated().map { index, slot in
             let y = Self.timeYOffset + slot.startMinute / 60 * Self.hourHeight
-            let height = max(16, (slot.endMinute - slot.startMinute) / 60 * Self.hourHeight - 2)
+            let minimumHeight: CGFloat = slot.occurrence.kind == "event" ? 20 : 40
+            let height = max(minimumHeight, (slot.endMinute - slot.startMinute) / 60 * Self.hourHeight - 2)
             let frame = CGRect(
                 x: columnX + CGFloat(slotColumn[index]) * subWidth + 1,
                 y: y,
@@ -2756,7 +2759,7 @@ final class DayTimelineUIKitView: UIView, UIGestureRecognizerDelegate, UIScrollV
             }
         case .ended:
             let target = activeDragTarget
-            cleanupEventDrag(view: view, colWidth: colWidth)
+            cleanupEventDrag(view: view, colWidth: colWidth, restoreStartFrame: target == nil)
             if let target {
                 UIImpactFeedbackGenerator(style: .light).impactOccurred()
                 DispatchQueue.main.async {
@@ -2764,23 +2767,25 @@ final class DayTimelineUIKitView: UIView, UIGestureRecognizerDelegate, UIScrollV
                 }
             }
         case .cancelled, .failed:
-            cleanupEventDrag(view: view, colWidth: colWidth)
+            cleanupEventDrag(view: view, colWidth: colWidth, restoreStartFrame: true)
         default:
             break
         }
     }
 
-    private func cleanupEventDrag(view: EventBlockView, colWidth: CGFloat) {
+    private func cleanupEventDrag(view: EventBlockView, colWidth: CGFloat, restoreStartFrame: Bool) {
         scrollView.isScrollEnabled = true
         activeDragView = nil
         activeDragTarget = nil
         activeDragSnapKey = nil
         swipeOffset = 0
-        UIView.animate(withDuration: 0.18, delay: 0, options: [.beginFromCurrentState, .allowUserInteraction]) {
+        UIView.performWithoutAnimation {
             self.layoutDayCanvas(colWidth: colWidth)
-            view.frame = self.activeDragStartFrame
-        } completion: { _ in
-            self.renderAllIfReady()
+            if restoreStartFrame {
+                view.frame = self.activeDragStartFrame
+                self.renderAllIfReady()
+            }
+            self.layoutIfNeeded()
         }
     }
 
@@ -2836,7 +2841,9 @@ final class DayTimelineUIKitView: UIView, UIGestureRecognizerDelegate, UIScrollV
 
     private func createDraft(at point: CGPoint, colWidth: CGFloat, visibleCount: Int) -> CreateDraft {
         let clipX = point.x - Self.gutterWidth
-        let dayIndex = min(visibleCount - 1, max(0, Int(floor(clipX / colWidth))))
+        let canvasX = clipX - dayCanvas.frame.minX
+        let rawSlot = Int(floor(canvasX / colWidth))
+        let dayIndex = min(visibleCount, max(-1, rawSlot - 1))
         let rawMinute = max(0, (point.y - Self.timeYOffset) / Self.hourHeight * 60)
         let snapped = (rawMinute / 5).rounded(.down) * 5
         let clamped = max(0, min(CGFloat(Self.hoursInDay * 60 - 60), snapped))
@@ -2857,7 +2864,7 @@ final class DayTimelineUIKitView: UIView, UIGestureRecognizerDelegate, UIScrollV
     }
 
     private func contentPoint(from point: CGPoint) -> CGPoint {
-        CGPoint(x: point.x, y: point.y + scrollView.contentOffset.y)
+        point
     }
 
     private func hitEvent(at contentPoint: CGPoint) -> EventBlockView? {

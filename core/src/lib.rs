@@ -1097,9 +1097,10 @@ impl MobileCoreInner {
 
         let week_start = today + Duration::days((week_offset as i64) * 7);
         let week_end = week_start + Duration::days(7);
+        let query_start = week_start - Duration::days(1);
         let indexed = IndexedWorkspace::build(self.workspace.clone());
         let range = knotq_date_util::DateRange {
-            start: midnight_utc(week_start)?,
+            start: midnight_utc(query_start)?,
             end: midnight_utc(week_end)?,
         };
         let occurrences = indexed
@@ -1108,9 +1109,9 @@ impl MobileCoreInner {
             .into_iter()
             .map(|context| MobileOccurrence::from_context(&self.workspace, context))
             .collect::<Vec<_>>();
-        let days = (0..7)
+        let days = (-1..7)
             .map(|offset| {
-                let date = week_start + Duration::days(offset);
+                let date = week_start + Duration::days(offset as i64);
                 let date_string = date.to_string();
                 MobileCalendarDay {
                     date: date_string.clone(),

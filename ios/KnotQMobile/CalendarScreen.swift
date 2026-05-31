@@ -38,7 +38,7 @@ struct CalendarScreen: View {
                     }
                 }
 
-                ForEach(calendar.days) { day in
+                ForEach(calendar.visibleDays) { day in
                     Section(MobileDate.formatFullDay(day.date)) {
                         if day.occurrences.isEmpty {
                             Text("No calendar items")

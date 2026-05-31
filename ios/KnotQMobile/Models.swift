@@ -12,6 +12,13 @@ extension MobileCalendarDay: Identifiable {
     public var id: String { date }
 }
 
+extension MobileCalendar {
+    var visibleDays: [MobileCalendarDay] {
+        let filtered = days.filter { $0.date >= startDate && $0.date <= endDate }
+        return filtered.isEmpty ? Array(days.prefix(7)) : filtered
+    }
+}
+
 extension MobileOccurrence: Identifiable {
     public var id: String { "\(schemeId)-\(itemId)-\(occurrenceJson)-\(start ?? end ?? kind)" }
 }
