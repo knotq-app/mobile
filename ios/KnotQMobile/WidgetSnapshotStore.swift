@@ -23,7 +23,7 @@ struct KnotQWidgetSnapshot: Codable, Hashable {
     static let empty = KnotQWidgetSnapshot(
         generatedAt: Date(),
         timeFormat: "twelve_hour",
-        themeMode: "system",
+        themeMode: "dark",
         items: []
     )
 }

@@ -834,6 +834,45 @@ private func findNode(id: String, in node: MobileNode) -> MobileNode? {
     return nil
 }
 
+private struct SchemeTreePrefix: View {
+    let depth: Int
+    let showsDisclosure: Bool
+    let expanded: Bool
+    let compact: Bool
+    let theme: KnotQTheme
+
+    var body: some View {
+        HStack(spacing: 0) {
+            ForEach(0..<depth, id: \.self) { _ in
+                Rectangle()
+                    .fill(theme.dividerSoft.opacity(0.82))
+                    .frame(width: 1, height: rowHeight)
+                    .frame(width: indentUnit, height: rowHeight)
+            }
+            if depth > 0 {
+                Rectangle()
+                    .fill(theme.dividerSoft.opacity(0.82))
+                    .frame(width: compact ? 8 : 10, height: 1)
+                    .padding(.trailing, compact ? 2 : 3)
+            }
+            if showsDisclosure {
+                Image(systemName: expanded ? "chevron.down" : "chevron.right")
+                    .font(.system(size: compact ? 9 : 10, weight: .bold))
+                    .foregroundStyle(theme.textMuted)
+                    .frame(width: disclosureWidth)
+            } else {
+                Color.clear
+                    .frame(width: disclosureWidth, height: rowHeight)
+            }
+        }
+        .frame(height: rowHeight)
+    }
+
+    private var indentUnit: CGFloat { compact ? 12 : 15 }
+    private var disclosureWidth: CGFloat { compact ? 12 : 14 }
+    private var rowHeight: CGFloat { compact ? 25 : 34 }
+}
+
 private struct NavigatorNodeRow: View {
     @EnvironmentObject private var model: AppModel
     let node: MobileNode
@@ -855,20 +894,13 @@ private struct NavigatorNodeRow: View {
                 Button {
                     expanded.toggle()
                 } label: {
-                    HStack(spacing: 8) {
-                        Image(systemName: expanded ? "chevron.down" : "chevron.right")
-                            .font(.system(size: 9, weight: .bold))
-                            .foregroundStyle(theme.textMuted)
-                            .frame(width: 10)
-                        Image(systemName: "folder")
-                            .font(.system(size: 12, weight: .semibold))
-                            .frame(width: 15)
+                    HStack(spacing: 7) {
+                        SchemeTreePrefix(depth: depth, showsDisclosure: true, expanded: expanded, compact: true, theme: theme)
                         Text(node.name)
                             .font(.system(size: 13, weight: .medium))
                             .lineLimit(1)
                         Spacer(minLength: 0)
                     }
-                    .padding(.leading, CGFloat(depth) * 10)
                     .padding(.horizontal, 6)
                     .frame(height: 25)
                     .foregroundStyle(theme.textPrimary)
@@ -934,7 +966,8 @@ private struct NavigatorNodeRow: View {
                 Label("Archive", systemImage: "archivebox")
             } content: {
                 Button { onSelectScheme(node.id) } label: {
-                    HStack(spacing: 8) {
+                    HStack(spacing: 7) {
+                        SchemeTreePrefix(depth: depth, showsDisclosure: false, expanded: false, compact: true, theme: theme)
                         RoundedRectangle(cornerRadius: 2)
                             .fill(schemeColor(node.colorIndex ?? 0, dark: theme.isDark))
                             .frame(width: 11, height: 11)
@@ -943,7 +976,6 @@ private struct NavigatorNodeRow: View {
                             .lineLimit(1)
                         Spacer(minLength: 0)
                     }
-                    .padding(.leading, CGFloat(depth) * 10)
                     .padding(.horizontal, 6)
                     .frame(height: 25)
                     .foregroundStyle(theme.textPrimary)
@@ -1043,7 +1075,7 @@ private struct HomeDashboardPane: View {
 
                 HomeQuickWriteButtons(theme: theme, onNewScheme: onNewScheme, onOpenDaily: onOpenDaily)
                     .padding(.trailing, 22)
-                    .padding(.bottom, 74)
+                    .padding(.bottom, 92)
             }
             .background(theme.bgApp)
         }
@@ -1373,22 +1405,14 @@ private struct HomeSchemeNodeRow: View {
                 Button {
                     expanded.toggle()
                 } label: {
-                    HStack(spacing: 9) {
-                        Image(systemName: expanded ? "chevron.down" : "chevron.right")
-                            .font(.system(size: 10, weight: .bold))
-                            .foregroundStyle(theme.textMuted)
-                            .frame(width: 12)
-                        Image(systemName: "folder")
-                            .font(.system(size: 15, weight: .semibold))
-                            .foregroundStyle(theme.textMuted)
-                            .frame(width: 18)
+                    HStack(spacing: 8) {
+                        SchemeTreePrefix(depth: depth, showsDisclosure: true, expanded: expanded, compact: false, theme: theme)
                         Text(node.name)
                             .font(.system(size: 15, weight: .semibold))
                             .foregroundStyle(theme.textPrimary)
                             .lineLimit(1)
                         Spacer(minLength: 0)
                     }
-                    .padding(.leading, CGFloat(depth) * 14)
                     .padding(.horizontal, 8)
                     .frame(minHeight: 34)
                     .contentShape(Rectangle())
@@ -1464,7 +1488,8 @@ private struct HomeSchemeNodeRow: View {
                 Button {
                     onOpenScheme(node.id)
                 } label: {
-                    HStack(spacing: 9) {
+                    HStack(spacing: 8) {
+                        SchemeTreePrefix(depth: depth, showsDisclosure: false, expanded: false, compact: false, theme: theme)
                         RoundedRectangle(cornerRadius: 3, style: .continuous)
                             .fill(schemeColor(node.colorIndex ?? 0, dark: theme.isDark))
                             .frame(width: 13, height: 13)
@@ -1477,7 +1502,6 @@ private struct HomeSchemeNodeRow: View {
                             .font(.system(size: 10, weight: .bold))
                             .foregroundStyle(theme.textMuted)
                     }
-                    .padding(.leading, CGFloat(depth) * 14 + 5)
                     .padding(.horizontal, 8)
                     .frame(minHeight: 34)
                     .contentShape(Rectangle())
@@ -3853,10 +3877,6 @@ private struct SettingsArchiveSection: View {
             }
         } header: {
             Text("Archive")
-        } footer: {
-            if !schemes.isEmpty {
-                Text("Open Archive to restore schemes.")
-            }
         }
     }
 }
@@ -4397,6 +4417,19 @@ private struct DesktopSearchPane: View {
     }
 }
 
+private struct SettingsThemeOption: View {
+    let title: String
+    let systemImage: String
+
+    var body: some View {
+        HStack(spacing: 9) {
+            Image(systemName: systemImage)
+                .frame(width: 18, alignment: .center)
+            Text(title)
+        }
+    }
+}
+
 private struct DesktopSettingsPane: View {
     @EnvironmentObject private var model: AppModel
     let theme: KnotQTheme
@@ -4407,9 +4440,9 @@ private struct DesktopSettingsPane: View {
             Form {
                 Section {
                     Picker("Theme", selection: themeBinding) {
-                        Label("System", systemImage: "circle.lefthalf.filled").tag("system")
-                        Label("Dark", systemImage: "moon.fill").tag("dark")
-                        Label("Light", systemImage: "sun.max.fill").tag("light")
+                        SettingsThemeOption(title: "Dark", systemImage: "moon.fill").tag("dark")
+                        SettingsThemeOption(title: "Light", systemImage: "sun.max.fill").tag("light")
+                        SettingsThemeOption(title: "System", systemImage: "circle.lefthalf.filled").tag("system")
                     }
                     .pickerStyle(.menu)
                 } header: {

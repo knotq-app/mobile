@@ -16,9 +16,9 @@ struct SettingsScreen: View {
                     get: { model.snapshot?.settings.themeMode ?? "dark" },
                     set: { model.setThemeMode($0) }
                 )) {
-                    Text("System").tag("system")
                     Text("Dark").tag("dark")
                     Text("Light").tag("light")
+                    Text("System").tag("system")
                 }
                 .pickerStyle(.menu)
             }
