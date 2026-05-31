@@ -498,6 +498,7 @@ struct IntegratedSchemeEditorPane: View {
     @StateObject private var controller = EditorController()
     @State private var schemeSignature = ""
     @State private var dateTarget: EditorDateTarget?
+    @State private var pendingArchive: ArchiveTarget?
     @State private var loadedSchemeID: String?
 
     private var accent: Color {
@@ -581,7 +582,7 @@ struct IntegratedSchemeEditorPane: View {
                     SchemeColorPickerButton(scheme: scheme, theme: theme, accent: accent)
                     if !scheme.isDailyQueue {
                         Button {
-                            archiveCurrentScheme()
+                            pendingArchive = .scheme(scheme)
                         } label: {
                             Image(systemName: "archivebox")
                         }
@@ -620,6 +621,9 @@ struct IntegratedSchemeEditorPane: View {
                     .presentationDetents([.fraction(0.50)])
             }
         }
+        .archiveConfirmation(target: $pendingArchive) { _ in
+            archiveCurrentScheme()
+        }
     }
 
     private var editorNavigationBar: some View {
@@ -640,7 +644,7 @@ struct IntegratedSchemeEditorPane: View {
 
             if !scheme.isDailyQueue {
                 Button {
-                    archiveCurrentScheme()
+                    pendingArchive = .scheme(scheme)
                 } label: {
                     Image(systemName: "archivebox")
                 }
