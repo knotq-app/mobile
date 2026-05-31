@@ -467,6 +467,10 @@ private final class TransparentInputAccessoryView: UIInputView {
         isOpaque = false
     }
 
+    override var intrinsicContentSize: CGSize {
+        CGSize(width: UIView.noIntrinsicMetric, height: frame.height > 0 ? frame.height : 44)
+    }
+
     @available(*, unavailable)
     required init?(coder: NSCoder) {
         fatalError("init(coder:) has not been implemented")
@@ -474,8 +478,17 @@ private final class TransparentInputAccessoryView: UIInputView {
 
     override func didMoveToWindow() {
         super.didMoveToWindow()
+        clearAccessoryChrome()
+    }
+
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        clearAccessoryChrome()
+    }
+
+    private func clearAccessoryChrome() {
         var next: UIView? = self
-        for _ in 0..<5 {
+        for _ in 0..<8 {
             next?.backgroundColor = .clear
             next?.isOpaque = false
             next = next?.superview
@@ -1211,8 +1224,10 @@ private final class EditorCoordinator: NSObject, UITextViewDelegate, @preconcurr
     func makeToolbar(for textView: UITextView) -> UIView {
         markerButtons.removeAll()
         let width = UIScreen.main.bounds.width
-        let container = TransparentInputAccessoryView(frame: CGRect(x: 0, y: 0, width: width, height: 50))
+        let container = TransparentInputAccessoryView(frame: CGRect(x: 0, y: 0, width: width, height: 44))
         container.autoresizingMask = [.flexibleWidth]
+        container.backgroundColor = .clear
+        container.isOpaque = false
         let dismissPan = UIPanGestureRecognizer(target: self, action: #selector(handleToolbarPan(_:)))
         dismissPan.cancelsTouchesInView = false
         container.addGestureRecognizer(dismissPan)
@@ -1250,7 +1265,7 @@ private final class EditorCoordinator: NSObject, UITextViewDelegate, @preconcurr
         stack.alignment = .center
         stack.spacing = 4
         stack.translatesAutoresizingMaskIntoConstraints = false
-        stack.layoutMargins = UIEdgeInsets(top: 7, left: 10, bottom: 7, right: 10)
+        stack.layoutMargins = UIEdgeInsets(top: 5, left: 10, bottom: 5, right: 10)
         stack.isLayoutMarginsRelativeArrangement = true
         scroll.addSubview(stack)
 
@@ -1278,8 +1293,8 @@ private final class EditorCoordinator: NSObject, UITextViewDelegate, @preconcurr
         NSLayoutConstraint.activate([
             backdrop.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 8),
             backdrop.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -8),
-            backdrop.topAnchor.constraint(equalTo: container.topAnchor, constant: 4),
-            backdrop.bottomAnchor.constraint(equalTo: container.bottomAnchor, constant: -6),
+            backdrop.topAnchor.constraint(equalTo: container.topAnchor),
+            backdrop.bottomAnchor.constraint(equalTo: container.bottomAnchor),
             scroll.leadingAnchor.constraint(equalTo: backdrop.contentView.leadingAnchor),
             scroll.trailingAnchor.constraint(equalTo: backdrop.contentView.trailingAnchor),
             scroll.topAnchor.constraint(equalTo: backdrop.contentView.topAnchor),

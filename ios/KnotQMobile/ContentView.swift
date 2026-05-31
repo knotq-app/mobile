@@ -4094,7 +4094,7 @@ private struct DesktopSearchPane: View {
             .overlay { RoundedRectangle(cornerRadius: 13).stroke(theme.borderOverlay, lineWidth: 1) }
             .padding(.horizontal, 12)
             .padding(.top, 6)
-            .padding(.bottom, searchFocused ? 16 : 28)
+            .padding(.bottom, searchFocused ? 8 : 84)
             .offset(y: max(0, searchBarDragOffset))
             .simultaneousGesture(
                 DragGesture(minimumDistance: 10)
