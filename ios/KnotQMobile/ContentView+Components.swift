@@ -841,7 +841,6 @@ final class SchemeNavigatorUIKitView: UIView, UITableViewDataSource, UITableView
         let folderID: String
         let position: Int
         let intent: UITableViewDropProposal.Intent
-        let expandsFolderID: String?
     }
 
     private let tableView = UITableView(frame: .zero, style: .plain)
@@ -1013,26 +1012,22 @@ final class SchemeNavigatorUIKitView: UIView, UITableViewDataSource, UITableView
               let placement = placement(for: draggedID, at: coordinator.session.location(in: tableView)) else {
             return
         }
-        if let folderID = placement.expandsFolderID {
-            expandedFolderIDs.insert(folderID)
-        }
         let destinationIndexPath = applyOptimisticMove(draggedID: draggedID, placement: placement)
+        if let item = coordinator.items.first {
+            coordinator.drop(
+                item.dragItem,
+                to: dropPreviewTarget(
+                    for: destinationIndexPath,
+                    fallback: coordinator.session.location(in: tableView)
+                )
+            )
+        }
         onMoveNode(
             draggedNode.kind == "folder" ? "folder" : "scheme",
             draggedID,
             placement.folderID,
             placement.position
         )
-        if let item = coordinator.items.first {
-            if let destinationIndexPath {
-                coordinator.drop(item.dragItem, toRowAt: destinationIndexPath)
-            } else {
-                coordinator.drop(
-                    item.dragItem,
-                    to: UIDragPreviewTarget(container: tableView, center: coordinator.session.location(in: tableView))
-                )
-            }
-        }
     }
 
     private func toggleFolder(_ id: String) {
@@ -1083,44 +1078,90 @@ final class SchemeNavigatorUIKitView: UIView, UITableViewDataSource, UITableView
     }
 
     private func applyOptimisticMove(draggedID: String, placement: Placement) -> IndexPath? {
-        guard let sourceRange = visibleRange(for: draggedID, in: rows),
-              let nextRows = optimisticRows(moving: draggedID, placement: placement),
-              let destinationRange = visibleRange(for: draggedID, in: nextRows) else {
+        guard let optimistic = optimisticTree(moving: draggedID, placement: placement) else {
             return nil
         }
+        let nextRoot = optimistic.root
+        let nextRows = optimistic.rows
         guard rows != nextRows else {
-            return IndexPath(row: destinationRange.lowerBound, section: 0)
+            root = nextRoot
+            return targetIndexPath(draggedID: draggedID, placement: placement, rows: nextRows)
         }
 
-        let deleteIndexPaths = sourceRange.map { IndexPath(row: $0, section: 0) }
-        let insertIndexPaths = destinationRange.map { IndexPath(row: $0, section: 0) }
+        applyRowDiff(root: nextRoot, rows: nextRows)
+        return targetIndexPath(draggedID: draggedID, placement: placement, rows: nextRows)
+    }
+
+    private func applyRowDiff(root nextRoot: MobileNode, rows nextRows: [Row]) {
+        let oldIDs = rows.map(\.id)
+        let newIDs = nextRows.map(\.id)
+        let diff = newIDs.difference(from: oldIDs).inferringMoves()
+
+        var deletes: [IndexPath] = []
+        var inserts: [IndexPath] = []
+        var moves: [(from: IndexPath, to: IndexPath)] = []
+
+        for change in diff {
+            switch change {
+            case .remove(let offset, _, let associatedWith):
+                if let associatedWith {
+                    moves.append((
+                        from: IndexPath(row: offset, section: 0),
+                        to: IndexPath(row: associatedWith, section: 0)
+                    ))
+                } else {
+                    deletes.append(IndexPath(row: offset, section: 0))
+                }
+            case .insert(let offset, _, let associatedWith):
+                if associatedWith == nil {
+                    inserts.append(IndexPath(row: offset, section: 0))
+                }
+            }
+        }
+
         tableView.performBatchUpdates {
+            root = nextRoot
             rows = nextRows
-            tableView.deleteRows(at: deleteIndexPaths, with: .automatic)
-            tableView.insertRows(at: insertIndexPaths, with: .automatic)
+            tableView.deleteRows(at: deletes, with: .automatic)
+            tableView.insertRows(at: inserts, with: .automatic)
+            for move in moves {
+                tableView.moveRow(at: move.from, to: move.to)
+            }
         }
-        return IndexPath(row: destinationRange.lowerBound, section: 0)
+        tableView.layoutIfNeeded()
     }
 
-    private func visibleRange(for id: String, in rows: [Row]) -> Range<Int>? {
-        guard let start = rows.firstIndex(where: { $0.id == id }) else {
-            return nil
+    private func targetIndexPath(draggedID: String, placement: Placement, rows: [Row]) -> IndexPath? {
+        if let index = rows.firstIndex(where: { $0.id == draggedID }) {
+            return IndexPath(row: index, section: 0)
         }
-        let depth = rows[start].depth
-        var end = start + 1
-        while end < rows.count, rows[end].depth > depth {
-            end += 1
+        if let index = rows.firstIndex(where: { $0.id == placement.folderID }) {
+            return IndexPath(row: index, section: 0)
         }
-        return start..<end
+        return nil
     }
 
-    private func optimisticRows(moving draggedID: String, placement: Placement) -> [Row]? {
+    private func optimisticTree(moving draggedID: String, placement: Placement) -> (root: MobileNode, rows: [Row])? {
         guard var nextRoot = root,
               let draggedNode = removeNode(id: draggedID, from: &nextRoot),
               insertNode(draggedNode, intoFolderID: placement.folderID, position: placement.position, in: &nextRoot) else {
             return nil
         }
-        return makeRows(root: nextRoot)
+        return (nextRoot, makeRows(root: nextRoot))
+    }
+
+    private func dropPreviewTarget(for indexPath: IndexPath?, fallback: CGPoint) -> UIDragPreviewTarget {
+        guard let indexPath, rows.indices.contains(indexPath.row) else {
+            return UIDragPreviewTarget(container: tableView, center: fallback)
+        }
+        tableView.layoutIfNeeded()
+        let rect = tableView.rectForRow(at: indexPath)
+        let visible = tableView.bounds.insetBy(dx: 0, dy: 4)
+        let center = CGPoint(
+            x: min(max(rect.midX, visible.minX), visible.maxX),
+            y: min(max(rect.midY, visible.minY), visible.maxY)
+        )
+        return UIDragPreviewTarget(container: tableView, center: center)
     }
 
     private func removeNode(id: String, from parent: inout MobileNode) -> MobileNode? {
@@ -1166,8 +1207,7 @@ final class SchemeNavigatorUIKitView: UIView, UITableViewDataSource, UITableView
                 draggedNode: draggedNode,
                 folderID: root.id,
                 position: targetPosition,
-                intent: .insertAtDestinationIndexPath,
-                expandsFolderID: nil
+                intent: .insertAtDestinationIndexPath
             )
         }
 
@@ -1187,8 +1227,7 @@ final class SchemeNavigatorUIKitView: UIView, UITableViewDataSource, UITableView
                 draggedNode: draggedNode,
                 folderID: row.id,
                 position: row.node.children.count,
-                intent: .insertIntoDestinationIndexPath,
-                expandsFolderID: row.id
+                intent: .insertIntoDestinationIndexPath
             )
         }
 
@@ -1199,8 +1238,7 @@ final class SchemeNavigatorUIKitView: UIView, UITableViewDataSource, UITableView
             draggedNode: draggedNode,
             folderID: row.parentID,
             position: targetPosition,
-            intent: .insertAtDestinationIndexPath,
-            expandsFolderID: nil
+            intent: .insertAtDestinationIndexPath
         )
     }
 
@@ -1209,8 +1247,7 @@ final class SchemeNavigatorUIKitView: UIView, UITableViewDataSource, UITableView
         draggedNode: MobileNode,
         folderID: String,
         position: Int,
-        intent: UITableViewDropProposal.Intent,
-        expandsFolderID: String?
+        intent: UITableViewDropProposal.Intent
     ) -> Placement? {
         guard let root,
               let targetParent = findNode(id: folderID, in: root) else {
@@ -1232,7 +1269,7 @@ final class SchemeNavigatorUIKitView: UIView, UITableViewDataSource, UITableView
         if sameParent, adjustedPosition == source.position {
             return nil
         }
-        return Placement(folderID: folderID, position: adjustedPosition, intent: intent, expandsFolderID: expandsFolderID)
+        return Placement(folderID: folderID, position: adjustedPosition, intent: intent)
     }
 }
 
