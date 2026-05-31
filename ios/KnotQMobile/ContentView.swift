@@ -1,5 +1,6 @@
 import SwiftUI
 import UIKit
+import UniformTypeIdentifiers
 
 private enum MobilePane: String, CaseIterable, Identifiable {
     case home
@@ -678,7 +679,6 @@ private struct DesktopNavigator: View {
     let onNewScheme: () -> Void
     let onNewFolder: () -> Void
     let onGoogleCalendar: (String?) -> Void
-    @State private var isReorderingNodes = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -710,8 +710,6 @@ private struct DesktopNavigator: View {
                                 root: root,
                                 selectedSchemeID: selectedSchemeID,
                                 theme: theme,
-                                isReordering: isReorderingNodes,
-                                onBeginReorder: { isReorderingNodes = true },
                                 onGoogleCalendar: onGoogleCalendar,
                                 onSelectScheme: onSelectScheme
                             )
@@ -722,31 +720,19 @@ private struct DesktopNavigator: View {
             }
 
             HStack(spacing: 6) {
-                if isReorderingNodes {
-                    Button {
-                        isReorderingNodes = false
-                    } label: {
-                        Label("Done", systemImage: "checkmark")
-                            .font(.system(size: 12, weight: .semibold))
-                            .frame(maxWidth: .infinity, alignment: .leading)
+                Menu {
+                    Button("New Scheme", systemImage: "doc.badge.plus", action: onNewScheme)
+                    Button("Folder", systemImage: "folder.badge.plus", action: onNewFolder)
+                    Button("Google Calendar", systemImage: "calendar.badge.plus") {
+                        onGoogleCalendar(nil)
                     }
-                    .buttonStyle(.plain)
-                    .foregroundStyle(theme.textDim)
-                } else {
-                    Menu {
-                        Button("New Scheme", systemImage: "doc.badge.plus", action: onNewScheme)
-                        Button("Folder", systemImage: "folder.badge.plus", action: onNewFolder)
-                        Button("Google Calendar", systemImage: "calendar.badge.plus") {
-                            onGoogleCalendar(nil)
-                        }
-                    } label: {
-                        Label("New", systemImage: "plus")
-                            .font(.system(size: 12, weight: .semibold))
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                    }
-                    .buttonStyle(.plain)
-                    .foregroundStyle(theme.textDim)
+                } label: {
+                    Label("New", systemImage: "plus")
+                        .font(.system(size: 12, weight: .semibold))
+                        .frame(maxWidth: .infinity, alignment: .leading)
                 }
+                .buttonStyle(.plain)
+                .foregroundStyle(theme.textDim)
 
                 Button {
                     onSelectPane(.settings)
@@ -882,6 +868,15 @@ private func findChildPlacement(childID: String, in node: MobileNode) -> (parent
     return nil
 }
 
+private func containsNode(_ targetID: String, within container: MobileNode) -> Bool {
+    for child in container.children {
+        if child.id == targetID || containsNode(targetID, within: child) {
+            return true
+        }
+    }
+    return false
+}
+
 private struct SchemeTreePrefix: View {
     let depth: Int
     let showsDisclosure: Bool
@@ -910,7 +905,7 @@ private struct SchemeTreePrefix: View {
                     .frame(width: disclosureWidth)
             } else {
                 Color.clear
-                    .frame(width: disclosureWidth, height: rowHeight)
+                    .frame(width: 0, height: rowHeight)
             }
         }
         .frame(height: rowHeight)
@@ -937,40 +932,6 @@ private struct SchemeTreeIconSlot<Content: View>: View {
     }
 }
 
-private struct NodeReorderControls: View {
-    let compact: Bool
-    let canPromote: Bool
-    let canDemote: Bool
-    let canMoveUp: Bool
-    let canMoveDown: Bool
-    let theme: KnotQTheme
-    let onPromote: () -> Void
-    let onDemote: () -> Void
-    let onMoveUp: () -> Void
-    let onMoveDown: () -> Void
-
-    var body: some View {
-        HStack(spacing: compact ? 2 : 3) {
-            reorderButton("decrease.indent", enabled: canPromote, action: onPromote)
-            reorderButton("increase.indent", enabled: canDemote, action: onDemote)
-            reorderButton("chevron.up", enabled: canMoveUp, action: onMoveUp)
-            reorderButton("chevron.down", enabled: canMoveDown, action: onMoveDown)
-        }
-    }
-
-    private func reorderButton(_ icon: String, enabled: Bool, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            Image(systemName: icon)
-                .font(.system(size: compact ? 9 : 10, weight: .bold))
-                .foregroundStyle(enabled ? theme.textPrimary : theme.textMuted.opacity(0.45))
-                .frame(width: compact ? 22 : 25, height: compact ? 22 : 25)
-                .background(enabled ? theme.buttonBg : Color.clear, in: RoundedRectangle(cornerRadius: 5, style: .continuous))
-        }
-        .disabled(!enabled)
-        .buttonStyle(.plain)
-    }
-}
-
 private struct NavigatorNodeRow: View {
     @EnvironmentObject private var model: AppModel
     let node: MobileNode
@@ -981,12 +942,11 @@ private struct NavigatorNodeRow: View {
     let root: MobileNode
     let selectedSchemeID: String?
     let theme: KnotQTheme
-    let isReordering: Bool
-    let onBeginReorder: () -> Void
     let onGoogleCalendar: (String?) -> Void
     let onSelectScheme: (String) -> Void
 
     @State private var expanded = true
+    @State private var isDropTarget = false
 
     var body: some View {
         if node.kind == "folder" {
@@ -1005,8 +965,6 @@ private struct NavigatorNodeRow: View {
                                 root: root,
                                 selectedSchemeID: selectedSchemeID,
                                 theme: theme,
-                                isReordering: isReordering,
-                                onBeginReorder: onBeginReorder,
                                 onGoogleCalendar: onGoogleCalendar,
                                 onSelectScheme: onSelectScheme
                             )
@@ -1037,19 +995,19 @@ private struct NavigatorNodeRow: View {
                 .font(.system(size: 13, weight: .medium))
                 .lineLimit(1)
             Spacer(minLength: 0)
-            if isReordering {
-                reorderControls(compact: true)
-            }
         }
         .padding(.horizontal, 6)
         .frame(height: 25)
         .foregroundStyle(theme.textPrimary)
+        .background(isDropTarget ? theme.rowSelected : Color.clear, in: RoundedRectangle(cornerRadius: 4))
         .contentShape(Rectangle())
         .onTapGesture {
-            guard !isReordering else { return }
             expanded.toggle()
         }
-        .simultaneousGesture(rowReorderGesture)
+        .onDrag { NSItemProvider(object: NSString(string: node.id)) }
+        .onDrop(of: [UTType.text], isTargeted: $isDropTarget) { providers, location in
+            handleDrop(providers: providers, location: location, dropInsideFolder: true)
+        }
     }
 
     private func schemeRow(compact: Bool) -> some View {
@@ -1064,89 +1022,71 @@ private struct NavigatorNodeRow: View {
                 .font(.system(size: compact ? 13 : 15, weight: .medium))
                 .lineLimit(1)
             Spacer(minLength: 0)
-            if isReordering {
-                reorderControls(compact: compact)
-            }
         }
         .padding(.horizontal, compact ? 6 : 8)
         .frame(height: compact ? 25 : 34)
         .foregroundStyle(theme.textPrimary)
         .background(selectedSchemeID == node.id ? theme.rowSelected : Color.clear, in: RoundedRectangle(cornerRadius: 4))
+        .overlay(
+            RoundedRectangle(cornerRadius: 4)
+                .stroke(isDropTarget ? theme.accent.opacity(0.55) : Color.clear, lineWidth: 1)
+        )
         .contentShape(Rectangle())
         .onTapGesture {
-            guard !isReordering else { return }
             onSelectScheme(node.id)
         }
-        .simultaneousGesture(rowReorderGesture)
+        .onDrag { NSItemProvider(object: NSString(string: node.id)) }
+        .onDrop(of: [UTType.text], isTargeted: $isDropTarget) { providers, location in
+            handleDrop(providers: providers, location: location, dropInsideFolder: false)
+        }
     }
 
-    private func reorderControls(compact: Bool) -> some View {
-        NodeReorderControls(
-            compact: compact,
-            canPromote: canPromote,
-            canDemote: canDemote,
-            canMoveUp: position > 0,
-            canMoveDown: position < siblingCount - 1,
-            theme: theme,
-            onPromote: promoteNode,
-            onDemote: demoteNode,
-            onMoveUp: moveNodeUp,
-            onMoveDown: moveNodeDown
+    private func handleDrop(providers: [NSItemProvider], location: CGPoint, dropInsideFolder: Bool) -> Bool {
+        guard let provider = providers.first else { return false }
+
+        provider.loadObject(ofClass: NSString.self) { object, _ in
+            let draggedID = (object as? NSString).map(String.init)
+            guard let draggedID else { return }
+
+            DispatchQueue.main.async {
+                moveDraggedNode(draggedID, dropInsideFolder: dropInsideFolder, location: location)
+            }
+        }
+
+        return true
+    }
+
+    private func moveDraggedNode(_ draggedID: String, dropInsideFolder: Bool, location: CGPoint) {
+        guard let draggedNode = findNode(id: draggedID, in: root) else { return }
+        guard draggedID != node.id else { return }
+
+        let placement: (folderID: String, position: Int)
+        if dropInsideFolder && node.kind == "folder" {
+            guard !containsNode(node.id, within: draggedNode) else { return }
+            placement = (node.id, node.children.count)
+        } else {
+            guard !(draggedNode.kind == "folder" && (containsNode(parentFolderID, within: draggedNode) || parentFolderID == draggedID)) else {
+                return
+            }
+
+            let isBeforeDrop = location.y < 12.5
+            var targetPosition = isBeforeDrop ? position : position + 1
+            if let sourcePlacement = findChildPlacement(childID: draggedID, in: root),
+               sourcePlacement.parentID == parentFolderID,
+               sourcePlacement.position < targetPosition {
+                targetPosition -= 1
+            }
+
+            let parentCount = findNode(id: parentFolderID, in: root)?.children.count ?? siblingCount
+            placement = (parentFolderID, max(0, min(targetPosition, parentCount)))
+        }
+
+        model.moveNode(
+            kind: draggedNode.kind == "folder" ? "folder" : "scheme",
+            id: draggedID,
+            folderID: placement.folderID,
+            position: placement.position
         )
-    }
-
-    private func beginReorder() {
-        onBeginReorder()
-        UIImpactFeedbackGenerator(style: .medium).impactOccurred()
-    }
-
-    private var rowReorderGesture: some Gesture {
-        LongPressGesture(minimumDuration: 0.38, maximumDistance: 8)
-            .onEnded { _ in beginReorder() }
-    }
-
-    private func moveNodeUp() {
-        model.moveNode(kind: movableKind, id: node.id, folderID: parentFolderID, position: max(position - 1, 0))
-    }
-
-    private func moveNodeDown() {
-        model.moveNode(kind: movableKind, id: node.id, folderID: parentFolderID, position: min(position + 2, siblingCount))
-    }
-
-    private func promoteNode() {
-        guard let placement = parentPlacement else { return }
-        model.moveNode(kind: movableKind, id: node.id, folderID: placement.parentID, position: placement.position + 1)
-    }
-
-    private func demoteNode() {
-        guard let destination = previousSiblingFolder else { return }
-        model.moveNode(kind: movableKind, id: node.id, folderID: destination.id, position: destination.children.count)
-    }
-
-    private var movableKind: String {
-        node.kind == "folder" ? "folder" : "scheme"
-    }
-
-    private var previousSiblingFolder: MobileNode? {
-        guard position > 0,
-              let parent = findNode(id: parentFolderID, in: root),
-              parent.children.indices.contains(position - 1)
-        else { return nil }
-        let previous = parent.children[position - 1]
-        return previous.kind == "folder" ? previous : nil
-    }
-
-    private var parentPlacement: (parentID: String, position: Int)? {
-        guard parentFolderID != root.id else { return nil }
-        return findChildPlacement(childID: parentFolderID, in: root)
-    }
-
-    private var canPromote: Bool {
-        parentPlacement != nil
-    }
-
-    private var canDemote: Bool {
-        previousSiblingFolder != nil
     }
 }
 
@@ -1194,10 +1134,10 @@ private struct HomeDashboardPane: View {
         GeometryReader { proxy in
             let schemePreviewMaxHeight = max(260, proxy.size.height * 0.50)
             ZStack(alignment: .bottomTrailing) {
-                VStack(alignment: .leading, spacing: 16) {
-                    HomeSchemesSection(
-                        root: snapshot?.root,
-                        dailyEntry: dailyEntry,
+            VStack(alignment: .leading, spacing: 16) {
+                HomeSchemesSection(
+                    root: snapshot?.root,
+                    dailyEntry: dailyEntry,
                         selectedDate: selectedDate,
                         maxHeight: schemePreviewMaxHeight,
                         theme: theme,
@@ -1219,7 +1159,6 @@ private struct HomeDashboardPane: View {
                 }
                 .frame(maxWidth: 720, maxHeight: .infinity, alignment: .topLeading)
                 .padding(14)
-                .padding(.bottom, 92)
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
 
                 HomeQuickWriteButtons(theme: theme, onNewScheme: onNewScheme, onOpenDaily: onOpenDaily)
@@ -1280,7 +1219,7 @@ private struct HomeUpcomingSection: View {
             } else {
                 ScrollView {
                     LazyVStack(spacing: 2) {
-                            ForEach(Array(occurrences.enumerated()), id: \.element.id) { idx, occurrence in
+                        ForEach(Array(occurrences.enumerated()), id: \.element.id) { idx, occurrence in
                             OccurrenceCompactRow(
                                 occurrence: occurrence,
                                 theme: theme,
@@ -1293,7 +1232,7 @@ private struct HomeUpcomingSection: View {
                             }
                         }
                     }
-                    .padding(.bottom, 8)
+                    .padding(.bottom, 92)
                 }
                 .scrollDismissesKeyboard(.never)
             }
@@ -1411,7 +1350,6 @@ private struct HomeSchemesSection: View {
     let onNewScheme: () -> Void
     let onNewFolder: () -> Void
     let onGoogleCalendar: (String?) -> Void
-    @State private var isReorderingNodes = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -1420,34 +1358,20 @@ private struct HomeSchemesSection: View {
                     .font(.system(size: 22, weight: .bold))
                     .foregroundStyle(theme.textPrimary)
                 Spacer(minLength: 0)
-                if isReorderingNodes {
-                    Button {
-                        isReorderingNodes = false
-                    } label: {
-                        Text("Done")
-                            .font(.system(size: 13, weight: .semibold))
-                            .foregroundStyle(theme.textPrimary)
-                            .frame(height: 32)
-                            .padding(.horizontal, 10)
-                            .background(theme.buttonBg, in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+                Menu {
+                    Button("New Scheme", systemImage: "doc.badge.plus", action: onNewScheme)
+                    Button("Folder", systemImage: "folder.badge.plus", action: onNewFolder)
+                    Button("Google Calendar", systemImage: "calendar.badge.plus") {
+                        onGoogleCalendar(nil)
                     }
-                    .buttonStyle(.plain)
-                } else {
-                    Menu {
-                        Button("New Scheme", systemImage: "doc.badge.plus", action: onNewScheme)
-                        Button("Folder", systemImage: "folder.badge.plus", action: onNewFolder)
-                        Button("Google Calendar", systemImage: "calendar.badge.plus") {
-                            onGoogleCalendar(nil)
-                        }
-                    } label: {
-                        Image(systemName: "plus")
-                            .font(.system(size: 15, weight: .bold))
-                            .foregroundStyle(theme.textPrimary)
-                            .frame(width: 32, height: 32)
-                            .background(theme.buttonBg, in: RoundedRectangle(cornerRadius: 7, style: .continuous))
-                    }
-                    .buttonStyle(.plain)
+                } label: {
+                    Image(systemName: "plus")
+                        .font(.system(size: 15, weight: .bold))
+                        .foregroundStyle(theme.textPrimary)
+                        .frame(width: 32, height: 32)
+                        .background(theme.buttonBg, in: RoundedRectangle(cornerRadius: 7, style: .continuous))
                 }
+                .buttonStyle(.plain)
             }
             .padding(.horizontal, 2)
             .padding(.bottom, 3)
@@ -1465,10 +1389,9 @@ private struct HomeSchemesSection: View {
                                     parentFolderID: root.id,
                                     root: root,
                                     theme: theme,
-                                    isReordering: isReorderingNodes,
-                                    onBeginReorder: { isReorderingNodes = true },
                                     onGoogleCalendar: onGoogleCalendar,
-                                    onOpenScheme: onOpenScheme
+                                    onOpenScheme: onOpenScheme,
+                                    leadingInset: 3
                                 )
                             }
                         } else {
@@ -1569,12 +1492,12 @@ private struct HomeSchemeNodeRow: View {
     let parentFolderID: String
     let root: MobileNode
     let theme: KnotQTheme
-    let isReordering: Bool
-    let onBeginReorder: () -> Void
     let onGoogleCalendar: (String?) -> Void
     let onOpenScheme: (String) -> Void
+    let leadingInset: CGFloat
 
     @State private var expanded = true
+    @State private var isDropTarget = false
 
     var body: some View {
         if node.kind == "folder" {
@@ -1598,10 +1521,9 @@ private struct HomeSchemeNodeRow: View {
                                 parentFolderID: node.id,
                                 root: root,
                                 theme: theme,
-                                isReordering: isReordering,
-                                onBeginReorder: onBeginReorder,
                                 onGoogleCalendar: onGoogleCalendar,
-                                onOpenScheme: onOpenScheme
+                                onOpenScheme: onOpenScheme,
+                                leadingInset: leadingInset
                             )
                         }
                     }
@@ -1631,18 +1553,19 @@ private struct HomeSchemeNodeRow: View {
                 .foregroundStyle(theme.textPrimary)
                 .lineLimit(1)
             Spacer(minLength: 0)
-            if isReordering {
-                reorderControls
-            }
         }
-        .padding(.horizontal, 8)
+        .padding(.leading, leadingInset)
+        .padding(.trailing, 8)
         .frame(minHeight: 34)
+        .background(isDropTarget ? theme.rowSelected : Color.clear, in: RoundedRectangle(cornerRadius: 4))
         .contentShape(Rectangle())
         .onTapGesture {
-            guard !isReordering else { return }
             expanded.toggle()
         }
-        .simultaneousGesture(rowReorderGesture)
+        .onDrag { NSItemProvider(object: NSString(string: node.id)) }
+        .onDrop(of: [UTType.text], isTargeted: $isDropTarget) { providers, location in
+            handleDrop(providers: providers, location: location, dropInsideFolder: true)
+        }
     }
 
     private var schemeRow: some View {
@@ -1658,91 +1581,69 @@ private struct HomeSchemeNodeRow: View {
                 .foregroundStyle(theme.textPrimary)
                 .lineLimit(1)
             Spacer(minLength: 0)
-            if isReordering {
-                reorderControls
-            } else {
-                Image(systemName: "chevron.right")
-                    .font(.system(size: 10, weight: .bold))
-                    .foregroundStyle(theme.textMuted)
-            }
+            Image(systemName: "chevron.right")
+                .font(.system(size: 10, weight: .bold))
+                .foregroundStyle(theme.textMuted)
         }
-        .padding(.horizontal, 8)
+        .padding(.leading, leadingInset)
+        .padding(.trailing, 8)
         .frame(minHeight: 34)
         .contentShape(Rectangle())
         .onTapGesture {
-            guard !isReordering else { return }
             onOpenScheme(node.id)
         }
-        .simultaneousGesture(rowReorderGesture)
+        .onDrag { NSItemProvider(object: NSString(string: node.id)) }
+        .onDrop(of: [UTType.text], isTargeted: $isDropTarget) { providers, location in
+            handleDrop(providers: providers, location: location, dropInsideFolder: false)
+        }
     }
 
-    private var reorderControls: some View {
-        NodeReorderControls(
-            compact: false,
-            canPromote: canPromote,
-            canDemote: canDemote,
-            canMoveUp: position > 0,
-            canMoveDown: position < siblingCount - 1,
-            theme: theme,
-            onPromote: promoteNode,
-            onDemote: demoteNode,
-            onMoveUp: moveNodeUp,
-            onMoveDown: moveNodeDown
+    private func handleDrop(providers: [NSItemProvider], location: CGPoint, dropInsideFolder: Bool) -> Bool {
+        guard let provider = providers.first else { return false }
+
+        provider.loadObject(ofClass: NSString.self) { object, _ in
+            let draggedID = (object as? NSString).map(String.init)
+            guard let draggedID else { return }
+
+            DispatchQueue.main.async {
+                moveDraggedNode(draggedID, dropInsideFolder: dropInsideFolder, location: location)
+            }
+        }
+
+        return true
+    }
+
+    private func moveDraggedNode(_ draggedID: String, dropInsideFolder: Bool, location: CGPoint) {
+        guard let draggedNode = findNode(id: draggedID, in: root) else { return }
+        guard draggedID != node.id else { return }
+
+        let placement: (folderID: String, position: Int)
+        if dropInsideFolder && node.kind == "folder" {
+            guard !containsNode(node.id, within: draggedNode) else { return }
+            placement = (node.id, node.children.count)
+        } else {
+            guard !(draggedNode.kind == "folder" && (containsNode(parentFolderID, within: draggedNode) || parentFolderID == draggedID)) else {
+                return
+            }
+
+            let isBeforeDrop = location.y < 17
+            var targetPosition = isBeforeDrop ? position : position + 1
+            if let sourcePlacement = findChildPlacement(childID: draggedID, in: root),
+               sourcePlacement.parentID == parentFolderID,
+               sourcePlacement.position < targetPosition {
+                targetPosition -= 1
+            }
+
+            let parentCount = findNode(id: parentFolderID, in: root)?.children.count ?? siblingCount
+            placement = (parentFolderID, max(0, min(targetPosition, parentCount)))
+        }
+
+        model.moveNode(
+            kind: draggedNode.kind == "folder" ? "folder" : "scheme",
+            id: draggedID,
+            folderID: placement.folderID,
+            position: placement.position
         )
-    }
-
-    private func beginReorder() {
-        onBeginReorder()
-        UIImpactFeedbackGenerator(style: .medium).impactOccurred()
-    }
-
-    private var rowReorderGesture: some Gesture {
-        LongPressGesture(minimumDuration: 0.38, maximumDistance: 8)
-            .onEnded { _ in beginReorder() }
-    }
-
-    private func moveNodeUp() {
-        model.moveNode(kind: movableKind, id: node.id, folderID: parentFolderID, position: max(position - 1, 0))
-    }
-
-    private func moveNodeDown() {
-        model.moveNode(kind: movableKind, id: node.id, folderID: parentFolderID, position: min(position + 2, siblingCount))
-    }
-
-    private func promoteNode() {
-        guard let placement = parentPlacement else { return }
-        model.moveNode(kind: movableKind, id: node.id, folderID: placement.parentID, position: placement.position + 1)
-    }
-
-    private func demoteNode() {
-        guard let destination = previousSiblingFolder else { return }
-        model.moveNode(kind: movableKind, id: node.id, folderID: destination.id, position: destination.children.count)
-    }
-
-    private var movableKind: String {
-        node.kind == "folder" ? "folder" : "scheme"
-    }
-
-    private var previousSiblingFolder: MobileNode? {
-        guard position > 0,
-              let parent = findNode(id: parentFolderID, in: root),
-              parent.children.indices.contains(position - 1)
-        else { return nil }
-        let previous = parent.children[position - 1]
-        return previous.kind == "folder" ? previous : nil
-    }
-
-    private var parentPlacement: (parentID: String, position: Int)? {
-        guard parentFolderID != root.id else { return nil }
-        return findChildPlacement(childID: parentFolderID, in: root)
-    }
-
-    private var canPromote: Bool {
-        parentPlacement != nil
-    }
-
-    private var canDemote: Bool {
-        previousSiblingFolder != nil
     }
 }
 
