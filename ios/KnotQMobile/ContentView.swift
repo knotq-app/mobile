@@ -166,6 +166,7 @@ struct ContentView: View {
                     )
                     .padding(.horizontal, 20)
                     .padding(.bottom, 6)
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
                 }
             }
             .background(theme.bgApp.ignoresSafeArea())
@@ -192,10 +193,10 @@ struct ContentView: View {
             }
         }
         .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillShowNotification)) { _ in
-            keyboardVisible = true
+            withAnimation(.easeOut(duration: 0.24)) { keyboardVisible = true }
         }
         .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillHideNotification)) { _ in
-            keyboardVisible = false
+            withAnimation(.easeOut(duration: 0.24)) { keyboardVisible = false }
         }
         .sheet(item: $addItemTarget) { target in
             AddItemSheet(schemeID: target.id)
@@ -299,6 +300,9 @@ struct ContentView: View {
                     onTapTitle: { showingMonthView = true },
                     isCreatingEvent: isCreatingEventDraft
                 )
+                // Extend the timeline to the screen's bottom edge so it scrolls
+                // all the way down with no leftover safe-area lip.
+                .ignoresSafeArea(.container, edges: .bottom)
             }
         case .scheme:
             if let selectedScheme {
@@ -329,7 +333,7 @@ struct ContentView: View {
                 }
             )
         case .search:
-            DesktopSearchPane(theme: theme, onOpenScheme: selectScheme)
+            DesktopSearchPane(theme: theme, keyboardVisible: keyboardVisible, onOpenScheme: selectScheme)
         case .settings:
             DesktopSettingsPane(theme: theme)
         }

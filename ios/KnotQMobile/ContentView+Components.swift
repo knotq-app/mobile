@@ -487,10 +487,14 @@ struct HomeDashboardPane: View {
 
                 HomeQuickWriteButtons(theme: theme, onNewScheme: onNewScheme, onOpenDaily: onOpenDaily)
                     .padding(.trailing, 22)
-                    .padding(.bottom, 92)
+                    // Pane now extends under the home indicator; lift the buttons
+                    // back up so they clear the floating dock and bottom edge.
+                    .padding(.bottom, 120)
             }
             .background(theme.bgApp)
         }
+        // Fill the bottom safe-area lip so content scrolls to the screen edge.
+        .ignoresSafeArea(.container, edges: .bottom)
     }
 
     private var selectedDateKey: String {
@@ -2202,6 +2206,7 @@ final class DayTimelineUIKitView: UIView, UIGestureRecognizerDelegate, UIScrollV
         let dayLabel = UILabel()
         let rangeBackground = UIView()
         var date = Date()
+        var isTodayCell = false { didSet { setNeedsLayout() } }
 
         override init(frame: CGRect) {
             super.init(frame: frame)
@@ -2223,7 +2228,14 @@ final class DayTimelineUIKitView: UIView, UIGestureRecognizerDelegate, UIScrollV
         override func layoutSubviews() {
             super.layoutSubviews()
             weekdayLabel.frame = CGRect(x: 0, y: 3, width: bounds.width, height: 14)
-            rangeBackground.frame = CGRect(x: 5, y: 23, width: max(0, bounds.width - 10), height: 34)
+            // Today is a compact circle (matching the month grid); a visible-day
+            // pill spans the cell width.
+            if isTodayCell {
+                let diameter: CGFloat = 34
+                rangeBackground.frame = CGRect(x: (bounds.width - diameter) / 2, y: 23, width: diameter, height: diameter)
+            } else {
+                rangeBackground.frame = CGRect(x: 5, y: 23, width: max(0, bounds.width - 10), height: 34)
+            }
             rangeBackground.layer.cornerRadius = 17
             rangeBackground.layer.cornerCurve = .continuous
             dayLabel.frame = CGRect(x: 0, y: 23, width: bounds.width, height: 34)
@@ -2486,6 +2498,9 @@ final class DayTimelineUIKitView: UIView, UIGestureRecognizerDelegate, UIScrollV
         separator.isUserInteractionEnabled = false
         scrollView.alwaysBounceVertical = true
         scrollView.showsHorizontalScrollIndicator = false
+        // The pane extends under the home indicator; manage insets manually so
+        // the timeline scrolls all the way to the bottom edge (no auto lip).
+        scrollView.contentInsetAdjustmentBehavior = .never
         scrollView.delegate = self
         dayClip.clipsToBounds = true
         draftView.isHidden = true
@@ -2546,7 +2561,7 @@ final class DayTimelineUIKitView: UIView, UIGestureRecognizerDelegate, UIScrollV
         backgroundColor = UIColor(theme.bgApp)
         titleLabel.textColor = UIColor(theme.textPrimary)
         titleChevron.tintColor = UIColor(theme.textMuted)
-        titleBackdrop.layer.borderColor = UIColor(theme.borderOverlay).cgColor
+        titleBackdrop.layer.borderColor = UIColor(theme.dividerSoft).cgColor
         separator.backgroundColor = UIColor(theme.dividerSoft)
         setNeedsLayout()
         renderAllIfReady()
@@ -2620,13 +2635,24 @@ final class DayTimelineUIKitView: UIView, UIGestureRecognizerDelegate, UIScrollV
             cell.date = date
             cell.weekdayLabel.text = weekdayInitial(date)
             cell.dayLabel.text = dayNumber(date)
-            cell.weekdayLabel.textColor = isToday(date) || visibleDayKeys().contains(AppModel.dateOnly(date))
+            // Cohesive accent treatment matching the month grid: today is a
+            // filled accent circle, visible days get a soft accent pill.
+            let todayCell = isToday(date)
+            let visibleCell = visibleDayKeys().contains(AppModel.dateOnly(date))
+            cell.isTodayCell = todayCell
+            cell.weekdayLabel.textColor = (todayCell || visibleCell)
                 ? UIColor(theme.textPrimary)
                 : UIColor(theme.textMuted)
-            cell.dayLabel.textColor = isToday(date) ? UIColor(theme.accent) : UIColor(theme.textPrimary)
-            cell.rangeBackground.backgroundColor = visibleDayKeys().contains(AppModel.dateOnly(date))
-                ? (theme.isDark ? UIColor.white.withAlphaComponent(0.09) : UIColor(hex: 0x3f6fd5).withAlphaComponent(0.08))
-                : .clear
+            if todayCell {
+                cell.rangeBackground.backgroundColor = UIColor(theme.accent)
+                cell.dayLabel.textColor = theme.isDark ? .black : .white
+            } else if visibleCell {
+                cell.rangeBackground.backgroundColor = UIColor(theme.accent).withAlphaComponent(theme.isDark ? 0.16 : 0.12)
+                cell.dayLabel.textColor = UIColor(theme.textPrimary)
+            } else {
+                cell.rangeBackground.backgroundColor = .clear
+                cell.dayLabel.textColor = UIColor(theme.textPrimary)
+            }
             cell.addTarget(self, action: #selector(handleWeekdayTap(_:)), for: .touchUpInside)
             weekStrip.addSubview(cell)
         }
@@ -2688,9 +2714,10 @@ final class DayTimelineUIKitView: UIView, UIGestureRecognizerDelegate, UIScrollV
             label.textColor = UIColor(theme.textMuted)
             timeGutter.addSubview(label)
         }
+        // Match the soft grid lines so the gutter edge doesn't stand out.
         let divider = CALayer()
         divider.name = Self.gutterDecorationLayerName
-        divider.backgroundColor = UIColor(theme.divider).cgColor
+        divider.backgroundColor = UIColor(theme.dividerSoft).cgColor
         divider.frame = CGRect(x: Self.gutterWidth - 0.75, y: 0, width: 0.75, height: Self.timelineHeight)
         timeGutter.layer.addSublayer(divider)
     }
@@ -3733,18 +3760,9 @@ struct DailyFeedPane: View {
                     }
             }
         }
-        .background(theme.bgApp)
+        .background(theme.bgApp.ignoresSafeArea())
         .navigationTitle(usesNativeNavigation ? "Daily" : "")
         .navigationBarTitleDisplayMode(.inline)
-        .toolbar {
-            if usesNativeNavigation {
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button(action: onAdd) {
-                        Image(systemName: "plus")
-                    }
-                }
-            }
-        }
     }
 
     private var selectedDateKey: String {
@@ -3801,11 +3819,6 @@ struct DailyEditorNavigationBar: View {
                 .foregroundStyle(theme.textPrimary)
 
             Spacer()
-
-            Button(action: onAdd) {
-                Image(systemName: "plus")
-            }
-            .buttonStyle(TitleIconButton(theme: theme))
         }
         .padding(.horizontal, 12)
         .frame(height: 50)
@@ -3998,6 +4011,7 @@ struct DesktopItemRow: View {
 struct DesktopSearchPane: View {
     @EnvironmentObject private var model: AppModel
     let theme: KnotQTheme
+    var keyboardVisible: Bool = false
     let onOpenScheme: (String) -> Void
     @State private var query = ""
     @FocusState private var searchFocused: Bool
@@ -4079,7 +4093,10 @@ struct DesktopSearchPane: View {
             .overlay { RoundedRectangle(cornerRadius: 13).stroke(theme.borderOverlay, lineWidth: 1) }
             .padding(.horizontal, 12)
             .padding(.top, 6)
-            .padding(.bottom, searchFocused ? 8 : 84)
+            // Driven by the real keyboard state (same signal as the dock) so the
+            // bar and dock shift together: snug above the keyboard when open,
+            // clearing the floating dock when closed.
+            .padding(.bottom, keyboardVisible ? 8 : 84)
             .offset(y: max(0, searchBarDragOffset))
             .simultaneousGesture(
                 DragGesture(minimumDistance: 10)

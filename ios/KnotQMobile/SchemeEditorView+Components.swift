@@ -1092,13 +1092,34 @@ private final class EditorTextView: UITextView {
 
     override func caretRect(for position: UITextPosition) -> CGRect {
         var rect = super.caretRect(for: position)
-        let maxHeight = DesktopEditorMetrics.textLineHeight
-        if rect.height > maxHeight {
-            rect.origin.y += (rect.height - maxHeight) / 2
-            rect.size.height = maxHeight
+        // Image/annotation space is reserved *below* the text (as line spacing
+        // after the glyph), which inflates the line fragment. Clamp the caret to
+        // the line's text height and keep it pinned to the top of the fragment —
+        // sitting on the text — instead of stretching down into the image or
+        // centering in the gap. Headings keep their taller caret.
+        let offset = offset(from: beginningOfDocument, to: position)
+        let textHeight = caretLineIsHeading(at: offset)
+            ? DesktopEditorMetrics.headingLineHeight
+            : DesktopEditorMetrics.textLineHeight
+        if rect.height > textHeight {
+            rect.size.height = textHeight
         }
-        rect.size.width = max(2, min(rect.width, 2))
+        rect.size.width = 2
         return rect
+    }
+
+    /// A line is a heading when its run carries the enlarged heading font.
+    /// Probe both sides of the caret so it is detected at either line edge.
+    private func caretLineIsHeading(at offset: Int) -> Bool {
+        let length = textStorage.length
+        guard length > 0 else { return false }
+        for probe in [offset, offset - 1] where probe >= 0 && probe < length {
+            if let font = textStorage.attribute(.font, at: probe, effectiveRange: nil) as? UIFont,
+               font.pointSize >= DesktopEditorMetrics.headingFontSize - 0.5 {
+                return true
+            }
+        }
+        return false
     }
 
     func configureTitle(title: String, theme: KnotQTheme, editable: Bool, validator: @escaping (String) -> String?, onCommit: @escaping (String) -> Void) {
