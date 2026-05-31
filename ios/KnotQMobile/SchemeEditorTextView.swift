@@ -1,0 +1,800 @@
+import SwiftUI
+import UIKit
+
+// MARK: - Theme helpers
+
+private extension KnotQTheme {
+    var editorChromeColor: UIColor {
+        UIColor(hex: isDark ? 0xb8c9e8 : 0x536a8f)
+    }
+}
+
+
+private final class EditorInlineTitleView: UIView, UITextFieldDelegate {
+    private let textField = UITextField()
+    private let errorLabel = UILabel()
+    private var committedTitle = ""
+    private var validator: ((String) -> String?)?
+    private var onCommit: ((String) -> Void)?
+    private var normalTintColor: UIColor = .systemBlue
+    private var errorTintColor: UIColor = .systemRed
+
+    override init(frame: CGRect) {
+        super.init(frame: frame)
+        backgroundColor = .clear
+
+        textField.borderStyle = .none
+        textField.font = .systemFont(ofSize: DesktopEditorMetrics.titleFontSize, weight: .bold)
+        textField.returnKeyType = .done
+        textField.enablesReturnKeyAutomatically = false
+        textField.clearButtonMode = .never
+        textField.autocorrectionType = .no
+        textField.smartDashesType = .no
+        textField.smartQuotesType = .no
+        textField.delegate = self
+        textField.addTarget(self, action: #selector(textDidChange), for: .editingChanged)
+        addSubview(textField)
+
+        errorLabel.font = .systemFont(ofSize: 11, weight: .medium)
+        errorLabel.numberOfLines = 1
+        addSubview(errorLabel)
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
+
+    func configure(title: String, theme: KnotQTheme, editable: Bool, validator: @escaping (String) -> String?, onCommit: @escaping (String) -> Void) {
+        self.validator = validator
+        self.onCommit = onCommit
+        textField.textColor = UIColor(theme.textPrimary)
+        normalTintColor = UIColor(theme.accent)
+        errorTintColor = UIColor(theme.danger)
+        errorLabel.textColor = errorTintColor
+        textField.isUserInteractionEnabled = editable
+        if !textField.isFirstResponder {
+            committedTitle = title
+            textField.text = title
+        }
+        if !editable, textField.isFirstResponder {
+            textField.resignFirstResponder()
+        }
+        updateError()
+    }
+
+    func focusAndSelectTitle() {
+        guard textField.isUserInteractionEnabled else { return }
+        textField.becomeFirstResponder()
+        textField.selectAll(nil)
+    }
+
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        textField.frame = CGRect(x: 0, y: 0, width: bounds.width, height: DesktopEditorMetrics.titleLineHeight)
+        errorLabel.frame = CGRect(x: 0, y: DesktopEditorMetrics.titleLineHeight - 1, width: bounds.width, height: 13)
+    }
+
+    @objc private func textDidChange() {
+        updateError()
+    }
+
+    func textFieldShouldReturn(_ textField: UITextField) -> Bool {
+        commitTitle()
+        textField.resignFirstResponder()
+        return true
+    }
+
+    func textFieldDidEndEditing(_ textField: UITextField) {
+        commitTitle()
+    }
+
+    private func commitTitle() {
+        let draft = textField.text ?? ""
+        let validationError = validator?(draft)
+        updateError(validationError)
+        guard validationError == nil, draft != committedTitle else { return }
+        committedTitle = draft
+        onCommit?(draft)
+    }
+
+    private func updateError(_ validationError: String? = nil) {
+        let error = validationError ?? validator?(textField.text ?? "")
+        errorLabel.text = error
+        errorLabel.isHidden = error == nil
+        textField.tintColor = error == nil ? normalTintColor : errorTintColor
+    }
+}
+
+final class EditorTextView: UITextView {
+    var theme: KnotQTheme = .dark { didSet { setNeedsDisplay() } }
+    var accentColor: UIColor = .systemBlue { didSet { setNeedsDisplay() } }
+    weak var coordinator: EditorCoordinator?
+
+    private let inlineTitleView = EditorInlineTitleView()
+    private let editorLayoutManager: EditorLayoutManager
+    private var imageCache: [String: UIImage] = [:]
+
+    init() {
+        let textStorage = NSTextStorage()
+        let layoutManager = EditorLayoutManager()
+        let textContainer = NSTextContainer(size: .zero)
+        textContainer.widthTracksTextView = true
+        textContainer.heightTracksTextView = false
+        layoutManager.addTextContainer(textContainer)
+        textStorage.addLayoutManager(layoutManager)
+        editorLayoutManager = layoutManager
+        super.init(frame: .zero, textContainer: textContainer)
+        layoutManager.editorTextView = self
+        addSubview(inlineTitleView)
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
+
+    private var lastIntrinsicWidth: CGFloat = 0
+
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        layoutInlineTitleView()
+        // With scrolling disabled (Daily feed), recompute intrinsic height after
+        // the parent grants a width — otherwise wrapping is calculated against
+        // an unbounded container and the text never breaks.
+        if !isScrollEnabled, bounds.width != lastIntrinsicWidth {
+            lastIntrinsicWidth = bounds.width
+            invalidateIntrinsicContentSize()
+        }
+    }
+
+    override var intrinsicContentSize: CGSize {
+        guard !isScrollEnabled else { return super.intrinsicContentSize }
+        let width = bounds.width > 0 ? bounds.width : UIScreen.main.bounds.width
+        let fitted = sizeThatFits(CGSize(width: width, height: .greatestFiniteMagnitude))
+        // Defer width to the parent layout; only height is meaningful here.
+        return CGSize(width: UIView.noIntrinsicMetric, height: fitted.height)
+    }
+
+    override func caretRect(for position: UITextPosition) -> CGRect {
+        var rect = super.caretRect(for: position)
+        // Image/annotation space is reserved *below* the text (as line spacing
+        // after the glyph), which inflates the line fragment. Clamp the caret to
+        // the line's text height and keep it pinned to the top of the fragment —
+        // sitting on the text — instead of stretching down into the image or
+        // centering in the gap. Headings keep their taller caret.
+        let offset = offset(from: beginningOfDocument, to: position)
+        let textHeight = caretLineIsHeading(at: offset)
+            ? DesktopEditorMetrics.headingLineHeight
+            : DesktopEditorMetrics.textLineHeight
+        if rect.height > textHeight {
+            rect.size.height = textHeight
+        }
+        rect.size.width = 2
+        return rect
+    }
+
+    /// A line is a heading when its run carries the enlarged heading font.
+    /// Probe both sides of the caret so it is detected at either line edge.
+    private func caretLineIsHeading(at offset: Int) -> Bool {
+        let length = textStorage.length
+        guard length > 0 else { return false }
+        for probe in [offset, offset - 1] where probe >= 0 && probe < length {
+            if let font = textStorage.attribute(.font, at: probe, effectiveRange: nil) as? UIFont,
+               font.pointSize >= DesktopEditorMetrics.headingFontSize - 0.5 {
+                return true
+            }
+        }
+        return false
+    }
+
+    func configureTitle(title: String, theme: KnotQTheme, editable: Bool, validator: @escaping (String) -> String?, onCommit: @escaping (String) -> Void) {
+        inlineTitleView.configure(title: title, theme: theme, editable: editable, validator: validator, onCommit: onCommit)
+        setNeedsLayout()
+    }
+
+    func focusTitle() {
+        inlineTitleView.focusAndSelectTitle()
+    }
+
+    private func layoutInlineTitleView() {
+        let left = max(18, textContainerInset.left)
+        let right = max(18, textContainerInset.right)
+        let top = max(0, textContainerInset.top - DesktopEditorMetrics.titleBlockHeight + 4)
+        inlineTitleView.frame = CGRect(
+            x: left,
+            y: top,
+            width: max(0, bounds.width - left - right),
+            height: DesktopEditorMetrics.titleBlockHeight
+        )
+    }
+
+    func loadItems(_ items: [MobileItem], theme: KnotQTheme, timeFormat: String, placeCursorAtEnd: Bool) {
+        let savedSelection = selectedRange
+        self.theme = theme
+        coordinator?.suppress {
+            let attributed = buildAttributedString(items: items, theme: theme, timeFormat: timeFormat)
+            textStorage.setAttributedString(attributed)
+            ensureWellFormed(textStorage, theme: theme)
+        }
+        let length = textStorage.length
+        // I3: caret never past length - 1 (the trailing "\n").
+        let targetLocation = placeCursorAtEnd
+            ? max(0, length - 1)
+            : clampedCaret(savedSelection.location, in: textStorage)
+        selectedRange = NSRange(location: targetLocation, length: 0)
+        typingAttributes = EditorAttributes.bodyAttributes(
+            meta: lineMeta(at: targetLocation, in: textStorage),
+            theme: theme
+        )
+        layoutManager.ensureLayout(for: textContainer)
+        if placeCursorAtEnd {
+            scrollRangeToVisible(NSRange(location: targetLocation, length: 0))
+            // On first open the text view often has no real bounds yet, so the
+            // initial scroll lands nowhere. Re-scroll to the end once layout has
+            // settled so we reliably open at the very bottom of the document.
+            DispatchQueue.main.async { [weak self] in
+                guard let self else { return }
+                self.scrollRangeToVisible(NSRange(location: max(0, self.textStorage.length - 1), length: 0))
+            }
+        }
+        setNeedsDisplay()
+        coordinator?.markClean()
+    }
+
+    func extractItemEdits() -> [MobileItemEdit] {
+        coordinator?.suppress {
+            textStorage.beginEditing()
+            ensureWellFormed(textStorage, theme: theme)
+            textStorage.endEditing()
+        }
+        return extractEdits(from: textStorage)
+    }
+
+    func isEffectivelyEmpty() -> Bool {
+        // With invariant I1, "empty" = one paragraph (the trailing "\n") with
+        // blank marker and zero indent.
+        let ns = textStorage.string as NSString
+        let paragraphs = paragraphRanges(in: ns)
+        guard paragraphs.count <= 1 else { return false }
+        guard let only = paragraphs.first else { return true }
+        let body = bodyText(paragraphRange: only.fullRange, in: textStorage)
+        let m = lineMeta(at: only.fullRange.location, in: textStorage)
+        return body.isEmpty && m.marker == .blank && m.indent == 0 && m.annotation == nil
+    }
+
+    func appendTaskLine(theme: KnotQTheme) {
+        let storage = textStorage
+        let meta = LineMeta(marker: .checkbox)
+        let attrs = EditorAttributes.bodyAttributes(meta: meta, theme: theme)
+        var lineStart = storage.length
+        coordinator?.suppress {
+            storage.beginEditing()
+            ensureWellFormed(storage, theme: theme)
+            // Append a new line just before the final trailing "\n" so it lives
+            // as its own paragraph with the new marker.
+            lineStart = storage.length
+            storage.replaceCharacters(
+                in: NSRange(location: storage.length, length: 0),
+                with: NSAttributedString(string: "\n", attributes: attrs)
+            )
+            let para = editableParagraphRange(in: storage.string as NSString, at: lineStart)
+            setLineMeta(meta, onParagraph: para, in: storage, theme: theme)
+            storage.endEditing()
+        }
+        selectedRange = NSRange(location: lineStart, length: 0)
+        typingAttributes = attrs
+        coordinator?.markDirty()
+        if !isFirstResponder {
+            becomeFirstResponder()
+        }
+        setNeedsDisplay()
+    }
+
+    func currentLineItemID() -> String? {
+        lineMeta(at: clampedCaret(selectedRange.location, in: textStorage), in: textStorage).itemID
+    }
+
+    func setCurrentMarker(_ marker: Marker, theme: KnotQTheme) {
+        let para = editableParagraphRange(in: textStorage.string as NSString, at: selectedRange.location)
+        let old = lineMeta(at: para.location, in: textStorage)
+        let newDone = (marker == .checkbox && old.marker == .checkbox) ? !old.done : false
+        let new = LineMeta(
+            marker: marker,
+            indent: old.indent,
+            done: newDone,
+            itemID: old.itemID,
+            annotation: marker == .checkbox ? old.annotation : nil,
+            media: old.media
+        )
+        applyMeta(new, paragraphRange: para, theme: theme)
+    }
+
+    func shiftCurrentIndent(_ delta: Int, theme: KnotQTheme) {
+        let para = editableParagraphRange(in: textStorage.string as NSString, at: selectedRange.location)
+        let old = lineMeta(at: para.location, in: textStorage)
+        let new = old.with(indent: max(0, min(8, old.indent + delta)))
+        applyMeta(new, paragraphRange: para, theme: theme)
+    }
+
+    func toggleWrappedMarkdown(_ delimiter: String, theme: KnotQTheme) {
+        let ns = textStorage.string as NSString
+        let target: NSRange
+        if selectedRange.length > 0 {
+            target = selectedRange
+        } else {
+            let para = editableParagraphRange(in: ns, at: selectedRange.location)
+            target = lineRange(from: para, in: ns)
+        }
+        guard target.location <= ns.length, NSMaxRange(target) <= ns.length else { return }
+        let selected = target.length > 0 ? ns.substring(with: target) : ""
+        let dlen = delimiter.count
+        let wasWrapped = selected.count >= dlen * 2
+            && selected.hasPrefix(delimiter)
+            && selected.hasSuffix(delimiter)
+        let replacement = wasWrapped
+            ? String(selected.dropFirst(dlen).dropLast(dlen))
+            : "\(delimiter)\(selected)\(delimiter)"
+        let meta = lineMeta(at: target.location, in: textStorage)
+        let attrs = EditorAttributes.bodyAttributes(meta: meta, theme: theme)
+        textStorage.replaceCharacters(
+            in: target,
+            with: NSAttributedString(string: replacement, attributes: attrs)
+        )
+        let newLength = (replacement as NSString).length
+        let caret: NSRange
+        if selectedRange.length > 0 {
+            caret = NSRange(location: target.location, length: newLength)
+        } else if !wasWrapped {
+            caret = NSRange(location: target.location + (delimiter as NSString).length, length: 0)
+        } else {
+            caret = NSRange(location: target.location + newLength, length: 0)
+        }
+        selectedRange = caret
+        coordinator?.markDirty()
+        setNeedsDisplay()
+    }
+
+    func toggleHeading(theme: KnotQTheme) {
+        let ns = textStorage.string as NSString
+        let para = editableParagraphRange(in: ns, at: selectedRange.location)
+        let lineText = bodyText(paragraphRange: para, in: textStorage)
+        let leading = lineText.prefix { $0 == " " || $0 == "\t" }
+        let afterLeading = String(lineText.dropFirst(leading.count))
+        let hashes = afterLeading.prefix { $0 == "#" }.count
+        let isHeading: Bool = {
+            guard hashes > 0 else { return false }
+            if afterLeading.count == hashes { return true }
+            let idx = afterLeading.index(afterLeading.startIndex, offsetBy: hashes)
+            return afterLeading[idx].isWhitespace
+        }()
+        let meta = lineMeta(at: para.location, in: textStorage)
+        let attrs = EditorAttributes.bodyAttributes(meta: meta, theme: theme)
+        let savedSelection = selectedRange
+        let leadingLen = (leading as NSString).length
+        if isHeading {
+            var removeLen = hashes
+            let nsAfter = afterLeading as NSString
+            if nsAfter.length > hashes {
+                let ch = nsAfter.character(at: hashes)
+                if ch == 32 || ch == 9 { removeLen += 1 }
+            }
+            textStorage.replaceCharacters(
+                in: NSRange(location: para.location + leadingLen, length: removeLen),
+                with: NSAttributedString(string: "", attributes: attrs)
+            )
+            selectedRange = NSRange(
+                location: max(para.location, savedSelection.location - removeLen),
+                length: savedSelection.length
+            )
+        } else {
+            let insertion = "# "
+            textStorage.replaceCharacters(
+                in: NSRange(location: para.location + leadingLen, length: 0),
+                with: NSAttributedString(string: insertion, attributes: attrs)
+            )
+            selectedRange = NSRange(
+                location: savedSelection.location + (insertion as NSString).length,
+                length: savedSelection.length
+            )
+        }
+        coordinator?.markDirty()
+        setNeedsDisplay()
+    }
+
+    /// Single internal entry point used by every "change just the meta" action
+    /// (set marker, shift indent, toggle checkbox). Suppresses the textStorage
+    /// delegate because we already maintain the invariants here.
+    private func applyMeta(_ meta: LineMeta, paragraphRange: NSRange, theme: KnotQTheme) {
+        coordinator?.suppress {
+            textStorage.beginEditing()
+            setLineMeta(meta, onParagraph: paragraphRange, in: textStorage, theme: theme)
+            textStorage.endEditing()
+        }
+        typingAttributes = EditorAttributes.bodyAttributes(meta: meta, theme: theme)
+        coordinator?.markDirty()
+        coordinator?.refreshToolbarActiveMarker(in: self)
+        setNeedsDisplay()
+    }
+
+    @discardableResult
+    func toggleCheckboxAt(point: CGPoint) -> Bool {
+        let ns = textStorage.string as NSString
+        guard let lineRange = checkboxLineRange(at: point) else { return false }
+        let para = ns.paragraphRange(for: lineRange)
+        let old = lineMeta(at: para.location, in: textStorage)
+        applyMeta(old.with(done: !old.done), paragraphRange: para, theme: theme)
+        return true
+    }
+
+    func checkboxLineRange(at point: CGPoint) -> NSRange? {
+        let ns = textStorage.string as NSString
+        let origin = CGPoint(x: textContainerInset.left, y: textContainerInset.top)
+        for paragraph in paragraphRanges(in: ns) {
+            let characterRange = paragraph.lineRange.length > 0 ? paragraph.lineRange : paragraph.fullRange
+            guard characterRange.length > 0 else { continue }
+            let glyphRange = self.layoutManager.glyphRange(forCharacterRange: characterRange, actualCharacterRange: nil)
+            guard self.layoutManager.numberOfGlyphs > 0, glyphRange.location < self.layoutManager.numberOfGlyphs else { continue }
+            let fragment = self.layoutManager.lineFragmentUsedRect(forGlyphAt: glyphRange.location, effectiveRange: nil).offsetBy(dx: origin.x, dy: origin.y)
+            let meta = metaForLine(storage: self.textStorage, lineRange: paragraph.lineRange)
+            guard meta.marker == .checkbox else { continue }
+            let rect = self.markerRect(for: meta, fragment: fragment).insetBy(dx: -8, dy: -8)
+            if rect.contains(point) {
+                return paragraph.lineRange
+            }
+        }
+        return nil
+    }
+
+    fileprivate func drawChrome(forGlyphRange glyphsToShow: NSRange, at origin: CGPoint) {
+        guard let context = UIGraphicsGetCurrentContext() else { return }
+        let storage = textStorage
+        let ns = storage.string as NSString
+        let paragraphs = paragraphRanges(in: ns)
+        let metas: [LineMeta] = paragraphs.map { lineMeta(at: $0.fullRange.location, in: storage) }
+        for index in paragraphs.indices {
+            let paragraph = paragraphs[index]
+            guard let geometry = paragraphGeometry(for: paragraph, origin: origin) else { continue }
+            let glyphRange = geometry.glyphRange
+            guard NSIntersectionRange(glyphRange, glyphsToShow).length > 0 else { continue }
+            let firstFragment = geometry.fragments[0]
+            let visualBounds = geometry.bounds
+            let meta = metas[index]
+            let previousMeta = index > 0 ? metas[index - 1] : nil
+            let nextMeta = index + 1 < metas.count ? metas[index + 1] : nil
+            let previousAnnotated = previousMeta?.annotation != nil
+            let nextAnnotated = nextMeta?.annotation != nil
+            let mediaExtraHeight = mediaStackHeight(meta.media, maxWidth: editorImageMaxWidth(textLeft: firstFragment.minX))
+            let rowExtraHeight = (meta.annotation == nil ? CGFloat(0) : DesktopEditorMetrics.annotationHeight) + mediaExtraHeight
+            let ordinal = meta.marker == .numbered ? numberedOrdinal(at: index, in: metas) : 1
+            drawIndentGuides(
+                meta: meta, previousMeta: previousMeta, nextMeta: nextMeta,
+                firstFragment: firstFragment, visualBounds: visualBounds,
+                rowExtraHeight: rowExtraHeight, context: context
+            )
+            drawMarker(meta: meta, ordinal: ordinal, fragment: firstFragment, context: context)
+            if let annotation = meta.annotation {
+                drawAnnotationBar(meta: meta, firstFragment: firstFragment, visualBounds: visualBounds, rowExtraHeight: rowExtraHeight, connectsToPrevious: previousAnnotated, connectsToNext: nextAnnotated, context: context)
+                drawAnnotation(annotation, meta: meta, visualBounds: visualBounds, context: context)
+            }
+            if !meta.media.isEmpty {
+                drawMediaStack(meta.media, meta: meta, firstFragment: firstFragment, visualBounds: visualBounds, context: context)
+            }
+        }
+    }
+
+    /// Counts the current line as Nth where N = 1 + the number of consecutive
+    /// prior Numbered siblings at the same indent (nested-deeper lines are
+    /// transparent; anything at a shallower indent or a non-Numbered at the
+    /// same indent ends the run). Mirrors desktop's `numbered_marker_ordinal`.
+    private func numberedOrdinal(at index: Int, in metas: [LineMeta]) -> Int {
+        let currentIndent = metas[index].indent
+        var ordinal = 1
+        var i = index - 1
+        while i >= 0 {
+            let prev = metas[i]
+            if prev.indent > currentIndent { i -= 1; continue }
+            if prev.indent < currentIndent { break }
+            if prev.marker != .numbered { break }
+            ordinal += 1
+            i -= 1
+        }
+        return ordinal
+    }
+
+    private func drawIndentGuides(meta: LineMeta, previousMeta: LineMeta?, nextMeta: LineMeta?, firstFragment: CGRect, visualBounds: CGRect, rowExtraHeight: CGFloat, context: CGContext) {
+        let indent = min(meta.indent, 8)
+        guard indent > 0 else { return }
+        context.setFillColor(UIColor(theme.dividerSoft).cgColor)
+        let marker = markerRect(for: meta, fragment: firstFragment)
+        let ownBarX = marker.minX - (DesktopEditorMetrics.annotationBarGap + DesktopEditorMetrics.indentGuideXShift)
+        let rowHeight = visualBounds.maxY - firstFragment.minY + rowExtraHeight
+        let guideMargin: CGFloat = 3
+        for guideIndent in 1...indent {
+            let previousHasGuide = min(previousMeta?.indent ?? 0, 8) >= guideIndent
+            let nextHasGuide = min(nextMeta?.indent ?? 0, 8) >= guideIndent
+            let topMargin = previousHasGuide ? 0 : guideMargin
+            let bottomMargin = nextHasGuide ? 0 : guideMargin
+            let levelOffset = CGFloat(indent - guideIndent) * DesktopEditorMetrics.indentWidth
+            context.fill(CGRect(
+                x: ownBarX - levelOffset,
+                y: firstFragment.minY + topMargin,
+                width: 1,
+                height: max(1, rowHeight - topMargin - bottomMargin)
+            ))
+        }
+    }
+
+    private func drawMarker(meta: LineMeta, ordinal: Int, fragment: CGRect, context: CGContext) {
+        let rect = markerRect(for: meta, fragment: fragment)
+        let chrome = theme.editorChromeColor
+        switch meta.marker {
+        case .blank:
+            return
+        case .bullet:
+            context.setFillColor(chrome.cgColor)
+            context.fillEllipse(in: rect.insetBy(dx: 4.5, dy: 4.5))
+        case .numbered:
+            let label = "\(ordinal)." as NSString
+            let attrs: [NSAttributedString.Key: Any] = [
+                .font: UIFont.systemFont(ofSize: 12, weight: .medium),
+                .foregroundColor: chrome
+            ]
+            let size = label.size(withAttributes: attrs)
+            label.draw(at: CGPoint(x: rect.maxX - size.width, y: rect.minY + (rect.height - size.height) / 2), withAttributes: attrs)
+        case .checkbox:
+            let path = UIBezierPath(roundedRect: rect, cornerRadius: 3)
+            (meta.done ? chrome : UIColor(theme.buttonBg)).setFill()
+            path.fill()
+            chrome.setStroke()
+            path.lineWidth = 1
+            path.stroke()
+            if meta.done {
+                let check = UIBezierPath()
+                check.move(to: CGPoint(x: rect.minX + 3.2, y: rect.minY + 7.2))
+                check.addLine(to: CGPoint(x: rect.minX + 5.8, y: rect.minY + 9.7))
+                check.addLine(to: CGPoint(x: rect.maxX - 3.0, y: rect.minY + 4.3))
+                UIColor(theme.bgApp).setStroke()
+                check.lineWidth = 1.8
+                check.stroke()
+            }
+        }
+    }
+
+    private func drawAnnotationBar(meta: LineMeta, firstFragment: CGRect, visualBounds: CGRect, rowExtraHeight: CGFloat, connectsToPrevious: Bool, connectsToNext: Bool, context: CGContext) {
+        let marker = markerRect(for: meta, fragment: firstFragment)
+        let x = annotationGuideX(marker: marker)
+        let top = connectsToPrevious ? firstFragment.minY : marker.minY
+        let bottom = visualBounds.maxY + rowExtraHeight - (connectsToNext ? 0 : 3)
+        context.setFillColor(theme.editorChromeColor.cgColor)
+        context.fill(CGRect(x: x, y: top, width: 1, height: max(1, bottom - top)))
+    }
+
+    private func drawAnnotation(_ annotation: String, meta: LineMeta, visualBounds: CGRect, context: CGContext) {
+        let attrs: [NSAttributedString.Key: Any] = [
+            .font: UIFont.monospacedSystemFont(ofSize: DesktopEditorMetrics.annotationFontSize, weight: .medium),
+            .foregroundColor: theme.editorChromeColor
+        ]
+        let marker = markerRect(for: meta, fragment: visualBounds)
+        let x = annotationGuideX(marker: marker) + DesktopEditorMetrics.annotationTextGap
+        let y = visualBounds.maxY - 1
+        (annotation as NSString).draw(at: CGPoint(x: x, y: y), withAttributes: attrs)
+    }
+
+    private func drawMediaStack(_ media: [MobileItemMedia], meta: LineMeta, firstFragment: CGRect, visualBounds: CGRect, context: CGContext) {
+        guard !media.isEmpty else { return }
+        let maxWidth = editorImageMaxWidth(textLeft: firstFragment.minX)
+        let annotationHeight = meta.annotation == nil ? CGFloat(0) : DesktopEditorMetrics.annotationHeight
+        var y = visualBounds.maxY + annotationHeight + DesktopEditorMetrics.imageTopGap
+        var drewImage = false
+        for item in media where item.kind == "image" {
+            let size = mediaDisplaySize(item, maxWidth: maxWidth)
+            guard size.width > 0, size.height > 0 else { continue }
+            if drewImage {
+                y += DesktopEditorMetrics.imageStackGap
+            }
+            let rect = CGRect(x: firstFragment.minX, y: y, width: size.width, height: size.height)
+            drawImageMedia(item, in: rect, context: context)
+            y += size.height
+            drewImage = true
+        }
+    }
+
+    private func drawImageMedia(_ media: MobileItemMedia, in rect: CGRect, context: CGContext) {
+        context.saveGState()
+        defer { context.restoreGState() }
+
+        let path = UIBezierPath(roundedRect: rect, cornerRadius: 5)
+        UIColor(theme.buttonBg).setFill()
+        path.fill()
+        UIColor(theme.divider).setStroke()
+        path.lineWidth = 1
+        path.stroke()
+
+        path.addClip()
+        if let image = imageForMedia(media), image.size.width > 2, image.size.height > 2 {
+            image.draw(in: rect)
+        } else {
+            drawImageFallback(in: rect)
+        }
+    }
+
+    private func drawImageFallback(in rect: CGRect) {
+        let inner = rect.insetBy(dx: 1, dy: 1)
+        let size = inner.size
+        UIColor(theme.bgModal).setFill()
+        UIBezierPath(rect: inner).fill()
+
+        UIColor(theme.accent).withAlphaComponent(0.16).setFill()
+        UIBezierPath(ovalIn: CGRect(
+            x: inner.maxX - size.width * 0.32,
+            y: inner.minY + size.height * 0.12,
+            width: size.width * 0.18,
+            height: size.width * 0.18
+        )).fill()
+
+        UIColor(theme.divider).setFill()
+        UIBezierPath(roundedRect: CGRect(
+            x: inner.minX + size.width * 0.07,
+            y: inner.minY + size.height * 0.16,
+            width: size.width * 0.40,
+            height: max(6, size.height * 0.07)
+        ), cornerRadius: 4).fill()
+        UIBezierPath(roundedRect: CGRect(
+            x: inner.minX + size.width * 0.07,
+            y: inner.minY + size.height * 0.32,
+            width: size.width * 0.62,
+            height: max(5, size.height * 0.05)
+        ), cornerRadius: 4).fill()
+        UIBezierPath(roundedRect: CGRect(
+            x: inner.minX + size.width * 0.07,
+            y: inner.minY + size.height * 0.45,
+            width: size.width * 0.50,
+            height: max(5, size.height * 0.05)
+        ), cornerRadius: 4).fill()
+        UIBezierPath(roundedRect: CGRect(
+            x: inner.minX + size.width * 0.07,
+            y: inner.maxY - size.height * 0.29,
+            width: size.width * 0.70,
+            height: max(18, size.height * 0.13)
+        ), cornerRadius: 6).fill()
+
+        let label = "Image" as NSString
+        label.draw(
+            at: CGPoint(x: inner.minX + size.width * 0.10, y: inner.maxY - size.height * 0.27),
+            withAttributes: [
+                .font: UIFont.systemFont(ofSize: max(11, size.height * 0.07), weight: .semibold),
+                .foregroundColor: UIColor(theme.textPrimary)
+            ]
+        )
+    }
+
+    private func mediaStackHeight(_ media: [MobileItemMedia], maxWidth: CGFloat) -> CGFloat {
+        var height: CGFloat = 0
+        var count = 0
+        for item in media where item.kind == "image" {
+            let size = mediaDisplaySize(item, maxWidth: maxWidth)
+            guard size.height > 0 else { continue }
+            height += count == 0 ? DesktopEditorMetrics.imageTopGap : DesktopEditorMetrics.imageStackGap
+            height += size.height
+            count += 1
+        }
+        return height
+    }
+
+    private func mediaDisplaySize(_ media: MobileItemMedia, maxWidth: CGFloat) -> CGSize {
+        let rawWidth = media.width.map(CGFloat.init) ?? DesktopEditorMetrics.imageFallbackWidth
+        let rawHeight = media.height.map(CGFloat.init) ?? DesktopEditorMetrics.imageFallbackHeight
+        guard rawWidth > 0, rawHeight > 0, maxWidth > 0 else { return .zero }
+        let scale = min(maxWidth / rawWidth, DesktopEditorMetrics.imageMaxHeight / rawHeight)
+        let clampedScale = min(max(scale, 0.05), 1)
+        return CGSize(width: rawWidth * clampedScale, height: rawHeight * clampedScale)
+    }
+
+    private func imageForMedia(_ media: MobileItemMedia) -> UIImage? {
+        guard let path = media.path, !path.isEmpty else { return nil }
+        if let cached = imageCache[path] {
+            return cached
+        }
+        guard let image = UIImage(contentsOfFile: path) else { return nil }
+        imageCache[path] = image
+        return image
+    }
+
+    private func editorImageMaxWidth(textLeft: CGFloat) -> CGFloat {
+        max(120, bounds.width - textLeft - textContainerInset.right - 8)
+    }
+
+    private func editorImageMaxWidth(meta: LineMeta) -> CGFloat {
+        let textLeft = textContainerInset.left
+            + CGFloat(meta.indent) * DesktopEditorMetrics.indentWidth
+            + (meta.marker == .blank ? 0 : DesktopEditorMetrics.markerSlot)
+        return editorImageMaxWidth(textLeft: textLeft)
+    }
+
+    private func annotationGuideX(marker: CGRect) -> CGFloat {
+        marker.minX - (DesktopEditorMetrics.annotationBarGap + DesktopEditorMetrics.indentGuideXShift)
+    }
+
+    private func markerRect(for meta: LineMeta, fragment: CGRect) -> CGRect {
+        CGRect(
+            x: textContainerInset.left + CGFloat(meta.indent) * DesktopEditorMetrics.indentWidth,
+            y: fragment.minY + (fragment.height - DesktopEditorMetrics.checkboxSize) / 2,
+            width: DesktopEditorMetrics.checkboxSize,
+            height: DesktopEditorMetrics.checkboxSize
+        )
+    }
+
+    fileprivate func annotationSpacingAfterGlyph(at glyphIndex: Int) -> CGFloat {
+        let ns = textStorage.string as NSString
+        guard glyphIndex >= 0,
+              glyphIndex < layoutManager.numberOfGlyphs,
+              ns.length > 0 else { return 0 }
+        let characterIndex = layoutManager.characterIndexForGlyph(at: glyphIndex)
+        guard characterIndex < ns.length else { return 0 }
+        let paragraphRange = ns.paragraphRange(for: NSRange(location: characterIndex, length: 0))
+        let line = lineRange(from: paragraphRange, in: ns)
+        let meta = metaForLine(storage: textStorage, lineRange: line)
+        var spacing: CGFloat = 0
+        if meta.annotation != nil {
+            spacing += DesktopEditorMetrics.annotationHeight
+        }
+        spacing += mediaStackHeight(meta.media, maxWidth: editorImageMaxWidth(meta: meta))
+        guard spacing > 0 else { return 0 }
+
+        let lastContentCharacter = line.length > 0 ? NSMaxRange(line) - 1 : paragraphRange.location
+        return characterIndex >= lastContentCharacter ? spacing : 0
+    }
+
+    private func paragraphGeometry(for paragraph: EditorParagraphRange, origin: CGPoint) -> (glyphRange: NSRange, fragments: [CGRect], bounds: CGRect)? {
+        let characterRange = paragraph.lineRange.length > 0 ? paragraph.lineRange : paragraph.fullRange
+        guard characterRange.length > 0 else { return nil }
+        let glyphRange = layoutManager.glyphRange(forCharacterRange: characterRange, actualCharacterRange: nil)
+        guard layoutManager.numberOfGlyphs > 0, glyphRange.location < layoutManager.numberOfGlyphs else { return nil }
+        var fragments: [CGRect] = []
+        layoutManager.enumerateLineFragments(forGlyphRange: glyphRange) { _, usedRect, _, fragmentGlyphRange, _ in
+            guard NSIntersectionRange(fragmentGlyphRange, glyphRange).length > 0 else { return }
+            fragments.append(usedRect.offsetBy(dx: origin.x, dy: origin.y))
+        }
+        guard let first = fragments.first else { return nil }
+        let bounds = fragments.dropFirst().reduce(first) { $0.union($1) }
+        return (glyphRange, fragments, bounds)
+    }
+}
+
+extension EditorCoordinator {
+    fileprivate func markClean() {
+        controller?.isDirty = false
+    }
+}
+
+// MARK: - NSLayoutManager subclass
+
+private final class EditorLayoutManager: NSLayoutManager {
+    weak var editorTextView: EditorTextView?
+
+    override init() {
+        super.init()
+        delegate = self
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
+
+    override func drawBackground(forGlyphRange glyphsToShow: NSRange, at origin: CGPoint) {
+        super.drawBackground(forGlyphRange: glyphsToShow, at: origin)
+        let editor = editorTextView
+        MainActor.assumeIsolated {
+            editor?.drawChrome(forGlyphRange: glyphsToShow, at: origin)
+        }
+    }
+}
+
+extension EditorLayoutManager: NSLayoutManagerDelegate {
+    func layoutManager(_ layoutManager: NSLayoutManager, lineSpacingAfterGlyphAt glyphIndex: Int, withProposedLineFragmentRect rect: CGRect) -> CGFloat {
+        0
+    }
+
+    func layoutManager(_ layoutManager: NSLayoutManager, paragraphSpacingAfterGlyphAt glyphIndex: Int, withProposedLineFragmentRect rect: CGRect) -> CGFloat {
+        let editor = editorTextView
+        return MainActor.assumeIsolated {
+            editor?.annotationSpacingAfterGlyph(at: glyphIndex) ?? 0
+        }
+    }
+}

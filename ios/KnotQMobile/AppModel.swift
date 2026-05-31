@@ -183,6 +183,50 @@ final class AppModel: ObservableObject {
         mutate { try $0.setItemRecurrence(schemeID: schemeID, itemID: itemID, rrule: rrule) }
     }
 
+    func commitEventEdit(
+        occurrence: MobileOccurrence,
+        title: String,
+        start: Date?,
+        end: Date?,
+        rrule: String?,
+        notificationOffsetSecs: Int32?,
+        notificationDirty: Bool,
+        done: Bool,
+        scope: EventOccurrenceScope
+    ) {
+        mutate {
+            try $0.commitEventEdit(
+                occurrence: occurrence,
+                title: title,
+                occurrenceStart: occurrence.start,
+                occurrenceEnd: occurrence.end,
+                start: start.map { iso.string(from: $0) },
+                end: end.map { iso.string(from: $0) },
+                rrule: rrule,
+                notificationOffsetSecs: notificationOffsetSecs,
+                notificationDirty: notificationDirty,
+                done: done,
+                scope: scope
+            )
+        }
+    }
+
+    func setOccurrenceNotificationOffset(
+        schemeID: String,
+        itemID: String,
+        occurrenceJSON: String? = nil,
+        offsetSecs: Int32?
+    ) {
+        mutate {
+            try $0.setOccurrenceNotificationOffset(
+                schemeID: schemeID,
+                itemID: itemID,
+                occurrenceJSON: occurrenceJSON,
+                offsetSecs: offsetSecs
+            )
+        }
+    }
+
     func toggleItem(schemeID: String, itemID: String) {
         mutate { try $0.toggleItem(schemeID: schemeID, itemID: itemID) }
     }
@@ -199,6 +243,10 @@ final class AppModel: ObservableObject {
 
     func deleteItem(schemeID: String, itemID: String) {
         mutate { try $0.deleteItem(schemeID: schemeID, itemID: itemID) }
+    }
+
+    func deleteEventOccurrence(_ occurrence: MobileOccurrence, scope: EventOccurrenceScope) {
+        mutate { try $0.deleteEventOccurrence(occurrence, scope: scope) }
     }
 
     func addCalendarItem(kind: CalendarKind, text: String, date: Date, start: Date?, end: Date?, schemeID: String? = nil) {
@@ -259,6 +307,15 @@ final class AppModel: ObservableObject {
 
     func setTimeFormat(_ format: String) {
         mutate { try $0.setTimeFormat(format) }
+    }
+
+    func setNotificationDefaults(eventOffsetSecs: Int32, assignmentOffsetSecs: Int32) {
+        mutate {
+            try $0.setNotificationDefaults(
+                eventOffsetSecs: eventOffsetSecs,
+                assignmentOffsetSecs: assignmentOffsetSecs
+            )
+        }
     }
 
     func resetWorkspace() {

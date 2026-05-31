@@ -33,6 +33,21 @@
 		010000000000000000000018 /* KnotQUpcomingWidget.appex in Embed App Extensions */ = {isa = PBXBuildFile; fileRef = 02000000000000000000001C /* KnotQUpcomingWidget.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, CodeSignOnCopy, ); }; };
 		01000000000000000000001D /* ContentView+Components.swift in Sources */ = {isa = PBXBuildFile; fileRef = 02000000000000000000001D /* ContentView+Components.swift */; };
 		01000000000000000000001E /* SchemeEditorView+Components.swift in Sources */ = {isa = PBXBuildFile; fileRef = 02000000000000000000001E /* SchemeEditorView+Components.swift */; };
+		01000000000000000000001F /* Theme+Colors.swift in Sources */ = {isa = PBXBuildFile; fileRef = 02000000000000000000001F /* Theme+Colors.swift */; };
+		010000000000000000000020 /* DesktopChrome.swift in Sources */ = {isa = PBXBuildFile; fileRef = 020000000000000000000020 /* DesktopChrome.swift */; };
+		010000000000000000000021 /* HomeComponents.swift in Sources */ = {isa = PBXBuildFile; fileRef = 020000000000000000000021 /* HomeComponents.swift */; };
+		010000000000000000000022 /* SchemeNavigatorUIKit.swift in Sources */ = {isa = PBXBuildFile; fileRef = 020000000000000000000022 /* SchemeNavigatorUIKit.swift */; };
+		010000000000000000000023 /* HomeDailyComponents.swift in Sources */ = {isa = PBXBuildFile; fileRef = 020000000000000000000023 /* HomeDailyComponents.swift */; };
+		010000000000000000000024 /* CalendarComponents.swift in Sources */ = {isa = PBXBuildFile; fileRef = 020000000000000000000024 /* CalendarComponents.swift */; };
+		010000000000000000000025 /* DayTimelineComponents.swift in Sources */ = {isa = PBXBuildFile; fileRef = 020000000000000000000025 /* DayTimelineComponents.swift */; };
+		010000000000000000000026 /* DayTimelineUIKitView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 020000000000000000000026 /* DayTimelineUIKitView.swift */; };
+		010000000000000000000027 /* ArchiveAndSettingsComponents.swift in Sources */ = {isa = PBXBuildFile; fileRef = 020000000000000000000027 /* ArchiveAndSettingsComponents.swift */; };
+		010000000000000000000028 /* DailyAndSearchComponents.swift in Sources */ = {isa = PBXBuildFile; fileRef = 020000000000000000000028 /* DailyAndSearchComponents.swift */; };
+		010000000000000000000029 /* MobileDockAndMisc.swift in Sources */ = {isa = PBXBuildFile; fileRef = 020000000000000000000029 /* MobileDockAndMisc.swift */; };
+		01000000000000000000002A /* SchemeEditorChrome.swift in Sources */ = {isa = PBXBuildFile; fileRef = 02000000000000000000002A /* SchemeEditorChrome.swift */; };
+		01000000000000000000002B /* SchemeEditorTextInput.swift in Sources */ = {isa = PBXBuildFile; fileRef = 02000000000000000000002B /* SchemeEditorTextInput.swift */; };
+		01000000000000000000002C /* SchemeEditorTextView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 02000000000000000000002C /* SchemeEditorTextView.swift */; };
+		01000000000000000000002D /* SchemeEditorSheets.swift in Sources */ = {isa = PBXBuildFile; fileRef = 02000000000000000000002D /* SchemeEditorSheets.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -76,6 +91,21 @@
 		02000000000000000000001C /* KnotQUpcomingWidget.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = KnotQUpcomingWidget.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		02000000000000000000001D /* ContentView+Components.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ContentView+Components.swift"; sourceTree = "<group>"; };
 		02000000000000000000001E /* SchemeEditorView+Components.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "SchemeEditorView+Components.swift"; sourceTree = "<group>"; };
+		02000000000000000000001F /* Theme+Colors.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Theme+Colors.swift"; sourceTree = "<group>"; };
+		020000000000000000000020 /* DesktopChrome.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "DesktopChrome.swift"; sourceTree = "<group>"; };
+		020000000000000000000021 /* HomeComponents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "HomeComponents.swift"; sourceTree = "<group>"; };
+		020000000000000000000022 /* SchemeNavigatorUIKit.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "SchemeNavigatorUIKit.swift"; sourceTree = "<group>"; };
+		020000000000000000000023 /* HomeDailyComponents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "HomeDailyComponents.swift"; sourceTree = "<group>"; };
+		020000000000000000000024 /* CalendarComponents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "CalendarComponents.swift"; sourceTree = "<group>"; };
+		020000000000000000000025 /* DayTimelineComponents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "DayTimelineComponents.swift"; sourceTree = "<group>"; };
+		020000000000000000000026 /* DayTimelineUIKitView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "DayTimelineUIKitView.swift"; sourceTree = "<group>"; };
+		020000000000000000000027 /* ArchiveAndSettingsComponents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ArchiveAndSettingsComponents.swift"; sourceTree = "<group>"; };
+		020000000000000000000028 /* DailyAndSearchComponents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "DailyAndSearchComponents.swift"; sourceTree = "<group>"; };
+		020000000000000000000029 /* MobileDockAndMisc.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MobileDockAndMisc.swift"; sourceTree = "<group>"; };
+		02000000000000000000002A /* SchemeEditorChrome.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "SchemeEditorChrome.swift"; sourceTree = "<group>"; };
+		02000000000000000000002B /* SchemeEditorTextInput.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "SchemeEditorTextInput.swift"; sourceTree = "<group>"; };
+		02000000000000000000002C /* SchemeEditorTextView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "SchemeEditorTextView.swift"; sourceTree = "<group>"; };
+		02000000000000000000002D /* SchemeEditorSheets.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "SchemeEditorSheets.swift"; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -125,6 +155,21 @@
 				020000000000000000000006 /* SchemesScreen.swift */,
 				020000000000000000000007 /* SchemeEditorView.swift */,
 				02000000000000000000001E /* SchemeEditorView+Components.swift */,
+				02000000000000000000001F /* Theme+Colors.swift */,
+				020000000000000000000020 /* DesktopChrome.swift */,
+				020000000000000000000021 /* HomeComponents.swift */,
+				020000000000000000000022 /* SchemeNavigatorUIKit.swift */,
+				020000000000000000000023 /* HomeDailyComponents.swift */,
+				020000000000000000000024 /* CalendarComponents.swift */,
+				020000000000000000000025 /* DayTimelineComponents.swift */,
+				020000000000000000000026 /* DayTimelineUIKitView.swift */,
+				020000000000000000000027 /* ArchiveAndSettingsComponents.swift */,
+				020000000000000000000028 /* DailyAndSearchComponents.swift */,
+				020000000000000000000029 /* MobileDockAndMisc.swift */,
+				02000000000000000000002A /* SchemeEditorChrome.swift */,
+				02000000000000000000002B /* SchemeEditorTextInput.swift */,
+				02000000000000000000002C /* SchemeEditorTextView.swift */,
+				02000000000000000000002D /* SchemeEditorSheets.swift */,
 				020000000000000000000008 /* CalendarScreen.swift */,
 				020000000000000000000009 /* DailyScreen.swift */,
 				02000000000000000000000A /* SearchScreen.swift */,
@@ -308,6 +353,21 @@
 				01000000000000000000001D /* ContentView+Components.swift in Sources */,
 				010000000000000000000006 /* SchemesScreen.swift in Sources */,
 				01000000000000000000001E /* SchemeEditorView+Components.swift in Sources */,
+				01000000000000000000001F /* Theme+Colors.swift in Sources */,
+				010000000000000000000020 /* DesktopChrome.swift in Sources */,
+				010000000000000000000021 /* HomeComponents.swift in Sources */,
+				010000000000000000000022 /* SchemeNavigatorUIKit.swift in Sources */,
+				010000000000000000000023 /* HomeDailyComponents.swift in Sources */,
+				010000000000000000000024 /* CalendarComponents.swift in Sources */,
+				010000000000000000000025 /* DayTimelineComponents.swift in Sources */,
+				010000000000000000000026 /* DayTimelineUIKitView.swift in Sources */,
+				010000000000000000000027 /* ArchiveAndSettingsComponents.swift in Sources */,
+				010000000000000000000028 /* DailyAndSearchComponents.swift in Sources */,
+				010000000000000000000029 /* MobileDockAndMisc.swift in Sources */,
+				01000000000000000000002A /* SchemeEditorChrome.swift in Sources */,
+				01000000000000000000002B /* SchemeEditorTextInput.swift in Sources */,
+				01000000000000000000002C /* SchemeEditorTextView.swift in Sources */,
+				01000000000000000000002D /* SchemeEditorSheets.swift in Sources */,
 				010000000000000000000007 /* SchemeEditorView.swift in Sources */,
 				010000000000000000000008 /* CalendarScreen.swift in Sources */,
 				010000000000000000000009 /* DailyScreen.swift in Sources */,

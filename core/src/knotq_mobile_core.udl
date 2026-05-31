@@ -45,6 +45,7 @@ dictionary MobileItem {
   boolean done;
   string? start;
   string? end;
+  i32? notification_offset_secs;
   string? repeat_rule;
   sequence<MobileItemMedia> media;
 };
@@ -87,6 +88,9 @@ dictionary MobileOccurrence {
   string scheme_id;
   string item_id;
   string occurrence_json;
+  i32 occurrence_index;
+  boolean is_recurring;
+  boolean can_delete_future;
   string scheme_name;
   i32 color_index;
   boolean is_read_only;
@@ -95,6 +99,7 @@ dictionary MobileOccurrence {
   boolean done;
   string? start;
   string? end;
+  i32? notification_offset_secs;
   string? local_date;
   string? repeat_rule;
 };
@@ -102,6 +107,8 @@ dictionary MobileOccurrence {
 dictionary MobileSettings {
   string theme_mode;
   string time_format;
+  i32 event_notification_offset_secs;
+  i32 assignment_notification_offset_secs;
   i32 google_account_count;
 };
 
@@ -226,6 +233,12 @@ interface MobileCore {
   void set_item_recurrence(string scheme_id, string item_id, string? rrule);
 
   [Throws=MobileError]
+  void set_occurrence_notification_offset(string scheme_id, string item_id, string? occurrence_json, i32? offset_secs);
+
+  [Throws=MobileError]
+  void commit_event_edit(string scheme_id, string item_id, string occurrence_json, i32 occurrence_index, string title, string? occurrence_start, string? occurrence_end, string? start, string? end, string? rrule, i32? notification_offset_secs, boolean notification_dirty, boolean done, string scope);
+
+  [Throws=MobileError]
   void toggle_item(string scheme_id, string item_id);
 
   [Throws=MobileError]
@@ -233,6 +246,9 @@ interface MobileCore {
 
   [Throws=MobileError]
   void delete_item(string scheme_id, string item_id);
+
+  [Throws=MobileError]
+  void delete_event_occurrence(string scheme_id, string item_id, string occurrence_json, i32 occurrence_index, string scope);
 
   [Throws=MobileError]
   void reorder_item(string scheme_id, i32 from, i32 to);
@@ -245,6 +261,9 @@ interface MobileCore {
 
   [Throws=MobileError]
   void set_time_format(string time_format);
+
+  [Throws=MobileError]
+  void set_notification_defaults(i32 event_offset_secs, i32 assignment_offset_secs);
 
   [Throws=MobileError]
   void reset_workspace();

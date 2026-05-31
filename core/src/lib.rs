@@ -6,7 +6,10 @@ use std::sync::{Mutex, MutexGuard};
 
 use anyhow::{anyhow, Context, Result};
 use chrono::{DateTime, Duration, NaiveDate, TimeZone, Utc};
-use knotq_commands::{Command, DateKind, WorkspaceCommandExt};
+use knotq_commands::{
+    event_popup_commit_commands, event_popup_delete_command, recurrence_can_delete_future, Command,
+    DateEditScope, DateKind, EventDeleteScope, EventPopupDraft, WorkspaceCommandExt,
+};
 use knotq_index::query::{SearchHitStatus, SearchOptions, SearchTarget};
 use knotq_index::IndexedWorkspace;
 use knotq_model::{
@@ -84,11 +87,7 @@ impl MobileCore {
             .map_err(Into::into)
     }
 
-    pub fn month_days(
-        &self,
-        year: i32,
-        month: u32,
-    ) -> Result<Vec<MobileCalendarDay>, MobileError> {
+    pub fn month_days(&self, year: i32, month: u32) -> Result<Vec<MobileCalendarDay>, MobileError> {
         self.lock()?.month_days(year, month).map_err(Into::into)
     }
 
@@ -432,19 +431,73 @@ impl MobileCore {
         item_id: String,
         rrule: Option<String>,
     ) -> Result<(), MobileError> {
-        let repeats = match rrule {
-            Some(rule) if !rule.trim().is_empty() => Some(Recurrence {
-                rrules: vec![rule.trim().to_string()],
-                ..Recurrence::default()
-            }),
-            _ => None,
-        };
+        let repeats = recurrence_from_rrule(rrule);
         self.lock()?
             .apply(Command::SetItemRecurrence {
                 scheme: parse_id(&scheme_id)?,
                 item: parse_id(&item_id)?,
                 repeats,
             })
+            .map_err(Into::into)
+    }
+
+    pub fn set_occurrence_notification_offset(
+        &self,
+        scheme_id: String,
+        item_id: String,
+        occurrence_json: Option<String>,
+        offset_secs: Option<i32>,
+    ) -> Result<(), MobileError> {
+        let occurrence = occurrence_json
+            .as_deref()
+            .filter(|raw| !raw.trim().is_empty())
+            .map(parse_occurrence_json)
+            .transpose()?
+            .unwrap_or(OccurrenceId::Single);
+        self.lock()?
+            .apply(Command::SetOccurrenceNotificationOffset {
+                scheme: parse_id(&scheme_id)?,
+                item: parse_id(&item_id)?,
+                occurrence,
+                offset_secs: offset_secs.map(i64::from),
+            })
+            .map_err(Into::into)
+    }
+
+    pub fn commit_event_edit(
+        &self,
+        scheme_id: String,
+        item_id: String,
+        occurrence_json: String,
+        occurrence_index: i32,
+        title: String,
+        occurrence_start: Option<String>,
+        occurrence_end: Option<String>,
+        start: Option<String>,
+        end: Option<String>,
+        rrule: Option<String>,
+        notification_offset_secs: Option<i32>,
+        notification_dirty: bool,
+        done: bool,
+        scope: String,
+    ) -> Result<(), MobileError> {
+        self.lock()?
+            .commit_event_edit(
+                parse_id(&scheme_id)?,
+                parse_id(&item_id)?,
+                parse_occurrence_json(&occurrence_json)?,
+                position_from_i32(occurrence_index)?,
+                title,
+                parse_datetime_opt(occurrence_start.as_deref())?,
+                parse_datetime_opt(occurrence_end.as_deref())?,
+                parse_datetime_opt(start.as_deref())?,
+                parse_datetime_opt(end.as_deref())?,
+                recurrence_from_rrule(rrule),
+                notification_offset_secs.map(i64::from),
+                notification_dirty,
+                done,
+                parse_date_edit_scope(&scope)?,
+            )
             .map_err(Into::into)
     }
 
@@ -484,6 +537,25 @@ impl MobileCore {
             .map_err(Into::into)
     }
 
+    pub fn delete_event_occurrence(
+        &self,
+        scheme_id: String,
+        item_id: String,
+        occurrence_json: String,
+        occurrence_index: i32,
+        scope: String,
+    ) -> Result<(), MobileError> {
+        self.lock()?
+            .delete_event_occurrence(
+                parse_id(&scheme_id)?,
+                parse_id(&item_id)?,
+                parse_occurrence_json(&occurrence_json)?,
+                position_from_i32(occurrence_index)?,
+                parse_event_delete_scope(&scope)?,
+            )
+            .map_err(Into::into)
+    }
+
     pub fn reorder_item(&self, scheme_id: String, from: i32, to: i32) -> Result<(), MobileError> {
         self.lock()?
             .apply(Command::ReorderItem {
@@ -514,6 +586,23 @@ impl MobileCore {
     pub fn set_time_format(&self, time_format: String) -> Result<(), MobileError> {
         let mut inner = self.lock()?;
         inner.settings.time_format = parse_time_format(&time_format)?;
+        inner.save_settings().map_err(Into::into)
+    }
+
+    pub fn set_notification_defaults(
+        &self,
+        event_offset_secs: i32,
+        assignment_offset_secs: i32,
+    ) -> Result<(), MobileError> {
+        let mut inner = self.lock()?;
+        let defaults = NotificationDefaults {
+            event_offset_secs: i64::from(event_offset_secs),
+            assignment_offset_secs: i64::from(assignment_offset_secs),
+        };
+        if inner.settings.notification_defaults == defaults {
+            return Ok(());
+        }
+        inner.settings.notification_defaults = defaults;
         inner.save_settings().map_err(Into::into)
     }
 
@@ -720,6 +809,97 @@ impl MobileCoreInner {
         };
         self.apply(command)?;
         Ok(true)
+    }
+
+    fn commit_event_edit(
+        &mut self,
+        scheme_id: SchemeId,
+        item_id: ItemId,
+        occurrence: OccurrenceId,
+        occurrence_index: usize,
+        title: String,
+        occurrence_start: Option<DateTime<Utc>>,
+        occurrence_end: Option<DateTime<Utc>>,
+        draft_start: Option<DateTime<Utc>>,
+        draft_end: Option<DateTime<Utc>>,
+        draft_repeats: Option<Recurrence>,
+        draft_notification_offset_secs: Option<i64>,
+        notification_dirty: bool,
+        draft_done: bool,
+        scope: DateEditScope,
+    ) -> Result<()> {
+        if self.workspace.is_scheme_read_only(scheme_id) {
+            return Err(anyhow!("scheme is read-only"));
+        }
+        let item = self
+            .workspace
+            .scheme(scheme_id)
+            .and_then(|scheme| scheme.item(item_id))
+            .cloned()
+            .ok_or_else(|| anyhow!("item {item_id} missing in scheme {scheme_id}"))?;
+
+        let mut commands = Vec::new();
+        if item.text != title {
+            commands.push(Command::UpdateItemText {
+                scheme: scheme_id,
+                item: item_id,
+                text: title,
+            });
+        }
+
+        let occurrence_state = item.state_for_occurrence(&occurrence);
+        let draft = EventPopupDraft {
+            scheme_id,
+            item_id,
+            occurrence,
+            occurrence_index,
+            draft_start,
+            draft_end,
+            draft_repeats: draft_repeats.clone(),
+            draft_notification_offset_secs,
+            draft_done,
+            start_dirty: occurrence_start != draft_start,
+            end_dirty: occurrence_end != draft_end,
+            repeats_dirty: item.repeats != draft_repeats,
+            notification_dirty,
+            done_dirty: occurrence_state.is_done() != draft_done,
+        };
+        commands.extend(event_popup_commit_commands(&item, &draft, scope));
+
+        if let Some(command) = Command::from_vec(commands) {
+            self.apply(command)?;
+        }
+        Ok(())
+    }
+
+    fn delete_event_occurrence(
+        &mut self,
+        scheme_id: SchemeId,
+        item_id: ItemId,
+        occurrence: OccurrenceId,
+        occurrence_index: usize,
+        scope: EventDeleteScope,
+    ) -> Result<()> {
+        if self.workspace.is_scheme_read_only(scheme_id) {
+            return Err(anyhow!("scheme is read-only"));
+        }
+        let item = self
+            .workspace
+            .scheme(scheme_id)
+            .and_then(|scheme| scheme.item(item_id))
+            .cloned()
+            .ok_or_else(|| anyhow!("item {item_id} missing in scheme {scheme_id}"))?;
+        if let Some(command) = event_popup_delete_command(
+            &item,
+            scheme_id,
+            item_id,
+            occurrence,
+            occurrence_index,
+            scope,
+        ) {
+            self.apply(command)?;
+        }
+        Ok(())
     }
 
     fn record_crdt_changes(&mut self, changeset: WorkspaceCrdtChangeSet) -> Result<()> {
@@ -946,7 +1126,8 @@ impl MobileCoreInner {
     ) -> Result<MobileGoogleSyncResult> {
         let accounts_changed = self.upsert_google_accounts(result.accounts);
         let synced_count = result.calendars.len() as i32;
-        let applied = self.apply_imported_google_calendars(result.calendars, create_missing, parent)?;
+        let applied =
+            self.apply_imported_google_calendars(result.calendars, create_missing, parent)?;
 
         if accounts_changed {
             self.save_settings()?;
@@ -1131,9 +1312,7 @@ impl MobileCoreInner {
                 }
             })
             .collect();
-        let upcoming = indexed
-            .calendar_query()
-            .upcoming(Utc::now(), 12)
+        let upcoming = mobile_upcoming(&indexed, Utc::now(), 12)
             .into_iter()
             .map(|context| MobileOccurrence::from_context(&self.workspace, context))
             .collect();
@@ -1158,6 +1337,12 @@ impl MobileCoreInner {
             settings: MobileSettings {
                 theme_mode: theme_mode_str(self.settings.theme_mode).to_string(),
                 time_format: time_format_str(self.settings.time_format).to_string(),
+                event_notification_offset_secs: offset_to_i32(
+                    self.settings.notification_defaults.event_offset_secs,
+                ),
+                assignment_notification_offset_secs: offset_to_i32(
+                    self.settings.notification_defaults.assignment_offset_secs,
+                ),
                 google_account_count: self.settings.google_accounts.len() as i32,
             },
             workspace_path: self.workspace_path.display().to_string(),
@@ -1198,9 +1383,7 @@ impl MobileCoreInner {
                 MobileCalendarDay {
                     occurrences: occurrences
                         .iter()
-                        .filter(|occurrence| {
-                            occurrence.local_date.as_deref() == Some(&date_string)
-                        })
+                        .filter(|occurrence| occurrence.local_date.as_deref() == Some(&date_string))
                         .cloned()
                         .collect(),
                     date: date_string,
@@ -1918,6 +2101,7 @@ pub struct MobileItem {
     pub done: bool,
     pub start: Option<String>,
     pub end: Option<String>,
+    pub notification_offset_secs: Option<i32>,
     pub repeat_rule: Option<String>,
     pub media: Vec<MobileItemMedia>,
 }
@@ -1951,6 +2135,10 @@ impl MobileItem {
             done: item.single_state().is_done(),
             start: item.start.map(format_datetime),
             end: item.end.map(format_datetime),
+            notification_offset_secs: item
+                .single_state()
+                .notification_offset_secs
+                .map(offset_to_i32),
             repeat_rule: recurrence_rule(item.repeats.as_ref()),
             media: item
                 .media
@@ -2015,6 +2203,9 @@ pub struct MobileOccurrence {
     pub scheme_id: String,
     pub item_id: String,
     pub occurrence_json: String,
+    pub occurrence_index: i32,
+    pub is_recurring: bool,
+    pub can_delete_future: bool,
     pub scheme_name: String,
     pub color_index: i32,
     pub is_read_only: bool,
@@ -2023,6 +2214,7 @@ pub struct MobileOccurrence {
     pub done: bool,
     pub start: Option<String>,
     pub end: Option<String>,
+    pub notification_offset_secs: Option<i32>,
     pub local_date: Option<String>,
     pub repeat_rule: Option<String>,
 }
@@ -2037,16 +2229,24 @@ impl MobileOccurrence {
             .and_then(|scheme| scheme.item(context.item_id));
         let title = item.map(|item| item.text.clone()).unwrap_or_default();
         let repeat_rule = item.and_then(|item| recurrence_rule(item.repeats.as_ref()));
+        let can_delete_future = item
+            .and_then(|item| item.repeats.as_ref())
+            .is_some_and(recurrence_can_delete_future);
         let local_date = context
             .occurrence
             .start
             .or(context.occurrence.end)
             .map(|dt| dt.date_naive().to_string());
         let occurrence_json = serde_json::to_string(&context.occurrence.id).unwrap_or_default();
+        let occurrence_index =
+            i32::try_from(context.occurrence.occurrence_index).unwrap_or(i32::MAX);
         Self {
             scheme_id: context.scheme_id.to_string(),
             item_id: context.item_id.to_string(),
             occurrence_json,
+            occurrence_index,
+            is_recurring: !context.occurrence.id.is_single(),
+            can_delete_future,
             scheme_name: context.scheme_name,
             color_index: i32::from(context.color_index),
             is_read_only: workspace.is_scheme_read_only(context.scheme_id),
@@ -2055,6 +2255,11 @@ impl MobileOccurrence {
             done: context.occurrence.state.is_done(),
             start: context.occurrence.start.map(format_datetime),
             end: context.occurrence.end.map(format_datetime),
+            notification_offset_secs: context
+                .occurrence
+                .state
+                .notification_offset_secs
+                .map(offset_to_i32),
             local_date,
             repeat_rule,
         }
@@ -2065,6 +2270,8 @@ impl MobileOccurrence {
 pub struct MobileSettings {
     pub theme_mode: String,
     pub time_format: String,
+    pub event_notification_offset_secs: i32,
+    pub assignment_notification_offset_secs: i32,
     pub google_account_count: i32,
 }
 
@@ -2164,6 +2371,38 @@ fn parse_date_kind(raw: &str) -> Result<DateKind> {
     })
 }
 
+fn parse_date_edit_scope(raw: &str) -> Result<DateEditScope> {
+    Ok(match raw {
+        "this_event" => DateEditScope::ThisEvent,
+        "all_future" => DateEditScope::AllFuture,
+        "all_events" => DateEditScope::AllEvents,
+        other => return Err(anyhow!("unknown event edit scope {other}")),
+    })
+}
+
+fn parse_event_delete_scope(raw: &str) -> Result<EventDeleteScope> {
+    Ok(match raw {
+        "this_event" => EventDeleteScope::ThisEvent,
+        "all_future" => EventDeleteScope::AllFuture,
+        "all_events" => EventDeleteScope::AllEvents,
+        other => return Err(anyhow!("unknown event delete scope {other}")),
+    })
+}
+
+fn parse_occurrence_json(raw: &str) -> Result<OccurrenceId> {
+    serde_json::from_str(raw).with_context(|| "parse occurrence")
+}
+
+fn recurrence_from_rrule(rrule: Option<String>) -> Option<Recurrence> {
+    match rrule {
+        Some(rule) if !rule.trim().is_empty() => Some(Recurrence {
+            rrules: vec![rule.trim().to_string()],
+            ..Recurrence::default()
+        }),
+        _ => None,
+    }
+}
+
 fn parse_theme_mode(raw: &str) -> Result<ThemeMode> {
     Ok(match raw {
         "system" => ThemeMode::System,
@@ -2208,6 +2447,43 @@ fn midnight_utc(date: NaiveDate) -> Result<DateTime<Utc>> {
         .and_hms_opt(0, 0, 0)
         .ok_or_else(|| anyhow!("invalid midnight for {date}"))?;
     Ok(Utc.from_utc_datetime(&naive))
+}
+
+fn mobile_upcoming(
+    indexed: &IndexedWorkspace,
+    from: DateTime<Utc>,
+    limit: usize,
+) -> Vec<knotq_index::calendar::OccurrenceWithContext> {
+    let mut occurrences = indexed.calendar_query().range(knotq_date_util::DateRange {
+        start: from,
+        end: from + Duration::days(365),
+    });
+    occurrences.retain(|event| occurrence_anchor(event) >= Some(from));
+
+    let mut seen_recurring_items = HashSet::new();
+    let mut out = Vec::new();
+    for event in occurrences {
+        if !event.occurrence.id.is_single()
+            && !seen_recurring_items.insert((event.scheme_id, event.item_id))
+        {
+            continue;
+        }
+        out.push(event);
+        if out.len() >= limit {
+            break;
+        }
+    }
+    out
+}
+
+fn occurrence_anchor(
+    event: &knotq_index::calendar::OccurrenceWithContext,
+) -> Option<DateTime<Utc>> {
+    event
+        .occurrence
+        .start
+        .or(event.occurrence.end)
+        .or(event.occurrence.available)
 }
 
 fn format_datetime(dt: DateTime<Utc>) -> String {
@@ -2269,6 +2545,10 @@ fn mobile_notification_lead_times(defaults: NotificationDefaults) -> Notificatio
         event_offset_secs: defaults.event_offset_secs,
         assignment_offset_secs: defaults.assignment_offset_secs,
     }
+}
+
+fn offset_to_i32(offset_secs: i64) -> i32 {
+    offset_secs.clamp(i64::from(i32::MIN), i64::from(i32::MAX)) as i32
 }
 
 fn mobile_notification_id(key: &str) -> String {
@@ -2568,6 +2848,329 @@ mod tests {
             .pending_notifications(Some("2026-05-27T12:00:00Z".to_string()), 14)
             .expect("pending notifications after action");
         assert!(!requests.iter().any(|request| request.title == "Send deck"));
+
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn mobile_upcoming_only_shows_next_recurring_occurrence() {
+        let dir = std::env::temp_dir().join(format!("knotq-mobile-test-{}", uuid::Uuid::new_v4()));
+        let core = MobileCore::new(dir.display().to_string()).expect("open mobile core");
+        let start = Utc::now() + Duration::hours(2);
+        let end = start + Duration::minutes(30);
+        let today = start.date_naive().to_string();
+
+        core.create_scheme(None, "Recurring".to_string(), Some(2), None)
+            .expect("create scheme");
+        let scheme_id = core
+            .snapshot(Some(today.clone()), 0)
+            .expect("snapshot")
+            .schemes
+            .into_iter()
+            .find(|scheme| scheme.display_name == "Recurring")
+            .expect("scheme")
+            .id;
+        core.add_calendar_item(
+            Some(scheme_id.clone()),
+            Some(today.clone()),
+            "Daily standup".to_string(),
+            "event".to_string(),
+            Some(format_datetime(start)),
+            Some(format_datetime(end)),
+        )
+        .expect("add event");
+        let item_id = core
+            .snapshot(Some(today.clone()), 0)
+            .expect("snapshot")
+            .schemes
+            .into_iter()
+            .find(|scheme| scheme.id == scheme_id)
+            .expect("scheme")
+            .items[0]
+            .id
+            .clone();
+        core.set_item_recurrence(
+            scheme_id,
+            item_id,
+            Some("FREQ=DAILY;INTERVAL=1".to_string()),
+        )
+        .expect("repeat");
+
+        let snapshot = core.snapshot(Some(today), 0).expect("snapshot");
+        let matches = snapshot
+            .calendar
+            .upcoming
+            .iter()
+            .filter(|occurrence| occurrence.title == "Daily standup")
+            .count();
+        assert_eq!(matches, 1);
+
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn notification_defaults_and_item_override_roundtrip() {
+        let dir = std::env::temp_dir().join(format!("knotq-mobile-test-{}", uuid::Uuid::new_v4()));
+        let core = MobileCore::new(dir.display().to_string()).expect("open mobile core");
+
+        core.set_notification_defaults(10 * 60, 6 * 60 * 60)
+            .expect("set defaults");
+        let snapshot = core
+            .snapshot(Some("2026-05-26".to_string()), 0)
+            .expect("snapshot");
+        assert_eq!(snapshot.settings.event_notification_offset_secs, 10 * 60);
+        assert_eq!(
+            snapshot.settings.assignment_notification_offset_secs,
+            6 * 60 * 60
+        );
+
+        core.create_scheme(None, "Notify".to_string(), Some(3), None)
+            .expect("create scheme");
+        let scheme_id = core
+            .snapshot(Some("2026-05-26".to_string()), 0)
+            .expect("snapshot")
+            .schemes
+            .into_iter()
+            .find(|scheme| scheme.display_name == "Notify")
+            .expect("scheme")
+            .id;
+        core.add_calendar_item(
+            Some(scheme_id.clone()),
+            Some("2026-05-26".to_string()),
+            "Ping me".to_string(),
+            "event".to_string(),
+            Some("2026-05-26T12:00:00Z".to_string()),
+            Some("2026-05-26T13:00:00Z".to_string()),
+        )
+        .expect("add event");
+        let item_id = core
+            .snapshot(Some("2026-05-26".to_string()), 0)
+            .expect("snapshot")
+            .schemes
+            .into_iter()
+            .find(|scheme| scheme.id == scheme_id)
+            .expect("scheme")
+            .items[0]
+            .id
+            .clone();
+        core.set_occurrence_notification_offset(
+            scheme_id.clone(),
+            item_id.clone(),
+            None,
+            Some(30 * 60),
+        )
+        .expect("set offset");
+
+        let snapshot = core
+            .snapshot(Some("2026-05-26".to_string()), 0)
+            .expect("snapshot");
+        let item = snapshot
+            .schemes
+            .iter()
+            .find(|scheme| scheme.id == scheme_id)
+            .expect("scheme")
+            .items
+            .iter()
+            .find(|item| item.id == item_id)
+            .expect("item");
+        assert_eq!(item.notification_offset_secs, Some(30 * 60));
+
+        let occurrence = snapshot
+            .calendar
+            .days
+            .into_iter()
+            .flat_map(|day| day.occurrences)
+            .find(|occurrence| occurrence.title == "Ping me")
+            .expect("occurrence");
+        assert_eq!(occurrence.notification_offset_secs, Some(30 * 60));
+
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn recurring_event_edit_this_event_uses_desktop_scoped_commit() {
+        let dir = std::env::temp_dir().join(format!("knotq-mobile-test-{}", uuid::Uuid::new_v4()));
+        let core = MobileCore::new(dir.display().to_string()).expect("open mobile core");
+
+        core.create_scheme(None, "Calendar".to_string(), Some(2), None)
+            .expect("create scheme");
+        let scheme_id = core
+            .snapshot(Some("2026-01-05".to_string()), 0)
+            .expect("snapshot")
+            .schemes
+            .into_iter()
+            .find(|scheme| scheme.display_name == "Calendar")
+            .expect("scheme")
+            .id;
+        core.add_calendar_item(
+            Some(scheme_id.clone()),
+            Some("2026-01-05".to_string()),
+            "Standup".to_string(),
+            "event".to_string(),
+            Some("2026-01-05T10:00:00Z".to_string()),
+            Some("2026-01-05T11:00:00Z".to_string()),
+        )
+        .expect("add event");
+        let item_id = core
+            .snapshot(Some("2026-01-05".to_string()), 0)
+            .expect("snapshot")
+            .schemes
+            .into_iter()
+            .find(|scheme| scheme.id == scheme_id)
+            .expect("scheme")
+            .items[0]
+            .id
+            .clone();
+        core.set_item_recurrence(
+            scheme_id.clone(),
+            item_id,
+            Some("FREQ=DAILY;INTERVAL=1".to_string()),
+        )
+        .expect("repeat");
+
+        let occurrence = core
+            .snapshot(Some("2026-01-05".to_string()), 0)
+            .expect("snapshot")
+            .calendar
+            .days
+            .into_iter()
+            .flat_map(|day| day.occurrences)
+            .find(|occurrence| {
+                occurrence.title == "Standup"
+                    && occurrence.local_date.as_deref() == Some("2026-01-07")
+            })
+            .expect("jan 7 occurrence");
+        assert!(occurrence.is_recurring);
+        assert_eq!(occurrence.occurrence_index, 2);
+
+        core.commit_event_edit(
+            occurrence.scheme_id.clone(),
+            occurrence.item_id.clone(),
+            occurrence.occurrence_json.clone(),
+            occurrence.occurrence_index,
+            occurrence.title.clone(),
+            occurrence.start.clone(),
+            occurrence.end.clone(),
+            Some("2026-01-07T14:00:00Z".to_string()),
+            Some("2026-01-07T15:00:00Z".to_string()),
+            occurrence.repeat_rule.clone(),
+            occurrence.notification_offset_secs,
+            false,
+            occurrence.done,
+            "this_event".to_string(),
+        )
+        .expect("scoped edit");
+
+        let snapshot = core
+            .snapshot(Some("2026-01-05".to_string()), 0)
+            .expect("snapshot after edit");
+        let item = snapshot
+            .schemes
+            .iter()
+            .find(|scheme| scheme.id == scheme_id)
+            .expect("scheme")
+            .items
+            .iter()
+            .find(|item| item.text == "Standup")
+            .expect("item");
+        assert_eq!(item.start.as_deref(), Some("2026-01-05T10:00:00Z"));
+        let moved = snapshot
+            .calendar
+            .days
+            .into_iter()
+            .flat_map(|day| day.occurrences)
+            .find(|occurrence| {
+                occurrence.title == "Standup"
+                    && occurrence.local_date.as_deref() == Some("2026-01-07")
+            })
+            .expect("moved occurrence");
+        assert_eq!(moved.start.as_deref(), Some("2026-01-07T14:00:00Z"));
+
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn recurring_event_delete_this_event_adds_exception_not_delete_item() {
+        let dir = std::env::temp_dir().join(format!("knotq-mobile-test-{}", uuid::Uuid::new_v4()));
+        let core = MobileCore::new(dir.display().to_string()).expect("open mobile core");
+
+        core.create_scheme(None, "Calendar".to_string(), Some(2), None)
+            .expect("create scheme");
+        let scheme_id = core
+            .snapshot(Some("2026-01-05".to_string()), 0)
+            .expect("snapshot")
+            .schemes
+            .into_iter()
+            .find(|scheme| scheme.display_name == "Calendar")
+            .expect("scheme")
+            .id;
+        core.add_calendar_item(
+            Some(scheme_id.clone()),
+            Some("2026-01-05".to_string()),
+            "Standup".to_string(),
+            "event".to_string(),
+            Some("2026-01-05T10:00:00Z".to_string()),
+            Some("2026-01-05T11:00:00Z".to_string()),
+        )
+        .expect("add event");
+        let item_id = core
+            .snapshot(Some("2026-01-05".to_string()), 0)
+            .expect("snapshot")
+            .schemes
+            .into_iter()
+            .find(|scheme| scheme.id == scheme_id)
+            .expect("scheme")
+            .items[0]
+            .id
+            .clone();
+        core.set_item_recurrence(
+            scheme_id.clone(),
+            item_id,
+            Some("FREQ=DAILY;INTERVAL=1".to_string()),
+        )
+        .expect("repeat");
+
+        let occurrence = core
+            .snapshot(Some("2026-01-05".to_string()), 0)
+            .expect("snapshot")
+            .calendar
+            .days
+            .into_iter()
+            .flat_map(|day| day.occurrences)
+            .find(|occurrence| {
+                occurrence.title == "Standup"
+                    && occurrence.local_date.as_deref() == Some("2026-01-07")
+            })
+            .expect("jan 7 occurrence");
+        core.delete_event_occurrence(
+            occurrence.scheme_id.clone(),
+            occurrence.item_id.clone(),
+            occurrence.occurrence_json,
+            occurrence.occurrence_index,
+            "this_event".to_string(),
+        )
+        .expect("delete occurrence");
+
+        let snapshot = core
+            .snapshot(Some("2026-01-05".to_string()), 0)
+            .expect("snapshot after delete");
+        let item_count = snapshot
+            .schemes
+            .iter()
+            .find(|scheme| scheme.id == scheme_id)
+            .expect("scheme")
+            .items
+            .len();
+        assert_eq!(item_count, 1);
+        assert!(!snapshot
+            .calendar
+            .days
+            .into_iter()
+            .flat_map(|day| day.occurrences)
+            .any(|occurrence| {
+                occurrence.title == "Standup"
+                    && occurrence.local_date.as_deref() == Some("2026-01-07")
+            }));
 
         let _ = std::fs::remove_dir_all(dir);
     }

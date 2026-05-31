@@ -39,6 +39,13 @@ private struct SheetID: Identifiable {
     let id: String
 }
 
+private struct PendingOccurrenceMove: Identifiable {
+    let id = UUID()
+    let occurrence: MobileOccurrence
+    let start: Date?
+    let end: Date?
+}
+
 enum HomeRoute: Hashable {
     case scheme(String)
     case daily
@@ -55,6 +62,7 @@ struct ContentView: View {
     @State private var showingMonthView = false
     @State private var showingNewFolder = false
     @State private var eventEditor: EventEditorTarget?
+    @State private var pendingOccurrenceMove: PendingOccurrenceMove?
     @State private var keyboardVisible = false
     @State private var titleFocusSchemeID: String?
     @State private var homeNavigationDepth = 0
@@ -192,6 +200,7 @@ struct ContentView: View {
                 Text(model.errorMessage ?? "")
             }
         }
+        .background(theme.bgApp.ignoresSafeArea())
         .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillShowNotification)) { _ in
             withAnimation(.easeOut(duration: 0.24)) { keyboardVisible = true }
         }
@@ -228,6 +237,25 @@ struct ContentView: View {
                 pane = .home
             }
             .presentationDetents([.height(220)])
+        }
+        .confirmationDialog("Recurring Task", isPresented: Binding(
+            get: { pendingOccurrenceMove != nil },
+            set: { showing in
+                if !showing { pendingOccurrenceMove = nil }
+            }
+        ), titleVisibility: .visible) {
+            Button(EventOccurrenceScope.thisEvent.label) {
+                applyPendingOccurrenceMove(scope: .thisEvent)
+            }
+            Button(EventOccurrenceScope.allFuture.label) {
+                applyPendingOccurrenceMove(scope: .allFuture)
+            }
+            Button(EventOccurrenceScope.allEvents.label) {
+                applyPendingOccurrenceMove(scope: .allEvents)
+            }
+            Button("Cancel", role: .cancel) { pendingOccurrenceMove = nil }
+        } message: {
+            Text("Which tasks should this move apply to?")
         }
         .onAppear { model.ensureDailyQueue(date: model.selectedDate) }
     }
@@ -347,7 +375,7 @@ struct ContentView: View {
         model.snapshot?.settings.timeFormat ?? "twelve_hour"
     }
 
-    /// True while the new-event editor popover is open, so the calendar keeps
+    /// True while the new-task editor popover is open, so the calendar keeps
     /// its create-draft block visible until the popover is dismissed.
     private var isCreatingEventDraft: Bool {
         if case .create = eventEditor { return true }
@@ -421,23 +449,47 @@ struct ContentView: View {
 
     private func moveOccurrence(_ occurrence: MobileOccurrence, start: Date?, end: Date?) {
         guard !occurrence.isReadOnly else { return }
+        guard let moveDates = normalizedMoveDates(for: occurrence, start: start, end: end) else { return }
+        if occurrence.isRecurring {
+            pendingOccurrenceMove = PendingOccurrenceMove(
+                occurrence: occurrence,
+                start: moveDates.start,
+                end: moveDates.end
+            )
+        } else {
+            applyOccurrenceMove(occurrence, start: moveDates.start, end: moveDates.end, scope: .allEvents)
+        }
+    }
+
+    private func normalizedMoveDates(for occurrence: MobileOccurrence, start: Date?, end: Date?) -> (start: Date?, end: Date?)? {
         if occurrence.kind == "assignment" {
-            model.setItemDate(schemeID: occurrence.schemeId, itemID: occurrence.itemId, kind: "end", date: end)
-            return
+            return (nil, end)
         }
         if occurrence.kind == "reminder" {
-            model.setItemDate(schemeID: occurrence.schemeId, itemID: occurrence.itemId, kind: "start", date: start)
-            return
+            return (start, nil)
         }
-        guard let start, let end else { return }
-        let oldStart = MobileDate.parseDateTime(occurrence.start)
-        if oldStart.map({ start > $0 }) == true {
-            model.setItemDate(schemeID: occurrence.schemeId, itemID: occurrence.itemId, kind: "end", date: end)
-            model.setItemDate(schemeID: occurrence.schemeId, itemID: occurrence.itemId, kind: "start", date: start)
-        } else {
-            model.setItemDate(schemeID: occurrence.schemeId, itemID: occurrence.itemId, kind: "start", date: start)
-            model.setItemDate(schemeID: occurrence.schemeId, itemID: occurrence.itemId, kind: "end", date: end)
-        }
+        guard let start, let end else { return nil }
+        return (start, end)
+    }
+
+    private func applyPendingOccurrenceMove(scope: EventOccurrenceScope) {
+        guard let pending = pendingOccurrenceMove else { return }
+        pendingOccurrenceMove = nil
+        applyOccurrenceMove(pending.occurrence, start: pending.start, end: pending.end, scope: scope)
+    }
+
+    private func applyOccurrenceMove(_ occurrence: MobileOccurrence, start: Date?, end: Date?, scope: EventOccurrenceScope) {
+        model.commitEventEdit(
+            occurrence: occurrence,
+            title: occurrence.title,
+            start: start,
+            end: end,
+            rrule: occurrence.repeatRule,
+            notificationOffsetSecs: occurrence.notificationOffsetSecs,
+            notificationDirty: false,
+            done: occurrence.done,
+            scope: scope
+        )
     }
 
     private func handleOccurrenceTap(_ occurrence: MobileOccurrence) {

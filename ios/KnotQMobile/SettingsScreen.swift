@@ -35,6 +35,8 @@ struct SettingsScreen: View {
             }
             .listRowBackground(theme.bgModal)
 
+            NotificationDefaultsSettingsSection(theme: theme)
+
             GoogleCalendarSettingsSection(theme: theme)
 
             Section("Sync") {
@@ -61,6 +63,11 @@ struct SettingsScreen: View {
         }
         .scrollContentBackground(.hidden)
         .background(theme.bgApp)
+        .safeAreaInset(edge: .bottom) {
+            Color.clear
+                .frame(height: 118)
+                .background(theme.bgApp)
+        }
         .navigationTitle("Settings")
         .sheet(isPresented: $showingSyncSignIn) {
             SyncSignInSheet(theme: theme)

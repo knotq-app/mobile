@@ -524,11 +524,15 @@ public protocol MobileCoreProtocol: AnyObject, Sendable {
     
     func applyNotificationAction(actionId: String, schemeId: String, itemId: String, occurrenceJson: String, triggerAt: String) throws  -> Bool
     
+    func commitEventEdit(schemeId: String, itemId: String, occurrenceJson: String, occurrenceIndex: Int32, title: String, occurrenceStart: String?, occurrenceEnd: String?, start: String?, end: String?, rrule: String?, notificationOffsetSecs: Int32?, notificationDirty: Bool, done: Bool, scope: String) throws 
+    
     func completeGoogleCalendarImport(clientId: String, clientSecret: String?, redirectUri: String, state: String, codeVerifier: String, callbackUrl: String, parentId: String?) throws  -> MobileGoogleSyncResult
     
     func createFolder(parentId: String?, name: String, position: Int32?) throws 
     
     func createScheme(folderId: String?, name: String, colorIndex: Int32?, position: Int32?) throws 
+    
+    func deleteEventOccurrence(schemeId: String, itemId: String, occurrenceJson: String, occurrenceIndex: Int32, scope: String) throws 
     
     func deleteFolder(folderId: String) throws 
     
@@ -573,6 +577,10 @@ public protocol MobileCoreProtocol: AnyObject, Sendable {
     func setItemMarker(schemeId: String, itemId: String, marker: String) throws 
     
     func setItemRecurrence(schemeId: String, itemId: String, rrule: String?) throws 
+    
+    func setNotificationDefaults(eventOffsetSecs: Int32, assignmentOffsetSecs: Int32) throws 
+    
+    func setOccurrenceNotificationOffset(schemeId: String, itemId: String, occurrenceJson: String?, offsetSecs: Int32?) throws 
     
     func setSchemeColor(schemeId: String, colorIndex: Int32) throws 
     
@@ -694,6 +702,27 @@ open func applyNotificationAction(actionId: String, schemeId: String, itemId: St
 })
 }
     
+open func commitEventEdit(schemeId: String, itemId: String, occurrenceJson: String, occurrenceIndex: Int32, title: String, occurrenceStart: String?, occurrenceEnd: String?, start: String?, end: String?, rrule: String?, notificationOffsetSecs: Int32?, notificationDirty: Bool, done: Bool, scope: String)throws   {try rustCallWithError(FfiConverterTypeMobileError_lift) {
+    uniffi_knotq_mobile_core_fn_method_mobilecore_commit_event_edit(
+            self.uniffiCloneHandle(),
+        FfiConverterString.lower(schemeId),
+        FfiConverterString.lower(itemId),
+        FfiConverterString.lower(occurrenceJson),
+        FfiConverterInt32.lower(occurrenceIndex),
+        FfiConverterString.lower(title),
+        FfiConverterOptionString.lower(occurrenceStart),
+        FfiConverterOptionString.lower(occurrenceEnd),
+        FfiConverterOptionString.lower(start),
+        FfiConverterOptionString.lower(end),
+        FfiConverterOptionString.lower(rrule),
+        FfiConverterOptionInt32.lower(notificationOffsetSecs),
+        FfiConverterBool.lower(notificationDirty),
+        FfiConverterBool.lower(done),
+        FfiConverterString.lower(scope),$0
+    )
+}
+}
+    
 open func completeGoogleCalendarImport(clientId: String, clientSecret: String?, redirectUri: String, state: String, codeVerifier: String, callbackUrl: String, parentId: String?)throws  -> MobileGoogleSyncResult  {
     return try  FfiConverterTypeMobileGoogleSyncResult_lift(try rustCallWithError(FfiConverterTypeMobileError_lift) {
     uniffi_knotq_mobile_core_fn_method_mobilecore_complete_google_calendar_import(
@@ -726,6 +755,18 @@ open func createScheme(folderId: String?, name: String, colorIndex: Int32?, posi
         FfiConverterString.lower(name),
         FfiConverterOptionInt32.lower(colorIndex),
         FfiConverterOptionInt32.lower(position),$0
+    )
+}
+}
+    
+open func deleteEventOccurrence(schemeId: String, itemId: String, occurrenceJson: String, occurrenceIndex: Int32, scope: String)throws   {try rustCallWithError(FfiConverterTypeMobileError_lift) {
+    uniffi_knotq_mobile_core_fn_method_mobilecore_delete_event_occurrence(
+            self.uniffiCloneHandle(),
+        FfiConverterString.lower(schemeId),
+        FfiConverterString.lower(itemId),
+        FfiConverterString.lower(occurrenceJson),
+        FfiConverterInt32.lower(occurrenceIndex),
+        FfiConverterString.lower(scope),$0
     )
 }
 }
@@ -924,6 +965,26 @@ open func setItemRecurrence(schemeId: String, itemId: String, rrule: String?)thr
         FfiConverterString.lower(schemeId),
         FfiConverterString.lower(itemId),
         FfiConverterOptionString.lower(rrule),$0
+    )
+}
+}
+    
+open func setNotificationDefaults(eventOffsetSecs: Int32, assignmentOffsetSecs: Int32)throws   {try rustCallWithError(FfiConverterTypeMobileError_lift) {
+    uniffi_knotq_mobile_core_fn_method_mobilecore_set_notification_defaults(
+            self.uniffiCloneHandle(),
+        FfiConverterInt32.lower(eventOffsetSecs),
+        FfiConverterInt32.lower(assignmentOffsetSecs),$0
+    )
+}
+}
+    
+open func setOccurrenceNotificationOffset(schemeId: String, itemId: String, occurrenceJson: String?, offsetSecs: Int32?)throws   {try rustCallWithError(FfiConverterTypeMobileError_lift) {
+    uniffi_knotq_mobile_core_fn_method_mobilecore_set_occurrence_notification_offset(
+            self.uniffiCloneHandle(),
+        FfiConverterString.lower(schemeId),
+        FfiConverterString.lower(itemId),
+        FfiConverterOptionString.lower(occurrenceJson),
+        FfiConverterOptionInt32.lower(offsetSecs),$0
     )
 }
 }
@@ -1383,12 +1444,13 @@ public struct MobileItem: Equatable, Hashable {
     public var done: Bool
     public var start: String?
     public var end: String?
+    public var notificationOffsetSecs: Int32?
     public var repeatRule: String?
     public var media: [MobileItemMedia]
 
     // Default memberwise initializers are never public by default, so we
     // declare one manually.
-    public init(id: String, text: String, marker: String, indent: Int32, kind: String, done: Bool, start: String?, end: String?, repeatRule: String?, media: [MobileItemMedia]) {
+    public init(id: String, text: String, marker: String, indent: Int32, kind: String, done: Bool, start: String?, end: String?, notificationOffsetSecs: Int32?, repeatRule: String?, media: [MobileItemMedia]) {
         self.id = id
         self.text = text
         self.marker = marker
@@ -1397,6 +1459,7 @@ public struct MobileItem: Equatable, Hashable {
         self.done = done
         self.start = start
         self.end = end
+        self.notificationOffsetSecs = notificationOffsetSecs
         self.repeatRule = repeatRule
         self.media = media
     }
@@ -1425,6 +1488,7 @@ public struct FfiConverterTypeMobileItem: FfiConverterRustBuffer {
                 done: FfiConverterBool.read(from: &buf), 
                 start: FfiConverterOptionString.read(from: &buf), 
                 end: FfiConverterOptionString.read(from: &buf), 
+                notificationOffsetSecs: FfiConverterOptionInt32.read(from: &buf), 
                 repeatRule: FfiConverterOptionString.read(from: &buf), 
                 media: FfiConverterSequenceTypeMobileItemMedia.read(from: &buf)
         )
@@ -1439,6 +1503,7 @@ public struct FfiConverterTypeMobileItem: FfiConverterRustBuffer {
         FfiConverterBool.write(value.done, into: &buf)
         FfiConverterOptionString.write(value.start, into: &buf)
         FfiConverterOptionString.write(value.end, into: &buf)
+        FfiConverterOptionInt32.write(value.notificationOffsetSecs, into: &buf)
         FfiConverterOptionString.write(value.repeatRule, into: &buf)
         FfiConverterSequenceTypeMobileItemMedia.write(value.media, into: &buf)
     }
@@ -1760,6 +1825,9 @@ public struct MobileOccurrence: Equatable, Hashable {
     public var schemeId: String
     public var itemId: String
     public var occurrenceJson: String
+    public var occurrenceIndex: Int32
+    public var isRecurring: Bool
+    public var canDeleteFuture: Bool
     public var schemeName: String
     public var colorIndex: Int32
     public var isReadOnly: Bool
@@ -1768,15 +1836,19 @@ public struct MobileOccurrence: Equatable, Hashable {
     public var done: Bool
     public var start: String?
     public var end: String?
+    public var notificationOffsetSecs: Int32?
     public var localDate: String?
     public var repeatRule: String?
 
     // Default memberwise initializers are never public by default, so we
     // declare one manually.
-    public init(schemeId: String, itemId: String, occurrenceJson: String, schemeName: String, colorIndex: Int32, isReadOnly: Bool, title: String, kind: String, done: Bool, start: String?, end: String?, localDate: String?, repeatRule: String?) {
+    public init(schemeId: String, itemId: String, occurrenceJson: String, occurrenceIndex: Int32, isRecurring: Bool, canDeleteFuture: Bool, schemeName: String, colorIndex: Int32, isReadOnly: Bool, title: String, kind: String, done: Bool, start: String?, end: String?, notificationOffsetSecs: Int32?, localDate: String?, repeatRule: String?) {
         self.schemeId = schemeId
         self.itemId = itemId
         self.occurrenceJson = occurrenceJson
+        self.occurrenceIndex = occurrenceIndex
+        self.isRecurring = isRecurring
+        self.canDeleteFuture = canDeleteFuture
         self.schemeName = schemeName
         self.colorIndex = colorIndex
         self.isReadOnly = isReadOnly
@@ -1785,6 +1857,7 @@ public struct MobileOccurrence: Equatable, Hashable {
         self.done = done
         self.start = start
         self.end = end
+        self.notificationOffsetSecs = notificationOffsetSecs
         self.localDate = localDate
         self.repeatRule = repeatRule
     }
@@ -1808,6 +1881,9 @@ public struct FfiConverterTypeMobileOccurrence: FfiConverterRustBuffer {
                 schemeId: FfiConverterString.read(from: &buf), 
                 itemId: FfiConverterString.read(from: &buf), 
                 occurrenceJson: FfiConverterString.read(from: &buf), 
+                occurrenceIndex: FfiConverterInt32.read(from: &buf), 
+                isRecurring: FfiConverterBool.read(from: &buf), 
+                canDeleteFuture: FfiConverterBool.read(from: &buf), 
                 schemeName: FfiConverterString.read(from: &buf), 
                 colorIndex: FfiConverterInt32.read(from: &buf), 
                 isReadOnly: FfiConverterBool.read(from: &buf), 
@@ -1816,6 +1892,7 @@ public struct FfiConverterTypeMobileOccurrence: FfiConverterRustBuffer {
                 done: FfiConverterBool.read(from: &buf), 
                 start: FfiConverterOptionString.read(from: &buf), 
                 end: FfiConverterOptionString.read(from: &buf), 
+                notificationOffsetSecs: FfiConverterOptionInt32.read(from: &buf), 
                 localDate: FfiConverterOptionString.read(from: &buf), 
                 repeatRule: FfiConverterOptionString.read(from: &buf)
         )
@@ -1825,6 +1902,9 @@ public struct FfiConverterTypeMobileOccurrence: FfiConverterRustBuffer {
         FfiConverterString.write(value.schemeId, into: &buf)
         FfiConverterString.write(value.itemId, into: &buf)
         FfiConverterString.write(value.occurrenceJson, into: &buf)
+        FfiConverterInt32.write(value.occurrenceIndex, into: &buf)
+        FfiConverterBool.write(value.isRecurring, into: &buf)
+        FfiConverterBool.write(value.canDeleteFuture, into: &buf)
         FfiConverterString.write(value.schemeName, into: &buf)
         FfiConverterInt32.write(value.colorIndex, into: &buf)
         FfiConverterBool.write(value.isReadOnly, into: &buf)
@@ -1833,6 +1913,7 @@ public struct FfiConverterTypeMobileOccurrence: FfiConverterRustBuffer {
         FfiConverterBool.write(value.done, into: &buf)
         FfiConverterOptionString.write(value.start, into: &buf)
         FfiConverterOptionString.write(value.end, into: &buf)
+        FfiConverterOptionInt32.write(value.notificationOffsetSecs, into: &buf)
         FfiConverterOptionString.write(value.localDate, into: &buf)
         FfiConverterOptionString.write(value.repeatRule, into: &buf)
     }
@@ -2013,13 +2094,17 @@ public func FfiConverterTypeMobileSearchHit_lower(_ value: MobileSearchHit) -> R
 public struct MobileSettings: Equatable, Hashable {
     public var themeMode: String
     public var timeFormat: String
+    public var eventNotificationOffsetSecs: Int32
+    public var assignmentNotificationOffsetSecs: Int32
     public var googleAccountCount: Int32
 
     // Default memberwise initializers are never public by default, so we
     // declare one manually.
-    public init(themeMode: String, timeFormat: String, googleAccountCount: Int32) {
+    public init(themeMode: String, timeFormat: String, eventNotificationOffsetSecs: Int32, assignmentNotificationOffsetSecs: Int32, googleAccountCount: Int32) {
         self.themeMode = themeMode
         self.timeFormat = timeFormat
+        self.eventNotificationOffsetSecs = eventNotificationOffsetSecs
+        self.assignmentNotificationOffsetSecs = assignmentNotificationOffsetSecs
         self.googleAccountCount = googleAccountCount
     }
 
@@ -2041,6 +2126,8 @@ public struct FfiConverterTypeMobileSettings: FfiConverterRustBuffer {
             try MobileSettings(
                 themeMode: FfiConverterString.read(from: &buf), 
                 timeFormat: FfiConverterString.read(from: &buf), 
+                eventNotificationOffsetSecs: FfiConverterInt32.read(from: &buf), 
+                assignmentNotificationOffsetSecs: FfiConverterInt32.read(from: &buf), 
                 googleAccountCount: FfiConverterInt32.read(from: &buf)
         )
     }
@@ -2048,6 +2135,8 @@ public struct FfiConverterTypeMobileSettings: FfiConverterRustBuffer {
     public static func write(_ value: MobileSettings, into buf: inout [UInt8]) {
         FfiConverterString.write(value.themeMode, into: &buf)
         FfiConverterString.write(value.timeFormat, into: &buf)
+        FfiConverterInt32.write(value.eventNotificationOffsetSecs, into: &buf)
+        FfiConverterInt32.write(value.assignmentNotificationOffsetSecs, into: &buf)
         FfiConverterInt32.write(value.googleAccountCount, into: &buf)
     }
 }
@@ -2537,6 +2626,9 @@ private let initializationResult: InitializationResult = {
     if (uniffi_knotq_mobile_core_checksum_method_mobilecore_apply_notification_action() != 6490) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_knotq_mobile_core_checksum_method_mobilecore_commit_event_edit() != 44971) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_knotq_mobile_core_checksum_method_mobilecore_complete_google_calendar_import() != 63128) {
         return InitializationResult.apiChecksumMismatch
     }
@@ -2544,6 +2636,9 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_knotq_mobile_core_checksum_method_mobilecore_create_scheme() != 60715) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_knotq_mobile_core_checksum_method_mobilecore_delete_event_occurrence() != 38818) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_knotq_mobile_core_checksum_method_mobilecore_delete_folder() != 41492) {
@@ -2610,6 +2705,12 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_knotq_mobile_core_checksum_method_mobilecore_set_item_recurrence() != 54120) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_knotq_mobile_core_checksum_method_mobilecore_set_notification_defaults() != 46232) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_knotq_mobile_core_checksum_method_mobilecore_set_occurrence_notification_offset() != 26565) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_knotq_mobile_core_checksum_method_mobilecore_set_scheme_color() != 60612) {

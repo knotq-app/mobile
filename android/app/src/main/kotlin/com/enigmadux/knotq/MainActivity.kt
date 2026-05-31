@@ -1699,7 +1699,7 @@ class MainActivity : Activity() {
         form.addView(text("End / Due", theme.textMuted, 12f, true))
         form.addView(end)
         AlertDialog.Builder(this)
-            .setTitle("New Calendar Item")
+            .setTitle("New")
             .setView(form)
             .setPositiveButton("Add") { _, _ ->
                 val localDate = LocalDate.of(date.year, date.month + 1, date.dayOfMonth)

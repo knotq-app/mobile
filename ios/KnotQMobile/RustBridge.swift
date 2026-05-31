@@ -107,6 +107,51 @@ final class RustBridge: @unchecked Sendable {
         try core.setItemRecurrence(schemeId: schemeID, itemId: itemID, rrule: rrule)
     }
 
+    func commitEventEdit(
+        occurrence: MobileOccurrence,
+        title: String,
+        occurrenceStart: String?,
+        occurrenceEnd: String?,
+        start: String?,
+        end: String?,
+        rrule: String?,
+        notificationOffsetSecs: Int32?,
+        notificationDirty: Bool,
+        done: Bool,
+        scope: EventOccurrenceScope
+    ) throws {
+        try core.commitEventEdit(
+            schemeId: occurrence.schemeId,
+            itemId: occurrence.itemId,
+            occurrenceJson: occurrence.occurrenceJson,
+            occurrenceIndex: occurrence.occurrenceIndex,
+            title: title,
+            occurrenceStart: occurrenceStart,
+            occurrenceEnd: occurrenceEnd,
+            start: start,
+            end: end,
+            rrule: rrule,
+            notificationOffsetSecs: notificationOffsetSecs,
+            notificationDirty: notificationDirty,
+            done: done,
+            scope: scope.rawValue
+        )
+    }
+
+    func setOccurrenceNotificationOffset(
+        schemeID: String,
+        itemID: String,
+        occurrenceJSON: String?,
+        offsetSecs: Int32?
+    ) throws {
+        try core.setOccurrenceNotificationOffset(
+            schemeId: schemeID,
+            itemId: itemID,
+            occurrenceJson: occurrenceJSON,
+            offsetSecs: offsetSecs
+        )
+    }
+
     func toggleItem(schemeID: String, itemID: String) throws {
         try core.toggleItem(schemeId: schemeID, itemId: itemID)
     }
@@ -117,6 +162,16 @@ final class RustBridge: @unchecked Sendable {
 
     func deleteItem(schemeID: String, itemID: String) throws {
         try core.deleteItem(schemeId: schemeID, itemId: itemID)
+    }
+
+    func deleteEventOccurrence(_ occurrence: MobileOccurrence, scope: EventOccurrenceScope) throws {
+        try core.deleteEventOccurrence(
+            schemeId: occurrence.schemeId,
+            itemId: occurrence.itemId,
+            occurrenceJson: occurrence.occurrenceJson,
+            occurrenceIndex: occurrence.occurrenceIndex,
+            scope: scope.rawValue
+        )
     }
 
     func addCalendarItem(kind: CalendarKind, text: String, date: String, start: String?, end: String?, schemeID: String?) throws {
@@ -154,6 +209,13 @@ final class RustBridge: @unchecked Sendable {
 
     func setTimeFormat(_ format: String) throws {
         try core.setTimeFormat(timeFormat: format)
+    }
+
+    func setNotificationDefaults(eventOffsetSecs: Int32, assignmentOffsetSecs: Int32) throws {
+        try core.setNotificationDefaults(
+            eventOffsetSecs: eventOffsetSecs,
+            assignmentOffsetSecs: assignmentOffsetSecs
+        )
     }
 
     func resetWorkspace() throws {

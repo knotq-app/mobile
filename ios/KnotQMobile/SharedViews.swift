@@ -89,19 +89,19 @@ struct ArchiveTarget: Identifiable, Equatable {
     }
 
     var title: String {
-        "Archive \(kind.label)"
+        "Move to Archive?"
     }
 
     var confirmTitle: String {
-        "Archive \(kind.label)"
+        "Move to Archive"
     }
 
     var message: String {
         switch kind {
         case .folder:
-            return "\"\(name)\" and its schemes will move to Archive."
+            return "\"\(name)\" and its schemes will be moved out of the sidebar. You can restore them later from Archive."
         case .scheme:
-            return "\"\(name)\" will move to Archive."
+            return "\"\(name)\" will be moved out of the sidebar. You can restore it later from Archive."
         }
     }
 }
@@ -138,7 +138,7 @@ extension View {
         target selection: Binding<ArchiveTarget?>,
         onConfirm: @escaping (ArchiveTarget) -> Void
     ) -> some View {
-        confirmationDialog(
+        alert(
             selection.wrappedValue?.title ?? "Archive",
             isPresented: Binding(
                 get: { selection.wrappedValue != nil },
@@ -148,10 +148,9 @@ extension View {
                     }
                 }
             ),
-            titleVisibility: .visible,
             presenting: selection.wrappedValue
         ) { target in
-            Button(target.confirmTitle, role: .destructive) {
+            Button(target.confirmTitle) {
                 onConfirm(target)
                 selection.wrappedValue = nil
             }

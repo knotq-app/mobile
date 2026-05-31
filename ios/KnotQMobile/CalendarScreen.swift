@@ -76,12 +76,13 @@ struct CalendarScreen: View {
 
 struct OccurrenceRow: View {
     @EnvironmentObject private var model: AppModel
+    @Environment(\.colorScheme) private var systemScheme
     let occurrence: MobileOccurrence
 
     var body: some View {
         HStack(alignment: .top, spacing: 12) {
             Circle()
-                .fill(colorForIndex(occurrence.colorIndex))
+                .fill(occurrenceSchemeColor(occurrence, dark: theme.isDark))
                 .frame(width: 10, height: 10)
                 .padding(.top, 6)
             VStack(alignment: .leading, spacing: 4) {
@@ -96,6 +97,10 @@ struct OccurrenceRow: View {
                 .foregroundStyle(.secondary)
             }
         }
+    }
+
+    private var theme: KnotQTheme {
+        KnotQTheme.resolve(mode: model.snapshot?.settings.themeMode, systemScheme: systemScheme)
     }
 
     private var timeLabel: String {
@@ -141,12 +146,23 @@ enum RepeatChoice: String, CaseIterable, Identifiable {
 
     /// Bare RRULE body, matching `CalendarRecurrence.rrules` elsewhere.
     var rrule: String? {
+        rrule(weekdays: Set<RepeatWeekdayChoice>())
+    }
+
+    func rrule(weekdays: Set<RepeatWeekdayChoice>) -> String? {
         switch self {
-        case .none: nil
-        case .daily: "FREQ=DAILY;INTERVAL=1"
-        case .weekly: "FREQ=WEEKLY;INTERVAL=1"
-        case .monthly: "FREQ=MONTHLY;INTERVAL=1"
-        case .yearly: "FREQ=YEARLY;INTERVAL=1"
+        case .none:
+            return nil
+        case .daily:
+            return "FREQ=DAILY;INTERVAL=1"
+        case .weekly:
+            let codes = RepeatWeekdayChoice.orderedCodes(weekdays)
+            if codes.isEmpty { return "FREQ=WEEKLY;INTERVAL=1" }
+            return "FREQ=WEEKLY;INTERVAL=1;BYDAY=\(codes.joined(separator: ","))"
+        case .monthly:
+            return "FREQ=MONTHLY;INTERVAL=1"
+        case .yearly:
+            return "FREQ=YEARLY;INTERVAL=1"
         }
     }
 
@@ -157,6 +173,27 @@ enum RepeatChoice: String, CaseIterable, Identifiable {
         if rrule.contains("FREQ=MONTHLY") { return .monthly }
         if rrule.contains("FREQ=YEARLY") { return .yearly }
         return .none
+    }
+}
+
+private enum EventScopePromptAction: String {
+    case save
+    case delete
+}
+
+private struct EventScopePrompt: Identifiable {
+    let action: EventScopePromptAction
+    let canThis: Bool
+    let canFuture: Bool
+    let canAll: Bool
+
+    var id: String { action.rawValue }
+
+    var message: String {
+        switch action {
+        case .save: "Which tasks should these changes apply to?"
+        case .delete: "Which tasks should be deleted?"
+        }
     }
 }
 
@@ -172,12 +209,18 @@ struct EventEditorSheet: View {
     @State private var start: Date
     @State private var end: Date
     @State private var repeatChoice: RepeatChoice
+    @State private var weeklyRepeatDays: Set<RepeatWeekdayChoice>
+    @State private var notificationOffsetSecs: Int32?
+    @State private var notificationDirty: Bool
     @State private var schemeID: String?
+    @State private var completed: Bool
     @State private var showDeleteConfirm = false
+    @State private var scopePrompt: EventScopePrompt?
 
     private let isEditing: Bool
     private let editingSchemeID: String?
     private let editingItemID: String?
+    private let editingOccurrence: MobileOccurrence?
     private let readOnly: Bool
 
     init(theme: KnotQTheme, target: EventEditorTarget) {
@@ -188,6 +231,7 @@ struct EventEditorSheet: View {
             isEditing = false
             editingSchemeID = nil
             editingItemID = nil
+            editingOccurrence = nil
             readOnly = false
             _title = State(initialValue: "")
             _hasStart = State(initialValue: true)
@@ -195,11 +239,16 @@ struct EventEditorSheet: View {
             _start = State(initialValue: date)
             _end = State(initialValue: date.addingTimeInterval(3600))
             _repeatChoice = State(initialValue: .none)
+            _weeklyRepeatDays = State(initialValue: [RepeatWeekdayChoice.defaultFor(date: date)])
+            _notificationOffsetSecs = State(initialValue: nil)
+            _notificationDirty = State(initialValue: false)
             _schemeID = State(initialValue: nil)
+            _completed = State(initialValue: false)
         case .edit(let occ):
             isEditing = true
             editingSchemeID = occ.schemeId
             editingItemID = occ.itemId
+            editingOccurrence = occ
             readOnly = occ.isReadOnly
             _title = State(initialValue: occ.title)
             let startDate = MobileDate.parseDateTime(occ.start)
@@ -209,7 +258,11 @@ struct EventEditorSheet: View {
             _start = State(initialValue: startDate ?? endDate ?? Date())
             _end = State(initialValue: endDate ?? startDate?.addingTimeInterval(3600) ?? Date().addingTimeInterval(3600))
             _repeatChoice = State(initialValue: RepeatChoice.from(rrule: occ.repeatRule))
+            _weeklyRepeatDays = State(initialValue: RepeatWeekdayChoice.selected(from: occ.repeatRule, fallbackDate: startDate ?? endDate ?? Date()))
+            _notificationOffsetSecs = State(initialValue: occ.notificationOffsetSecs)
+            _notificationDirty = State(initialValue: false)
             _schemeID = State(initialValue: occ.schemeId)
+            _completed = State(initialValue: occ.done)
         }
     }
 
@@ -219,16 +272,25 @@ struct EventEditorSheet: View {
                 Section {
                     TextField("Title", text: $title)
                         .disabled(readOnly)
+                    if isEditing && !readOnly {
+                        Toggle("Completed", isOn: $completed)
+                    }
+                    // Scheme lives with the title — they're usually set together.
+                    if !isEditing {
+                        Picker("Scheme", selection: $schemeID) {
+                            calendarSchemeRow(name: "Daily", color: dailyQueueColor(dark: theme.isDark))
+                                .tag(String?.none)
+                            ForEach(model.snapshot?.schemes.filter { !$0.isDailyQueue && !$0.isReadOnly } ?? []) { scheme in
+                                calendarSchemeRow(name: scheme.displayName, color: schemeColor(scheme.colorIndex, dark: theme.isDark))
+                                    .tag(String?.some(scheme.id))
+                            }
+                        }
+                        .pickerStyle(.navigationLink)
+                    }
                 }
 
                 Section {
-                    Picker("Kind", selection: editorKindBinding) {
-                        Text("Event").tag(CalendarKind.event)
-                        Text("Reminder").tag(CalendarKind.reminder)
-                        Text("Assignment").tag(CalendarKind.assignment)
-                    }
-                    .pickerStyle(.segmented)
-                    .disabled(readOnly)
+                    CalendarKindSelector(selection: editorKindBinding, disabled: readOnly)
 
                     if hasStart {
                         DatePicker(hasEnd ? "Start" : "At", selection: $start)
@@ -241,37 +303,44 @@ struct EventEditorSheet: View {
                         DatePicker(hasStart ? "End" : "Due", selection: $end, in: (hasStart ? start : Date.distantPast)...)
                             .disabled(readOnly)
                     }
+                    if hasStart || hasEnd {
+                        Picker("Notification", selection: notificationOffsetBinding) {
+                            ForEach(occurrenceNotificationOptionsIncluding(notificationOffsetBinding.wrappedValue)) { option in
+                                Text(option.label).tag(option.offsetSecs)
+                            }
+                        }
+                        .disabled(readOnly)
+                    }
                 }
 
-                Section {
-                    Picker("Repeat", selection: $repeatChoice) {
-                        ForEach(RepeatChoice.allCases) { choice in
-                            Text(choice.label).tag(choice)
+                if hasStart || hasEnd {
+                    Section {
+                        Picker("Repeat", selection: $repeatChoice) {
+                            ForEach(RepeatChoice.allCases) { choice in
+                                Text(choice.label).tag(choice)
+                            }
+                        }
+                        .onChange(of: repeatChoice) { _, choice in
+                            if choice == .weekly, weeklyRepeatDays.isEmpty {
+                                weeklyRepeatDays = [RepeatWeekdayChoice.defaultFor(date: repeatAnchorDate)]
+                            }
+                        }
+                        if repeatChoice == .weekly {
+                            WeeklyRepeatDaysPicker(selection: $weeklyRepeatDays, disabled: readOnly)
                         }
                     }
                     .disabled(readOnly)
                 }
 
-                if !isEditing {
-                    Section {
-                        Picker("Scheme", selection: $schemeID) {
-                            Text("Daily").tag(String?.none)
-                            ForEach(model.snapshot?.schemes.filter { !$0.isDailyQueue && !$0.isReadOnly } ?? []) { scheme in
-                                Text(scheme.displayName).tag(String?.some(scheme.id))
-                            }
-                        }
-                    }
-                }
-
                 if isEditing && !readOnly {
                     Section {
-                        Button(role: .destructive) { showDeleteConfirm = true } label: {
-                            Label("Delete Event", systemImage: "trash")
+                        Button(role: .destructive) { requestDelete() } label: {
+                            Label("Delete Task", systemImage: "trash")
                         }
                     }
                 }
             }
-            .navigationTitle(readOnly ? "Event Details" : (isEditing ? "Edit Event" : "New Event"))
+            .navigationTitle(readOnly ? "Task Details" : (isEditing ? "Edit" : "New"))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 if !readOnly {
@@ -284,20 +353,43 @@ struct EventEditorSheet: View {
                         if readOnly {
                             dismiss()
                         } else {
-                            save()
+                            requestSave()
                         }
                     }
-                        .disabled(!readOnly && !hasStart && !hasEnd)
                 }
             }
-            .confirmationDialog("Delete this event?", isPresented: $showDeleteConfirm, titleVisibility: .visible) {
+            .confirmationDialog("Delete this task?", isPresented: $showDeleteConfirm, titleVisibility: .visible) {
                 Button("Delete", role: .destructive) {
-                    if let s = editingSchemeID, let i = editingItemID {
-                        model.deleteItem(schemeID: s, itemID: i)
-                    }
-                    dismiss()
+                    deleteEditing(scope: .allEvents)
                 }
                 Button("Cancel", role: .cancel) {}
+            }
+            .confirmationDialog("Recurring Task", isPresented: Binding(
+                get: { scopePrompt != nil },
+                set: { showing in
+                    if !showing { scopePrompt = nil }
+                }
+            ), titleVisibility: .visible) {
+                if let prompt = scopePrompt {
+                    if prompt.canThis {
+                        Button(EventOccurrenceScope.thisEvent.label) {
+                            applyScopeChoice(.thisEvent)
+                        }
+                    }
+                    if prompt.canFuture {
+                        Button(EventOccurrenceScope.allFuture.label) {
+                            applyScopeChoice(.allFuture)
+                        }
+                    }
+                    if prompt.canAll {
+                        Button(EventOccurrenceScope.allEvents.label) {
+                            applyScopeChoice(.allEvents)
+                        }
+                    }
+                }
+                Button("Cancel", role: .cancel) { scopePrompt = nil }
+            } message: {
+                Text(scopePrompt?.message ?? "")
             }
         }
     }
@@ -322,7 +414,9 @@ struct EventEditorSheet: View {
                     hasStart = false
                     hasEnd = true
                 case .task:
-                    break
+                    hasStart = false
+                    hasEnd = false
+                    repeatChoice = .none
                 }
             }
         )
@@ -333,22 +427,121 @@ struct EventEditorSheet: View {
         case (true, true): .event
         case (true, false): .reminder
         case (false, true): .assignment
-        default: .event
+        default: .task
         }
     }
 
-    private func save() {
+    private var repeatAnchorDate: Date {
+        if hasStart { return start }
+        if hasEnd { return end }
+        return start
+    }
+
+    private var notificationOffsetBinding: Binding<Int32> {
+        Binding(
+            get: {
+                notificationOffsetSecs
+                    ?? defaultNotificationOffset(kind: derivedKind, settings: model.snapshot?.settings)
+            },
+            set: { offset in
+                notificationOffsetSecs = offset
+                notificationDirty = true
+            }
+        )
+    }
+
+    private func requestSave() {
+        if let prompt = saveScopePrompt() {
+            scopePrompt = prompt
+        } else {
+            save(scope: .allEvents)
+        }
+    }
+
+    private func requestDelete() {
+        if let occurrence = editingOccurrence, occurrence.isRecurring {
+            scopePrompt = EventScopePrompt(
+                action: .delete,
+                canThis: true,
+                canFuture: occurrence.canDeleteFuture,
+                canAll: true
+            )
+        } else {
+            showDeleteConfirm = true
+        }
+    }
+
+    private func applyScopeChoice(_ scope: EventOccurrenceScope) {
+        guard let action = scopePrompt?.action else { return }
+        scopePrompt = nil
+        switch action {
+        case .save:
+            save(scope: scope)
+        case .delete:
+            deleteEditing(scope: scope)
+        }
+    }
+
+    private func saveScopePrompt() -> EventScopePrompt? {
+        guard let occurrence = editingOccurrence, occurrence.isRecurring else { return nil }
+        let startValue = hasStart ? start : nil
+        let endValue = hasEnd ? end : nil
+        let originalStart = MobileDate.parseDateTime(occurrence.start)
+        let originalEnd = MobileDate.parseDateTime(occurrence.end)
+        guard datesDiffer(originalStart, startValue) || datesDiffer(originalEnd, endValue) else {
+            return nil
+        }
+        let presenceChanged = (originalStart == nil) != (startValue == nil)
+            || (originalEnd == nil) != (endValue == nil)
+        return EventScopePrompt(
+            action: .save,
+            canThis: !presenceChanged,
+            canFuture: !presenceChanged,
+            canAll: true
+        )
+    }
+
+    private func datesDiffer(_ lhs: Date?, _ rhs: Date?) -> Bool {
+        switch (lhs, rhs) {
+        case (nil, nil):
+            return false
+        case let (left?, right?):
+            return abs(left.timeIntervalSince(right)) > 0.5
+        default:
+            return true
+        }
+    }
+
+    private func deleteEditing(scope: EventOccurrenceScope) {
+        if let occurrence = editingOccurrence {
+            model.deleteEventOccurrence(occurrence, scope: scope)
+        } else if let s = editingSchemeID, let i = editingItemID {
+            model.deleteItem(schemeID: s, itemID: i)
+        }
+        dismiss()
+    }
+
+    private func save(scope: EventOccurrenceScope) {
         let trimmed = title.trimmingCharacters(in: .whitespacesAndNewlines)
         let startValue = hasStart ? start : nil
         let endValue = hasEnd ? end : nil
+        let notificationChangedByUnscheduling = !(hasStart || hasEnd)
+            && editingOccurrence?.notificationOffsetSecs != nil
 
-        if isEditing, let s = editingSchemeID, let i = editingItemID {
-            model.updateItemText(schemeID: s, itemID: i, text: trimmed)
-            model.setItemDate(schemeID: s, itemID: i, kind: "start", date: startValue)
-            model.setItemDate(schemeID: s, itemID: i, kind: "end", date: endValue)
-            model.setItemRecurrence(schemeID: s, itemID: i, rrule: repeatChoice.rrule)
+        if isEditing, let occurrence = editingOccurrence {
+            model.commitEventEdit(
+                occurrence: occurrence,
+                title: trimmed,
+                start: startValue,
+                end: endValue,
+                rrule: (hasStart || hasEnd) ? repeatChoice.rrule(weekdays: weeklyRepeatDays) : nil,
+                notificationOffsetSecs: hasStart || hasEnd ? notificationOffsetSecs : nil,
+                notificationDirty: ((hasStart || hasEnd) && notificationDirty) || notificationChangedByUnscheduling,
+                done: completed,
+                scope: scope
+            )
         } else {
-            let anchorDay = startValue ?? endValue ?? Date()
+            let anchorDay = startValue ?? endValue ?? start
             let newID = model.createCalendarItemReturningID(
                 kind: derivedKind,
                 text: trimmed,
@@ -357,12 +550,21 @@ struct EventEditorSheet: View {
                 end: endValue,
                 schemeID: schemeID
             )
-            if let newID, let choiceRule = repeatChoice.rrule {
+            if let newID {
                 let resolvedScheme = schemeID ?? model.snapshot?.daily.first {
                     $0.date == AppModel.dateOnly(anchorDay)
                 }?.scheme.id
                 if let resolvedScheme {
-                    model.setItemRecurrence(schemeID: resolvedScheme, itemID: newID, rrule: choiceRule)
+                    if (hasStart || hasEnd), let choiceRule = repeatChoice.rrule(weekdays: weeklyRepeatDays) {
+                        model.setItemRecurrence(schemeID: resolvedScheme, itemID: newID, rrule: choiceRule)
+                    }
+                    if (hasStart || hasEnd), notificationDirty {
+                        model.setOccurrenceNotificationOffset(
+                            schemeID: resolvedScheme,
+                            itemID: newID,
+                            offsetSecs: notificationOffsetSecs
+                        )
+                    }
                 }
             }
         }
@@ -373,56 +575,109 @@ struct EventEditorSheet: View {
 struct AddCalendarItemSheet: View {
     @EnvironmentObject private var model: AppModel
     @Environment(\.dismiss) private var dismiss
-    @State private var kind: CalendarKind = .event
+    @Environment(\.colorScheme) private var systemScheme
+    @State private var kind: CalendarKind = .task
     @State private var text = ""
     @State private var date = Date()
     @State private var start = Date()
     @State private var end = Date().addingTimeInterval(60 * 60)
+    @State private var notificationOffsetSecs: Int32?
+    @State private var notificationDirty = false
     @State private var selectedSchemeID = ""
+
+    private var theme: KnotQTheme {
+        KnotQTheme.resolve(mode: model.snapshot?.settings.themeMode, systemScheme: systemScheme)
+    }
 
     var body: some View {
         NavigationStack {
             Form {
-                TextField("Title", text: $text)
-                Picker("Kind", selection: $kind) {
-                    ForEach(CalendarKind.allCases) { kind in
-                        Text(kind.label).tag(kind)
+                Section {
+                    TextField("Title", text: $text)
+                    Picker("Scheme", selection: $selectedSchemeID) {
+                        calendarSchemeRow(name: "Daily", color: dailyQueueColor(dark: theme.isDark))
+                            .tag("")
+                        ForEach(model.snapshot?.schemes.filter { !$0.isDailyQueue && !$0.isReadOnly } ?? []) { scheme in
+                            calendarSchemeRow(name: scheme.displayName, color: schemeColor(scheme.colorIndex, dark: theme.isDark))
+                                .tag(scheme.id)
+                        }
                     }
+                    .pickerStyle(.navigationLink)
                 }
-                DatePicker("Date", selection: $date, displayedComponents: .date)
-                if kind == .event || kind == .reminder {
-                    DatePicker(kind == .event ? "Start" : "At", selection: $start)
-                }
-                if kind == .event || kind == .assignment {
-                    DatePicker(kind == .event ? "End" : "Due", selection: $end)
-                }
-                Picker("Scheme", selection: $selectedSchemeID) {
-                    Text("Daily").tag("")
-                    ForEach(model.snapshot?.schemes.filter { !$0.isDailyQueue && !$0.isReadOnly } ?? []) { scheme in
-                        Text(scheme.displayName).tag(scheme.id)
+
+                Section {
+                    CalendarKindSelector(selection: $kind)
+                    DatePicker("Date", selection: $date, displayedComponents: .date)
+                    if kind == .event || kind == .reminder {
+                        DatePicker(kind == .event ? "Start" : "At", selection: $start)
+                    }
+                    if kind == .event || kind == .assignment {
+                        DatePicker(kind == .event ? "End" : "Due", selection: $end)
+                    }
+                    if kind != .task {
+                        Picker("Notification", selection: notificationOffsetBinding) {
+                            ForEach(occurrenceNotificationOptionsIncluding(notificationOffsetBinding.wrappedValue)) { option in
+                                Text(option.label).tag(option.offsetSecs)
+                            }
+                        }
                     }
                 }
             }
-            .navigationTitle("New Calendar Item")
+            .navigationTitle("New")
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { dismiss() }
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Add") {
-                        model.addCalendarItem(
+                        let schemeID = selectedSchemeID.isEmpty ? nil : selectedSchemeID
+                        let itemID = model.createCalendarItemReturningID(
                             kind: kind,
                             text: text,
                             date: date,
                             start: kind == .event || kind == .reminder ? start : nil,
                             end: kind == .event || kind == .assignment ? end : nil,
-                            schemeID: selectedSchemeID.isEmpty ? nil : selectedSchemeID
+                            schemeID: schemeID
                         )
+                        if kind != .task, notificationDirty, let itemID {
+                            let resolvedSchemeID = schemeID ?? model.snapshot?.daily.first {
+                                $0.date == AppModel.dateOnly(date)
+                            }?.scheme.id
+                            if let resolvedSchemeID {
+                                model.setOccurrenceNotificationOffset(
+                                    schemeID: resolvedSchemeID,
+                                    itemID: itemID,
+                                    offsetSecs: notificationOffsetSecs
+                                )
+                            }
+                        }
                         dismiss()
                     }
                     .disabled(text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                 }
             }
         }
+    }
+
+    private var notificationOffsetBinding: Binding<Int32> {
+        Binding(
+            get: {
+                notificationOffsetSecs
+                    ?? defaultNotificationOffset(kind: kind, settings: model.snapshot?.settings)
+            },
+            set: { offset in
+                notificationOffsetSecs = offset
+                notificationDirty = true
+            }
+        )
+    }
+}
+
+private func calendarSchemeRow(name: String, color: Color) -> some View {
+    HStack(spacing: 8) {
+        Circle()
+            .fill(color)
+            .frame(width: 10, height: 10)
+        Text(name)
     }
 }

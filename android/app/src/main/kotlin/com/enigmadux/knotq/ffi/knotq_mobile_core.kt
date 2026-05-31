@@ -309,7 +309,7 @@ internal inline fun<T, reified E: Throwable> uniffiTraitInterfaceCallWithError(
         }
     }
 }
-// Initial value and increment amount for handles.
+// Initial value and increment amount for handles. 
 // These ensure that Kotlin-generated handles always have the lowest bit set
 private const val UNIFFI_HANDLEMAP_INITIAL = 1.toLong()
 private const val UNIFFI_HANDLEMAP_DELTA = 2.toLong()
@@ -319,7 +319,7 @@ private const val UNIFFI_HANDLEMAP_DELTA = 2.toLong()
 // This is used pass an opaque 64-bit handle representing a foreign object to the Rust code.
 internal class UniffiHandleMap<T: Any> {
     private val map = ConcurrentHashMap<Long, T>()
-    // Start
+    // Start 
     private val counter = java.util.concurrent.atomic.AtomicLong(UNIFFI_HANDLEMAP_INITIAL)
 
     val size: Int
@@ -644,9 +644,15 @@ internal object IntegrityCheckingUniffiLib {
     ): Short
     external fun uniffi_knotq_mobile_core_checksum_method_mobilecore_apply_notification_action(
     ): Short
+    external fun uniffi_knotq_mobile_core_checksum_method_mobilecore_commit_event_edit(
+    ): Short
+    external fun uniffi_knotq_mobile_core_checksum_method_mobilecore_complete_google_calendar_import(
+    ): Short
     external fun uniffi_knotq_mobile_core_checksum_method_mobilecore_create_folder(
     ): Short
     external fun uniffi_knotq_mobile_core_checksum_method_mobilecore_create_scheme(
+    ): Short
+    external fun uniffi_knotq_mobile_core_checksum_method_mobilecore_delete_event_occurrence(
     ): Short
     external fun uniffi_knotq_mobile_core_checksum_method_mobilecore_delete_folder(
     ): Short
@@ -657,6 +663,10 @@ internal object IntegrityCheckingUniffiLib {
     external fun uniffi_knotq_mobile_core_checksum_method_mobilecore_empty_archive(
     ): Short
     external fun uniffi_knotq_mobile_core_checksum_method_mobilecore_ensure_daily_queue(
+    ): Short
+    external fun uniffi_knotq_mobile_core_checksum_method_mobilecore_google_auth_request(
+    ): Short
+    external fun uniffi_knotq_mobile_core_checksum_method_mobilecore_month_days(
     ): Short
     external fun uniffi_knotq_mobile_core_checksum_method_mobilecore_move_node(
     ): Short
@@ -688,6 +698,10 @@ internal object IntegrityCheckingUniffiLib {
     ): Short
     external fun uniffi_knotq_mobile_core_checksum_method_mobilecore_set_item_recurrence(
     ): Short
+    external fun uniffi_knotq_mobile_core_checksum_method_mobilecore_set_notification_defaults(
+    ): Short
+    external fun uniffi_knotq_mobile_core_checksum_method_mobilecore_set_occurrence_notification_offset(
+    ): Short
     external fun uniffi_knotq_mobile_core_checksum_method_mobilecore_set_scheme_color(
     ): Short
     external fun uniffi_knotq_mobile_core_checksum_method_mobilecore_set_theme_mode(
@@ -695,6 +709,8 @@ internal object IntegrityCheckingUniffiLib {
     external fun uniffi_knotq_mobile_core_checksum_method_mobilecore_set_time_format(
     ): Short
     external fun uniffi_knotq_mobile_core_checksum_method_mobilecore_snapshot(
+    ): Short
+    external fun uniffi_knotq_mobile_core_checksum_method_mobilecore_sync_google_calendars(
     ): Short
     external fun uniffi_knotq_mobile_core_checksum_method_mobilecore_sync_once(
     ): Short
@@ -711,102 +727,118 @@ internal object IntegrityCheckingUniffiLib {
     external fun ffi_knotq_mobile_core_uniffi_contract_version(
     ): Int
 
-
+        
 }
 
 internal object UniffiLib {
-
+    
     // The Cleaner for the whole library
     internal val CLEANER: UniffiCleaner by lazy {
         UniffiCleaner.create()
     }
-
+    
 
     init {
         Native.register(UniffiLib::class.java, findLibraryName(componentName = "knotq_mobile_core"))
-
+        
     }
-    external fun uniffi_knotq_mobile_core_fn_clone_mobilecore(`handle`: Long,uniffi_out_err: UniffiRustCallStatus,
+    external fun uniffi_knotq_mobile_core_fn_clone_mobilecore(`handle`: Long,uniffi_out_err: UniffiRustCallStatus, 
 ): Long
-external fun uniffi_knotq_mobile_core_fn_free_mobilecore(`handle`: Long,uniffi_out_err: UniffiRustCallStatus,
+external fun uniffi_knotq_mobile_core_fn_free_mobilecore(`handle`: Long,uniffi_out_err: UniffiRustCallStatus, 
 ): Unit
-external fun uniffi_knotq_mobile_core_fn_constructor_mobilecore_new(`appDir`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus,
+external fun uniffi_knotq_mobile_core_fn_constructor_mobilecore_new(`appDir`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
 ): Long
-external fun uniffi_knotq_mobile_core_fn_method_mobilecore_add_calendar_item(`ptr`: Long,`schemeId`: RustBuffer.ByValue,`date`: RustBuffer.ByValue,`text`: RustBuffer.ByValue,`kind`: RustBuffer.ByValue,`start`: RustBuffer.ByValue,`end`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus,
+external fun uniffi_knotq_mobile_core_fn_method_mobilecore_add_calendar_item(`ptr`: Long,`schemeId`: RustBuffer.ByValue,`date`: RustBuffer.ByValue,`text`: RustBuffer.ByValue,`kind`: RustBuffer.ByValue,`start`: RustBuffer.ByValue,`end`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
 ): Unit
-external fun uniffi_knotq_mobile_core_fn_method_mobilecore_add_item(`ptr`: Long,`schemeId`: RustBuffer.ByValue,`text`: RustBuffer.ByValue,`marker`: RustBuffer.ByValue,`position`: RustBuffer.ByValue,`indent`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus,
+external fun uniffi_knotq_mobile_core_fn_method_mobilecore_add_item(`ptr`: Long,`schemeId`: RustBuffer.ByValue,`text`: RustBuffer.ByValue,`marker`: RustBuffer.ByValue,`position`: RustBuffer.ByValue,`indent`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
 ): Unit
-external fun uniffi_knotq_mobile_core_fn_method_mobilecore_apply_notification_action(`ptr`: Long,`actionId`: RustBuffer.ByValue,`schemeId`: RustBuffer.ByValue,`itemId`: RustBuffer.ByValue,`occurrenceJson`: RustBuffer.ByValue,`triggerAt`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus,
+external fun uniffi_knotq_mobile_core_fn_method_mobilecore_apply_notification_action(`ptr`: Long,`actionId`: RustBuffer.ByValue,`schemeId`: RustBuffer.ByValue,`itemId`: RustBuffer.ByValue,`occurrenceJson`: RustBuffer.ByValue,`triggerAt`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
 ): Byte
-external fun uniffi_knotq_mobile_core_fn_method_mobilecore_create_folder(`ptr`: Long,`parentId`: RustBuffer.ByValue,`name`: RustBuffer.ByValue,`position`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus,
+external fun uniffi_knotq_mobile_core_fn_method_mobilecore_commit_event_edit(`ptr`: Long,`schemeId`: RustBuffer.ByValue,`itemId`: RustBuffer.ByValue,`occurrenceJson`: RustBuffer.ByValue,`occurrenceIndex`: Int,`title`: RustBuffer.ByValue,`occurrenceStart`: RustBuffer.ByValue,`occurrenceEnd`: RustBuffer.ByValue,`start`: RustBuffer.ByValue,`end`: RustBuffer.ByValue,`rrule`: RustBuffer.ByValue,`notificationOffsetSecs`: RustBuffer.ByValue,`notificationDirty`: Byte,`done`: Byte,`scope`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
 ): Unit
-external fun uniffi_knotq_mobile_core_fn_method_mobilecore_create_scheme(`ptr`: Long,`folderId`: RustBuffer.ByValue,`name`: RustBuffer.ByValue,`colorIndex`: RustBuffer.ByValue,`position`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus,
-): Unit
-external fun uniffi_knotq_mobile_core_fn_method_mobilecore_delete_folder(`ptr`: Long,`folderId`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus,
-): Unit
-external fun uniffi_knotq_mobile_core_fn_method_mobilecore_delete_item(`ptr`: Long,`schemeId`: RustBuffer.ByValue,`itemId`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus,
-): Unit
-external fun uniffi_knotq_mobile_core_fn_method_mobilecore_delete_scheme(`ptr`: Long,`schemeId`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus,
-): Unit
-external fun uniffi_knotq_mobile_core_fn_method_mobilecore_empty_archive(`ptr`: Long,uniffi_out_err: UniffiRustCallStatus,
-): Unit
-external fun uniffi_knotq_mobile_core_fn_method_mobilecore_ensure_daily_queue(`ptr`: Long,`date`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus,
-): Unit
-external fun uniffi_knotq_mobile_core_fn_method_mobilecore_move_node(`ptr`: Long,`kind`: RustBuffer.ByValue,`id`: RustBuffer.ByValue,`folderId`: RustBuffer.ByValue,`position`: Int,uniffi_out_err: UniffiRustCallStatus,
-): Unit
-external fun uniffi_knotq_mobile_core_fn_method_mobilecore_pending_notifications(`ptr`: Long,`now`: RustBuffer.ByValue,`horizonDays`: Int,uniffi_out_err: UniffiRustCallStatus,
+external fun uniffi_knotq_mobile_core_fn_method_mobilecore_complete_google_calendar_import(`ptr`: Long,`clientId`: RustBuffer.ByValue,`clientSecret`: RustBuffer.ByValue,`redirectUri`: RustBuffer.ByValue,`state`: RustBuffer.ByValue,`codeVerifier`: RustBuffer.ByValue,`callbackUrl`: RustBuffer.ByValue,`parentId`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
 ): RustBuffer.ByValue
-external fun uniffi_knotq_mobile_core_fn_method_mobilecore_permanently_delete_scheme(`ptr`: Long,`schemeId`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus,
+external fun uniffi_knotq_mobile_core_fn_method_mobilecore_create_folder(`ptr`: Long,`parentId`: RustBuffer.ByValue,`name`: RustBuffer.ByValue,`position`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
 ): Unit
-external fun uniffi_knotq_mobile_core_fn_method_mobilecore_rename_folder(`ptr`: Long,`folderId`: RustBuffer.ByValue,`name`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus,
+external fun uniffi_knotq_mobile_core_fn_method_mobilecore_create_scheme(`ptr`: Long,`folderId`: RustBuffer.ByValue,`name`: RustBuffer.ByValue,`colorIndex`: RustBuffer.ByValue,`position`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
 ): Unit
-external fun uniffi_knotq_mobile_core_fn_method_mobilecore_rename_scheme(`ptr`: Long,`schemeId`: RustBuffer.ByValue,`name`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus,
+external fun uniffi_knotq_mobile_core_fn_method_mobilecore_delete_event_occurrence(`ptr`: Long,`schemeId`: RustBuffer.ByValue,`itemId`: RustBuffer.ByValue,`occurrenceJson`: RustBuffer.ByValue,`occurrenceIndex`: Int,`scope`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
 ): Unit
-external fun uniffi_knotq_mobile_core_fn_method_mobilecore_reorder_item(`ptr`: Long,`schemeId`: RustBuffer.ByValue,`from`: Int,`to`: Int,uniffi_out_err: UniffiRustCallStatus,
+external fun uniffi_knotq_mobile_core_fn_method_mobilecore_delete_folder(`ptr`: Long,`folderId`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
 ): Unit
-external fun uniffi_knotq_mobile_core_fn_method_mobilecore_replace_scheme_items(`ptr`: Long,`schemeId`: RustBuffer.ByValue,`items`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus,
+external fun uniffi_knotq_mobile_core_fn_method_mobilecore_delete_item(`ptr`: Long,`schemeId`: RustBuffer.ByValue,`itemId`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
 ): Unit
-external fun uniffi_knotq_mobile_core_fn_method_mobilecore_reset_workspace(`ptr`: Long,uniffi_out_err: UniffiRustCallStatus,
+external fun uniffi_knotq_mobile_core_fn_method_mobilecore_delete_scheme(`ptr`: Long,`schemeId`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
 ): Unit
-external fun uniffi_knotq_mobile_core_fn_method_mobilecore_restore_scheme(`ptr`: Long,`schemeId`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus,
+external fun uniffi_knotq_mobile_core_fn_method_mobilecore_empty_archive(`ptr`: Long,uniffi_out_err: UniffiRustCallStatus, 
 ): Unit
-external fun uniffi_knotq_mobile_core_fn_method_mobilecore_search(`ptr`: Long,`query`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus,
+external fun uniffi_knotq_mobile_core_fn_method_mobilecore_ensure_daily_queue(`ptr`: Long,`date`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+): Unit
+external fun uniffi_knotq_mobile_core_fn_method_mobilecore_google_auth_request(`ptr`: Long,`clientId`: RustBuffer.ByValue,`redirectUri`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
 ): RustBuffer.ByValue
-external fun uniffi_knotq_mobile_core_fn_method_mobilecore_seed_editor_image_fixture(`ptr`: Long,uniffi_out_err: UniffiRustCallStatus,
-): Unit
-external fun uniffi_knotq_mobile_core_fn_method_mobilecore_set_item_date(`ptr`: Long,`schemeId`: RustBuffer.ByValue,`itemId`: RustBuffer.ByValue,`kind`: RustBuffer.ByValue,`date`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus,
-): Unit
-external fun uniffi_knotq_mobile_core_fn_method_mobilecore_set_item_indent(`ptr`: Long,`schemeId`: RustBuffer.ByValue,`itemId`: RustBuffer.ByValue,`indent`: Int,uniffi_out_err: UniffiRustCallStatus,
-): Unit
-external fun uniffi_knotq_mobile_core_fn_method_mobilecore_set_item_marker(`ptr`: Long,`schemeId`: RustBuffer.ByValue,`itemId`: RustBuffer.ByValue,`marker`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus,
-): Unit
-external fun uniffi_knotq_mobile_core_fn_method_mobilecore_set_item_recurrence(`ptr`: Long,`schemeId`: RustBuffer.ByValue,`itemId`: RustBuffer.ByValue,`rrule`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus,
-): Unit
-external fun uniffi_knotq_mobile_core_fn_method_mobilecore_set_scheme_color(`ptr`: Long,`schemeId`: RustBuffer.ByValue,`colorIndex`: Int,uniffi_out_err: UniffiRustCallStatus,
-): Unit
-external fun uniffi_knotq_mobile_core_fn_method_mobilecore_set_theme_mode(`ptr`: Long,`themeMode`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus,
-): Unit
-external fun uniffi_knotq_mobile_core_fn_method_mobilecore_set_time_format(`ptr`: Long,`timeFormat`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus,
-): Unit
-external fun uniffi_knotq_mobile_core_fn_method_mobilecore_snapshot(`ptr`: Long,`today`: RustBuffer.ByValue,`weekOffset`: Int,uniffi_out_err: UniffiRustCallStatus,
+external fun uniffi_knotq_mobile_core_fn_method_mobilecore_month_days(`ptr`: Long,`year`: Int,`month`: Int,uniffi_out_err: UniffiRustCallStatus, 
 ): RustBuffer.ByValue
-external fun uniffi_knotq_mobile_core_fn_method_mobilecore_sync_once(`ptr`: Long,`apiBase`: RustBuffer.ByValue,`bearerToken`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus,
+external fun uniffi_knotq_mobile_core_fn_method_mobilecore_move_node(`ptr`: Long,`kind`: RustBuffer.ByValue,`id`: RustBuffer.ByValue,`folderId`: RustBuffer.ByValue,`position`: Int,uniffi_out_err: UniffiRustCallStatus, 
+): Unit
+external fun uniffi_knotq_mobile_core_fn_method_mobilecore_pending_notifications(`ptr`: Long,`now`: RustBuffer.ByValue,`horizonDays`: Int,uniffi_out_err: UniffiRustCallStatus, 
+): RustBuffer.ByValue
+external fun uniffi_knotq_mobile_core_fn_method_mobilecore_permanently_delete_scheme(`ptr`: Long,`schemeId`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+): Unit
+external fun uniffi_knotq_mobile_core_fn_method_mobilecore_rename_folder(`ptr`: Long,`folderId`: RustBuffer.ByValue,`name`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+): Unit
+external fun uniffi_knotq_mobile_core_fn_method_mobilecore_rename_scheme(`ptr`: Long,`schemeId`: RustBuffer.ByValue,`name`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+): Unit
+external fun uniffi_knotq_mobile_core_fn_method_mobilecore_reorder_item(`ptr`: Long,`schemeId`: RustBuffer.ByValue,`from`: Int,`to`: Int,uniffi_out_err: UniffiRustCallStatus, 
+): Unit
+external fun uniffi_knotq_mobile_core_fn_method_mobilecore_replace_scheme_items(`ptr`: Long,`schemeId`: RustBuffer.ByValue,`items`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+): Unit
+external fun uniffi_knotq_mobile_core_fn_method_mobilecore_reset_workspace(`ptr`: Long,uniffi_out_err: UniffiRustCallStatus, 
+): Unit
+external fun uniffi_knotq_mobile_core_fn_method_mobilecore_restore_scheme(`ptr`: Long,`schemeId`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+): Unit
+external fun uniffi_knotq_mobile_core_fn_method_mobilecore_search(`ptr`: Long,`query`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+): RustBuffer.ByValue
+external fun uniffi_knotq_mobile_core_fn_method_mobilecore_seed_editor_image_fixture(`ptr`: Long,uniffi_out_err: UniffiRustCallStatus, 
+): Unit
+external fun uniffi_knotq_mobile_core_fn_method_mobilecore_set_item_date(`ptr`: Long,`schemeId`: RustBuffer.ByValue,`itemId`: RustBuffer.ByValue,`kind`: RustBuffer.ByValue,`date`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+): Unit
+external fun uniffi_knotq_mobile_core_fn_method_mobilecore_set_item_indent(`ptr`: Long,`schemeId`: RustBuffer.ByValue,`itemId`: RustBuffer.ByValue,`indent`: Int,uniffi_out_err: UniffiRustCallStatus, 
+): Unit
+external fun uniffi_knotq_mobile_core_fn_method_mobilecore_set_item_marker(`ptr`: Long,`schemeId`: RustBuffer.ByValue,`itemId`: RustBuffer.ByValue,`marker`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+): Unit
+external fun uniffi_knotq_mobile_core_fn_method_mobilecore_set_item_recurrence(`ptr`: Long,`schemeId`: RustBuffer.ByValue,`itemId`: RustBuffer.ByValue,`rrule`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+): Unit
+external fun uniffi_knotq_mobile_core_fn_method_mobilecore_set_notification_defaults(`ptr`: Long,`eventOffsetSecs`: Int,`assignmentOffsetSecs`: Int,uniffi_out_err: UniffiRustCallStatus, 
+): Unit
+external fun uniffi_knotq_mobile_core_fn_method_mobilecore_set_occurrence_notification_offset(`ptr`: Long,`schemeId`: RustBuffer.ByValue,`itemId`: RustBuffer.ByValue,`occurrenceJson`: RustBuffer.ByValue,`offsetSecs`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+): Unit
+external fun uniffi_knotq_mobile_core_fn_method_mobilecore_set_scheme_color(`ptr`: Long,`schemeId`: RustBuffer.ByValue,`colorIndex`: Int,uniffi_out_err: UniffiRustCallStatus, 
+): Unit
+external fun uniffi_knotq_mobile_core_fn_method_mobilecore_set_theme_mode(`ptr`: Long,`themeMode`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+): Unit
+external fun uniffi_knotq_mobile_core_fn_method_mobilecore_set_time_format(`ptr`: Long,`timeFormat`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+): Unit
+external fun uniffi_knotq_mobile_core_fn_method_mobilecore_snapshot(`ptr`: Long,`today`: RustBuffer.ByValue,`weekOffset`: Int,uniffi_out_err: UniffiRustCallStatus, 
+): RustBuffer.ByValue
+external fun uniffi_knotq_mobile_core_fn_method_mobilecore_sync_google_calendars(`ptr`: Long,`clientId`: RustBuffer.ByValue,`clientSecret`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+): RustBuffer.ByValue
+external fun uniffi_knotq_mobile_core_fn_method_mobilecore_sync_once(`ptr`: Long,`apiBase`: RustBuffer.ByValue,`bearerToken`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
 ): Byte
-external fun uniffi_knotq_mobile_core_fn_method_mobilecore_take_sync_notice(`ptr`: Long,uniffi_out_err: UniffiRustCallStatus,
+external fun uniffi_knotq_mobile_core_fn_method_mobilecore_take_sync_notice(`ptr`: Long,uniffi_out_err: UniffiRustCallStatus, 
 ): RustBuffer.ByValue
-external fun uniffi_knotq_mobile_core_fn_method_mobilecore_toggle_item(`ptr`: Long,`schemeId`: RustBuffer.ByValue,`itemId`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus,
+external fun uniffi_knotq_mobile_core_fn_method_mobilecore_toggle_item(`ptr`: Long,`schemeId`: RustBuffer.ByValue,`itemId`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
 ): Unit
-external fun uniffi_knotq_mobile_core_fn_method_mobilecore_toggle_occurrence(`ptr`: Long,`schemeId`: RustBuffer.ByValue,`itemId`: RustBuffer.ByValue,`occurrenceJson`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus,
+external fun uniffi_knotq_mobile_core_fn_method_mobilecore_toggle_occurrence(`ptr`: Long,`schemeId`: RustBuffer.ByValue,`itemId`: RustBuffer.ByValue,`occurrenceJson`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
 ): Unit
-external fun uniffi_knotq_mobile_core_fn_method_mobilecore_update_item_text(`ptr`: Long,`schemeId`: RustBuffer.ByValue,`itemId`: RustBuffer.ByValue,`text`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus,
+external fun uniffi_knotq_mobile_core_fn_method_mobilecore_update_item_text(`ptr`: Long,`schemeId`: RustBuffer.ByValue,`itemId`: RustBuffer.ByValue,`text`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
 ): Unit
-external fun ffi_knotq_mobile_core_rustbuffer_alloc(`size`: Long,uniffi_out_err: UniffiRustCallStatus,
+external fun ffi_knotq_mobile_core_rustbuffer_alloc(`size`: Long,uniffi_out_err: UniffiRustCallStatus, 
 ): RustBuffer.ByValue
-external fun ffi_knotq_mobile_core_rustbuffer_from_bytes(`bytes`: ForeignBytes.ByValue,uniffi_out_err: UniffiRustCallStatus,
+external fun ffi_knotq_mobile_core_rustbuffer_from_bytes(`bytes`: ForeignBytes.ByValue,uniffi_out_err: UniffiRustCallStatus, 
 ): RustBuffer.ByValue
-external fun ffi_knotq_mobile_core_rustbuffer_free(`buf`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus,
+external fun ffi_knotq_mobile_core_rustbuffer_free(`buf`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
 ): Unit
-external fun ffi_knotq_mobile_core_rustbuffer_reserve(`buf`: RustBuffer.ByValue,`additional`: Long,uniffi_out_err: UniffiRustCallStatus,
+external fun ffi_knotq_mobile_core_rustbuffer_reserve(`buf`: RustBuffer.ByValue,`additional`: Long,uniffi_out_err: UniffiRustCallStatus, 
 ): RustBuffer.ByValue
 external fun ffi_knotq_mobile_core_rust_future_poll_u8(`handle`: Long,`callback`: UniffiRustFutureContinuationCallback,`callbackData`: Long,
 ): Unit
@@ -814,7 +846,7 @@ external fun ffi_knotq_mobile_core_rust_future_cancel_u8(`handle`: Long,
 ): Unit
 external fun ffi_knotq_mobile_core_rust_future_free_u8(`handle`: Long,
 ): Unit
-external fun ffi_knotq_mobile_core_rust_future_complete_u8(`handle`: Long,uniffi_out_err: UniffiRustCallStatus,
+external fun ffi_knotq_mobile_core_rust_future_complete_u8(`handle`: Long,uniffi_out_err: UniffiRustCallStatus, 
 ): Byte
 external fun ffi_knotq_mobile_core_rust_future_poll_i8(`handle`: Long,`callback`: UniffiRustFutureContinuationCallback,`callbackData`: Long,
 ): Unit
@@ -822,7 +854,7 @@ external fun ffi_knotq_mobile_core_rust_future_cancel_i8(`handle`: Long,
 ): Unit
 external fun ffi_knotq_mobile_core_rust_future_free_i8(`handle`: Long,
 ): Unit
-external fun ffi_knotq_mobile_core_rust_future_complete_i8(`handle`: Long,uniffi_out_err: UniffiRustCallStatus,
+external fun ffi_knotq_mobile_core_rust_future_complete_i8(`handle`: Long,uniffi_out_err: UniffiRustCallStatus, 
 ): Byte
 external fun ffi_knotq_mobile_core_rust_future_poll_u16(`handle`: Long,`callback`: UniffiRustFutureContinuationCallback,`callbackData`: Long,
 ): Unit
@@ -830,7 +862,7 @@ external fun ffi_knotq_mobile_core_rust_future_cancel_u16(`handle`: Long,
 ): Unit
 external fun ffi_knotq_mobile_core_rust_future_free_u16(`handle`: Long,
 ): Unit
-external fun ffi_knotq_mobile_core_rust_future_complete_u16(`handle`: Long,uniffi_out_err: UniffiRustCallStatus,
+external fun ffi_knotq_mobile_core_rust_future_complete_u16(`handle`: Long,uniffi_out_err: UniffiRustCallStatus, 
 ): Short
 external fun ffi_knotq_mobile_core_rust_future_poll_i16(`handle`: Long,`callback`: UniffiRustFutureContinuationCallback,`callbackData`: Long,
 ): Unit
@@ -838,7 +870,7 @@ external fun ffi_knotq_mobile_core_rust_future_cancel_i16(`handle`: Long,
 ): Unit
 external fun ffi_knotq_mobile_core_rust_future_free_i16(`handle`: Long,
 ): Unit
-external fun ffi_knotq_mobile_core_rust_future_complete_i16(`handle`: Long,uniffi_out_err: UniffiRustCallStatus,
+external fun ffi_knotq_mobile_core_rust_future_complete_i16(`handle`: Long,uniffi_out_err: UniffiRustCallStatus, 
 ): Short
 external fun ffi_knotq_mobile_core_rust_future_poll_u32(`handle`: Long,`callback`: UniffiRustFutureContinuationCallback,`callbackData`: Long,
 ): Unit
@@ -846,7 +878,7 @@ external fun ffi_knotq_mobile_core_rust_future_cancel_u32(`handle`: Long,
 ): Unit
 external fun ffi_knotq_mobile_core_rust_future_free_u32(`handle`: Long,
 ): Unit
-external fun ffi_knotq_mobile_core_rust_future_complete_u32(`handle`: Long,uniffi_out_err: UniffiRustCallStatus,
+external fun ffi_knotq_mobile_core_rust_future_complete_u32(`handle`: Long,uniffi_out_err: UniffiRustCallStatus, 
 ): Int
 external fun ffi_knotq_mobile_core_rust_future_poll_i32(`handle`: Long,`callback`: UniffiRustFutureContinuationCallback,`callbackData`: Long,
 ): Unit
@@ -854,7 +886,7 @@ external fun ffi_knotq_mobile_core_rust_future_cancel_i32(`handle`: Long,
 ): Unit
 external fun ffi_knotq_mobile_core_rust_future_free_i32(`handle`: Long,
 ): Unit
-external fun ffi_knotq_mobile_core_rust_future_complete_i32(`handle`: Long,uniffi_out_err: UniffiRustCallStatus,
+external fun ffi_knotq_mobile_core_rust_future_complete_i32(`handle`: Long,uniffi_out_err: UniffiRustCallStatus, 
 ): Int
 external fun ffi_knotq_mobile_core_rust_future_poll_u64(`handle`: Long,`callback`: UniffiRustFutureContinuationCallback,`callbackData`: Long,
 ): Unit
@@ -862,7 +894,7 @@ external fun ffi_knotq_mobile_core_rust_future_cancel_u64(`handle`: Long,
 ): Unit
 external fun ffi_knotq_mobile_core_rust_future_free_u64(`handle`: Long,
 ): Unit
-external fun ffi_knotq_mobile_core_rust_future_complete_u64(`handle`: Long,uniffi_out_err: UniffiRustCallStatus,
+external fun ffi_knotq_mobile_core_rust_future_complete_u64(`handle`: Long,uniffi_out_err: UniffiRustCallStatus, 
 ): Long
 external fun ffi_knotq_mobile_core_rust_future_poll_i64(`handle`: Long,`callback`: UniffiRustFutureContinuationCallback,`callbackData`: Long,
 ): Unit
@@ -870,7 +902,7 @@ external fun ffi_knotq_mobile_core_rust_future_cancel_i64(`handle`: Long,
 ): Unit
 external fun ffi_knotq_mobile_core_rust_future_free_i64(`handle`: Long,
 ): Unit
-external fun ffi_knotq_mobile_core_rust_future_complete_i64(`handle`: Long,uniffi_out_err: UniffiRustCallStatus,
+external fun ffi_knotq_mobile_core_rust_future_complete_i64(`handle`: Long,uniffi_out_err: UniffiRustCallStatus, 
 ): Long
 external fun ffi_knotq_mobile_core_rust_future_poll_f32(`handle`: Long,`callback`: UniffiRustFutureContinuationCallback,`callbackData`: Long,
 ): Unit
@@ -878,7 +910,7 @@ external fun ffi_knotq_mobile_core_rust_future_cancel_f32(`handle`: Long,
 ): Unit
 external fun ffi_knotq_mobile_core_rust_future_free_f32(`handle`: Long,
 ): Unit
-external fun ffi_knotq_mobile_core_rust_future_complete_f32(`handle`: Long,uniffi_out_err: UniffiRustCallStatus,
+external fun ffi_knotq_mobile_core_rust_future_complete_f32(`handle`: Long,uniffi_out_err: UniffiRustCallStatus, 
 ): Float
 external fun ffi_knotq_mobile_core_rust_future_poll_f64(`handle`: Long,`callback`: UniffiRustFutureContinuationCallback,`callbackData`: Long,
 ): Unit
@@ -886,7 +918,7 @@ external fun ffi_knotq_mobile_core_rust_future_cancel_f64(`handle`: Long,
 ): Unit
 external fun ffi_knotq_mobile_core_rust_future_free_f64(`handle`: Long,
 ): Unit
-external fun ffi_knotq_mobile_core_rust_future_complete_f64(`handle`: Long,uniffi_out_err: UniffiRustCallStatus,
+external fun ffi_knotq_mobile_core_rust_future_complete_f64(`handle`: Long,uniffi_out_err: UniffiRustCallStatus, 
 ): Double
 external fun ffi_knotq_mobile_core_rust_future_poll_rust_buffer(`handle`: Long,`callback`: UniffiRustFutureContinuationCallback,`callbackData`: Long,
 ): Unit
@@ -894,7 +926,7 @@ external fun ffi_knotq_mobile_core_rust_future_cancel_rust_buffer(`handle`: Long
 ): Unit
 external fun ffi_knotq_mobile_core_rust_future_free_rust_buffer(`handle`: Long,
 ): Unit
-external fun ffi_knotq_mobile_core_rust_future_complete_rust_buffer(`handle`: Long,uniffi_out_err: UniffiRustCallStatus,
+external fun ffi_knotq_mobile_core_rust_future_complete_rust_buffer(`handle`: Long,uniffi_out_err: UniffiRustCallStatus, 
 ): RustBuffer.ByValue
 external fun ffi_knotq_mobile_core_rust_future_poll_void(`handle`: Long,`callback`: UniffiRustFutureContinuationCallback,`callbackData`: Long,
 ): Unit
@@ -902,10 +934,10 @@ external fun ffi_knotq_mobile_core_rust_future_cancel_void(`handle`: Long,
 ): Unit
 external fun ffi_knotq_mobile_core_rust_future_free_void(`handle`: Long,
 ): Unit
-external fun ffi_knotq_mobile_core_rust_future_complete_void(`handle`: Long,uniffi_out_err: UniffiRustCallStatus,
+external fun ffi_knotq_mobile_core_rust_future_complete_void(`handle`: Long,uniffi_out_err: UniffiRustCallStatus, 
 ): Unit
 
-
+    
 }
 
 private fun uniffiCheckContractApiVersion(lib: IntegrityCheckingUniffiLib) {
@@ -928,10 +960,19 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
     if (lib.uniffi_knotq_mobile_core_checksum_method_mobilecore_apply_notification_action() != 6490.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
+    if (lib.uniffi_knotq_mobile_core_checksum_method_mobilecore_commit_event_edit() != 44971.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_knotq_mobile_core_checksum_method_mobilecore_complete_google_calendar_import() != 63128.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
     if (lib.uniffi_knotq_mobile_core_checksum_method_mobilecore_create_folder() != 49482.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_knotq_mobile_core_checksum_method_mobilecore_create_scheme() != 60715.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_knotq_mobile_core_checksum_method_mobilecore_delete_event_occurrence() != 38818.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_knotq_mobile_core_checksum_method_mobilecore_delete_folder() != 41492.toShort()) {
@@ -947,6 +988,12 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_knotq_mobile_core_checksum_method_mobilecore_ensure_daily_queue() != 43040.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_knotq_mobile_core_checksum_method_mobilecore_google_auth_request() != 56614.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_knotq_mobile_core_checksum_method_mobilecore_month_days() != 13384.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_knotq_mobile_core_checksum_method_mobilecore_move_node() != 12044.toShort()) {
@@ -994,6 +1041,12 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
     if (lib.uniffi_knotq_mobile_core_checksum_method_mobilecore_set_item_recurrence() != 54120.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
+    if (lib.uniffi_knotq_mobile_core_checksum_method_mobilecore_set_notification_defaults() != 46232.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_knotq_mobile_core_checksum_method_mobilecore_set_occurrence_notification_offset() != 26565.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
     if (lib.uniffi_knotq_mobile_core_checksum_method_mobilecore_set_scheme_color() != 60612.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
@@ -1004,6 +1057,9 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_knotq_mobile_core_checksum_method_mobilecore_snapshot() != 52252.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_knotq_mobile_core_checksum_method_mobilecore_sync_google_calendars() != 18522.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_knotq_mobile_core_checksum_method_mobilecore_sync_once() != 14938.toShort()) {
@@ -1099,7 +1155,7 @@ inline fun <T : Disposable?, R> T.use(block: (T) -> R) =
         }
     }
 
-/**
+/** 
  * Placeholder object used to signal that we're constructing an interface with a FFI handle.
  *
  * This is the first argument for interface constructors that input a raw handle. It exists is that
@@ -1110,7 +1166,7 @@ inline fun <T : Disposable?, R> T.use(block: (T) -> R) =
  * */
 object UniffiWithHandle
 
-/**
+/** 
  * Used to instantiate an interface without an actual pointer, for fakes in tests, mostly.
  *
  * @suppress
@@ -1179,6 +1235,29 @@ private class AndroidSystemCleanable(
     private val cleanable: java.lang.ref.Cleaner.Cleanable,
 ) : UniffiCleaner.Cleanable {
     override fun clean() = cleanable.clean()
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterUInt: FfiConverter<UInt, Int> {
+    override fun lift(value: Int): UInt {
+        return value.toUInt()
+    }
+
+    override fun read(buf: ByteBuffer): UInt {
+        return lift(buf.getInt())
+    }
+
+    override fun lower(value: UInt): Int {
+        return value.toInt()
+    }
+
+    override fun allocationSize(value: UInt) = 4UL
+
+    override fun write(value: UInt, buf: ByteBuffer) {
+        buf.putInt(value.toInt())
+    }
 }
 
 /**
@@ -1381,75 +1460,91 @@ public object FfiConverterString: FfiConverter<String, RustBuffer.ByValue> {
 
 
 public interface MobileCoreInterface {
-
+    
     fun `addCalendarItem`(`schemeId`: kotlin.String?, `date`: kotlin.String?, `text`: kotlin.String, `kind`: kotlin.String, `start`: kotlin.String?, `end`: kotlin.String?)
-
+    
     fun `addItem`(`schemeId`: kotlin.String, `text`: kotlin.String, `marker`: kotlin.String?, `position`: kotlin.Int?, `indent`: kotlin.Int?)
-
+    
     fun `applyNotificationAction`(`actionId`: kotlin.String, `schemeId`: kotlin.String, `itemId`: kotlin.String, `occurrenceJson`: kotlin.String, `triggerAt`: kotlin.String): kotlin.Boolean
-
+    
+    fun `commitEventEdit`(`schemeId`: kotlin.String, `itemId`: kotlin.String, `occurrenceJson`: kotlin.String, `occurrenceIndex`: kotlin.Int, `title`: kotlin.String, `occurrenceStart`: kotlin.String?, `occurrenceEnd`: kotlin.String?, `start`: kotlin.String?, `end`: kotlin.String?, `rrule`: kotlin.String?, `notificationOffsetSecs`: kotlin.Int?, `notificationDirty`: kotlin.Boolean, `done`: kotlin.Boolean, `scope`: kotlin.String)
+    
+    fun `completeGoogleCalendarImport`(`clientId`: kotlin.String, `clientSecret`: kotlin.String?, `redirectUri`: kotlin.String, `state`: kotlin.String, `codeVerifier`: kotlin.String, `callbackUrl`: kotlin.String, `parentId`: kotlin.String?): MobileGoogleSyncResult
+    
     fun `createFolder`(`parentId`: kotlin.String?, `name`: kotlin.String, `position`: kotlin.Int?)
-
+    
     fun `createScheme`(`folderId`: kotlin.String?, `name`: kotlin.String, `colorIndex`: kotlin.Int?, `position`: kotlin.Int?)
-
+    
+    fun `deleteEventOccurrence`(`schemeId`: kotlin.String, `itemId`: kotlin.String, `occurrenceJson`: kotlin.String, `occurrenceIndex`: kotlin.Int, `scope`: kotlin.String)
+    
     fun `deleteFolder`(`folderId`: kotlin.String)
-
+    
     fun `deleteItem`(`schemeId`: kotlin.String, `itemId`: kotlin.String)
-
+    
     fun `deleteScheme`(`schemeId`: kotlin.String)
-
+    
     fun `emptyArchive`()
-
+    
     fun `ensureDailyQueue`(`date`: kotlin.String?)
-
+    
+    fun `googleAuthRequest`(`clientId`: kotlin.String, `redirectUri`: kotlin.String): MobileGoogleAuthRequest
+    
+    fun `monthDays`(`year`: kotlin.Int, `month`: kotlin.UInt): List<MobileCalendarDay>
+    
     fun `moveNode`(`kind`: kotlin.String, `id`: kotlin.String, `folderId`: kotlin.String, `position`: kotlin.Int)
-
+    
     fun `pendingNotifications`(`now`: kotlin.String?, `horizonDays`: kotlin.Int): List<MobileNotificationRequest>
-
+    
     fun `permanentlyDeleteScheme`(`schemeId`: kotlin.String)
-
+    
     fun `renameFolder`(`folderId`: kotlin.String, `name`: kotlin.String)
-
+    
     fun `renameScheme`(`schemeId`: kotlin.String, `name`: kotlin.String)
-
+    
     fun `reorderItem`(`schemeId`: kotlin.String, `from`: kotlin.Int, `to`: kotlin.Int)
-
+    
     fun `replaceSchemeItems`(`schemeId`: kotlin.String, `items`: List<MobileItemEdit>)
-
+    
     fun `resetWorkspace`()
-
+    
     fun `restoreScheme`(`schemeId`: kotlin.String)
-
+    
     fun `search`(`query`: kotlin.String): List<MobileSearchHit>
-
+    
     fun `seedEditorImageFixture`()
-
+    
     fun `setItemDate`(`schemeId`: kotlin.String, `itemId`: kotlin.String, `kind`: kotlin.String, `date`: kotlin.String?)
-
+    
     fun `setItemIndent`(`schemeId`: kotlin.String, `itemId`: kotlin.String, `indent`: kotlin.Int)
-
+    
     fun `setItemMarker`(`schemeId`: kotlin.String, `itemId`: kotlin.String, `marker`: kotlin.String)
-
+    
     fun `setItemRecurrence`(`schemeId`: kotlin.String, `itemId`: kotlin.String, `rrule`: kotlin.String?)
-
+    
+    fun `setNotificationDefaults`(`eventOffsetSecs`: kotlin.Int, `assignmentOffsetSecs`: kotlin.Int)
+    
+    fun `setOccurrenceNotificationOffset`(`schemeId`: kotlin.String, `itemId`: kotlin.String, `occurrenceJson`: kotlin.String?, `offsetSecs`: kotlin.Int?)
+    
     fun `setSchemeColor`(`schemeId`: kotlin.String, `colorIndex`: kotlin.Int)
-
+    
     fun `setThemeMode`(`themeMode`: kotlin.String)
-
+    
     fun `setTimeFormat`(`timeFormat`: kotlin.String)
-
+    
     fun `snapshot`(`today`: kotlin.String?, `weekOffset`: kotlin.Int): MobileSnapshot
-
+    
+    fun `syncGoogleCalendars`(`clientId`: kotlin.String?, `clientSecret`: kotlin.String?): MobileGoogleSyncResult
+    
     fun `syncOnce`(`apiBase`: kotlin.String, `bearerToken`: kotlin.String): kotlin.Boolean
-
+    
     fun `takeSyncNotice`(): kotlin.String?
-
+    
     fun `toggleItem`(`schemeId`: kotlin.String, `itemId`: kotlin.String)
-
+    
     fun `toggleOccurrence`(`schemeId`: kotlin.String, `itemId`: kotlin.String, `occurrenceJson`: kotlin.String)
-
+    
     fun `updateItemText`(`schemeId`: kotlin.String, `itemId`: kotlin.String, `text`: kotlin.String)
-
+    
     companion object
 }
 
@@ -1478,10 +1573,10 @@ open class MobileCore: Disposable, AutoCloseable, MobileCoreInterface
         this.cleanable = null
     }
     constructor(`appDir`: kotlin.String) :
-        this(UniffiWithHandle,
+        this(UniffiWithHandle, 
     uniffiRustCallWithError(MobileException) { _status ->
     UniffiLib.uniffi_knotq_mobile_core_fn_constructor_mobilecore_new(
-
+    
         FfiConverterString.lower(`appDir`),_status)
 }
     )
@@ -1557,9 +1652,9 @@ open class MobileCore: Disposable, AutoCloseable, MobileCoreInterface
         }
     }
 
-
+    
     @Throws(MobileException::class)override fun `addCalendarItem`(`schemeId`: kotlin.String?, `date`: kotlin.String?, `text`: kotlin.String, `kind`: kotlin.String, `start`: kotlin.String?, `end`: kotlin.String?)
-        =
+        = 
     callWithHandle {
     uniffiRustCallWithError(MobileException) { _status ->
     UniffiLib.uniffi_knotq_mobile_core_fn_method_mobilecore_add_calendar_item(
@@ -1567,12 +1662,12 @@ open class MobileCore: Disposable, AutoCloseable, MobileCoreInterface
         FfiConverterOptionalString.lower(`schemeId`),FfiConverterOptionalString.lower(`date`),FfiConverterString.lower(`text`),FfiConverterString.lower(`kind`),FfiConverterOptionalString.lower(`start`),FfiConverterOptionalString.lower(`end`),_status)
 }
     }
+    
+    
 
-
-
-
+    
     @Throws(MobileException::class)override fun `addItem`(`schemeId`: kotlin.String, `text`: kotlin.String, `marker`: kotlin.String?, `position`: kotlin.Int?, `indent`: kotlin.Int?)
-        =
+        = 
     callWithHandle {
     uniffiRustCallWithError(MobileException) { _status ->
     UniffiLib.uniffi_knotq_mobile_core_fn_method_mobilecore_add_item(
@@ -1580,10 +1675,10 @@ open class MobileCore: Disposable, AutoCloseable, MobileCoreInterface
         FfiConverterString.lower(`schemeId`),FfiConverterString.lower(`text`),FfiConverterOptionalString.lower(`marker`),FfiConverterOptionalInt.lower(`position`),FfiConverterOptionalInt.lower(`indent`),_status)
 }
     }
+    
+    
 
-
-
-
+    
     @Throws(MobileException::class)override fun `applyNotificationAction`(`actionId`: kotlin.String, `schemeId`: kotlin.String, `itemId`: kotlin.String, `occurrenceJson`: kotlin.String, `triggerAt`: kotlin.String): kotlin.Boolean {
             return FfiConverterBoolean.lift(
     callWithHandle {
@@ -1595,11 +1690,38 @@ open class MobileCore: Disposable, AutoCloseable, MobileCoreInterface
     }
     )
     }
+    
 
+    
+    @Throws(MobileException::class)override fun `commitEventEdit`(`schemeId`: kotlin.String, `itemId`: kotlin.String, `occurrenceJson`: kotlin.String, `occurrenceIndex`: kotlin.Int, `title`: kotlin.String, `occurrenceStart`: kotlin.String?, `occurrenceEnd`: kotlin.String?, `start`: kotlin.String?, `end`: kotlin.String?, `rrule`: kotlin.String?, `notificationOffsetSecs`: kotlin.Int?, `notificationDirty`: kotlin.Boolean, `done`: kotlin.Boolean, `scope`: kotlin.String)
+        = 
+    callWithHandle {
+    uniffiRustCallWithError(MobileException) { _status ->
+    UniffiLib.uniffi_knotq_mobile_core_fn_method_mobilecore_commit_event_edit(
+        it,
+        FfiConverterString.lower(`schemeId`),FfiConverterString.lower(`itemId`),FfiConverterString.lower(`occurrenceJson`),FfiConverterInt.lower(`occurrenceIndex`),FfiConverterString.lower(`title`),FfiConverterOptionalString.lower(`occurrenceStart`),FfiConverterOptionalString.lower(`occurrenceEnd`),FfiConverterOptionalString.lower(`start`),FfiConverterOptionalString.lower(`end`),FfiConverterOptionalString.lower(`rrule`),FfiConverterOptionalInt.lower(`notificationOffsetSecs`),FfiConverterBoolean.lower(`notificationDirty`),FfiConverterBoolean.lower(`done`),FfiConverterString.lower(`scope`),_status)
+}
+    }
+    
+    
 
+    
+    @Throws(MobileException::class)override fun `completeGoogleCalendarImport`(`clientId`: kotlin.String, `clientSecret`: kotlin.String?, `redirectUri`: kotlin.String, `state`: kotlin.String, `codeVerifier`: kotlin.String, `callbackUrl`: kotlin.String, `parentId`: kotlin.String?): MobileGoogleSyncResult {
+            return FfiConverterTypeMobileGoogleSyncResult.lift(
+    callWithHandle {
+    uniffiRustCallWithError(MobileException) { _status ->
+    UniffiLib.uniffi_knotq_mobile_core_fn_method_mobilecore_complete_google_calendar_import(
+        it,
+        FfiConverterString.lower(`clientId`),FfiConverterOptionalString.lower(`clientSecret`),FfiConverterString.lower(`redirectUri`),FfiConverterString.lower(`state`),FfiConverterString.lower(`codeVerifier`),FfiConverterString.lower(`callbackUrl`),FfiConverterOptionalString.lower(`parentId`),_status)
+}
+    }
+    )
+    }
+    
 
+    
     @Throws(MobileException::class)override fun `createFolder`(`parentId`: kotlin.String?, `name`: kotlin.String, `position`: kotlin.Int?)
-        =
+        = 
     callWithHandle {
     uniffiRustCallWithError(MobileException) { _status ->
     UniffiLib.uniffi_knotq_mobile_core_fn_method_mobilecore_create_folder(
@@ -1607,12 +1729,12 @@ open class MobileCore: Disposable, AutoCloseable, MobileCoreInterface
         FfiConverterOptionalString.lower(`parentId`),FfiConverterString.lower(`name`),FfiConverterOptionalInt.lower(`position`),_status)
 }
     }
+    
+    
 
-
-
-
+    
     @Throws(MobileException::class)override fun `createScheme`(`folderId`: kotlin.String?, `name`: kotlin.String, `colorIndex`: kotlin.Int?, `position`: kotlin.Int?)
-        =
+        = 
     callWithHandle {
     uniffiRustCallWithError(MobileException) { _status ->
     UniffiLib.uniffi_knotq_mobile_core_fn_method_mobilecore_create_scheme(
@@ -1620,12 +1742,25 @@ open class MobileCore: Disposable, AutoCloseable, MobileCoreInterface
         FfiConverterOptionalString.lower(`folderId`),FfiConverterString.lower(`name`),FfiConverterOptionalInt.lower(`colorIndex`),FfiConverterOptionalInt.lower(`position`),_status)
 }
     }
+    
+    
 
+    
+    @Throws(MobileException::class)override fun `deleteEventOccurrence`(`schemeId`: kotlin.String, `itemId`: kotlin.String, `occurrenceJson`: kotlin.String, `occurrenceIndex`: kotlin.Int, `scope`: kotlin.String)
+        = 
+    callWithHandle {
+    uniffiRustCallWithError(MobileException) { _status ->
+    UniffiLib.uniffi_knotq_mobile_core_fn_method_mobilecore_delete_event_occurrence(
+        it,
+        FfiConverterString.lower(`schemeId`),FfiConverterString.lower(`itemId`),FfiConverterString.lower(`occurrenceJson`),FfiConverterInt.lower(`occurrenceIndex`),FfiConverterString.lower(`scope`),_status)
+}
+    }
+    
+    
 
-
-
+    
     @Throws(MobileException::class)override fun `deleteFolder`(`folderId`: kotlin.String)
-        =
+        = 
     callWithHandle {
     uniffiRustCallWithError(MobileException) { _status ->
     UniffiLib.uniffi_knotq_mobile_core_fn_method_mobilecore_delete_folder(
@@ -1633,12 +1768,12 @@ open class MobileCore: Disposable, AutoCloseable, MobileCoreInterface
         FfiConverterString.lower(`folderId`),_status)
 }
     }
+    
+    
 
-
-
-
+    
     @Throws(MobileException::class)override fun `deleteItem`(`schemeId`: kotlin.String, `itemId`: kotlin.String)
-        =
+        = 
     callWithHandle {
     uniffiRustCallWithError(MobileException) { _status ->
     UniffiLib.uniffi_knotq_mobile_core_fn_method_mobilecore_delete_item(
@@ -1646,12 +1781,12 @@ open class MobileCore: Disposable, AutoCloseable, MobileCoreInterface
         FfiConverterString.lower(`schemeId`),FfiConverterString.lower(`itemId`),_status)
 }
     }
+    
+    
 
-
-
-
+    
     @Throws(MobileException::class)override fun `deleteScheme`(`schemeId`: kotlin.String)
-        =
+        = 
     callWithHandle {
     uniffiRustCallWithError(MobileException) { _status ->
     UniffiLib.uniffi_knotq_mobile_core_fn_method_mobilecore_delete_scheme(
@@ -1659,12 +1794,12 @@ open class MobileCore: Disposable, AutoCloseable, MobileCoreInterface
         FfiConverterString.lower(`schemeId`),_status)
 }
     }
+    
+    
 
-
-
-
+    
     @Throws(MobileException::class)override fun `emptyArchive`()
-        =
+        = 
     callWithHandle {
     uniffiRustCallWithError(MobileException) { _status ->
     UniffiLib.uniffi_knotq_mobile_core_fn_method_mobilecore_empty_archive(
@@ -1672,12 +1807,12 @@ open class MobileCore: Disposable, AutoCloseable, MobileCoreInterface
         _status)
 }
     }
+    
+    
 
-
-
-
+    
     @Throws(MobileException::class)override fun `ensureDailyQueue`(`date`: kotlin.String?)
-        =
+        = 
     callWithHandle {
     uniffiRustCallWithError(MobileException) { _status ->
     UniffiLib.uniffi_knotq_mobile_core_fn_method_mobilecore_ensure_daily_queue(
@@ -1685,12 +1820,40 @@ open class MobileCore: Disposable, AutoCloseable, MobileCoreInterface
         FfiConverterOptionalString.lower(`date`),_status)
 }
     }
+    
+    
 
+    
+    @Throws(MobileException::class)override fun `googleAuthRequest`(`clientId`: kotlin.String, `redirectUri`: kotlin.String): MobileGoogleAuthRequest {
+            return FfiConverterTypeMobileGoogleAuthRequest.lift(
+    callWithHandle {
+    uniffiRustCallWithError(MobileException) { _status ->
+    UniffiLib.uniffi_knotq_mobile_core_fn_method_mobilecore_google_auth_request(
+        it,
+        FfiConverterString.lower(`clientId`),FfiConverterString.lower(`redirectUri`),_status)
+}
+    }
+    )
+    }
+    
 
+    
+    @Throws(MobileException::class)override fun `monthDays`(`year`: kotlin.Int, `month`: kotlin.UInt): List<MobileCalendarDay> {
+            return FfiConverterSequenceTypeMobileCalendarDay.lift(
+    callWithHandle {
+    uniffiRustCallWithError(MobileException) { _status ->
+    UniffiLib.uniffi_knotq_mobile_core_fn_method_mobilecore_month_days(
+        it,
+        FfiConverterInt.lower(`year`),FfiConverterUInt.lower(`month`),_status)
+}
+    }
+    )
+    }
+    
 
-
+    
     @Throws(MobileException::class)override fun `moveNode`(`kind`: kotlin.String, `id`: kotlin.String, `folderId`: kotlin.String, `position`: kotlin.Int)
-        =
+        = 
     callWithHandle {
     uniffiRustCallWithError(MobileException) { _status ->
     UniffiLib.uniffi_knotq_mobile_core_fn_method_mobilecore_move_node(
@@ -1698,10 +1861,10 @@ open class MobileCore: Disposable, AutoCloseable, MobileCoreInterface
         FfiConverterString.lower(`kind`),FfiConverterString.lower(`id`),FfiConverterString.lower(`folderId`),FfiConverterInt.lower(`position`),_status)
 }
     }
+    
+    
 
-
-
-
+    
     @Throws(MobileException::class)override fun `pendingNotifications`(`now`: kotlin.String?, `horizonDays`: kotlin.Int): List<MobileNotificationRequest> {
             return FfiConverterSequenceTypeMobileNotificationRequest.lift(
     callWithHandle {
@@ -1713,11 +1876,11 @@ open class MobileCore: Disposable, AutoCloseable, MobileCoreInterface
     }
     )
     }
+    
 
-
-
+    
     @Throws(MobileException::class)override fun `permanentlyDeleteScheme`(`schemeId`: kotlin.String)
-        =
+        = 
     callWithHandle {
     uniffiRustCallWithError(MobileException) { _status ->
     UniffiLib.uniffi_knotq_mobile_core_fn_method_mobilecore_permanently_delete_scheme(
@@ -1725,12 +1888,12 @@ open class MobileCore: Disposable, AutoCloseable, MobileCoreInterface
         FfiConverterString.lower(`schemeId`),_status)
 }
     }
+    
+    
 
-
-
-
+    
     @Throws(MobileException::class)override fun `renameFolder`(`folderId`: kotlin.String, `name`: kotlin.String)
-        =
+        = 
     callWithHandle {
     uniffiRustCallWithError(MobileException) { _status ->
     UniffiLib.uniffi_knotq_mobile_core_fn_method_mobilecore_rename_folder(
@@ -1738,12 +1901,12 @@ open class MobileCore: Disposable, AutoCloseable, MobileCoreInterface
         FfiConverterString.lower(`folderId`),FfiConverterString.lower(`name`),_status)
 }
     }
+    
+    
 
-
-
-
+    
     @Throws(MobileException::class)override fun `renameScheme`(`schemeId`: kotlin.String, `name`: kotlin.String)
-        =
+        = 
     callWithHandle {
     uniffiRustCallWithError(MobileException) { _status ->
     UniffiLib.uniffi_knotq_mobile_core_fn_method_mobilecore_rename_scheme(
@@ -1751,12 +1914,12 @@ open class MobileCore: Disposable, AutoCloseable, MobileCoreInterface
         FfiConverterString.lower(`schemeId`),FfiConverterString.lower(`name`),_status)
 }
     }
+    
+    
 
-
-
-
+    
     @Throws(MobileException::class)override fun `reorderItem`(`schemeId`: kotlin.String, `from`: kotlin.Int, `to`: kotlin.Int)
-        =
+        = 
     callWithHandle {
     uniffiRustCallWithError(MobileException) { _status ->
     UniffiLib.uniffi_knotq_mobile_core_fn_method_mobilecore_reorder_item(
@@ -1764,12 +1927,12 @@ open class MobileCore: Disposable, AutoCloseable, MobileCoreInterface
         FfiConverterString.lower(`schemeId`),FfiConverterInt.lower(`from`),FfiConverterInt.lower(`to`),_status)
 }
     }
+    
+    
 
-
-
-
+    
     @Throws(MobileException::class)override fun `replaceSchemeItems`(`schemeId`: kotlin.String, `items`: List<MobileItemEdit>)
-        =
+        = 
     callWithHandle {
     uniffiRustCallWithError(MobileException) { _status ->
     UniffiLib.uniffi_knotq_mobile_core_fn_method_mobilecore_replace_scheme_items(
@@ -1777,12 +1940,12 @@ open class MobileCore: Disposable, AutoCloseable, MobileCoreInterface
         FfiConverterString.lower(`schemeId`),FfiConverterSequenceTypeMobileItemEdit.lower(`items`),_status)
 }
     }
+    
+    
 
-
-
-
+    
     @Throws(MobileException::class)override fun `resetWorkspace`()
-        =
+        = 
     callWithHandle {
     uniffiRustCallWithError(MobileException) { _status ->
     UniffiLib.uniffi_knotq_mobile_core_fn_method_mobilecore_reset_workspace(
@@ -1790,12 +1953,12 @@ open class MobileCore: Disposable, AutoCloseable, MobileCoreInterface
         _status)
 }
     }
+    
+    
 
-
-
-
+    
     @Throws(MobileException::class)override fun `restoreScheme`(`schemeId`: kotlin.String)
-        =
+        = 
     callWithHandle {
     uniffiRustCallWithError(MobileException) { _status ->
     UniffiLib.uniffi_knotq_mobile_core_fn_method_mobilecore_restore_scheme(
@@ -1803,10 +1966,10 @@ open class MobileCore: Disposable, AutoCloseable, MobileCoreInterface
         FfiConverterString.lower(`schemeId`),_status)
 }
     }
+    
+    
 
-
-
-
+    
     @Throws(MobileException::class)override fun `search`(`query`: kotlin.String): List<MobileSearchHit> {
             return FfiConverterSequenceTypeMobileSearchHit.lift(
     callWithHandle {
@@ -1818,11 +1981,11 @@ open class MobileCore: Disposable, AutoCloseable, MobileCoreInterface
     }
     )
     }
+    
 
-
-
+    
     @Throws(MobileException::class)override fun `seedEditorImageFixture`()
-        =
+        = 
     callWithHandle {
     uniffiRustCallWithError(MobileException) { _status ->
     UniffiLib.uniffi_knotq_mobile_core_fn_method_mobilecore_seed_editor_image_fixture(
@@ -1830,12 +1993,12 @@ open class MobileCore: Disposable, AutoCloseable, MobileCoreInterface
         _status)
 }
     }
+    
+    
 
-
-
-
+    
     @Throws(MobileException::class)override fun `setItemDate`(`schemeId`: kotlin.String, `itemId`: kotlin.String, `kind`: kotlin.String, `date`: kotlin.String?)
-        =
+        = 
     callWithHandle {
     uniffiRustCallWithError(MobileException) { _status ->
     UniffiLib.uniffi_knotq_mobile_core_fn_method_mobilecore_set_item_date(
@@ -1843,12 +2006,12 @@ open class MobileCore: Disposable, AutoCloseable, MobileCoreInterface
         FfiConverterString.lower(`schemeId`),FfiConverterString.lower(`itemId`),FfiConverterString.lower(`kind`),FfiConverterOptionalString.lower(`date`),_status)
 }
     }
+    
+    
 
-
-
-
+    
     @Throws(MobileException::class)override fun `setItemIndent`(`schemeId`: kotlin.String, `itemId`: kotlin.String, `indent`: kotlin.Int)
-        =
+        = 
     callWithHandle {
     uniffiRustCallWithError(MobileException) { _status ->
     UniffiLib.uniffi_knotq_mobile_core_fn_method_mobilecore_set_item_indent(
@@ -1856,12 +2019,12 @@ open class MobileCore: Disposable, AutoCloseable, MobileCoreInterface
         FfiConverterString.lower(`schemeId`),FfiConverterString.lower(`itemId`),FfiConverterInt.lower(`indent`),_status)
 }
     }
+    
+    
 
-
-
-
+    
     @Throws(MobileException::class)override fun `setItemMarker`(`schemeId`: kotlin.String, `itemId`: kotlin.String, `marker`: kotlin.String)
-        =
+        = 
     callWithHandle {
     uniffiRustCallWithError(MobileException) { _status ->
     UniffiLib.uniffi_knotq_mobile_core_fn_method_mobilecore_set_item_marker(
@@ -1869,12 +2032,12 @@ open class MobileCore: Disposable, AutoCloseable, MobileCoreInterface
         FfiConverterString.lower(`schemeId`),FfiConverterString.lower(`itemId`),FfiConverterString.lower(`marker`),_status)
 }
     }
+    
+    
 
-
-
-
+    
     @Throws(MobileException::class)override fun `setItemRecurrence`(`schemeId`: kotlin.String, `itemId`: kotlin.String, `rrule`: kotlin.String?)
-        =
+        = 
     callWithHandle {
     uniffiRustCallWithError(MobileException) { _status ->
     UniffiLib.uniffi_knotq_mobile_core_fn_method_mobilecore_set_item_recurrence(
@@ -1882,12 +2045,38 @@ open class MobileCore: Disposable, AutoCloseable, MobileCoreInterface
         FfiConverterString.lower(`schemeId`),FfiConverterString.lower(`itemId`),FfiConverterOptionalString.lower(`rrule`),_status)
 }
     }
+    
+    
 
+    
+    @Throws(MobileException::class)override fun `setNotificationDefaults`(`eventOffsetSecs`: kotlin.Int, `assignmentOffsetSecs`: kotlin.Int)
+        = 
+    callWithHandle {
+    uniffiRustCallWithError(MobileException) { _status ->
+    UniffiLib.uniffi_knotq_mobile_core_fn_method_mobilecore_set_notification_defaults(
+        it,
+        FfiConverterInt.lower(`eventOffsetSecs`),FfiConverterInt.lower(`assignmentOffsetSecs`),_status)
+}
+    }
+    
+    
 
+    
+    @Throws(MobileException::class)override fun `setOccurrenceNotificationOffset`(`schemeId`: kotlin.String, `itemId`: kotlin.String, `occurrenceJson`: kotlin.String?, `offsetSecs`: kotlin.Int?)
+        = 
+    callWithHandle {
+    uniffiRustCallWithError(MobileException) { _status ->
+    UniffiLib.uniffi_knotq_mobile_core_fn_method_mobilecore_set_occurrence_notification_offset(
+        it,
+        FfiConverterString.lower(`schemeId`),FfiConverterString.lower(`itemId`),FfiConverterOptionalString.lower(`occurrenceJson`),FfiConverterOptionalInt.lower(`offsetSecs`),_status)
+}
+    }
+    
+    
 
-
+    
     @Throws(MobileException::class)override fun `setSchemeColor`(`schemeId`: kotlin.String, `colorIndex`: kotlin.Int)
-        =
+        = 
     callWithHandle {
     uniffiRustCallWithError(MobileException) { _status ->
     UniffiLib.uniffi_knotq_mobile_core_fn_method_mobilecore_set_scheme_color(
@@ -1895,12 +2084,12 @@ open class MobileCore: Disposable, AutoCloseable, MobileCoreInterface
         FfiConverterString.lower(`schemeId`),FfiConverterInt.lower(`colorIndex`),_status)
 }
     }
+    
+    
 
-
-
-
+    
     @Throws(MobileException::class)override fun `setThemeMode`(`themeMode`: kotlin.String)
-        =
+        = 
     callWithHandle {
     uniffiRustCallWithError(MobileException) { _status ->
     UniffiLib.uniffi_knotq_mobile_core_fn_method_mobilecore_set_theme_mode(
@@ -1908,12 +2097,12 @@ open class MobileCore: Disposable, AutoCloseable, MobileCoreInterface
         FfiConverterString.lower(`themeMode`),_status)
 }
     }
+    
+    
 
-
-
-
+    
     @Throws(MobileException::class)override fun `setTimeFormat`(`timeFormat`: kotlin.String)
-        =
+        = 
     callWithHandle {
     uniffiRustCallWithError(MobileException) { _status ->
     UniffiLib.uniffi_knotq_mobile_core_fn_method_mobilecore_set_time_format(
@@ -1921,10 +2110,10 @@ open class MobileCore: Disposable, AutoCloseable, MobileCoreInterface
         FfiConverterString.lower(`timeFormat`),_status)
 }
     }
+    
+    
 
-
-
-
+    
     @Throws(MobileException::class)override fun `snapshot`(`today`: kotlin.String?, `weekOffset`: kotlin.Int): MobileSnapshot {
             return FfiConverterTypeMobileSnapshot.lift(
     callWithHandle {
@@ -1936,9 +2125,23 @@ open class MobileCore: Disposable, AutoCloseable, MobileCoreInterface
     }
     )
     }
+    
 
+    
+    @Throws(MobileException::class)override fun `syncGoogleCalendars`(`clientId`: kotlin.String?, `clientSecret`: kotlin.String?): MobileGoogleSyncResult {
+            return FfiConverterTypeMobileGoogleSyncResult.lift(
+    callWithHandle {
+    uniffiRustCallWithError(MobileException) { _status ->
+    UniffiLib.uniffi_knotq_mobile_core_fn_method_mobilecore_sync_google_calendars(
+        it,
+        FfiConverterOptionalString.lower(`clientId`),FfiConverterOptionalString.lower(`clientSecret`),_status)
+}
+    }
+    )
+    }
+    
 
-
+    
     @Throws(MobileException::class)override fun `syncOnce`(`apiBase`: kotlin.String, `bearerToken`: kotlin.String): kotlin.Boolean {
             return FfiConverterBoolean.lift(
     callWithHandle {
@@ -1950,9 +2153,9 @@ open class MobileCore: Disposable, AutoCloseable, MobileCoreInterface
     }
     )
     }
+    
 
-
-
+    
     @Throws(MobileException::class)override fun `takeSyncNotice`(): kotlin.String? {
             return FfiConverterOptionalString.lift(
     callWithHandle {
@@ -1964,11 +2167,11 @@ open class MobileCore: Disposable, AutoCloseable, MobileCoreInterface
     }
     )
     }
+    
 
-
-
+    
     @Throws(MobileException::class)override fun `toggleItem`(`schemeId`: kotlin.String, `itemId`: kotlin.String)
-        =
+        = 
     callWithHandle {
     uniffiRustCallWithError(MobileException) { _status ->
     UniffiLib.uniffi_knotq_mobile_core_fn_method_mobilecore_toggle_item(
@@ -1976,12 +2179,12 @@ open class MobileCore: Disposable, AutoCloseable, MobileCoreInterface
         FfiConverterString.lower(`schemeId`),FfiConverterString.lower(`itemId`),_status)
 }
     }
+    
+    
 
-
-
-
+    
     @Throws(MobileException::class)override fun `toggleOccurrence`(`schemeId`: kotlin.String, `itemId`: kotlin.String, `occurrenceJson`: kotlin.String)
-        =
+        = 
     callWithHandle {
     uniffiRustCallWithError(MobileException) { _status ->
     UniffiLib.uniffi_knotq_mobile_core_fn_method_mobilecore_toggle_occurrence(
@@ -1989,12 +2192,12 @@ open class MobileCore: Disposable, AutoCloseable, MobileCoreInterface
         FfiConverterString.lower(`schemeId`),FfiConverterString.lower(`itemId`),FfiConverterString.lower(`occurrenceJson`),_status)
 }
     }
+    
+    
 
-
-
-
+    
     @Throws(MobileException::class)override fun `updateItemText`(`schemeId`: kotlin.String, `itemId`: kotlin.String, `text`: kotlin.String)
-        =
+        = 
     callWithHandle {
     uniffiRustCallWithError(MobileException) { _status ->
     UniffiLib.uniffi_knotq_mobile_core_fn_method_mobilecore_update_item_text(
@@ -2002,21 +2205,21 @@ open class MobileCore: Disposable, AutoCloseable, MobileCoreInterface
         FfiConverterString.lower(`schemeId`),FfiConverterString.lower(`itemId`),FfiConverterString.lower(`text`),_status)
 }
     }
+    
+    
+
+    
+
+    
 
 
-
-
-
-
-
-
-
-
+    
+    
     /**
      * @suppress
      */
     companion object
-
+    
 }
 
 
@@ -2047,21 +2250,21 @@ public object FfiConverterTypeMobileCore: FfiConverter<MobileCore, Long> {
 
 data class MobileCalendar (
     var `startDate`: kotlin.String
-    ,
+    , 
     var `endDate`: kotlin.String
-    ,
+    , 
     var `days`: List<MobileCalendarDay>
-    ,
+    , 
     var `upcoming`: List<MobileOccurrence>
-    ,
+    , 
     var `overdue`: List<MobileOccurrence>
-
+    
 ){
+    
 
+    
 
-
-
-
+    
     companion object
 }
 
@@ -2100,15 +2303,15 @@ public object FfiConverterTypeMobileCalendar: FfiConverterRustBuffer<MobileCalen
 
 data class MobileCalendarDay (
     var `date`: kotlin.String
-    ,
+    , 
     var `occurrences`: List<MobileOccurrence>
-
+    
 ){
+    
 
+    
 
-
-
-
+    
     companion object
 }
 
@@ -2138,15 +2341,15 @@ public object FfiConverterTypeMobileCalendarDay: FfiConverterRustBuffer<MobileCa
 
 data class MobileDailyEntry (
     var `date`: kotlin.String
-    ,
+    , 
     var `scheme`: MobileScheme
-
+    
 ){
+    
 
+    
 
-
-
-
+    
     companion object
 }
 
@@ -2174,33 +2377,141 @@ public object FfiConverterTypeMobileDailyEntry: FfiConverterRustBuffer<MobileDai
 
 
 
+data class MobileGoogleAuthRequest (
+    var `authUrl`: kotlin.String
+    , 
+    var `state`: kotlin.String
+    , 
+    var `codeVerifier`: kotlin.String
+    , 
+    var `redirectUri`: kotlin.String
+    , 
+    var `scope`: kotlin.String
+    , 
+    var `clientId`: kotlin.String
+    
+){
+    
+
+    
+
+    
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeMobileGoogleAuthRequest: FfiConverterRustBuffer<MobileGoogleAuthRequest> {
+    override fun read(buf: ByteBuffer): MobileGoogleAuthRequest {
+        return MobileGoogleAuthRequest(
+            FfiConverterString.read(buf),
+            FfiConverterString.read(buf),
+            FfiConverterString.read(buf),
+            FfiConverterString.read(buf),
+            FfiConverterString.read(buf),
+            FfiConverterString.read(buf),
+        )
+    }
+
+    override fun allocationSize(value: MobileGoogleAuthRequest) = (
+            FfiConverterString.allocationSize(value.`authUrl`) +
+            FfiConverterString.allocationSize(value.`state`) +
+            FfiConverterString.allocationSize(value.`codeVerifier`) +
+            FfiConverterString.allocationSize(value.`redirectUri`) +
+            FfiConverterString.allocationSize(value.`scope`) +
+            FfiConverterString.allocationSize(value.`clientId`)
+    )
+
+    override fun write(value: MobileGoogleAuthRequest, buf: ByteBuffer) {
+            FfiConverterString.write(value.`authUrl`, buf)
+            FfiConverterString.write(value.`state`, buf)
+            FfiConverterString.write(value.`codeVerifier`, buf)
+            FfiConverterString.write(value.`redirectUri`, buf)
+            FfiConverterString.write(value.`scope`, buf)
+            FfiConverterString.write(value.`clientId`, buf)
+    }
+}
+
+
+
+data class MobileGoogleSyncResult (
+    var `importedCount`: kotlin.Int
+    , 
+    var `syncedCount`: kotlin.Int
+    , 
+    var `failureCount`: kotlin.Int
+    , 
+    var `message`: kotlin.String
+    
+){
+    
+
+    
+
+    
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeMobileGoogleSyncResult: FfiConverterRustBuffer<MobileGoogleSyncResult> {
+    override fun read(buf: ByteBuffer): MobileGoogleSyncResult {
+        return MobileGoogleSyncResult(
+            FfiConverterInt.read(buf),
+            FfiConverterInt.read(buf),
+            FfiConverterInt.read(buf),
+            FfiConverterString.read(buf),
+        )
+    }
+
+    override fun allocationSize(value: MobileGoogleSyncResult) = (
+            FfiConverterInt.allocationSize(value.`importedCount`) +
+            FfiConverterInt.allocationSize(value.`syncedCount`) +
+            FfiConverterInt.allocationSize(value.`failureCount`) +
+            FfiConverterString.allocationSize(value.`message`)
+    )
+
+    override fun write(value: MobileGoogleSyncResult, buf: ByteBuffer) {
+            FfiConverterInt.write(value.`importedCount`, buf)
+            FfiConverterInt.write(value.`syncedCount`, buf)
+            FfiConverterInt.write(value.`failureCount`, buf)
+            FfiConverterString.write(value.`message`, buf)
+    }
+}
+
+
+
 data class MobileItem (
     var `id`: kotlin.String
-    ,
+    , 
     var `text`: kotlin.String
-    ,
+    , 
     var `marker`: kotlin.String
-    ,
+    , 
     var `indent`: kotlin.Int
-    ,
+    , 
     var `kind`: kotlin.String
-    ,
+    , 
     var `done`: kotlin.Boolean
-    ,
+    , 
     var `start`: kotlin.String?
-    ,
+    , 
     var `end`: kotlin.String?
-    ,
+    , 
+    var `notificationOffsetSecs`: kotlin.Int?
+    , 
     var `repeatRule`: kotlin.String?
-    ,
+    , 
     var `media`: List<MobileItemMedia>
-
+    
 ){
+    
 
+    
 
-
-
-
+    
     companion object
 }
 
@@ -2218,6 +2529,7 @@ public object FfiConverterTypeMobileItem: FfiConverterRustBuffer<MobileItem> {
             FfiConverterBoolean.read(buf),
             FfiConverterOptionalString.read(buf),
             FfiConverterOptionalString.read(buf),
+            FfiConverterOptionalInt.read(buf),
             FfiConverterOptionalString.read(buf),
             FfiConverterSequenceTypeMobileItemMedia.read(buf),
         )
@@ -2232,6 +2544,7 @@ public object FfiConverterTypeMobileItem: FfiConverterRustBuffer<MobileItem> {
             FfiConverterBoolean.allocationSize(value.`done`) +
             FfiConverterOptionalString.allocationSize(value.`start`) +
             FfiConverterOptionalString.allocationSize(value.`end`) +
+            FfiConverterOptionalInt.allocationSize(value.`notificationOffsetSecs`) +
             FfiConverterOptionalString.allocationSize(value.`repeatRule`) +
             FfiConverterSequenceTypeMobileItemMedia.allocationSize(value.`media`)
     )
@@ -2245,6 +2558,7 @@ public object FfiConverterTypeMobileItem: FfiConverterRustBuffer<MobileItem> {
             FfiConverterBoolean.write(value.`done`, buf)
             FfiConverterOptionalString.write(value.`start`, buf)
             FfiConverterOptionalString.write(value.`end`, buf)
+            FfiConverterOptionalInt.write(value.`notificationOffsetSecs`, buf)
             FfiConverterOptionalString.write(value.`repeatRule`, buf)
             FfiConverterSequenceTypeMobileItemMedia.write(value.`media`, buf)
     }
@@ -2254,21 +2568,21 @@ public object FfiConverterTypeMobileItem: FfiConverterRustBuffer<MobileItem> {
 
 data class MobileItemEdit (
     var `id`: kotlin.String?
-    ,
+    , 
     var `text`: kotlin.String
-    ,
+    , 
     var `marker`: kotlin.String
-    ,
+    , 
     var `indent`: kotlin.Int
-    ,
+    , 
     var `done`: kotlin.Boolean
-
+    
 ){
+    
 
+    
 
-
-
-
+    
     companion object
 }
 
@@ -2307,21 +2621,21 @@ public object FfiConverterTypeMobileItemEdit: FfiConverterRustBuffer<MobileItemE
 
 data class MobileItemMedia (
     var `kind`: kotlin.String
-    ,
+    , 
     var `path`: kotlin.String?
-    ,
+    , 
     var `format`: kotlin.String
-    ,
+    , 
     var `width`: kotlin.Int?
-    ,
+    , 
     var `height`: kotlin.Int?
-
+    
 ){
+    
 
+    
 
-
-
-
+    
     companion object
 }
 
@@ -2360,23 +2674,25 @@ public object FfiConverterTypeMobileItemMedia: FfiConverterRustBuffer<MobileItem
 
 data class MobileNode (
     var `kind`: kotlin.String
-    ,
+    , 
     var `id`: kotlin.String
-    ,
+    , 
     var `name`: kotlin.String
-    ,
+    , 
     var `colorIndex`: kotlin.Int?
-    ,
+    , 
     var `isDailyQueue`: kotlin.Boolean
-    ,
+    , 
+    var `isReadOnly`: kotlin.Boolean
+    , 
     var `children`: List<MobileNode>
-
+    
 ){
+    
 
+    
 
-
-
-
+    
     companion object
 }
 
@@ -2391,6 +2707,7 @@ public object FfiConverterTypeMobileNode: FfiConverterRustBuffer<MobileNode> {
             FfiConverterString.read(buf),
             FfiConverterOptionalInt.read(buf),
             FfiConverterBoolean.read(buf),
+            FfiConverterBoolean.read(buf),
             FfiConverterSequenceTypeMobileNode.read(buf),
         )
     }
@@ -2401,6 +2718,7 @@ public object FfiConverterTypeMobileNode: FfiConverterRustBuffer<MobileNode> {
             FfiConverterString.allocationSize(value.`name`) +
             FfiConverterOptionalInt.allocationSize(value.`colorIndex`) +
             FfiConverterBoolean.allocationSize(value.`isDailyQueue`) +
+            FfiConverterBoolean.allocationSize(value.`isReadOnly`) +
             FfiConverterSequenceTypeMobileNode.allocationSize(value.`children`)
     )
 
@@ -2410,6 +2728,7 @@ public object FfiConverterTypeMobileNode: FfiConverterRustBuffer<MobileNode> {
             FfiConverterString.write(value.`name`, buf)
             FfiConverterOptionalInt.write(value.`colorIndex`, buf)
             FfiConverterBoolean.write(value.`isDailyQueue`, buf)
+            FfiConverterBoolean.write(value.`isReadOnly`, buf)
             FfiConverterSequenceTypeMobileNode.write(value.`children`, buf)
     }
 }
@@ -2418,33 +2737,33 @@ public object FfiConverterTypeMobileNode: FfiConverterRustBuffer<MobileNode> {
 
 data class MobileNotificationRequest (
     var `id`: kotlin.String
-    ,
+    , 
     var `notificationKey`: kotlin.String
-    ,
+    , 
     var `fireAt`: kotlin.String
-    ,
+    , 
     var `expiresAt`: kotlin.String?
-    ,
+    , 
     var `title`: kotlin.String
-    ,
+    , 
     var `body`: kotlin.String
-    ,
+    , 
     var `kind`: kotlin.String
-    ,
+    , 
     var `schemeId`: kotlin.String
-    ,
+    , 
     var `itemId`: kotlin.String
-    ,
+    , 
     var `occurrenceJson`: kotlin.String
-    ,
+    , 
     var `triggerAt`: kotlin.String
-
+    
 ){
+    
 
+    
 
-
-
-
+    
     companion object
 }
 
@@ -2501,35 +2820,45 @@ public object FfiConverterTypeMobileNotificationRequest: FfiConverterRustBuffer<
 
 data class MobileOccurrence (
     var `schemeId`: kotlin.String
-    ,
+    , 
     var `itemId`: kotlin.String
-    ,
+    , 
     var `occurrenceJson`: kotlin.String
-    ,
+    , 
+    var `occurrenceIndex`: kotlin.Int
+    , 
+    var `isRecurring`: kotlin.Boolean
+    , 
+    var `canDeleteFuture`: kotlin.Boolean
+    , 
     var `schemeName`: kotlin.String
-    ,
+    , 
     var `colorIndex`: kotlin.Int
-    ,
+    , 
+    var `isReadOnly`: kotlin.Boolean
+    , 
     var `title`: kotlin.String
-    ,
+    , 
     var `kind`: kotlin.String
-    ,
+    , 
     var `done`: kotlin.Boolean
-    ,
+    , 
     var `start`: kotlin.String?
-    ,
+    , 
     var `end`: kotlin.String?
-    ,
+    , 
+    var `notificationOffsetSecs`: kotlin.Int?
+    , 
     var `localDate`: kotlin.String?
-    ,
+    , 
     var `repeatRule`: kotlin.String?
-
+    
 ){
+    
 
+    
 
-
-
-
+    
     companion object
 }
 
@@ -2542,13 +2871,18 @@ public object FfiConverterTypeMobileOccurrence: FfiConverterRustBuffer<MobileOcc
             FfiConverterString.read(buf),
             FfiConverterString.read(buf),
             FfiConverterString.read(buf),
+            FfiConverterInt.read(buf),
+            FfiConverterBoolean.read(buf),
+            FfiConverterBoolean.read(buf),
             FfiConverterString.read(buf),
             FfiConverterInt.read(buf),
+            FfiConverterBoolean.read(buf),
             FfiConverterString.read(buf),
             FfiConverterString.read(buf),
             FfiConverterBoolean.read(buf),
             FfiConverterOptionalString.read(buf),
             FfiConverterOptionalString.read(buf),
+            FfiConverterOptionalInt.read(buf),
             FfiConverterOptionalString.read(buf),
             FfiConverterOptionalString.read(buf),
         )
@@ -2558,13 +2892,18 @@ public object FfiConverterTypeMobileOccurrence: FfiConverterRustBuffer<MobileOcc
             FfiConverterString.allocationSize(value.`schemeId`) +
             FfiConverterString.allocationSize(value.`itemId`) +
             FfiConverterString.allocationSize(value.`occurrenceJson`) +
+            FfiConverterInt.allocationSize(value.`occurrenceIndex`) +
+            FfiConverterBoolean.allocationSize(value.`isRecurring`) +
+            FfiConverterBoolean.allocationSize(value.`canDeleteFuture`) +
             FfiConverterString.allocationSize(value.`schemeName`) +
             FfiConverterInt.allocationSize(value.`colorIndex`) +
+            FfiConverterBoolean.allocationSize(value.`isReadOnly`) +
             FfiConverterString.allocationSize(value.`title`) +
             FfiConverterString.allocationSize(value.`kind`) +
             FfiConverterBoolean.allocationSize(value.`done`) +
             FfiConverterOptionalString.allocationSize(value.`start`) +
             FfiConverterOptionalString.allocationSize(value.`end`) +
+            FfiConverterOptionalInt.allocationSize(value.`notificationOffsetSecs`) +
             FfiConverterOptionalString.allocationSize(value.`localDate`) +
             FfiConverterOptionalString.allocationSize(value.`repeatRule`)
     )
@@ -2573,13 +2912,18 @@ public object FfiConverterTypeMobileOccurrence: FfiConverterRustBuffer<MobileOcc
             FfiConverterString.write(value.`schemeId`, buf)
             FfiConverterString.write(value.`itemId`, buf)
             FfiConverterString.write(value.`occurrenceJson`, buf)
+            FfiConverterInt.write(value.`occurrenceIndex`, buf)
+            FfiConverterBoolean.write(value.`isRecurring`, buf)
+            FfiConverterBoolean.write(value.`canDeleteFuture`, buf)
             FfiConverterString.write(value.`schemeName`, buf)
             FfiConverterInt.write(value.`colorIndex`, buf)
+            FfiConverterBoolean.write(value.`isReadOnly`, buf)
             FfiConverterString.write(value.`title`, buf)
             FfiConverterString.write(value.`kind`, buf)
             FfiConverterBoolean.write(value.`done`, buf)
             FfiConverterOptionalString.write(value.`start`, buf)
             FfiConverterOptionalString.write(value.`end`, buf)
+            FfiConverterOptionalInt.write(value.`notificationOffsetSecs`, buf)
             FfiConverterOptionalString.write(value.`localDate`, buf)
             FfiConverterOptionalString.write(value.`repeatRule`, buf)
     }
@@ -2589,25 +2933,27 @@ public object FfiConverterTypeMobileOccurrence: FfiConverterRustBuffer<MobileOcc
 
 data class MobileScheme (
     var `id`: kotlin.String
-    ,
+    , 
     var `name`: kotlin.String
-    ,
+    , 
     var `displayName`: kotlin.String
-    ,
+    , 
     var `colorIndex`: kotlin.Int
-    ,
+    , 
     var `isDailyQueue`: kotlin.Boolean
-    ,
+    , 
+    var `isReadOnly`: kotlin.Boolean
+    , 
     var `date`: kotlin.String?
-    ,
+    , 
     var `items`: List<MobileItem>
-
+    
 ){
+    
 
+    
 
-
-
-
+    
     companion object
 }
 
@@ -2622,6 +2968,7 @@ public object FfiConverterTypeMobileScheme: FfiConverterRustBuffer<MobileScheme>
             FfiConverterString.read(buf),
             FfiConverterInt.read(buf),
             FfiConverterBoolean.read(buf),
+            FfiConverterBoolean.read(buf),
             FfiConverterOptionalString.read(buf),
             FfiConverterSequenceTypeMobileItem.read(buf),
         )
@@ -2633,6 +2980,7 @@ public object FfiConverterTypeMobileScheme: FfiConverterRustBuffer<MobileScheme>
             FfiConverterString.allocationSize(value.`displayName`) +
             FfiConverterInt.allocationSize(value.`colorIndex`) +
             FfiConverterBoolean.allocationSize(value.`isDailyQueue`) +
+            FfiConverterBoolean.allocationSize(value.`isReadOnly`) +
             FfiConverterOptionalString.allocationSize(value.`date`) +
             FfiConverterSequenceTypeMobileItem.allocationSize(value.`items`)
     )
@@ -2643,6 +2991,7 @@ public object FfiConverterTypeMobileScheme: FfiConverterRustBuffer<MobileScheme>
             FfiConverterString.write(value.`displayName`, buf)
             FfiConverterInt.write(value.`colorIndex`, buf)
             FfiConverterBoolean.write(value.`isDailyQueue`, buf)
+            FfiConverterBoolean.write(value.`isReadOnly`, buf)
             FfiConverterOptionalString.write(value.`date`, buf)
             FfiConverterSequenceTypeMobileItem.write(value.`items`, buf)
     }
@@ -2652,27 +3001,27 @@ public object FfiConverterTypeMobileScheme: FfiConverterRustBuffer<MobileScheme>
 
 data class MobileSearchHit (
     var `targetKind`: kotlin.String
-    ,
+    , 
     var `schemeId`: kotlin.String?
-    ,
+    , 
     var `itemId`: kotlin.String?
-    ,
+    , 
     var `schemeName`: kotlin.String
-    ,
+    , 
     var `colorIndex`: kotlin.Int?
-    ,
+    , 
     var `title`: kotlin.String
-    ,
+    , 
     var `detail`: kotlin.String
-    ,
+    , 
     var `status`: kotlin.String
-
+    
 ){
+    
 
+    
 
-
-
-
+    
     companion object
 }
 
@@ -2720,15 +3069,21 @@ public object FfiConverterTypeMobileSearchHit: FfiConverterRustBuffer<MobileSear
 
 data class MobileSettings (
     var `themeMode`: kotlin.String
-    ,
+    , 
     var `timeFormat`: kotlin.String
-
+    , 
+    var `eventNotificationOffsetSecs`: kotlin.Int
+    , 
+    var `assignmentNotificationOffsetSecs`: kotlin.Int
+    , 
+    var `googleAccountCount`: kotlin.Int
+    
 ){
+    
 
+    
 
-
-
-
+    
     companion object
 }
 
@@ -2740,17 +3095,26 @@ public object FfiConverterTypeMobileSettings: FfiConverterRustBuffer<MobileSetti
         return MobileSettings(
             FfiConverterString.read(buf),
             FfiConverterString.read(buf),
+            FfiConverterInt.read(buf),
+            FfiConverterInt.read(buf),
+            FfiConverterInt.read(buf),
         )
     }
 
     override fun allocationSize(value: MobileSettings) = (
             FfiConverterString.allocationSize(value.`themeMode`) +
-            FfiConverterString.allocationSize(value.`timeFormat`)
+            FfiConverterString.allocationSize(value.`timeFormat`) +
+            FfiConverterInt.allocationSize(value.`eventNotificationOffsetSecs`) +
+            FfiConverterInt.allocationSize(value.`assignmentNotificationOffsetSecs`) +
+            FfiConverterInt.allocationSize(value.`googleAccountCount`)
     )
 
     override fun write(value: MobileSettings, buf: ByteBuffer) {
             FfiConverterString.write(value.`themeMode`, buf)
             FfiConverterString.write(value.`timeFormat`, buf)
+            FfiConverterInt.write(value.`eventNotificationOffsetSecs`, buf)
+            FfiConverterInt.write(value.`assignmentNotificationOffsetSecs`, buf)
+            FfiConverterInt.write(value.`googleAccountCount`, buf)
     }
 }
 
@@ -2758,25 +3122,25 @@ public object FfiConverterTypeMobileSettings: FfiConverterRustBuffer<MobileSetti
 
 data class MobileSnapshot (
     var `root`: MobileNode
-    ,
+    , 
     var `schemes`: List<MobileScheme>
-    ,
+    , 
     var `archivedSchemes`: List<MobileScheme>
-    ,
+    , 
     var `daily`: List<MobileDailyEntry>
-    ,
+    , 
     var `calendar`: MobileCalendar
-    ,
+    , 
     var `settings`: MobileSettings
-    ,
+    , 
     var `workspacePath`: kotlin.String
-
+    
 ){
+    
 
+    
 
-
-
-
+    
     companion object
 }
 
@@ -2822,24 +3186,24 @@ public object FfiConverterTypeMobileSnapshot: FfiConverterRustBuffer<MobileSnaps
 
 
 sealed class MobileException: kotlin.Exception() {
-
+    
     class Core(
-
+        
         val `reason`: kotlin.String
         ) : MobileException() {
         override val message
             get() = "reason=${ `reason` }"
     }
+    
 
-
-
+    
 
 
     companion object ErrorHandler : UniffiRustCallStatusErrorHandler<MobileException> {
         override fun lift(error_buf: RustBuffer.ByValue): MobileException = FfiConverterTypeMobileError.lift(error_buf)
     }
 
-
+    
 }
 
 /**
@@ -2847,7 +3211,7 @@ sealed class MobileException: kotlin.Exception() {
  */
 public object FfiConverterTypeMobileError : FfiConverterRustBuffer<MobileException> {
     override fun read(buf: ByteBuffer): MobileException {
-
+        
 
         return when(buf.getInt()) {
             1 -> MobileException.Core(
