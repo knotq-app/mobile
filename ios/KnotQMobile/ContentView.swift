@@ -111,13 +111,13 @@ struct ContentView: View {
                         .padding(.vertical, 6)
 
                         if pane != .home {
-                            DesktopUpcomingRail(
-                                calendar: model.snapshot?.calendar,
-                                theme: theme,
-                                timeFormat: currentTimeFormat,
-                                onToggleOccurrence: model.toggleOccurrence,
-                                onOpenOccurrence: { eventEditor = .edit($0) }
-                            )
+                        DesktopUpcomingRail(
+                            calendar: model.snapshot?.calendar,
+                            theme: theme,
+                            timeFormat: currentTimeFormat,
+                            onToggleOccurrence: handleOccurrenceTap,
+                            onOpenOccurrence: { eventEditor = .edit($0) }
+                        )
                             .frame(width: 258)
                         }
                     }
@@ -226,7 +226,7 @@ struct ContentView: View {
                     theme: theme,
                     onOpenDaily: openDaily,
                     onOpenScheme: selectScheme,
-                    onToggleOccurrence: model.toggleOccurrence,
+                    onToggleOccurrence: handleOccurrenceTap,
                     onOpenOccurrence: { eventEditor = .edit($0) },
                     onNewScheme: quickCreateScheme,
                     onNewFolder: { showingNewFolder = true }
@@ -236,7 +236,7 @@ struct ContentView: View {
                     snapshot: model.snapshot,
                     selectedDate: model.selectedDate,
                     theme: theme,
-                    onToggleOccurrence: model.toggleOccurrence,
+                    onToggleOccurrence: handleOccurrenceTap,
                     onOpenOccurrence: { eventEditor = .edit($0) },
                     onCreateScheme: quickCreateSchemeID,
                     onNewFolder: { showingNewFolder = true },
@@ -395,6 +395,7 @@ struct ContentView: View {
     }
 
     private func moveOccurrence(_ occurrence: MobileOccurrence, start: Date?, end: Date?) {
+        guard !occurrence.isReadOnly else { return }
         if occurrence.kind == "assignment" {
             model.setItemDate(schemeID: occurrence.schemeId, itemID: occurrence.itemId, kind: "end", date: end)
             return
@@ -411,6 +412,14 @@ struct ContentView: View {
         } else {
             model.setItemDate(schemeID: occurrence.schemeId, itemID: occurrence.itemId, kind: "start", date: start)
             model.setItemDate(schemeID: occurrence.schemeId, itemID: occurrence.itemId, kind: "end", date: end)
+        }
+    }
+
+    private func handleOccurrenceTap(_ occurrence: MobileOccurrence) {
+        if occurrence.isReadOnly {
+            eventEditor = .edit(occurrence)
+        } else {
+            model.toggleOccurrence(occurrence)
         }
     }
 
@@ -527,7 +536,7 @@ private struct DesktopTitleBar: View {
                 Menu {
                     Button("Calendar Item", systemImage: "calendar.badge.plus", action: onAddCalendar)
                     Button("Item", systemImage: "plus", action: onAddItem)
-                        .disabled(!(pane == .scheme || pane == .daily))
+                        .disabled(!(pane == .daily || (pane == .scheme && scheme?.isReadOnly != true)))
                     Button("New Scheme", systemImage: "doc.badge.plus", action: onNewScheme)
                     Button("Folder", systemImage: "folder.badge.plus", action: onNewFolder)
                 } label: {
@@ -2645,6 +2654,7 @@ private struct DayTimelinePane: View {
         LongPressGesture(minimumDuration: 0.3)
             .sequenced(before: DragGesture(minimumDistance: 0))
             .onChanged { value in
+                guard !laid.occurrence.isReadOnly else { return }
                 switch value {
                 case .first(true):
                     if draggingOccurrenceID != laid.id {
@@ -2665,6 +2675,7 @@ private struct DayTimelinePane: View {
                 }
             }
             .onEnded { value in
+                guard !laid.occurrence.isReadOnly else { return }
                 var moveTarget: OccurrenceMoveTarget?
                 if case let .second(_, drag?) = value,
                    abs(drag.translation.width) > 2 || abs(drag.translation.height) > 2 {
@@ -2683,6 +2694,7 @@ private struct DayTimelinePane: View {
     }
 
     private func eventDragOffset(for laid: LaidOccurrence, colWidth: CGFloat, visibleCount: Int) -> CGSize {
+        guard !laid.occurrence.isReadOnly else { return .zero }
         guard draggingOccurrenceID == laid.id,
               let target = occurrenceMoveTarget(for: laid, translation: draggingTranslation, colWidth: colWidth, visibleCount: visibleCount) else {
             return .zero
@@ -4034,6 +4046,8 @@ private struct DesktopSettingsPane: View {
                 }
 
                 SettingsArchiveSection(schemes: model.snapshot?.archivedSchemes ?? [], theme: theme)
+
+                GoogleCalendarSettingsSection(theme: theme)
 
                 Section {
                     if let session = model.syncSession {

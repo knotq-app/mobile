@@ -33,6 +33,8 @@ struct SettingsScreen: View {
                 }
             }
 
+            GoogleCalendarSettingsSection(theme: theme)
+
             Section("Sync") {
                 if let session = model.syncSession {
                     LabeledContent("Account", value: session.email)
@@ -59,6 +61,59 @@ struct SettingsScreen: View {
             SyncSignInSheet(theme: theme)
                 .environmentObject(model)
                 .presentationDetents([.medium])
+        }
+    }
+}
+
+struct GoogleCalendarSettingsSection: View {
+    @EnvironmentObject private var model: AppModel
+    let theme: KnotQTheme
+
+    private var accountCount: Int32 {
+        model.snapshot?.settings.googleAccountCount ?? 0
+    }
+
+    var body: some View {
+        Section("Google Calendar") {
+            if accountCount > 0 {
+                LabeledContent("Accounts", value: "\(accountCount)")
+                if let status = model.googleCalendarStatus, !status.isEmpty {
+                    Text(status)
+                        .font(.footnote)
+                        .foregroundStyle(theme.textMuted)
+                }
+                Button {
+                    Task { await model.syncGoogleCalendars() }
+                } label: {
+                    if model.googleSyncInProgress {
+                        Label("Syncing Google Calendars", systemImage: "arrow.triangle.2.circlepath")
+                    } else {
+                        Label("Sync Google Calendars", systemImage: "arrow.triangle.2.circlepath")
+                    }
+                }
+                .disabled(model.googleSyncInProgress || model.googleAuthInProgress)
+                Button {
+                    Task { await model.connectGoogleCalendar() }
+                } label: {
+                    Label("Connect Another Google Calendar", systemImage: "calendar.badge.plus")
+                }
+                .disabled(model.googleAuthInProgress || model.googleSyncInProgress)
+            } else {
+                LabeledContent("Status") {
+                    Text("Not connected")
+                        .foregroundStyle(theme.textMuted)
+                }
+                Button {
+                    Task { await model.connectGoogleCalendar() }
+                } label: {
+                    if model.googleAuthInProgress {
+                        Label("Connecting Google Calendar", systemImage: "calendar.badge.plus")
+                    } else {
+                        Label("Connect Google Calendar", systemImage: "calendar.badge.plus")
+                    }
+                }
+                .disabled(model.googleAuthInProgress || model.googleSyncInProgress)
+            }
         }
     }
 }

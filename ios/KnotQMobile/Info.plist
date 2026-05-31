@@ -20,6 +20,14 @@
 	<string>1</string>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
+	<key>KnotQGoogleClientID</key>
+	<string>$(KNOTQ_GOOGLE_CLIENT_ID)</string>
+	<key>KnotQGoogleClientSecret</key>
+	<string>$(KNOTQ_GOOGLE_CLIENT_SECRET)</string>
+	<key>KnotQGoogleRedirectScheme</key>
+	<string>$(KNOTQ_GOOGLE_REDIRECT_SCHEME)</string>
+	<key>KnotQGoogleRedirectURI</key>
+	<string>$(KNOTQ_GOOGLE_REDIRECT_URI)</string>
 	<key>NSAppTransportSecurity</key>
 	<dict>
 		<key>NSAllowsArbitraryLoadsInLocalNetworking</key>

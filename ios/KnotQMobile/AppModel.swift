@@ -1,5 +1,7 @@
+import AuthenticationServices
 import Foundation
 import SwiftUI
+import UIKit
 
 @MainActor
 final class AppModel: ObservableObject {
@@ -11,11 +13,16 @@ final class AppModel: ObservableObject {
     @Published var syncSession: LocalSyncSession?
     @Published var syncAuthInProgress = false
     @Published var syncInProgress = false
+    @Published var googleAuthInProgress = false
+    @Published var googleSyncInProgress = false
+    @Published var googleCalendarStatus: String?
 
     private let bridge: RustBridge?
     private let iso = ISO8601DateFormatter()
     private let syncSessionKey = "knotq.localSyncSession"
     private var syncPollTask: Task<Void, Never>?
+    private var googleSyncTask: Task<Void, Never>?
+    private var googleOAuthSession: GoogleOAuthSessionCoordinator?
 
     init() {
         bridge = try? RustBridge()
@@ -54,6 +61,7 @@ final class AppModel: ObservableObject {
             snapshot = nextSnapshot
             KnotQWidgetSnapshotStore.publish(snapshot: nextSnapshot)
             rescheduleNotifications()
+            configureGoogleSyncPolling(accountCount: nextSnapshot.settings.googleAccountCount)
             errorMessage = nil
         } catch {
             errorMessage = error.localizedDescription
@@ -252,6 +260,74 @@ final class AppModel: ObservableObject {
         mutate { try $0.resetWorkspace() }
     }
 
+    func connectGoogleCalendar() async {
+        guard !googleAuthInProgress, let bridge else { return }
+        googleAuthInProgress = true
+        defer {
+            googleAuthInProgress = false
+            googleOAuthSession = nil
+        }
+
+        do {
+            let config = try Self.googleOAuthConfigForImport()
+            let request = try bridge.googleAuthRequest(clientID: config.clientID, redirectURI: config.redirectURI)
+            guard let authURL = URL(string: request.authUrl) else {
+                throw GoogleOAuthConfigError.message("Google returned an invalid authorization URL.")
+            }
+
+            let session = GoogleOAuthSessionCoordinator()
+            googleOAuthSession = session
+            let callbackURL = try await session.authenticate(url: authURL, callbackScheme: config.redirectScheme)
+            let result = try await Task.detached {
+                try bridge.completeGoogleCalendarImport(
+                    request: request,
+                    callbackURL: callbackURL.absoluteString,
+                    clientSecret: config.clientSecret
+                )
+            }.value
+            googleCalendarStatus = result.message
+            refresh()
+            if syncSession != nil {
+                await syncOnce()
+            }
+            errorMessage = nil
+        } catch {
+            if Self.isGoogleAuthCancellation(error) {
+                return
+            }
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    func syncGoogleCalendars(silent: Bool = false) async {
+        guard !googleSyncInProgress, let bridge else { return }
+        guard snapshot?.settings.googleAccountCount ?? 0 > 0 else { return }
+        googleSyncInProgress = true
+        defer { googleSyncInProgress = false }
+
+        do {
+            let clientID = Self.configuredGoogleClientID()
+            let clientSecret = Self.configuredGoogleClientSecret()
+            let result = try await Task.detached {
+                try bridge.syncGoogleCalendars(clientID: clientID, clientSecret: clientSecret)
+            }.value
+            googleCalendarStatus = result.message
+            refresh()
+            if syncSession != nil {
+                await syncOnce()
+            }
+            if !silent {
+                errorMessage = nil
+            }
+        } catch {
+            if silent {
+                googleCalendarStatus = error.localizedDescription
+            } else {
+                errorMessage = error.localizedDescription
+            }
+        }
+    }
+
     func signInToSync(apiBase: String, email: String, password: String) async {
         let apiBase = normalizedApiBase(apiBase)
         guard !apiBase.isEmpty, let url = URL(string: "\(apiBase)/v1/auth/login") else {
@@ -389,6 +465,21 @@ final class AppModel: ObservableObject {
         }
     }
 
+    private func configureGoogleSyncPolling(accountCount: Int32) {
+        if accountCount <= 0 {
+            googleSyncTask?.cancel()
+            googleSyncTask = nil
+            return
+        }
+        guard googleSyncTask == nil else { return }
+        googleSyncTask = Task { [weak self] in
+            while !Task.isCancelled {
+                try? await Task.sleep(nanoseconds: 300_000_000_000)
+                await self?.syncGoogleCalendars(silent: true)
+            }
+        }
+    }
+
     private func saveSyncSession(_ session: LocalSyncSession) {
         if let data = try? JSONEncoder().encode(session) {
             UserDefaults.standard.set(data, forKey: syncSessionKey)
@@ -432,6 +523,73 @@ final class AppModel: ObservableObject {
         default:
             return "Sign in failed."
         }
+    }
+
+    private static func googleOAuthConfigForImport() throws -> GoogleOAuthMobileConfig {
+        guard let clientID = configuredGoogleClientID() else {
+            throw GoogleOAuthConfigError.message("Set KNOTQ_GOOGLE_CLIENT_ID or KnotQGoogleClientID to connect Google Calendar.")
+        }
+        let redirectScheme = configuredGoogleRedirectScheme()
+            ?? derivedGoogleRedirectScheme(clientID: clientID)
+        guard let redirectScheme else {
+            throw GoogleOAuthConfigError.message("Set KNOTQ_GOOGLE_REDIRECT_SCHEME or KnotQGoogleRedirectScheme for the Google OAuth callback.")
+        }
+        let redirectURI = configuredGoogleRedirectURI() ?? "\(redirectScheme):/oauth2redirect"
+        return GoogleOAuthMobileConfig(
+            clientID: clientID,
+            clientSecret: configuredGoogleClientSecret(),
+            redirectScheme: redirectScheme,
+            redirectURI: redirectURI
+        )
+    }
+
+    private static func configuredGoogleClientID() -> String? {
+        googleConfigString(infoKey: "KnotQGoogleClientID", envKeys: ["KNOTQ_GOOGLE_CLIENT_ID", "GOOGLE_CLIENT_ID"])
+    }
+
+    private static func configuredGoogleClientSecret() -> String? {
+        googleConfigString(infoKey: "KnotQGoogleClientSecret", envKeys: ["KNOTQ_GOOGLE_CLIENT_SECRET", "GOOGLE_CLIENT_SECRET"])
+    }
+
+    private static func configuredGoogleRedirectScheme() -> String? {
+        googleConfigString(infoKey: "KnotQGoogleRedirectScheme", envKeys: ["KNOTQ_GOOGLE_REDIRECT_SCHEME", "GOOGLE_REDIRECT_SCHEME"])
+    }
+
+    private static func configuredGoogleRedirectURI() -> String? {
+        googleConfigString(infoKey: "KnotQGoogleRedirectURI", envKeys: ["KNOTQ_GOOGLE_REDIRECT_URI", "GOOGLE_REDIRECT_URI"])
+    }
+
+    private static func googleConfigString(infoKey: String, envKeys: [String]) -> String? {
+        if let value = usableGoogleConfigString(Bundle.main.object(forInfoDictionaryKey: infoKey) as? String) {
+            return value
+        }
+        for key in envKeys {
+            if let value = usableGoogleConfigString(ProcessInfo.processInfo.environment[key]) {
+                return value
+            }
+        }
+        return nil
+    }
+
+    private static func usableGoogleConfigString(_ raw: String?) -> String? {
+        guard let trimmed = raw?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !trimmed.isEmpty,
+              !trimmed.contains("$(") else {
+            return nil
+        }
+        return trimmed
+    }
+
+    private static func derivedGoogleRedirectScheme(clientID: String) -> String? {
+        let suffix = ".apps.googleusercontent.com"
+        guard clientID.hasSuffix(suffix) else { return nil }
+        return "com.googleusercontent.apps.\(clientID.dropLast(suffix.count))"
+    }
+
+    private static func isGoogleAuthCancellation(_ error: Error) -> Bool {
+        let nsError = error as NSError
+        return nsError.domain == ASWebAuthenticationSessionError.errorDomain
+            && nsError.code == ASWebAuthenticationSessionError.Code.canceledLogin.rawValue
     }
 
     #if DEBUG
@@ -507,5 +665,80 @@ private enum SyncAuthError: LocalizedError {
         case .message(let message):
             return message
         }
+    }
+}
+
+private struct GoogleOAuthMobileConfig {
+    let clientID: String
+    let clientSecret: String?
+    let redirectScheme: String
+    let redirectURI: String
+}
+
+private enum GoogleOAuthConfigError: LocalizedError {
+    case message(String)
+
+    var errorDescription: String? {
+        switch self {
+        case .message(let message):
+            return message
+        }
+    }
+}
+
+@MainActor
+private final class GoogleOAuthSessionCoordinator: NSObject, ASWebAuthenticationPresentationContextProviding {
+    private var session: ASWebAuthenticationSession?
+    private var continuation: CheckedContinuation<URL, Error>?
+
+    func authenticate(url: URL, callbackScheme: String) async throws -> URL {
+        session?.cancel()
+        return try await withTaskCancellationHandler {
+            try await withCheckedThrowingContinuation { continuation in
+                self.continuation = continuation
+                let next = ASWebAuthenticationSession(url: url, callbackURLScheme: callbackScheme) { [weak self] callbackURL, error in
+                    Task { @MainActor in
+                        guard let self else { return }
+                        let pending = self.continuation
+                        self.continuation = nil
+                        self.session = nil
+                        if let error {
+                            pending?.resume(throwing: error)
+                        } else if let callbackURL {
+                            pending?.resume(returning: callbackURL)
+                        } else {
+                            pending?.resume(throwing: GoogleOAuthConfigError.message("Google OAuth did not return a callback URL."))
+                        }
+                    }
+                }
+                next.presentationContextProvider = self
+                next.prefersEphemeralWebBrowserSession = false
+                self.session = next
+                if !next.start() {
+                    self.session = nil
+                    self.continuation = nil
+                    continuation.resume(throwing: GoogleOAuthConfigError.message("Could not start Google OAuth."))
+                }
+            }
+        } onCancel: {
+            Task { @MainActor in
+                self.cancel()
+            }
+        }
+    }
+
+    func cancel() {
+        session?.cancel()
+        session = nil
+        continuation = nil
+    }
+
+    func presentationAnchor(for session: ASWebAuthenticationSession) -> ASPresentationAnchor {
+        let scenes = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
+        return scenes
+            .flatMap(\.windows)
+            .first { $0.isKeyWindow }
+            ?? scenes.first?.windows.first
+            ?? ASPresentationAnchor()
     }
 }

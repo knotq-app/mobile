@@ -31,6 +31,9 @@ use knotq_sync::{
 };
 use sha2::{Digest, Sha256};
 
+mod google_calendar;
+use google_calendar::{GoogleCalendarImportResult, GoogleOAuthConfig};
+
 const DAILY_QUEUE_MARKER_COLOR: u32 = 0x42a5f5;
 const SYNC_BATCH_LIMIT: usize = 50;
 const NOTIFICATION_HORIZON_DAYS: i64 = 14;
@@ -222,6 +225,53 @@ impl MobileCore {
         inner.save_workspace().map_err(Into::into)
     }
 
+    pub fn google_auth_request(
+        &self,
+        client_id: String,
+        redirect_uri: String,
+    ) -> Result<MobileGoogleAuthRequest, MobileError> {
+        let client_id = non_empty(client_id, "Google client id")?;
+        let redirect_uri = non_empty(redirect_uri, "Google redirect URI")?;
+        Ok(google_calendar::google_auth_request(
+            client_id,
+            redirect_uri,
+        ))
+    }
+
+    pub fn complete_google_calendar_import(
+        &self,
+        client_id: String,
+        client_secret: Option<String>,
+        redirect_uri: String,
+        state: String,
+        code_verifier: String,
+        callback_url: String,
+    ) -> Result<MobileGoogleSyncResult, MobileError> {
+        let config = GoogleOAuthConfig {
+            client_id: non_empty(client_id, "Google client id")?,
+            client_secret: non_empty_opt(client_secret),
+        };
+        self.lock()?
+            .complete_google_calendar_import(
+                config,
+                non_empty(redirect_uri, "Google redirect URI")?,
+                non_empty(state, "Google OAuth state")?,
+                non_empty(code_verifier, "Google OAuth code verifier")?,
+                non_empty(callback_url, "Google OAuth callback URL")?,
+            )
+            .map_err(Into::into)
+    }
+
+    pub fn sync_google_calendars(
+        &self,
+        client_id: Option<String>,
+        client_secret: Option<String>,
+    ) -> Result<MobileGoogleSyncResult, MobileError> {
+        self.lock()?
+            .sync_google_calendars(non_empty_opt(client_id), non_empty_opt(client_secret))
+            .map_err(Into::into)
+    }
+
     pub fn add_item(
         &self,
         scheme_id: String,
@@ -398,8 +448,8 @@ impl MobileCore {
         item_id: String,
         occurrence_json: String,
     ) -> Result<(), MobileError> {
-        let occurrence = serde_json::from_str(&occurrence_json)
-            .with_context(|| "parse occurrence")?;
+        let occurrence =
+            serde_json::from_str(&occurrence_json).with_context(|| "parse occurrence")?;
         self.lock()?
             .apply(Command::ToggleOccurrence {
                 scheme: parse_id(&scheme_id)?,
@@ -819,6 +869,181 @@ impl MobileCoreInner {
         Ok(id)
     }
 
+    fn complete_google_calendar_import(
+        &mut self,
+        config: GoogleOAuthConfig,
+        redirect_uri: String,
+        state: String,
+        code_verifier: String,
+        callback_url: String,
+    ) -> Result<MobileGoogleSyncResult> {
+        let sources = google_calendar::google_calendar_sources(&self.workspace);
+        let result = google_calendar::run_google_calendar_import_from_callback(
+            config,
+            &redirect_uri,
+            &state,
+            &code_verifier,
+            &callback_url,
+            sources,
+        )?;
+        self.finish_google_calendar_sync(result, true)
+    }
+
+    fn sync_google_calendars(
+        &mut self,
+        client_id: Option<String>,
+        client_secret: Option<String>,
+    ) -> Result<MobileGoogleSyncResult> {
+        if self.settings.google_accounts.is_empty() {
+            return Ok(MobileGoogleSyncResult {
+                imported_count: 0,
+                synced_count: 0,
+                failure_count: 0,
+                message: "No Google Calendar account is connected.".to_string(),
+            });
+        }
+        let client_id = client_id
+            .or_else(|| {
+                self.settings
+                    .google_accounts
+                    .first()
+                    .map(|account| account.client_id.clone())
+            })
+            .ok_or_else(|| anyhow!("No Google OAuth client id is available"))?;
+        let config = GoogleOAuthConfig {
+            client_id,
+            client_secret,
+        };
+        let accounts = self.settings.google_accounts.clone();
+        let sources = google_calendar::google_calendar_sources(&self.workspace);
+        let result =
+            google_calendar::run_google_calendar_background_sync(config, accounts, sources)?;
+        self.finish_google_calendar_sync(result, false)
+    }
+
+    fn finish_google_calendar_sync(
+        &mut self,
+        result: GoogleCalendarImportResult,
+        create_missing: bool,
+    ) -> Result<MobileGoogleSyncResult> {
+        let accounts_changed = self.upsert_google_accounts(result.accounts);
+        let synced_count = result.calendars.len() as i32;
+        let applied = self.apply_imported_google_calendars(result.calendars, create_missing)?;
+
+        if accounts_changed {
+            self.save_settings()?;
+        }
+        if applied.content_changed {
+            self.workspace.normalize_one_level_folders();
+            self.workspace.normalize_item_markers();
+            self.record_crdt_changes(applied.changes)?;
+            self.save_workspace()?;
+        }
+
+        let failure_count = result.failures.len() as i32;
+        let message = if result.failures.is_empty() {
+            if synced_count == 0 {
+                "Google Calendar is already up to date.".to_string()
+            } else if applied.created_count > 0 {
+                format!("Imported {} Google calendars.", applied.created_count)
+            } else {
+                format!("Synced {synced_count} Google calendars.")
+            }
+        } else {
+            result.failures.join("\n")
+        };
+
+        Ok(MobileGoogleSyncResult {
+            imported_count: applied.created_count,
+            synced_count,
+            failure_count,
+            message,
+        })
+    }
+
+    fn upsert_google_accounts(&mut self, accounts: Vec<knotq_model::GoogleOAuthAccount>) -> bool {
+        let mut changed = false;
+        for account in accounts {
+            if let Some(existing) = self.settings.google_accounts.iter_mut().find(|existing| {
+                existing.client_id == account.client_id && existing.account_id == account.account_id
+            }) {
+                if existing != &account {
+                    *existing = account;
+                    changed = true;
+                }
+            } else {
+                self.settings.google_accounts.push(account);
+                changed = true;
+            }
+        }
+        changed
+    }
+
+    fn apply_imported_google_calendars(
+        &mut self,
+        calendars: Vec<google_calendar::ImportedGoogleCalendar>,
+        create_missing: bool,
+    ) -> Result<GoogleCalendarApplyResult> {
+        let mut changes = WorkspaceCrdtChangeSet::default();
+        let mut content_changed = false;
+        let mut created_count = 0;
+
+        for calendar in calendars {
+            let existing_scheme_id = google_calendar::find_google_calendar_scheme(
+                &self.workspace,
+                &calendar.account_id,
+                &calendar.calendar_id,
+            );
+            let scheme_id = match existing_scheme_id {
+                Some(scheme_id) => scheme_id,
+                None if create_missing => {
+                    let mut scheme = Scheme::new(calendar.name.clone(), calendar.color_index);
+                    let id = scheme.id;
+                    scheme.source = google_calendar::google_calendar_source(&calendar);
+                    self.workspace.schemes.insert(id, scheme);
+                    self.workspace
+                        .folders
+                        .get_mut(&self.workspace.root)
+                        .ok_or_else(|| anyhow!("root folder is missing"))?
+                        .children
+                        .push(NodeRef::Scheme(id));
+                    changes.workspace = true;
+                    changes.schemes.insert(id);
+                    content_changed = true;
+                    created_count += 1;
+                    id
+                }
+                None => continue,
+            };
+
+            let Some(scheme) = self.workspace.schemes.get_mut(&scheme_id) else {
+                continue;
+            };
+            let should_update_name = existing_scheme_id.is_none();
+            let metadata_changed = google_calendar::apply_google_calendar_metadata(
+                scheme,
+                &calendar,
+                should_update_name,
+            );
+            let items_changed = google_calendar::apply_google_calendar_items(scheme, &calendar);
+            if metadata_changed {
+                changes.workspace = true;
+            }
+            if items_changed {
+                changes.schemes.insert(scheme_id);
+            }
+            if metadata_changed || items_changed {
+                content_changed = true;
+            }
+        }
+
+        Ok(GoogleCalendarApplyResult {
+            content_changed,
+            created_count,
+            changes,
+        })
+    }
+
     fn snapshot(&mut self, today: NaiveDate, week_offset: i32) -> Result<MobileSnapshot> {
         self.ensure_daily_queue(today)?;
         let root = self.folder_node(self.workspace.root)?;
@@ -906,6 +1131,7 @@ impl MobileCoreInner {
             settings: MobileSettings {
                 theme_mode: theme_mode_str(self.settings.theme_mode).to_string(),
                 time_format: time_format_str(self.settings.time_format).to_string(),
+                google_account_count: self.settings.google_accounts.len() as i32,
             },
             workspace_path: self.workspace_path.display().to_string(),
         })
@@ -922,6 +1148,7 @@ impl MobileCoreInner {
             name: folder.name.clone(),
             color_index: None,
             is_daily_queue: false,
+            is_read_only: false,
             children: folder
                 .children
                 .iter()
@@ -948,6 +1175,7 @@ impl MobileCoreInner {
                     name: scheme.name.clone(),
                     color_index: Some(i32::from(scheme.color_index)),
                     is_daily_queue: false,
+                    is_read_only: scheme.is_read_only(),
                     children: Vec::new(),
                 }))
             }
@@ -979,6 +1207,7 @@ impl MobileCoreInner {
             display_name,
             color_index: i32::from(scheme.color_index),
             is_daily_queue,
+            is_read_only: scheme.is_read_only(),
             date: date.map(|date| date.to_string()),
             items,
         }
@@ -1195,6 +1424,12 @@ struct MobileSyncDocumentRef {
 struct MobileSyncHttpClient {
     api_base: String,
     bearer_token: String,
+}
+
+struct GoogleCalendarApplyResult {
+    content_changed: bool,
+    created_count: i32,
+    changes: WorkspaceCrdtChangeSet,
 }
 
 fn mobile_sync_documents(workspace: &Workspace) -> Vec<MobileSyncDocumentRef> {
@@ -1584,6 +1819,7 @@ pub struct MobileNode {
     pub name: String,
     pub color_index: Option<i32>,
     pub is_daily_queue: bool,
+    pub is_read_only: bool,
     pub children: Vec<MobileNode>,
 }
 
@@ -1594,6 +1830,7 @@ pub struct MobileScheme {
     pub display_name: String,
     pub color_index: i32,
     pub is_daily_queue: bool,
+    pub is_read_only: bool,
     pub date: Option<String>,
     pub items: Vec<MobileItem>,
 }
@@ -1707,6 +1944,7 @@ pub struct MobileOccurrence {
     pub occurrence_json: String,
     pub scheme_name: String,
     pub color_index: i32,
+    pub is_read_only: bool,
     pub title: String,
     pub kind: String,
     pub done: bool,
@@ -1738,6 +1976,7 @@ impl MobileOccurrence {
             occurrence_json,
             scheme_name: context.scheme_name,
             color_index: i32::from(context.color_index),
+            is_read_only: workspace.is_scheme_read_only(context.scheme_id),
             title,
             kind: item_kind_str(context.occurrence.kind).to_string(),
             done: context.occurrence.state.is_done(),
@@ -1753,6 +1992,25 @@ impl MobileOccurrence {
 pub struct MobileSettings {
     pub theme_mode: String,
     pub time_format: String,
+    pub google_account_count: i32,
+}
+
+#[derive(Clone, Debug)]
+pub struct MobileGoogleAuthRequest {
+    pub auth_url: String,
+    pub state: String,
+    pub code_verifier: String,
+    pub redirect_uri: String,
+    pub scope: String,
+    pub client_id: String,
+}
+
+#[derive(Clone, Debug)]
+pub struct MobileGoogleSyncResult {
+    pub imported_count: i32,
+    pub synced_count: i32,
+    pub failure_count: i32,
+    pub message: String,
 }
 
 #[derive(Clone, Debug)]
@@ -1954,6 +2212,21 @@ fn next_color_index(workspace: &Workspace) -> u8 {
         .filter(|scheme| !workspace.is_daily_queue_scheme(scheme.id))
         .count();
     (count % 10) as u8
+}
+
+fn non_empty(value: String, label: &str) -> Result<String> {
+    let value = value.trim().to_string();
+    if value.is_empty() {
+        Err(anyhow!("{label} is required"))
+    } else {
+        Ok(value)
+    }
+}
+
+fn non_empty_opt(value: Option<String>) -> Option<String> {
+    value
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
 }
 
 fn opt_position(position: Option<i32>) -> Result<Option<usize>> {

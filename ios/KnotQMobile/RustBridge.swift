@@ -119,6 +119,29 @@ final class RustBridge: @unchecked Sendable {
         try core.addCalendarItem(schemeId: schemeID, date: date, text: text, kind: kind.rawValue, start: start, end: end)
     }
 
+    func googleAuthRequest(clientID: String, redirectURI: String) throws -> MobileGoogleAuthRequest {
+        try core.googleAuthRequest(clientId: clientID, redirectUri: redirectURI)
+    }
+
+    func completeGoogleCalendarImport(
+        request: MobileGoogleAuthRequest,
+        callbackURL: String,
+        clientSecret: String?
+    ) throws -> MobileGoogleSyncResult {
+        try core.completeGoogleCalendarImport(
+            clientId: request.clientId,
+            clientSecret: clientSecret,
+            redirectUri: request.redirectUri,
+            state: request.state,
+            codeVerifier: request.codeVerifier,
+            callbackUrl: callbackURL
+        )
+    }
+
+    func syncGoogleCalendars(clientID: String?, clientSecret: String?) throws -> MobileGoogleSyncResult {
+        try core.syncGoogleCalendars(clientId: clientID, clientSecret: clientSecret)
+    }
+
     func setThemeMode(_ mode: String) throws {
         try core.setThemeMode(themeMode: mode)
     }

@@ -567,7 +567,8 @@ struct IntegratedSchemeEditorPane: View {
                     onRenameTitle: { title in
                         model.renameScheme(id: scheme.id, name: title)
                     },
-                    onDate: openDateForLine
+                    onDate: openDateForLine,
+                    readOnly: scheme.isReadOnly
                 )
 
             }
@@ -666,6 +667,10 @@ struct IntegratedSchemeEditorPane: View {
     }
 
     private func commitDocument() {
+        guard !scheme.isReadOnly else {
+            controller.isDirty = false
+            return
+        }
         guard controller.isDirty else { return }
         let edits = controller.commit()
         model.replaceSchemeItems(schemeID: scheme.id, items: edits)
@@ -689,6 +694,7 @@ struct IntegratedSchemeEditorPane: View {
     }
 
     private func openDateForLine() {
+        guard !scheme.isReadOnly else { return }
         commitDocument()
         guard let itemID = controller.currentLineItemID(),
               let currentScheme = model.scheme(id: scheme.id),
@@ -802,6 +808,7 @@ private struct SchemeTextView: UIViewRepresentable {
     let titleValidator: (String) -> String?
     let onRenameTitle: (String) -> Void
     let onDate: () -> Void
+    let readOnly: Bool
 
     func makeCoordinator() -> EditorCoordinator {
         EditorCoordinator()
@@ -815,6 +822,7 @@ private struct SchemeTextView: UIViewRepresentable {
         coordinator.theme = theme
         coordinator.accentColor = UIColor(accent)
         coordinator.onDateRequested = onDate
+        coordinator.readOnly = readOnly
         view.coordinator = coordinator
         view.theme = theme
         view.accentColor = UIColor(accent)
@@ -838,7 +846,9 @@ private struct SchemeTextView: UIViewRepresentable {
         view.autocapitalizationType = .sentences
         view.smartDashesType = .no
         view.smartQuotesType = .no
-        view.inputAccessoryView = coordinator.makeToolbar(for: view)
+        view.isEditable = !readOnly
+        view.isSelectable = true
+        view.inputAccessoryView = readOnly ? nil : coordinator.makeToolbar(for: view)
         view.configureTitle(title: schemeTitle, theme: theme, editable: titleEditable, validator: titleValidator, onCommit: onRenameTitle)
         let checkboxTap = UITapGestureRecognizer(target: coordinator, action: #selector(EditorCoordinator.handleEditorTap(_:)))
         checkboxTap.delegate = coordinator
@@ -854,12 +864,16 @@ private struct SchemeTextView: UIViewRepresentable {
         coordinator.theme = theme
         coordinator.accentColor = UIColor(accent)
         coordinator.onDateRequested = onDate
+        coordinator.readOnly = readOnly
         uiView.theme = theme
         uiView.accentColor = UIColor(accent)
         uiView.backgroundColor = UIColor(theme.bgApp)
         uiView.textContainerInset = textInsets
         uiView.isScrollEnabled = isScrollEnabled
         uiView.keyboardDismissMode = .none
+        uiView.isEditable = !readOnly
+        uiView.isSelectable = true
+        uiView.inputAccessoryView = readOnly ? nil : uiView.inputAccessoryView ?? coordinator.makeToolbar(for: uiView)
         uiView.configureTitle(title: schemeTitle, theme: theme, editable: titleEditable, validator: titleValidator, onCommit: onRenameTitle)
         uiView.setNeedsDisplay()
     }
@@ -874,6 +888,7 @@ private final class EditorCoordinator: NSObject, UITextViewDelegate, @preconcurr
     var theme: KnotQTheme = .dark
     var accentColor: UIColor = .systemBlue
     var onDateRequested: (() -> Void)?
+    var readOnly = false
 
     private var suppressDelegateDepth = 0
     private var autoBulletizePending = false
@@ -889,6 +904,7 @@ private final class EditorCoordinator: NSObject, UITextViewDelegate, @preconcurr
     }
 
     func markDirty() {
+        guard !readOnly else { return }
         controller?.isDirty = true
     }
 
@@ -936,16 +952,19 @@ private final class EditorCoordinator: NSObject, UITextViewDelegate, @preconcurr
     }
 
     @objc func handleEditorTap(_ recognizer: UITapGestureRecognizer) {
+        guard !readOnly else { return }
         guard recognizer.state == .ended, let view else { return }
         _ = view.toggleCheckboxAt(point: recognizer.location(in: view))
     }
 
     func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldReceive touch: UITouch) -> Bool {
+        guard !readOnly else { return false }
         guard let view else { return false }
         return view.checkboxLineRange(at: touch.location(in: view)) != nil
     }
 
     func textView(_ textView: UITextView, shouldChangeTextIn range: NSRange, replacementText text: String) -> Bool {
+        guard !readOnly else { return false }
         guard let view = textView as? EditorTextView else { return true }
         if text == "\n" && range.length == 0 {
             return !handleEnter(in: view, at: range.location)

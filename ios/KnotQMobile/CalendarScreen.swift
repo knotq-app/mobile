@@ -178,6 +178,7 @@ struct EventEditorSheet: View {
     private let isEditing: Bool
     private let editingSchemeID: String?
     private let editingItemID: String?
+    private let readOnly: Bool
 
     init(theme: KnotQTheme, target: EventEditorTarget) {
         self.theme = theme
@@ -187,6 +188,7 @@ struct EventEditorSheet: View {
             isEditing = false
             editingSchemeID = nil
             editingItemID = nil
+            readOnly = false
             _title = State(initialValue: "")
             _hasStart = State(initialValue: true)
             _hasEnd = State(initialValue: true)
@@ -198,6 +200,7 @@ struct EventEditorSheet: View {
             isEditing = true
             editingSchemeID = occ.schemeId
             editingItemID = occ.itemId
+            readOnly = occ.isReadOnly
             _title = State(initialValue: occ.title)
             let startDate = MobileDate.parseDateTime(occ.start)
             let endDate = MobileDate.parseDateTime(occ.end)
@@ -215,6 +218,7 @@ struct EventEditorSheet: View {
             Form {
                 Section {
                     TextField("Title", text: $title)
+                        .disabled(readOnly)
                 }
 
                 Section {
@@ -224,15 +228,18 @@ struct EventEditorSheet: View {
                         Text("Assignment").tag(CalendarKind.assignment)
                     }
                     .pickerStyle(.segmented)
+                    .disabled(readOnly)
 
                     if hasStart {
                         DatePicker(hasEnd ? "Start" : "At", selection: $start)
+                            .disabled(readOnly)
                             .onChange(of: start) { _, value in
                                 if hasEnd, end < value { end = value.addingTimeInterval(3600) }
                             }
                     }
                     if hasEnd {
                         DatePicker(hasStart ? "End" : "Due", selection: $end, in: (hasStart ? start : Date.distantPast)...)
+                            .disabled(readOnly)
                     }
                 }
 
@@ -242,20 +249,21 @@ struct EventEditorSheet: View {
                             Text(choice.label).tag(choice)
                         }
                     }
+                    .disabled(readOnly)
                 }
 
                 if !isEditing {
                     Section {
                         Picker("Scheme", selection: $schemeID) {
                             Text("Daily").tag(String?.none)
-                            ForEach(model.snapshot?.schemes.filter { !$0.isDailyQueue } ?? []) { scheme in
+                            ForEach(model.snapshot?.schemes.filter { !$0.isDailyQueue && !$0.isReadOnly } ?? []) { scheme in
                                 Text(scheme.displayName).tag(String?.some(scheme.id))
                             }
                         }
                     }
                 }
 
-                if isEditing {
+                if isEditing && !readOnly {
                     Section {
                         Button(role: .destructive) { showDeleteConfirm = true } label: {
                             Label("Delete Event", systemImage: "trash")
@@ -263,15 +271,23 @@ struct EventEditorSheet: View {
                     }
                 }
             }
-            .navigationTitle(isEditing ? "Edit Event" : "New Event")
+            .navigationTitle(readOnly ? "Event Details" : (isEditing ? "Edit Event" : "New Event"))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") { dismiss() }
+                if !readOnly {
+                    ToolbarItem(placement: .cancellationAction) {
+                        Button("Cancel") { dismiss() }
+                    }
                 }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Save") { save() }
-                        .disabled(!hasStart && !hasEnd)
+                    Button(readOnly ? "Done" : "Save") {
+                        if readOnly {
+                            dismiss()
+                        } else {
+                            save()
+                        }
+                    }
+                        .disabled(!readOnly && !hasStart && !hasEnd)
                 }
             }
             .confirmationDialog("Delete this event?", isPresented: $showDeleteConfirm, titleVisibility: .visible) {
@@ -382,7 +398,7 @@ struct AddCalendarItemSheet: View {
                 }
                 Picker("Scheme", selection: $selectedSchemeID) {
                     Text("Daily").tag("")
-                    ForEach(model.snapshot?.schemes.filter { !$0.isDailyQueue } ?? []) { scheme in
+                    ForEach(model.snapshot?.schemes.filter { !$0.isDailyQueue && !$0.isReadOnly } ?? []) { scheme in
                         Text(scheme.displayName).tag(scheme.id)
                     }
                 }
