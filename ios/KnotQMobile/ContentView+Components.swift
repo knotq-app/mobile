@@ -856,7 +856,6 @@ final class SchemeNavigatorUIKitView: UIView, UITableViewDataSource, UITableView
     private var onMoveNode: (String, String, String, Int) -> Void = { _, _, _, _ in }
     private var onArchiveScheme: (String) -> Void = { _ in }
     private var onArchiveFolder: (String) -> Void = { _ in }
-    private var settlingDraggedID: String?
 
     private var rowHeight: CGFloat { compact ? 27 : 34 }
 
@@ -898,10 +897,7 @@ final class SchemeNavigatorUIKitView: UIView, UITableViewDataSource, UITableView
         onArchiveScheme: @escaping (String) -> Void,
         onArchiveFolder: @escaping (String) -> Void
     ) {
-        self.root = root
-        self.selectedSchemeID = selectedSchemeID
-        self.theme = theme
-        self.compact = compact
+        let styleChanged = self.selectedSchemeID != selectedSchemeID || self.compact != compact || self.theme.isDark != theme.isDark
         self.onOpenScheme = onOpenScheme
         self.onMoveNode = onMoveNode
         self.onArchiveScheme = onArchiveScheme
@@ -909,8 +905,16 @@ final class SchemeNavigatorUIKitView: UIView, UITableViewDataSource, UITableView
         tableView.contentInset = UIEdgeInsets(top: compact ? 1 : 4, left: 0, bottom: compact ? 4 : 5, right: 0)
         tableView.backgroundColor = .clear
         syncExpandedFolders(root)
-        rebuildRows()
-        tableView.reloadData()
+        let nextRows = makeRows(root: root)
+        let rowsChanged = rows != nextRows
+        self.root = root
+        self.selectedSchemeID = selectedSchemeID
+        self.theme = theme
+        self.compact = compact
+        rows = nextRows
+        if rowsChanged || styleChanged {
+            tableView.reloadData()
+        }
     }
 
     func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
@@ -931,8 +935,7 @@ final class SchemeNavigatorUIKitView: UIView, UITableViewDataSource, UITableView
             expanded: expandedFolderIDs.contains(row.id),
             selected: selectedSchemeID == row.id,
             theme: theme,
-            compact: compact,
-            settling: settlingDraggedID == row.id
+            compact: compact
         )
         return cell
     }
@@ -1013,45 +1016,23 @@ final class SchemeNavigatorUIKitView: UIView, UITableViewDataSource, UITableView
         if let folderID = placement.expandsFolderID {
             expandedFolderIDs.insert(folderID)
         }
-        settlingDraggedID = draggedID
-        let animator: UIDragAnimating?
-        if let item = coordinator.items.first {
-            let location = coordinator.session.location(in: tableView)
-            if let indexPath = coordinator.destinationIndexPath ?? tableView.indexPathForRow(at: location),
-               rows.indices.contains(indexPath.row) {
-                animator = coordinator.drop(item.dragItem, toRowAt: indexPath)
-            } else {
-                animator = coordinator.drop(
-                    item.dragItem,
-                    to: UIDragPreviewTarget(container: tableView, center: location)
-                )
-            }
-        } else {
-            animator = nil
-        }
+        let destinationIndexPath = applyOptimisticMove(draggedID: draggedID, placement: placement)
         onMoveNode(
             draggedNode.kind == "folder" ? "folder" : "scheme",
             draggedID,
             placement.folderID,
             placement.position
         )
-        if let animator {
-            animator.addCompletion { [weak self] _ in
-                DispatchQueue.main.async {
-                    self?.finishSettlingDrop(draggedID)
-                }
-            }
-        } else {
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.12) { [weak self] in
-                self?.finishSettlingDrop(draggedID)
+        if let item = coordinator.items.first {
+            if let destinationIndexPath {
+                coordinator.drop(item.dragItem, toRowAt: destinationIndexPath)
+            } else {
+                coordinator.drop(
+                    item.dragItem,
+                    to: UIDragPreviewTarget(container: tableView, center: coordinator.session.location(in: tableView))
+                )
             }
         }
-    }
-
-    private func finishSettlingDrop(_ draggedID: String) {
-        guard settlingDraggedID == draggedID else { return }
-        settlingDraggedID = nil
-        tableView.reloadData()
     }
 
     private func toggleFolder(_ id: String) {
@@ -1060,18 +1041,15 @@ final class SchemeNavigatorUIKitView: UIView, UITableViewDataSource, UITableView
         } else {
             expandedFolderIDs.insert(id)
         }
-        rebuildRows()
+        rows = makeRows(root: root)
         tableView.reloadData()
     }
 
-    private func rebuildRows() {
-        guard let root else {
-            rows = []
-            return
-        }
+    private func makeRows(root: MobileNode?) -> [Row] {
+        guard let root else { return [] }
         var next: [Row] = []
         appendRows(root.children, parentID: root.id, depth: 0, into: &next)
-        rows = next
+        return next
     }
 
     private func appendRows(_ nodes: [MobileNode], parentID: String, depth: Int, into rows: inout [Row]) {
@@ -1102,6 +1080,72 @@ final class SchemeNavigatorUIKitView: UIView, UITableViewDataSource, UITableView
             folderIDs.insert(node.id)
             collectFolderIDs(from: node.children, into: &folderIDs)
         }
+    }
+
+    private func applyOptimisticMove(draggedID: String, placement: Placement) -> IndexPath? {
+        guard let sourceRange = visibleRange(for: draggedID, in: rows),
+              let nextRows = optimisticRows(moving: draggedID, placement: placement),
+              let destinationRange = visibleRange(for: draggedID, in: nextRows) else {
+            return nil
+        }
+        guard rows != nextRows else {
+            return IndexPath(row: destinationRange.lowerBound, section: 0)
+        }
+
+        let deleteIndexPaths = sourceRange.map { IndexPath(row: $0, section: 0) }
+        let insertIndexPaths = destinationRange.map { IndexPath(row: $0, section: 0) }
+        tableView.performBatchUpdates {
+            rows = nextRows
+            tableView.deleteRows(at: deleteIndexPaths, with: .automatic)
+            tableView.insertRows(at: insertIndexPaths, with: .automatic)
+        }
+        return IndexPath(row: destinationRange.lowerBound, section: 0)
+    }
+
+    private func visibleRange(for id: String, in rows: [Row]) -> Range<Int>? {
+        guard let start = rows.firstIndex(where: { $0.id == id }) else {
+            return nil
+        }
+        let depth = rows[start].depth
+        var end = start + 1
+        while end < rows.count, rows[end].depth > depth {
+            end += 1
+        }
+        return start..<end
+    }
+
+    private func optimisticRows(moving draggedID: String, placement: Placement) -> [Row]? {
+        guard var nextRoot = root,
+              let draggedNode = removeNode(id: draggedID, from: &nextRoot),
+              insertNode(draggedNode, intoFolderID: placement.folderID, position: placement.position, in: &nextRoot) else {
+            return nil
+        }
+        return makeRows(root: nextRoot)
+    }
+
+    private func removeNode(id: String, from parent: inout MobileNode) -> MobileNode? {
+        if let index = parent.children.firstIndex(where: { $0.id == id }) {
+            return parent.children.remove(at: index)
+        }
+        for index in parent.children.indices {
+            if let removed = removeNode(id: id, from: &parent.children[index]) {
+                return removed
+            }
+        }
+        return nil
+    }
+
+    private func insertNode(_ node: MobileNode, intoFolderID folderID: String, position: Int, in parent: inout MobileNode) -> Bool {
+        if parent.id == folderID {
+            parent.children.insert(node, at: max(0, min(position, parent.children.count)))
+            return true
+        }
+        for index in parent.children.indices where parent.children[index].kind == "folder" {
+            if insertNode(node, intoFolderID: folderID, position: position, in: &parent.children[index]) {
+                return true
+            }
+        }
+        return false
     }
 
     private func draggedID(from session: UIDropSession) -> String? {
@@ -1233,25 +1277,18 @@ private final class SchemeNavigatorCell: UITableViewCell {
         expanded: Bool,
         selected: Bool,
         theme: KnotQTheme,
-        compact: Bool,
-        settling: Bool
+        compact: Bool
     ) {
         self.depth = depth
         self.compact = compact
         self.nodeKind = node.kind
 
         selectedFill.backgroundColor = selected ? UIColor(theme.rowSelected) : .clear
-        selectedFill.alpha = settling ? 0 : 1
         titleLabel.text = node.name
         titleLabel.textColor = UIColor(theme.textPrimary)
         titleLabel.font = .systemFont(ofSize: compact ? 13 : 14, weight: node.kind == "folder" ? .semibold : .medium)
         chevronView.tintColor = UIColor(theme.textMuted)
         chevronView.isHidden = node.kind == "folder"
-        let contentAlpha: CGFloat = settling ? 0 : 1
-        iconView.alpha = contentAlpha
-        colorSquare.alpha = contentAlpha
-        titleLabel.alpha = contentAlpha
-        chevronView.alpha = contentAlpha
 
         if node.kind == "folder" {
             iconView.isHidden = false
