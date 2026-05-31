@@ -1234,7 +1234,8 @@ private final class EditorCoordinator: NSObject, UITextViewDelegate, @preconcurr
 
         // Liquid glass background (iOS 26+). Falls back to an ultra-thin
         // material so older OSes still render something readable above the
-        // keyboard without leaving opaque side gutters in light mode.
+        // keyboard. The glass replaces per-button chip backgrounds; the bar
+        // itself is the only floating surface.
         let backdrop: UIVisualEffectView
         if #available(iOS 26.0, *) {
             backdrop = UIVisualEffectView(effect: UIGlassEffect())
@@ -1245,9 +1246,10 @@ private final class EditorCoordinator: NSObject, UITextViewDelegate, @preconcurr
         backdrop.backgroundColor = .clear
         backdrop.isOpaque = false
         backdrop.contentView.backgroundColor = .clear
-        backdrop.layer.cornerRadius = 0
+        backdrop.layer.cornerRadius = 18
+        backdrop.layer.cornerCurve = .continuous
         backdrop.clipsToBounds = true
-        backdrop.layer.borderWidth = 0
+        backdrop.layer.borderWidth = 1
         backdrop.layer.borderColor = UIColor(theme.borderOverlay).cgColor
         container.addSubview(backdrop)
 
@@ -1288,10 +1290,10 @@ private final class EditorCoordinator: NSObject, UITextViewDelegate, @preconcurr
         ].forEach(stack.addArrangedSubview)
 
         NSLayoutConstraint.activate([
-            backdrop.leadingAnchor.constraint(equalTo: container.leadingAnchor),
-            backdrop.trailingAnchor.constraint(equalTo: container.trailingAnchor),
-            backdrop.topAnchor.constraint(equalTo: container.topAnchor),
-            backdrop.bottomAnchor.constraint(equalTo: container.bottomAnchor),
+            backdrop.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 8),
+            backdrop.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -8),
+            backdrop.topAnchor.constraint(equalTo: container.topAnchor, constant: 4),
+            backdrop.bottomAnchor.constraint(equalTo: container.bottomAnchor, constant: -6),
             scroll.leadingAnchor.constraint(equalTo: backdrop.contentView.leadingAnchor),
             scroll.trailingAnchor.constraint(equalTo: backdrop.contentView.trailingAnchor),
             scroll.topAnchor.constraint(equalTo: backdrop.contentView.topAnchor),
