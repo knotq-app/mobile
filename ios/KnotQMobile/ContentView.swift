@@ -3856,6 +3856,7 @@ private struct OccurrenceCompactRow: View {
         }
         .onLongPressGesture {
             if let moreAction {
+                UIImpactFeedbackGenerator(style: .medium).impactOccurred()
                 moreAction()
             }
         }
