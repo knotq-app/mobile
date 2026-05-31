@@ -10,10 +10,10 @@ use knotq_commands::{Command, DateKind, WorkspaceCommandExt};
 use knotq_index::query::{SearchHitStatus, SearchOptions, SearchTarget};
 use knotq_index::IndexedWorkspace;
 use knotq_model::{
-    AppSettings, DocumentId, FolderId, ImageAssetFormat, Item, ItemId, ItemKind, ItemMarker,
-    ItemMedia, NodeRef, NotificationDefaults, OccurrenceId, OperationId, Recurrence, ReplicaId,
-    Scheme, SchemeId, SyncDocumentKind, ThemeMode, TimeFormat, Workspace, WorkspaceId,
-    DAILY_QUEUE_COLOR_INDEX,
+    daily_queue_scheme_id, daily_queue_sync_metadata, AppSettings, DocumentId, FolderId,
+    ImageAssetFormat, Item, ItemId, ItemKind, ItemMarker, ItemMedia, NodeRef, NotificationDefaults,
+    OccurrenceId, OperationId, Recurrence, ReplicaId, Scheme, SchemeId, SyncDocumentKind,
+    ThemeMode, TimeFormat, Workspace, WorkspaceId, DAILY_QUEUE_COLOR_INDEX,
 };
 use knotq_notifications::{
     compute_due_notifications_with_lead_times, NotificationLeadTimes, ScheduledNotification,
@@ -802,11 +802,15 @@ impl MobileCoreInner {
                 return Ok(id);
             }
         }
+        let id = daily_queue_scheme_id(date);
         let mut scheme = Scheme::new(daily_queue_scheme_name(date), DAILY_QUEUE_COLOR_INDEX);
+        scheme.id = id;
         scheme.items = Vec::new();
-        let id = scheme.id;
         self.workspace.daily_queue.insert(date, id);
         self.workspace.schemes.insert(id, scheme);
+        self.workspace
+            .scheme_sync
+            .insert(id, daily_queue_sync_metadata(date));
         self.record_crdt_changes(
             WorkspaceCrdtChangeSet::default()
                 .workspace()
