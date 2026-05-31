@@ -63,6 +63,16 @@ struct ContentView: View {
         KnotQTheme.resolve(mode: model.snapshot?.settings.themeMode, systemScheme: systemScheme)
     }
 
+    private func applyWindowBackground(_ color: Color) {
+        let uiColor = UIColor(color)
+        for scene in UIApplication.shared.connectedScenes {
+            guard let windowScene = scene as? UIWindowScene else { continue }
+            for window in windowScene.windows {
+                window.backgroundColor = uiColor
+            }
+        }
+    }
+
     private var selectedScheme: MobileScheme? {
         model.scheme(id: selectedSchemeID)
     }
@@ -158,22 +168,14 @@ struct ContentView: View {
                     .padding(.bottom, 6)
                 }
             }
-            // Dark panes without a navigation bar can use a soft status-bar
-            // shadow; in light mode it reads as an unintended drop shadow.
-            .overlay(alignment: .top) {
-                if theme.isDark && !wide && pane != .scheme && pane != .daily && pane != .settings && homeNavigationDepth == 0 && !keyboardVisible {
-                    LinearGradient(
-                        colors: [Color.black.opacity(0.30), .clear],
-                        startPoint: .top,
-                        endPoint: .bottom
-                    )
-                    .frame(height: 10)
-                    .allowsHitTesting(false)
-                }
-            }
             .background(theme.bgApp.ignoresSafeArea())
             .foregroundStyle(theme.textPrimary)
             .preferredColorScheme(theme.isDark ? .dark : .light)
+            // The window itself is black by default, so it shows through the
+            // bottom safe-area lip and behind the transparent keyboard toolbar.
+            // Paint it with the theme background so those gaps match the app.
+            .onAppear { applyWindowBackground(theme.bgApp) }
+            .onChange(of: theme.isDark) { _, _ in applyWindowBackground(theme.bgApp) }
             .alert("KnotQ", isPresented: Binding(
                 get: { model.errorMessage != nil },
                 set: { showing in

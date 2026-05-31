@@ -185,7 +185,7 @@ struct IntegratedSchemeEditorPane: View {
             }
             .clipped()
         }
-        .background(theme.bgApp)
+        .background(theme.bgApp.ignoresSafeArea())
         .navigationTitle("")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {

@@ -32,14 +32,14 @@ struct KnotQTheme {
         }
     }
 
-    // Apple Calendar-style dark: pure-black canvas, near-black raised surfaces,
-    // bright text, red "today" accent.
+    // Desktop-matched dark: soft charcoal canvas (not pitch black), lighter
+    // raised surfaces, bright text, red "today" accent.
     static let dark = KnotQTheme(
         isDark: true,
-        bgApp: Color(hex: 0x000000),
-        bgSidebar: Color(hex: 0x0b0b0c),
-        bgToolbar: Color(hex: 0x161618),
-        bgModal: Color(hex: 0x141416),
+        bgApp: Color(hex: 0x242627),
+        bgSidebar: Color(hex: 0x28292b),
+        bgToolbar: Color(hex: 0x363738),
+        bgModal: Color(hex: 0x303133),
         rowAlt: Color.white.opacity(0.04),
         rowHover: Color.white.opacity(0.08),
         rowSelected: Color.white.opacity(0.14),
@@ -2654,6 +2654,7 @@ final class DayTimelineUIKitView: UIView, UIGestureRecognizerDelegate, UIScrollV
         }
 
         drawTimeGutter(theme: theme)
+        drawPastShade(theme: theme, colWidth: colWidth, visibleCount: visibleCount)
         drawGrid(theme: theme, colWidth: colWidth, visibleCount: visibleCount)
         drawNowLine(theme: theme, colWidth: colWidth, visibleCount: visibleCount)
         drawEvents(theme: theme, colWidth: colWidth, visibleCount: visibleCount)
@@ -2678,9 +2679,10 @@ final class DayTimelineUIKitView: UIView, UIGestureRecognizerDelegate, UIScrollV
 
     private func drawTimeGutter(theme: KnotQTheme) {
         timeGutter.backgroundColor = UIColor(theme.bgApp)
-        for hour in 0..<Self.hoursInDay {
+        for hour in 0...Self.hoursInDay {
             let label = UILabel(frame: CGRect(x: 0, y: Self.timeYOffset + CGFloat(hour) * Self.hourHeight - 6, width: Self.gutterWidth - 8, height: 14))
-            label.text = hourLabel(hour)
+            // The very bottom of the timeline is the next midnight (00:00 / 12 AM).
+            label.text = hourLabel(hour % Self.hoursInDay)
             label.textAlignment = .right
             label.font = .systemFont(ofSize: 10, weight: .medium)
             label.textColor = UIColor(theme.textMuted)
@@ -2691,6 +2693,33 @@ final class DayTimelineUIKitView: UIView, UIGestureRecognizerDelegate, UIScrollV
         divider.backgroundColor = UIColor(theme.divider).cgColor
         divider.frame = CGRect(x: Self.gutterWidth - 0.75, y: 0, width: 0.75, height: Self.timelineHeight)
         timeGutter.layer.addSublayer(divider)
+    }
+
+    /// Tints the already-elapsed part of each day blue, mirroring the desktop
+    /// `cal_past` shade: a full column for past days, and top-to-now for today.
+    /// Sits behind the grid, now-line, and events.
+    private func drawPastShade(theme: KnotQTheme, colWidth: CGFloat, visibleCount: Int) {
+        let today = Calendar.current.startOfDay(for: Date())
+        let shade = UIColor(theme.accent).withAlphaComponent(theme.isDark ? 0.13 : 0.15).cgColor
+        for index in -1...visibleCount {
+            let date = Calendar.current.startOfDay(for: dayDate(index))
+            let height: CGFloat
+            if date < today {
+                height = Self.timelineHeight
+            } else if date == today {
+                let now = Date()
+                let minute = Calendar.current.component(.hour, from: now) * 60
+                    + Calendar.current.component(.minute, from: now)
+                height = Self.timeYOffset + CGFloat(minute) / 60 * Self.hourHeight
+            } else {
+                continue
+            }
+            let layer = CALayer()
+            layer.name = Self.dayDecorationLayerName
+            layer.backgroundColor = shade
+            layer.frame = CGRect(x: CGFloat(index + 1) * colWidth, y: 0, width: colWidth, height: height)
+            dayCanvas.layer.insertSublayer(layer, at: 0)
+        }
     }
 
     private func drawGrid(theme: KnotQTheme, colWidth: CGFloat, visibleCount: Int) {
@@ -2729,11 +2758,6 @@ final class DayTimelineUIKitView: UIView, UIGestureRecognizerDelegate, UIScrollV
         line.strokeColor = UIColor(theme.danger).cgColor
         line.lineWidth = 1.5
         dayCanvas.layer.addSublayer(line)
-        let dot = CAShapeLayer()
-        dot.name = Self.dayDecorationLayerName
-        dot.path = UIBezierPath(ovalIn: CGRect(x: x - 3.5, y: y - 3.5, width: 7, height: 7)).cgPath
-        dot.fillColor = UIColor(theme.danger).cgColor
-        dayCanvas.layer.addSublayer(dot)
     }
 
     private func drawEvents(theme: KnotQTheme, colWidth: CGFloat, visibleCount: Int) {
@@ -2954,9 +2978,8 @@ final class DayTimelineUIKitView: UIView, UIGestureRecognizerDelegate, UIScrollV
             let translation = CGPoint(x: location.x - activeDragStartLocation.x, y: location.y - activeDragStartLocation.y)
             let target = moveTarget(for: laid, translation: translation, colWidth: colWidth, visibleCount: visibleCount)
             activeDragTarget = target
-            let reveal = eventDragReveal(translationX: translation.x, colWidth: colWidth)
-            swipeOffset = reveal
-            layoutDayCanvas(colWidth: colWidth)
+            // Keep the calendar columns fixed while dragging an event — only the
+            // event follows the finger, so the calendar never swipes left/right.
             view.frame = frameForDragging(laid: laid, target: target, translation: translation, colWidth: colWidth)
             let snapKey = "\(target.dayIndex)-\(Int(target.startMinute))"
             if snapKey != activeDragSnapKey {
@@ -3032,17 +3055,6 @@ final class DayTimelineUIKitView: UIView, UIGestureRecognizerDelegate, UIScrollV
         }
         let end = anchor.flatMap { Calendar.current.date(byAdding: .minute, value: Int(duration), to: $0) }
         return MoveTarget(dayIndex: dayIndex, startMinute: startMinute, start: anchor, end: end)
-    }
-
-    private func eventDragReveal(translationX: CGFloat, colWidth: CGFloat) -> CGFloat {
-        let threshold = colWidth * 0.20
-        if translationX > threshold {
-            return min(colWidth * 0.78, (translationX - threshold) * 0.56)
-        }
-        if translationX < -threshold {
-            return -min(colWidth * 0.78, (-translationX - threshold) * 0.56)
-        }
-        return 0
     }
 
     private func createDraft(at point: CGPoint, colWidth: CGFloat, visibleCount: Int) -> CreateDraft {
@@ -4088,14 +4100,9 @@ struct DesktopSearchPane: View {
                 including: .subviews
             )
             .animation(.interactiveSpring(response: 0.24, dampingFraction: 0.85), value: searchBarDragOffset)
-            .background(
-                LinearGradient(
-                    colors: [theme.bgApp.opacity(0), theme.bgApp.opacity(0.95), theme.bgApp],
-                    startPoint: .top,
-                    endPoint: .bottom
-                )
-                .allowsHitTesting(false)
-            )
+            // Solid fill (no gradient fade) so the search bar has a crisp top
+            // edge and content is cleanly hidden behind it instead of hazing.
+            .background(theme.bgApp)
         }
         .onAppear {
             model.search(query)
