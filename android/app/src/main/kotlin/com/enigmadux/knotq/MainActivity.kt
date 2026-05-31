@@ -88,8 +88,14 @@ private data class SyncSession(
     val userId: String,
     val email: String,
     val supportsSync: Boolean,
+    // Short-lived access token; `expiresAt` is its expiry.
     val bearerToken: String,
-    val expiresAt: String
+    val expiresAt: String,
+    // Long-lived, rotated-on-refresh credential and its (sliding) expiry. Nullable
+    // so a session persisted before refresh tokens existed still loads; a missing
+    // refresh token just forces a one-time re-login.
+    val refreshToken: String? = null,
+    val refreshExpiresAt: String? = null
 )
 
 private data class FolderDestination(val id: String, val name: String, val depth: Int)
@@ -1024,17 +1030,41 @@ class MainActivity : Activity() {
     }
 
     private fun syncOnce() {
+        // The in-progress guard also serializes refresh: two concurrent refreshes
+        // would replay the same single-use refresh token and trip the server's
+        // reuse detection, revoking the session.
         if (syncInProgress) return
         val session = syncSession ?: return
         if (!session.supportsSync) return
         syncInProgress = true
         Thread {
+            // Refresh the short-lived access token if near expiry (rotating +
+            // persisting the new credentials), or sign out if the refresh token is
+            // dead.
+            val active = refreshSyncSessionIfNeeded(session)
+            if (active == null) {
+                runOnUiThread {
+                    syncInProgress = false
+                    syncSession = null
+                    saveSyncSession(null)
+                    syncPollHandler.removeCallbacks(syncPollRunnable)
+                    showError("Sync session expired", "Please sign in again.")
+                    render()
+                }
+                return@Thread
+            }
+            if (active !== session) {
+                runOnUiThread {
+                    syncSession = active
+                    saveSyncSession(active)
+                }
+            }
             val result = runCatching {
                 bridge.request(
                     obj(
                         "type" to "sync_once",
-                        "api_base" to session.apiBase,
-                        "bearer_token" to session.bearerToken
+                        "api_base" to active.apiBase,
+                        "bearer_token" to active.bearerToken
                     )
                 )
             }
@@ -1056,6 +1086,48 @@ class MainActivity : Activity() {
                 }
             }
         }.start()
+    }
+
+    // Runs on a background thread (blocking HTTP). Returns null if the session is
+    // gone (refresh token dead) and the caller should sign out; otherwise the
+    // session to use — the original (no refresh needed / transient failure) or a
+    // copy carrying the rotated credentials.
+    private fun refreshSyncSessionIfNeeded(session: SyncSession): SyncSession? {
+        val refreshToken = session.refreshToken
+        if (refreshToken.isNullOrEmpty()) return session
+        if (!tokenNeedsRefresh(session.expiresAt)) return session
+        try {
+            val connection =
+                (URL("${session.apiBase}/v1/auth/refresh").openConnection() as HttpURLConnection).apply {
+                    requestMethod = "POST"
+                    connectTimeout = 10_000
+                    readTimeout = 10_000
+                    doOutput = true
+                    setRequestProperty("Content-Type", "application/json")
+                }
+            val body = JSONObject().put("refresh_token", refreshToken).toString().toByteArray(Charsets.UTF_8)
+            connection.outputStream.use { it.write(body) }
+            val status = connection.responseCode
+            if (status == 401) return null
+            if (status !in 200..299) return session
+            val raw = connection.inputStream.bufferedReader().use { it.readText() }
+            val json = JSONObject(raw)
+            return session.copy(
+                bearerToken = json.optString("bearer_token"),
+                expiresAt = json.optString("expires_at"),
+                refreshToken = json.optString("refresh_token").ifEmpty { refreshToken },
+                refreshExpiresAt = json.optString("refresh_expires_at").ifEmpty { null },
+                supportsSync = json.optBoolean("supports_sync", true)
+            )
+        } catch (error: Exception) {
+            // Network/parse hiccup: keep the current token, retry next tick.
+            return session
+        }
+    }
+
+    private fun tokenNeedsRefresh(expiresAt: String): Boolean {
+        val expiry = runCatching { java.time.Instant.parse(expiresAt) }.getOrNull() ?: return true
+        return expiry.isBefore(java.time.Instant.now().plusSeconds(120))
     }
 
     private fun loginToSyncBackend(apiBase: String, email: String, password: String): SyncSession {
@@ -1089,7 +1161,9 @@ class MainActivity : Activity() {
             email = json.optString("email"),
             supportsSync = json.optBoolean("supports_sync", true),
             bearerToken = json.optString("bearer_token"),
-            expiresAt = json.optString("expires_at")
+            expiresAt = json.optString("expires_at"),
+            refreshToken = json.optString("refresh_token").ifEmpty { null },
+            refreshExpiresAt = json.optString("refresh_expires_at").ifEmpty { null }
         )
     }
 
@@ -1105,7 +1179,9 @@ class MainActivity : Activity() {
                 email = json.optString("email"),
                 supportsSync = json.optBoolean("supports_sync", true),
                 bearerToken = json.optString("bearer_token"),
-                expiresAt = json.optString("expires_at")
+                expiresAt = json.optString("expires_at"),
+                refreshToken = json.optString("refresh_token").ifEmpty { null },
+                refreshExpiresAt = json.optString("refresh_expires_at").ifEmpty { null }
             )
             if (session.apiBase != rawApiBase) {
                 saveSyncSession(session)
@@ -1137,6 +1213,8 @@ class MainActivity : Activity() {
                     .put("supports_sync", session.supportsSync)
                     .put("bearer_token", session.bearerToken)
                     .put("expires_at", session.expiresAt)
+                    .put("refresh_token", session.refreshToken ?: JSONObject.NULL)
+                    .put("refresh_expires_at", session.refreshExpiresAt ?: JSONObject.NULL)
                     .toString()
             )
         }

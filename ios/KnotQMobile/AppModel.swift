@@ -366,7 +366,9 @@ final class AppModel: ObservableObject {
                 email: payload.email,
                 supportsSync: payload.supportsSync,
                 bearerToken: payload.bearerToken,
-                expiresAt: payload.expiresAt
+                expiresAt: payload.expiresAt,
+                refreshToken: payload.refreshToken,
+                refreshExpiresAt: payload.refreshExpiresAt
             )
             syncSession = session
             saveSyncSession(session)
@@ -386,11 +388,18 @@ final class AppModel: ObservableObject {
     }
 
     func syncOnce() async {
-        guard !syncInProgress, let bridge, let session = syncSession, session.supportsSync else {
-            return
-        }
+        // Set the in-progress guard before refreshing so concurrent callers bail
+        // out — two simultaneous refreshes would replay the same (single-use)
+        // refresh token and trip the server's reuse detection, revoking the session.
+        guard !syncInProgress, syncSession != nil else { return }
         syncInProgress = true
         defer { syncInProgress = false }
+
+        // Refresh the short-lived access token if it's near expiry (persisting the
+        // rotated credentials), or bail out if the session is gone.
+        guard await refreshSyncSessionIfNeeded() else { return }
+
+        guard let bridge, let session = syncSession, session.supportsSync else { return }
         do {
             let result = try await Task.detached {
                 let changed = try bridge.syncOnce(apiBase: session.apiBase, bearerToken: session.bearerToken)
@@ -404,6 +413,69 @@ final class AppModel: ObservableObject {
         } catch {
             errorMessage = error.localizedDescription
         }
+    }
+
+    /// Refresh the access token before syncing if it's near expiry, persisting the
+    /// rotated credentials immediately. Returns false (and signs out) only if the
+    /// refresh token itself is dead; transient failures keep the current token.
+    private func refreshSyncSessionIfNeeded() async -> Bool {
+        guard let session = syncSession else { return false }
+        guard let refreshToken = session.refreshToken, !refreshToken.isEmpty else {
+            // Legacy session without a refresh token: proceed; if the access token
+            // has lapsed the sync fails and the user can sign in again.
+            return true
+        }
+        guard Self.tokenNeedsRefresh(session.expiresAt),
+              let url = URL(string: "\(session.apiBase)/v1/auth/refresh")
+        else {
+            return true
+        }
+        do {
+            var request = URLRequest(url: url)
+            request.httpMethod = "POST"
+            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            request.httpBody = try JSONSerialization.data(withJSONObject: ["refresh_token": refreshToken])
+            let (data, response) = try await URLSession.shared.data(for: request)
+            guard let http = response as? HTTPURLResponse else { return true }
+            if http.statusCode == 401 {
+                // Refresh token revoked/expired/replayed: the session is gone.
+                signOutSync()
+                errorMessage = "Your sync session expired. Please sign in again."
+                return false
+            }
+            guard (200..<300).contains(http.statusCode) else {
+                // Transient server error: keep the current token, retry next tick.
+                return true
+            }
+            let payload = try JSONDecoder().decode(SyncLoginResponse.self, from: data)
+            var updated = session
+            updated.bearerToken = payload.bearerToken
+            updated.expiresAt = payload.expiresAt
+            if let rotated = payload.refreshToken, !rotated.isEmpty {
+                updated.refreshToken = rotated
+            }
+            updated.refreshExpiresAt = payload.refreshExpiresAt
+            updated.supportsSync = payload.supportsSync
+            syncSession = updated
+            saveSyncSession(updated)
+            return true
+        } catch {
+            // Network/parse hiccup: keep the current token, retry next tick.
+            return true
+        }
+    }
+
+    /// True when the access token expires within the skew window (or is
+    /// unparseable, in which case we refresh defensively).
+    private static func tokenNeedsRefresh(_ expiresAt: String) -> Bool {
+        let withFraction = ISO8601DateFormatter()
+        withFraction.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        let plain = ISO8601DateFormatter()
+        plain.formatOptions = [.withInternetDateTime]
+        guard let expiry = withFraction.date(from: expiresAt) ?? plain.date(from: expiresAt) else {
+            return true
+        }
+        return expiry.timeIntervalSinceNow <= 120
     }
 
     func scheme(id: String?) -> MobileScheme? {
@@ -639,6 +711,8 @@ private struct SyncLoginResponse: Decodable {
     let supportsSync: Bool
     let bearerToken: String
     let expiresAt: String
+    let refreshToken: String?
+    let refreshExpiresAt: String?
 
     enum CodingKeys: String, CodingKey {
         case userId = "user_id"
@@ -646,6 +720,8 @@ private struct SyncLoginResponse: Decodable {
         case supportsSync = "supports_sync"
         case bearerToken = "bearer_token"
         case expiresAt = "expires_at"
+        case refreshToken = "refresh_token"
+        case refreshExpiresAt = "refresh_expires_at"
     }
 
     init(from decoder: Decoder) throws {
@@ -655,6 +731,8 @@ private struct SyncLoginResponse: Decodable {
         supportsSync = try container.decodeIfPresent(Bool.self, forKey: .supportsSync) ?? true
         bearerToken = try container.decode(String.self, forKey: .bearerToken)
         expiresAt = try container.decode(String.self, forKey: .expiresAt)
+        refreshToken = try container.decodeIfPresent(String.self, forKey: .refreshToken)
+        refreshExpiresAt = try container.decodeIfPresent(String.self, forKey: .refreshExpiresAt)
     }
 }
 
