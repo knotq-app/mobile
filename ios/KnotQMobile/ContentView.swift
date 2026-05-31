@@ -1071,11 +1071,6 @@ private struct NavigatorNodeRow: View {
 
             let isBeforeDrop = location.y < 12.5
             var targetPosition = isBeforeDrop ? position : position + 1
-            if let sourcePlacement = findChildPlacement(childID: draggedID, in: root),
-               sourcePlacement.parentID == parentFolderID,
-               sourcePlacement.position < targetPosition {
-                targetPosition -= 1
-            }
 
             let parentCount = findNode(id: parentFolderID, in: root)?.children.count ?? siblingCount
             placement = (parentFolderID, max(0, min(targetPosition, parentCount)))
@@ -1630,11 +1625,6 @@ private struct HomeSchemeNodeRow: View {
 
             let isBeforeDrop = location.y < 17
             var targetPosition = isBeforeDrop ? position : position + 1
-            if let sourcePlacement = findChildPlacement(childID: draggedID, in: root),
-               sourcePlacement.parentID == parentFolderID,
-               sourcePlacement.position < targetPosition {
-                targetPosition -= 1
-            }
 
             let parentCount = findNode(id: parentFolderID, in: root)?.children.count ?? siblingCount
             placement = (parentFolderID, max(0, min(targetPosition, parentCount)))
