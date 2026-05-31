@@ -50,7 +50,9 @@ final class AppModel: ObservableObject {
     func refresh() {
         guard let bridge else { return }
         do {
-            snapshot = try bridge.snapshot(today: Self.dateOnly(selectedDate), weekOffset: weekOffset)
+            let nextSnapshot = try bridge.snapshot(today: Self.dateOnly(selectedDate), weekOffset: weekOffset)
+            snapshot = nextSnapshot
+            KnotQWidgetSnapshotStore.publish(snapshot: nextSnapshot)
             rescheduleNotifications()
             errorMessage = nil
         } catch {

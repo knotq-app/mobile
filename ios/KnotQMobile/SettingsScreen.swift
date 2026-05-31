@@ -20,6 +20,7 @@ struct SettingsScreen: View {
                     Text("Dark").tag("dark")
                     Text("Light").tag("light")
                 }
+                .pickerStyle(.menu)
             }
 
             Section("Time") {

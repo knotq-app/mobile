@@ -2092,6 +2092,93 @@ mod tests {
     }
 
     #[test]
+    fn replace_scheme_items_clears_calendar_metadata_for_plain_text() {
+        let dir = std::env::temp_dir().join(format!("knotq-mobile-test-{}", uuid::Uuid::new_v4()));
+        let core = MobileCore::new(dir.display().to_string()).expect("open mobile core");
+
+        core.create_scheme(None, "Editor".to_string(), Some(2), None)
+            .expect("create scheme");
+        let scheme_id = core
+            .snapshot(Some("2026-05-26".to_string()), 0)
+            .expect("snapshot")
+            .schemes
+            .into_iter()
+            .find(|scheme| scheme.display_name == "Editor")
+            .expect("created scheme")
+            .id;
+
+        core.add_item(
+            scheme_id.clone(),
+            "Drop my date".to_string(),
+            Some("checkbox".to_string()),
+            None,
+            None,
+        )
+        .expect("add item");
+        let item_id = core
+            .snapshot(Some("2026-05-26".to_string()), 0)
+            .expect("snapshot")
+            .schemes
+            .into_iter()
+            .find(|scheme| scheme.id == scheme_id)
+            .expect("scheme")
+            .items[0]
+            .id
+            .clone();
+        core.set_item_date(
+            scheme_id.clone(),
+            item_id.clone(),
+            "start".to_string(),
+            Some("2026-05-27T12:00:00Z".to_string()),
+        )
+        .expect("set start");
+        core.set_item_date(
+            scheme_id.clone(),
+            item_id.clone(),
+            "end".to_string(),
+            Some("2026-05-27T13:00:00Z".to_string()),
+        )
+        .expect("set end");
+        core.set_item_recurrence(
+            scheme_id.clone(),
+            item_id.clone(),
+            Some("FREQ=WEEKLY;INTERVAL=1".to_string()),
+        )
+        .expect("set recurrence");
+
+        core.replace_scheme_items(
+            scheme_id.clone(),
+            vec![MobileItemEdit {
+                id: Some(item_id.clone()),
+                text: "Plain text now".to_string(),
+                marker: "blank".to_string(),
+                indent: 0,
+                done: false,
+            }],
+        )
+        .expect("replace items");
+
+        let item = core
+            .snapshot(Some("2026-05-26".to_string()), 0)
+            .expect("snapshot")
+            .schemes
+            .into_iter()
+            .find(|scheme| scheme.id == scheme_id)
+            .expect("scheme")
+            .items
+            .into_iter()
+            .find(|item| item.id == item_id)
+            .expect("item");
+        assert_eq!(item.marker, "blank");
+        assert_eq!(item.kind, "procedure");
+        assert_eq!(item.start, None);
+        assert_eq!(item.end, None);
+        assert_eq!(item.repeat_rule, None);
+
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
     fn pending_notifications_use_stable_mobile_ids_and_actions() {
         let dir = std::env::temp_dir().join(format!("knotq-mobile-test-{}", uuid::Uuid::new_v4()));
         let core = MobileCore::new(dir.display().to_string()).expect("open mobile core");

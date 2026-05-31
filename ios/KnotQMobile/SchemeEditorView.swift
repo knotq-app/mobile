@@ -459,6 +459,30 @@ final class EditorController: ObservableObject {
     }
 }
 
+private final class TransparentInputAccessoryView: UIInputView {
+    init(frame: CGRect) {
+        super.init(frame: frame, inputViewStyle: .default)
+        allowsSelfSizing = true
+        backgroundColor = .clear
+        isOpaque = false
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    override func didMoveToWindow() {
+        super.didMoveToWindow()
+        var next: UIView? = self
+        for _ in 0..<5 {
+            next?.backgroundColor = .clear
+            next?.isOpaque = false
+            next = next?.superview
+        }
+    }
+}
+
 struct IntegratedSchemeEditorPane: View {
     @EnvironmentObject private var model: AppModel
     @Environment(\.dismiss) private var dismiss
@@ -956,7 +980,7 @@ private final class EditorCoordinator: NSObject, UITextViewDelegate, @preconcurr
             indent: meta.indent,
             done: false,
             itemID: meta.itemID,
-            annotation: meta.annotation,
+            annotation: nil,
             media: meta.media
         )
         suppress {
@@ -1024,7 +1048,7 @@ private final class EditorCoordinator: NSObject, UITextViewDelegate, @preconcurr
                 indent: currentMeta.indent,
                 done: false,
                 itemID: currentMeta.itemID,
-                annotation: currentMeta.annotation,
+                annotation: nil,
                 media: currentMeta.media
             )
             suppress {
@@ -1164,9 +1188,7 @@ private final class EditorCoordinator: NSObject, UITextViewDelegate, @preconcurr
     func makeToolbar(for textView: UITextView) -> UIView {
         markerButtons.removeAll()
         let width = UIScreen.main.bounds.width
-        let container = UIView(frame: CGRect(x: 0, y: 0, width: width, height: 50))
-        container.backgroundColor = .clear
-        container.isOpaque = false
+        let container = TransparentInputAccessoryView(frame: CGRect(x: 0, y: 0, width: width, height: 50))
         container.autoresizingMask = [.flexibleWidth]
         let dismissPan = UIPanGestureRecognizer(target: self, action: #selector(handleToolbarPan(_:)))
         dismissPan.cancelsTouchesInView = false
@@ -1183,6 +1205,9 @@ private final class EditorCoordinator: NSObject, UITextViewDelegate, @preconcurr
             backdrop = UIVisualEffectView(effect: UIBlurEffect(style: .systemUltraThinMaterial))
         }
         backdrop.translatesAutoresizingMaskIntoConstraints = false
+        backdrop.backgroundColor = .clear
+        backdrop.isOpaque = false
+        backdrop.contentView.backgroundColor = .clear
         // Float the bar as a rounded pill rather than a full-width rectangle.
         backdrop.layer.cornerRadius = 18
         backdrop.layer.cornerCurve = .continuous
@@ -1557,7 +1582,7 @@ private final class EditorTextView: UITextView {
             indent: old.indent,
             done: newDone,
             itemID: old.itemID,
-            annotation: old.annotation,
+            annotation: marker == .checkbox ? old.annotation : nil,
             media: old.media
         )
         applyMeta(new, paragraphRange: para, theme: theme)

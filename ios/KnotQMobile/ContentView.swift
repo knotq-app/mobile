@@ -4018,7 +4018,7 @@ private struct DesktopSettingsPane: View {
                         Label("Dark", systemImage: "moon.fill").tag("dark")
                         Label("Light", systemImage: "sun.max.fill").tag("light")
                     }
-                    .pickerStyle(.inline)
+                    .pickerStyle(.menu)
                 } header: {
                     Text("Appearance")
                 }

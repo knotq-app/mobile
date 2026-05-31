@@ -23,7 +23,25 @@
 		01000000000000000000000E /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 020000000000000000000011 /* Assets.xcassets */; };
 		01000000000000000000000F /* MobileNotificationScheduler.swift in Sources */ = {isa = PBXBuildFile; fileRef = 020000000000000000000012 /* MobileNotificationScheduler.swift */; };
 		010000000000000000000010 /* AppIntents.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 020000000000000000000013 /* AppIntents.framework */; };
+		010000000000000000000011 /* WidgetSnapshotStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 020000000000000000000015 /* WidgetSnapshotStore.swift */; };
+		010000000000000000000012 /* WidgetSnapshotWriter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 020000000000000000000016 /* WidgetSnapshotWriter.swift */; };
+		010000000000000000000013 /* WidgetKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 020000000000000000000017 /* WidgetKit.framework */; };
+		010000000000000000000014 /* WidgetSnapshotStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 020000000000000000000015 /* WidgetSnapshotStore.swift */; };
+		010000000000000000000015 /* KnotQUpcomingWidget.swift in Sources */ = {isa = PBXBuildFile; fileRef = 020000000000000000000019 /* KnotQUpcomingWidget.swift */; };
+		010000000000000000000016 /* WidgetKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 020000000000000000000017 /* WidgetKit.framework */; };
+		010000000000000000000017 /* SwiftUI.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 020000000000000000000018 /* SwiftUI.framework */; };
+		010000000000000000000018 /* KnotQUpcomingWidget.appex in Embed App Extensions */ = {isa = PBXBuildFile; fileRef = 02000000000000000000001C /* KnotQUpcomingWidget.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, CodeSignOnCopy, ); }; };
 /* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		0D0000000000000000000001 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 080000000000000000000001 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 050000000000000000000002;
+			remoteInfo = KnotQUpcomingWidget;
+		};
+/* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
 		020000000000000000000001 /* KnotQMobileApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KnotQMobileApp.swift; sourceTree = "<group>"; };
@@ -46,6 +64,14 @@
 		020000000000000000000012 /* MobileNotificationScheduler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MobileNotificationScheduler.swift; sourceTree = "<group>"; };
 		020000000000000000000013 /* AppIntents.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = AppIntents.framework; path = System/Library/Frameworks/AppIntents.framework; sourceTree = SDKROOT; };
 		020000000000000000000014 /* KnotQMobile.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = KnotQMobile.entitlements; sourceTree = "<group>"; };
+		020000000000000000000015 /* WidgetSnapshotStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WidgetSnapshotStore.swift; sourceTree = "<group>"; };
+		020000000000000000000016 /* WidgetSnapshotWriter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WidgetSnapshotWriter.swift; sourceTree = "<group>"; };
+		020000000000000000000017 /* WidgetKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = WidgetKit.framework; path = System/Library/Frameworks/WidgetKit.framework; sourceTree = SDKROOT; };
+		020000000000000000000018 /* SwiftUI.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = SwiftUI.framework; path = System/Library/Frameworks/SwiftUI.framework; sourceTree = SDKROOT; };
+		020000000000000000000019 /* KnotQUpcomingWidget.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KnotQUpcomingWidget.swift; sourceTree = "<group>"; };
+		02000000000000000000001A /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		02000000000000000000001B /* KnotQUpcomingWidget.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = KnotQUpcomingWidget.entitlements; sourceTree = "<group>"; };
+		02000000000000000000001C /* KnotQUpcomingWidget.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = KnotQUpcomingWidget.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -54,6 +80,16 @@
 			buildActionMask = 2147483647;
 			files = (
 				010000000000000000000010 /* AppIntents.framework in Frameworks */,
+				010000000000000000000013 /* WidgetKit.framework in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		030000000000000000000002 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				010000000000000000000017 /* SwiftUI.framework in Frameworks */,
+				010000000000000000000016 /* WidgetKit.framework in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -64,6 +100,7 @@
 			isa = PBXGroup;
 			children = (
 				040000000000000000000002 /* KnotQMobile */,
+				040000000000000000000004 /* KnotQUpcomingWidget */,
 				040000000000000000000003 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -77,6 +114,8 @@
 				020000000000000000000003 /* RustBridge.swift */,
 				020000000000000000000004 /* AppModel.swift */,
 				020000000000000000000012 /* MobileNotificationScheduler.swift */,
+				020000000000000000000015 /* WidgetSnapshotStore.swift */,
+				020000000000000000000016 /* WidgetSnapshotWriter.swift */,
 				020000000000000000000005 /* ContentView.swift */,
 				020000000000000000000006 /* SchemesScreen.swift */,
 				020000000000000000000007 /* SchemeEditorView.swift */,
@@ -93,10 +132,21 @@
 			path = KnotQMobile;
 			sourceTree = "<group>";
 		};
+		040000000000000000000004 /* KnotQUpcomingWidget */ = {
+			isa = PBXGroup;
+			children = (
+				020000000000000000000019 /* KnotQUpcomingWidget.swift */,
+				02000000000000000000001A /* Info.plist */,
+				02000000000000000000001B /* KnotQUpcomingWidget.entitlements */,
+			);
+			path = KnotQUpcomingWidget;
+			sourceTree = "<group>";
+		};
 		040000000000000000000003 /* Products */ = {
 			isa = PBXGroup;
 			children = (
 				02000000000000000000000F /* KnotQMobile.app */,
+				02000000000000000000001C /* KnotQUpcomingWidget.appex */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -112,15 +162,34 @@
 				060000000000000000000001 /* Sources */,
 				030000000000000000000001 /* Frameworks */,
 				070000000000000000000001 /* Resources */,
+				0C0000000000000000000001 /* Embed App Extensions */,
 			);
 			buildRules = (
 			);
 			dependencies = (
+				0E0000000000000000000001 /* PBXTargetDependency */,
 			);
 			name = KnotQMobile;
 			productName = KnotQMobile;
 			productReference = 02000000000000000000000F /* KnotQMobile.app */;
 			productType = "com.apple.product-type.application";
+		};
+		050000000000000000000002 /* KnotQUpcomingWidget */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 0B0000000000000000000003 /* Build configuration list for PBXNativeTarget "KnotQUpcomingWidget" */;
+			buildPhases = (
+				060000000000000000000002 /* Sources */,
+				030000000000000000000002 /* Frameworks */,
+				070000000000000000000002 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = KnotQUpcomingWidget;
+			productName = KnotQUpcomingWidget;
+			productReference = 02000000000000000000001C /* KnotQUpcomingWidget.appex */;
+			productType = "com.apple.product-type.app-extension";
 		};
 /* End PBXNativeTarget section */
 
@@ -133,6 +202,10 @@
 				LastUpgradeCheck = 2650;
 					TargetAttributes = {
 						050000000000000000000001 = {
+							CreatedOnToolsVersion = 26.5;
+							ProvisioningStyle = Automatic;
+						};
+						050000000000000000000002 = {
 							CreatedOnToolsVersion = 26.5;
 							ProvisioningStyle = Automatic;
 						};
@@ -153,9 +226,24 @@
 			projectRoot = "";
 			targets = (
 				050000000000000000000001 /* KnotQMobile */,
+				050000000000000000000002 /* KnotQUpcomingWidget */,
 			);
 		};
 /* End PBXProject section */
+
+/* Begin PBXCopyFilesBuildPhase section */
+		0C0000000000000000000001 /* Embed App Extensions */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 13;
+			files = (
+				010000000000000000000018 /* KnotQUpcomingWidget.appex in Embed App Extensions */,
+			);
+			name = "Embed App Extensions";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXResourcesBuildPhase section */
 		070000000000000000000001 /* Resources */ = {
@@ -163,6 +251,13 @@
 			buildActionMask = 2147483647;
 			files = (
 				01000000000000000000000E /* Assets.xcassets in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		070000000000000000000002 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -201,6 +296,8 @@
 				010000000000000000000003 /* RustBridge.swift in Sources */,
 				010000000000000000000004 /* AppModel.swift in Sources */,
 				01000000000000000000000F /* MobileNotificationScheduler.swift in Sources */,
+				010000000000000000000011 /* WidgetSnapshotStore.swift in Sources */,
+				010000000000000000000012 /* WidgetSnapshotWriter.swift in Sources */,
 				010000000000000000000005 /* ContentView.swift in Sources */,
 				010000000000000000000006 /* SchemesScreen.swift in Sources */,
 				010000000000000000000007 /* SchemeEditorView.swift in Sources */,
@@ -212,7 +309,24 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		060000000000000000000002 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				010000000000000000000014 /* WidgetSnapshotStore.swift in Sources */,
+				010000000000000000000015 /* KnotQUpcomingWidget.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		0E0000000000000000000001 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 050000000000000000000002 /* KnotQUpcomingWidget */;
+			targetProxy = 0D0000000000000000000001 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
 
 /* Begin XCBuildConfiguration section */
 		0A0000000000000000000001 /* Debug */ = {
@@ -403,6 +517,60 @@
 			};
 			name = Release;
 		};
+		0A0000000000000000000005 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				APPLICATION_EXTENSION_API_ONLY = YES;
+				CODE_SIGN_ENTITLEMENTS = KnotQUpcomingWidget/KnotQUpcomingWidget.entitlements;
+				CODE_SIGN_IDENTITY = "Apple Development";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = T35KD9JHQ6;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = KnotQUpcomingWidget/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.enigmadux.knotq.upcoming-widget;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SWIFT_VERSION = 6.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		0A0000000000000000000006 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				APPLICATION_EXTENSION_API_ONLY = YES;
+				CODE_SIGN_ENTITLEMENTS = KnotQUpcomingWidget/KnotQUpcomingWidget.entitlements;
+				CODE_SIGN_IDENTITY = "Apple Development";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = T35KD9JHQ6;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = KnotQUpcomingWidget/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.enigmadux.knotq.upcoming-widget;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SWIFT_VERSION = 6.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -420,6 +588,15 @@
 			buildConfigurations = (
 				0A0000000000000000000003 /* Debug */,
 				0A0000000000000000000004 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		0B0000000000000000000003 /* Build configuration list for PBXNativeTarget "KnotQUpcomingWidget" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				0A0000000000000000000005 /* Debug */,
+				0A0000000000000000000006 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
