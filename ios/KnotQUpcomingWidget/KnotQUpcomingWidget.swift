@@ -56,66 +56,87 @@ private struct KnotQUpcomingWidgetView: View {
             case .systemSmall:
                 systemBody(limit: 3)
             case .systemMedium:
-                systemBody(limit: 4)
+                systemBody(limit: 6, columns: 2)
             case .systemLarge:
-                systemBody(limit: 8)
+                systemBody(limit: 24, columns: 2)
             default:
                 systemBody(limit: 3)
             }
         }
-        .containerBackground(background, for: .widget)
+        .containerBackground(theme.background, for: .widget)
     }
 
     private var accessoryRectangular: some View {
-        VStack(alignment: .leading, spacing: 2) {
-            Text("Upcoming")
-                .font(.caption2.weight(.semibold))
-                .foregroundStyle(.secondary)
+        VStack(alignment: .leading, spacing: 5) {
             if let first = visibleItems.first {
-                Text(title(for: first))
-                    .font(.caption.weight(.semibold))
-                    .lineLimit(1)
-                Text(timeLabel(for: first))
-                    .font(.caption2.monospacedDigit())
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
+                WidgetOccurrenceCompactRow(
+                    item: first,
+                    time: timeLabel(for: first),
+                    theme: theme,
+                    striped: false,
+                    compact: false
+                )
+                if visibleItems.count > 1 {
+                    Text("+ \(visibleItems.count - 1) more")
+                        .font(.caption2.monospacedDigit())
+                        .foregroundStyle(theme.textMuted)
+                        .lineLimit(1)
+                }
             } else {
                 Text("Nothing scheduled")
-                    .font(.caption.weight(.semibold))
-                    .lineLimit(1)
+                    .font(.caption)
+                    .foregroundStyle(theme.textMuted)
+                    .lineLimit(2)
             }
         }
+        .padding(8)
     }
 
-    private func systemBody(limit: Int) -> some View {
-        VStack(alignment: .leading, spacing: 7) {
-            HStack(spacing: 6) {
-                Image(systemName: "calendar")
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(accent)
-                Text("Upcoming")
-                    .font(.system(size: 14, weight: .bold))
-                    .foregroundStyle(primaryText)
-                Spacer(minLength: 0)
-            }
-
+    private func systemBody(limit: Int, columns: Int = 1, dense: Bool = false) -> some View {
+        VStack(alignment: .leading, spacing: dense ? 1 : 4) {
             if visibleItems.isEmpty {
-                Spacer(minLength: 0)
                 Text("Nothing scheduled")
-                    .font(.system(size: 13, weight: .medium))
-                    .foregroundStyle(secondaryText)
+                    .font(.system(size: 12))
+                    .foregroundStyle(theme.textMuted)
+                    .padding(.horizontal, 2)
                     .frame(maxWidth: .infinity, alignment: .leading)
-                Spacer(minLength: 0)
             } else {
-                VStack(alignment: .leading, spacing: family == .systemLarge ? 5 : 4) {
-                    ForEach(Array(visibleItems.prefix(limit))) { item in
-                        WidgetUpcomingRow(item: item, time: timeLabel(for: item), dark: isDark)
+                if columns <= 1 {
+                    VStack(spacing: 0) {
+                        ForEach(Array(visibleItems.prefix(limit).enumerated()), id: \.element.id) { idx, item in
+                            WidgetOccurrenceCompactRow(
+                                item: item,
+                                time: timeLabel(for: item),
+                                theme: theme,
+                                striped: false,
+                                compact: false
+                            )
+
+                            if idx != min(limit, visibleItems.count) - 1 {
+                                Divider()
+                                    .background(theme.divider)
+                            }
+                        }
                     }
+                } else {
+                    let columnsArray = Array(repeating: GridItem(.flexible(minimum: 82), spacing: dense ? 2 : 4), count: columns)
+                    LazyVGrid(columns: columnsArray, spacing: dense ? 2 : 4) {
+                        ForEach(Array(visibleItems.prefix(limit).enumerated()), id: \.element.id) { idx, item in
+                            WidgetOccurrenceCompactRow(
+                                item: item,
+                                time: timeLabel(for: item),
+                                theme: theme,
+                                striped: false,
+                                compact: dense
+                            )
+                        }
+                    }
+                    .frame(maxWidth: .infinity)
                 }
-                Spacer(minLength: 0)
             }
         }
-        .padding(2)
+        .padding(.horizontal, 2)
+        .padding(.vertical, dense ? 2 : 3)
     }
 
     private var visibleItems: [KnotQWidgetOccurrence] {
@@ -123,10 +144,10 @@ private struct KnotQUpcomingWidgetView: View {
     }
 
     private var inlineSummary: String {
-        guard let first = visibleItems.first else { return "KnotQ: nothing scheduled" }
+        guard let first = visibleItems.first else { return "Nothing scheduled" }
         let count = max(0, visibleItems.count - 1)
         let suffix = count > 0 ? " +\(count)" : ""
-        return "\(timeLabel(for: first)) \(title(for: first))\(suffix)"
+        return "\(timeLabel(for: first)) • \(title(for: first))\(suffix)"
     }
 
     private func title(for item: KnotQWidgetOccurrence) -> String {
@@ -142,7 +163,7 @@ private struct KnotQUpcomingWidgetView: View {
             return "Due \(formattedDateTime(end))"
         }
         if let start = item.start, let end = item.end {
-            return "\(formattedDateTime(start))-\(formattedTime(end))"
+            return "\(formattedDateTime(start)) - \(formattedDateTime(end))"
         }
         if let start = item.start {
             return formattedDateTime(start)
@@ -159,21 +180,21 @@ private struct KnotQUpcomingWidgetView: View {
         let today = calendar.startOfDay(for: Date())
         let target = calendar.startOfDay(for: date)
         let time = formattedTime(raw)
-        if target == today { return time }
+        if target == today {
+            return time
+        }
         if let tomorrow = calendar.date(byAdding: .day, value: 1, to: today), target == tomorrow {
             return "Tomorrow \(time)"
         }
-        let formatter = DateFormatter()
-        formatter.locale = Locale(identifier: "en_US_POSIX")
-        formatter.dateFormat = target < today ? "MMM d" : "EEE"
-        return "\(formatter.string(from: date)) \(time)"
+        let prefix = upcomingDatePrefix(for: date)
+        return prefix.isEmpty ? time : "\(prefix) \(time)"
     }
 
     private func formattedTime(_ raw: String) -> String {
         guard let date = Self.iso.date(from: raw) else { return raw }
         let formatter = DateFormatter()
         formatter.locale = Locale(identifier: "en_US_POSIX")
-        formatter.dateFormat = entry.snapshot.timeFormat == "twenty_four_hour" ? "HH:mm" : "h:mm a"
+        formatter.dateFormat = entry.snapshot.timeFormat == "twenty_four_hour" ? "HH:mm" : "h:mm"
         return formatter.string(from: date)
     }
 
@@ -185,20 +206,8 @@ private struct KnotQUpcomingWidgetView: View {
         }
     }
 
-    private var background: Color {
-        isDark ? Color(red: 0.055, green: 0.055, blue: 0.062) : Color(red: 0.965, green: 0.953, blue: 0.933)
-    }
-
-    private var primaryText: Color {
-        isDark ? Color(red: 0.925, green: 0.925, blue: 0.900) : Color(red: 0.165, green: 0.145, blue: 0.110)
-    }
-
-    private var secondaryText: Color {
-        isDark ? Color(red: 0.650, green: 0.650, blue: 0.610) : Color(red: 0.455, green: 0.405, blue: 0.330)
-    }
-
-    private var accent: Color {
-        isDark ? Color(red: 0.610, green: 0.720, blue: 1.000) : Color(red: 0.210, green: 0.405, blue: 0.810)
+    private var theme: WidgetTheme {
+        WidgetTheme.make(dark: isDark)
     }
 
     private static let iso: ISO8601DateFormatter = {
@@ -208,47 +217,174 @@ private struct KnotQUpcomingWidgetView: View {
     }()
 }
 
-private struct WidgetUpcomingRow: View {
+private struct WidgetOccurrenceCompactRow: View {
     let item: KnotQWidgetOccurrence
     let time: String
-    let dark: Bool
+    let theme: WidgetTheme
+    let striped: Bool
+    let compact: Bool
 
     var body: some View {
-        HStack(alignment: .firstTextBaseline, spacing: 6) {
-            Circle()
-                .fill(color)
-                .frame(width: 7, height: 7)
-            Text(time)
-                .font(.system(size: 10, weight: .bold, design: .monospaced))
-                .foregroundStyle(timeColor)
-                .lineLimit(1)
-            Text(title)
-                .font(.system(size: 12, weight: .medium))
-                .foregroundStyle(titleColor)
-                .lineLimit(1)
-            Spacer(minLength: 0)
+            HStack(spacing: compact ? 1 : 6) {
+                Rectangle()
+                    .fill(schemeAccent)
+                    .frame(width: 2)
+                    .padding(.vertical, compact ? 1 : 8)
+
+            VStack(alignment: .leading, spacing: compact ? 0 : 2) {
+                HStack(alignment: .firstTextBaseline) {
+                    Text(schemeLabel)
+                        .font(.system(size: compact ? 7 : 10, weight: .bold))
+                        .foregroundStyle(schemeAccent)
+                        .lineLimit(1)
+
+                    Spacer(minLength: 6)
+
+                    Text(time)
+                        .font(.system(size: compact ? 6 : 9, weight: .bold, design: .monospaced))
+                        .foregroundStyle(occurrenceTimeColor)
+                        .lineLimit(1)
+                }
+
+                Text(titleLabel)
+                    .font(.system(size: compact ? 7 : 11))
+                    .lineLimit(1)
+                    .foregroundStyle(theme.textPrimary)
+            }
+            .padding(.vertical, compact ? 0.5 : 6)
+            .padding(.trailing, compact ? 1 : 6)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+        .background(striped ? theme.rowAlt : Color.clear)
+        .opacity(item.done ? 0.5 : 1)
     }
 
-    private var title: String {
-        let trimmed = item.title.trimmingCharacters(in: .whitespacesAndNewlines)
-        return trimmed.isEmpty ? item.kind.capitalized : trimmed
+    private var schemeLabel: String {
+        let scheme = item.schemeName.trimmingCharacters(in: .whitespacesAndNewlines)
+        return scheme.isEmpty ? "Scheme" : scheme
     }
 
-    private var color: Color {
-        let palette: [Color] = [
-            .blue, .green, .orange, .purple, .pink,
-            .teal, .red, .indigo, .mint, Color(red: 0.878, green: 0.659, blue: 0.0)
-        ]
-        return palette[item.colorIndex % palette.count]
+    private var titleLabel: String {
+        let title = item.title.trimmingCharacters(in: .whitespacesAndNewlines)
+        return title.isEmpty ? item.kind.capitalized : title
     }
 
-    private var timeColor: Color {
-        dark ? Color(red: 0.760, green: 0.760, blue: 1.000) : Color(red: 0.165, green: 0.365, blue: 0.760)
+    private var schemeAccent: Color {
+        schemeColor(index: Int32(item.colorIndex), dark: theme.isDark)
     }
 
-    private var titleColor: Color {
-        dark ? Color(red: 0.925, green: 0.925, blue: 0.900) : Color(red: 0.165, green: 0.145, blue: 0.110)
+    private var occurrenceTimeColor: Color {
+        guard !item.done else { return theme.textMuted }
+
+        let now = Date()
+        let anchorRaw = item.kind == "assignment"
+            ? item.end
+            : (item.start ?? item.end)
+        guard let anchorRaw,
+              let anchor = Self.iso.date(from: anchorRaw) else {
+            return theme.textSoft
+        }
+
+        if item.kind == "event",
+           let endRaw = item.end,
+           let end = Self.iso.date(from: endRaw),
+           anchor <= now,
+           end > now {
+            return theme.isDark ? Color(hex: 0xbfbfff) : Color(hex: 0x2f67cf)
+        }
+
+        if anchor < now {
+            return theme.isDark ? Color(hex: 0xff5a53) : Color(hex: 0xd20f39)
+        }
+
+        let calendar = Calendar.current
+        let today = calendar.startOfDay(for: now)
+        let startDay = calendar.startOfDay(for: anchor)
+        let dayDiff = calendar.dateComponents([.day], from: today, to: startDay).day ?? 0
+
+        if dayDiff <= 0 {
+            return theme.isDark ? Color(hex: 0xbfbfff) : Color(hex: 0x2f67cf)
+        }
+        if dayDiff <= 1 {
+            return theme.isDark ? Color(hex: 0xe5e5ff) : Color(hex: 0x4f5f8f)
+        }
+        return theme.textSoft
+    }
+
+    private static let iso: ISO8601DateFormatter = {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime]
+        return formatter
+    }()
+}
+
+private struct WidgetTheme {
+    let isDark: Bool
+    let background: Color
+    let rowAlt: Color
+    let divider: Color
+    let textPrimary: Color
+    let textMuted: Color
+    let textSoft: Color
+
+    static func make(dark: Bool) -> WidgetTheme {
+        if dark {
+            return WidgetTheme(
+                isDark: true,
+                background: Color(hex: 0x000000),
+                rowAlt: Color(hex: 0xffffff).opacity(0.04),
+                divider: Color(hex: 0xffffff).opacity(0.10),
+                textPrimary: Color(hex: 0xf2f2f7),
+                textMuted: Color(hex: 0x98a0aa).opacity(0.55),
+                textSoft: Color(hex: 0xd2dae2).opacity(0.64)
+            )
+        }
+
+        return WidgetTheme(
+            isDark: false,
+            background: Color(hex: 0xe8e2d8),
+            rowAlt: Color(hex: 0x5a4635).opacity(0.047),
+            divider: Color(hex: 0x5a4635).opacity(0.14),
+            textPrimary: Color(hex: 0x2c2420),
+            textMuted: Color(hex: 0x5a4a3c).opacity(0.75),
+            textSoft: Color(hex: 0x382c22).opacity(0.85)
+        )
+    }
+}
+
+private func schemeColor(index: Int32, dark: Bool) -> Color {
+    let darkPalette: [UInt32] = [0xff453a, 0xff9f0a, 0x30d158, 0x0a84ff, 0xbf5af2, 0xffd60a]
+    let lightPalette: [UInt32] = [0xd4271c, 0xc47400, 0x1e9e40, 0x0064d2, 0x8a3db5, 0xe0a800]
+    let palette = dark ? darkPalette : lightPalette
+    return Color(hex: palette[Int(index) % palette.count])
+}
+
+private func upcomingDatePrefix(for date: Date) -> String {
+    let calendar = Calendar.current
+    let today = calendar.startOfDay(for: Date())
+    let target = calendar.startOfDay(for: date)
+    if target == today { return "" }
+    if let tomorrow = calendar.date(byAdding: .day, value: 1, to: today), target == tomorrow {
+        return "Tomorrow"
+    }
+    if let inAWeek = calendar.date(byAdding: .day, value: 7, to: today), target < inAWeek && target > today {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.dateFormat = "EEE"
+        return formatter.string(from: date)
+    }
+    let formatter = DateFormatter()
+    formatter.locale = Locale(identifier: "en_US_POSIX")
+    formatter.dateFormat = "MMM d"
+    return formatter.string(from: date)
+}
+
+extension Color {
+    init(hex: UInt32) {
+        self.init(
+            red: Double((hex >> 16) & 0xff) / 255.0,
+            green: Double((hex >> 8) & 0xff) / 255.0,
+            blue: Double(hex & 0xff) / 255.0
+        )
     }
 }

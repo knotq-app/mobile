@@ -31,6 +31,8 @@
 		010000000000000000000016 /* WidgetKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 020000000000000000000017 /* WidgetKit.framework */; };
 		010000000000000000000017 /* SwiftUI.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 020000000000000000000018 /* SwiftUI.framework */; };
 		010000000000000000000018 /* KnotQUpcomingWidget.appex in Embed App Extensions */ = {isa = PBXBuildFile; fileRef = 02000000000000000000001C /* KnotQUpcomingWidget.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, CodeSignOnCopy, ); }; };
+		01000000000000000000001D /* ContentView+Components.swift in Sources */ = {isa = PBXBuildFile; fileRef = 02000000000000000000001D /* ContentView+Components.swift */; };
+		01000000000000000000001E /* SchemeEditorView+Components.swift in Sources */ = {isa = PBXBuildFile; fileRef = 02000000000000000000001E /* SchemeEditorView+Components.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -72,6 +74,8 @@
 		02000000000000000000001A /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		02000000000000000000001B /* KnotQUpcomingWidget.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = KnotQUpcomingWidget.entitlements; sourceTree = "<group>"; };
 		02000000000000000000001C /* KnotQUpcomingWidget.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = KnotQUpcomingWidget.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		02000000000000000000001D /* ContentView+Components.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ContentView+Components.swift"; sourceTree = "<group>"; };
+		02000000000000000000001E /* SchemeEditorView+Components.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "SchemeEditorView+Components.swift"; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -117,8 +121,10 @@
 				020000000000000000000015 /* WidgetSnapshotStore.swift */,
 				020000000000000000000016 /* WidgetSnapshotWriter.swift */,
 				020000000000000000000005 /* ContentView.swift */,
+				02000000000000000000001D /* ContentView+Components.swift */,
 				020000000000000000000006 /* SchemesScreen.swift */,
 				020000000000000000000007 /* SchemeEditorView.swift */,
+				02000000000000000000001E /* SchemeEditorView+Components.swift */,
 				020000000000000000000008 /* CalendarScreen.swift */,
 				020000000000000000000009 /* DailyScreen.swift */,
 				02000000000000000000000A /* SearchScreen.swift */,
@@ -299,7 +305,9 @@
 				010000000000000000000011 /* WidgetSnapshotStore.swift in Sources */,
 				010000000000000000000012 /* WidgetSnapshotWriter.swift in Sources */,
 				010000000000000000000005 /* ContentView.swift in Sources */,
+				01000000000000000000001D /* ContentView+Components.swift in Sources */,
 				010000000000000000000006 /* SchemesScreen.swift in Sources */,
+				01000000000000000000001E /* SchemeEditorView+Components.swift in Sources */,
 				010000000000000000000007 /* SchemeEditorView.swift in Sources */,
 				010000000000000000000008 /* CalendarScreen.swift in Sources */,
 				010000000000000000000009 /* DailyScreen.swift in Sources */,
