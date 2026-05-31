@@ -2035,7 +2035,6 @@ struct DayTimelinePane: UIViewRepresentable {
     let theme: KnotQTheme
     let timeFormat: String
     let onSetDate: (Date) -> Void
-    let onShiftDay: (Int) -> Void
     let onCreate: (Date) -> Void
     let onOpenOccurrence: (MobileOccurrence) -> Void
     let onMoveOccurrence: (MobileOccurrence, Date?, Date?) -> Void
@@ -2051,7 +2050,6 @@ struct DayTimelinePane: UIViewRepresentable {
             theme: theme,
             timeFormat: timeFormat,
             onSetDate: onSetDate,
-            onShiftDay: onShiftDay,
             onCreate: onCreate,
             onOpenOccurrence: onOpenOccurrence,
             onMoveOccurrence: onMoveOccurrence
@@ -2291,7 +2289,6 @@ final class DayTimelineUIKitView: UIView, UIGestureRecognizerDelegate, UIScrollV
     private var theme: KnotQTheme?
     private var timeFormat = "twelve_hour"
     private var onSetDate: (Date) -> Void = { _ in }
-    private var onShiftDay: (Int) -> Void = { _ in }
     private var onCreate: (Date) -> Void = { _ in }
     private var onOpenOccurrence: (MobileOccurrence) -> Void = { _ in }
     private var onMoveOccurrence: (MobileOccurrence, Date?, Date?) -> Void = { _, _, _ in }
@@ -2369,7 +2366,6 @@ final class DayTimelineUIKitView: UIView, UIGestureRecognizerDelegate, UIScrollV
         theme: KnotQTheme,
         timeFormat: String,
         onSetDate: @escaping (Date) -> Void,
-        onShiftDay: @escaping (Int) -> Void,
         onCreate: @escaping (Date) -> Void,
         onOpenOccurrence: @escaping (MobileOccurrence) -> Void,
         onMoveOccurrence: @escaping (MobileOccurrence, Date?, Date?) -> Void
@@ -2379,7 +2375,6 @@ final class DayTimelineUIKitView: UIView, UIGestureRecognizerDelegate, UIScrollV
         self.theme = theme
         self.timeFormat = timeFormat
         self.onSetDate = onSetDate
-        self.onShiftDay = onShiftDay
         self.onCreate = onCreate
         self.onOpenOccurrence = onOpenOccurrence
         self.onMoveOccurrence = onMoveOccurrence
@@ -2620,7 +2615,10 @@ final class DayTimelineUIKitView: UIView, UIGestureRecognizerDelegate, UIScrollV
         selectedDate = Calendar.current.startOfDay(for: sender.date)
         swipeOffset = 0
         renderAllIfReady()
-        onSetDate(selectedDate)
+        let date = selectedDate
+        DispatchQueue.main.async {
+            self.onSetDate(date)
+        }
     }
 
     @objc private func handleDayPan(_ recognizer: UIPanGestureRecognizer) {
@@ -2651,14 +2649,15 @@ final class DayTimelineUIKitView: UIView, UIGestureRecognizerDelegate, UIScrollV
     }
 
     private func completeSwipe(dayDelta: Int, colWidth: CGFloat) {
+        let targetDate = Calendar.current.date(byAdding: .day, value: dayDelta, to: selectedDate) ?? selectedDate
         swipeOffset = dayDelta > 0 ? -colWidth : colWidth
         UIView.animate(withDuration: 0.22, delay: 0, usingSpringWithDamping: 0.86, initialSpringVelocity: 0.2, options: [.beginFromCurrentState, .allowUserInteraction]) {
             self.layoutDayCanvas(colWidth: colWidth)
         } completion: { _ in
-            self.selectedDate = Calendar.current.date(byAdding: .day, value: dayDelta, to: self.selectedDate) ?? self.selectedDate
             self.swipeOffset = 0
-            self.renderAllIfReady()
-            self.onShiftDay(dayDelta)
+            DispatchQueue.main.async {
+                self.onSetDate(targetDate)
+            }
         }
     }
 
@@ -2697,7 +2696,9 @@ final class DayTimelineUIKitView: UIView, UIGestureRecognizerDelegate, UIScrollV
             draftView.isHidden = true
             scrollView.isScrollEnabled = true
             if let draft, let date = createDate(for: draft) {
-                onCreate(date)
+                DispatchQueue.main.async {
+                    self.onCreate(date)
+                }
             }
         case .cancelled, .failed:
             activeCreateDraft = nil
@@ -2743,7 +2744,9 @@ final class DayTimelineUIKitView: UIView, UIGestureRecognizerDelegate, UIScrollV
             cleanupEventDrag(view: view, colWidth: colWidth)
             if let target {
                 UIImpactFeedbackGenerator(style: .light).impactOccurred()
-                onMoveOccurrence(laid.occurrence, target.start, target.end)
+                DispatchQueue.main.async {
+                    self.onMoveOccurrence(laid.occurrence, target.start, target.end)
+                }
             }
         case .cancelled, .failed:
             cleanupEventDrag(view: view, colWidth: colWidth)

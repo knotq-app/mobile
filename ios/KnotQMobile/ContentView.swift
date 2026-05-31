@@ -280,12 +280,6 @@ struct ContentView: View {
                         model.weekOffset = 0
                         model.refresh()
                     },
-                    onShiftDay: { delta in
-                        let next = Calendar.current.date(byAdding: .day, value: delta, to: model.selectedDate) ?? model.selectedDate
-                        model.selectedDate = next
-                        model.weekOffset = 0
-                        model.refresh()
-                    },
                     onCreate: { date in eventEditor = .create(date) },
                     onOpenOccurrence: { occ in eventEditor = .edit(occ) },
                     onMoveOccurrence: moveOccurrence
