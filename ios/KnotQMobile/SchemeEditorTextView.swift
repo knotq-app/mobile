@@ -258,7 +258,7 @@ final class EditorTextView: UITextView {
         guard let only = paragraphs.first else { return true }
         let body = bodyText(paragraphRange: only.fullRange, in: textStorage)
         let m = lineMeta(at: only.fullRange.location, in: textStorage)
-        return body.isEmpty && m.marker == .blank && m.indent == 0 && m.annotation == nil
+        return body.isEmpty && m.marker == .blank && m.indent == 0 && m.annotation == nil && m.media.isEmpty
     }
 
     func appendTaskLine(theme: KnotQTheme) {
@@ -291,6 +291,15 @@ final class EditorTextView: UITextView {
 
     func currentLineItemID() -> String? {
         lineMeta(at: clampedCaret(selectedRange.location, in: textStorage), in: textStorage).itemID
+    }
+
+    func attachImageMedia(_ media: MobileItemMedia, at location: Int?, theme: KnotQTheme) {
+        let caret = clampedCaret(location ?? selectedRange.location, in: textStorage)
+        let paragraph = editableParagraphRange(in: textStorage.string as NSString, at: caret)
+        let old = lineMeta(at: paragraph.location, in: textStorage)
+        applyMeta(old.with(media: old.media + [media]), paragraphRange: paragraph, theme: theme)
+        selectedRange = NSRange(location: caret, length: 0)
+        invalidateIntrinsicContentSize()
     }
 
     override func copy(_ sender: Any?) {

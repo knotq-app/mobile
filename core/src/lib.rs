@@ -22,10 +22,11 @@ use knotq_notifications::{
     compute_due_notifications_with_lead_times, NotificationLeadTimes, ScheduledNotification,
     DEFAULT_DURABLE_NOTIFICATION_LIMIT,
 };
-use knotq_state::{daily_queue_scheme_name, make_default_workspace};
+use knotq_state::{daily_queue_initial_start, daily_queue_scheme_name, make_default_workspace};
 use knotq_storage_json::{
-    load_app_settings, load_local_sync_state, load_workspace, save_app_settings,
-    save_local_sync_state, save_workspace,
+    load_app_settings, load_daily_queue_scheme, load_daily_queue_schemes_for_calendar_range,
+    load_local_sync_state, load_workspace_with_options, save_app_settings, save_local_sync_state,
+    save_workspace, WorkspaceLoadOptions,
 };
 use knotq_sync::{
     LocalSyncState, PendingCrdtEdit, PullUpdatesResponse, PushUpdatesRequest, PushUpdatesResponse,
@@ -88,7 +89,8 @@ impl MobileCore {
     }
 
     pub fn month_days(&self, year: i32, month: u32) -> Result<Vec<MobileCalendarDay>, MobileError> {
-        self.lock()?.month_days(year, month).map_err(Into::into)
+        let mut inner = self.lock()?;
+        inner.month_days(year, month).map_err(Into::into)
     }
 
     pub fn search(&self, query: String) -> Result<Vec<MobileSearchHit>, MobileError> {
@@ -720,7 +722,10 @@ impl MobileCoreInner {
         let image_assets_dir = workspace_dir.join("assets/images");
         let settings_path = app_dir.join("settings.json");
         let mut should_reset_workspace_dir = false;
-        let mut workspace = match load_workspace(&workspace_path) {
+        let today = Local::now().date_naive();
+        let load_options =
+            WorkspaceLoadOptions::daily_queue_range(daily_queue_initial_start(today), today);
+        let mut workspace = match load_workspace_with_options(&workspace_path, load_options) {
             Ok(Some(workspace)) => workspace,
             Ok(None) => make_default_workspace(),
             Err(_) => {
@@ -769,6 +774,75 @@ impl MobileCoreInner {
 
     fn save_workspace(&self) -> Result<()> {
         save_workspace(&self.workspace_path, &self.workspace)
+    }
+
+    fn load_daily_queue_scheme_if_needed(&mut self, date: NaiveDate) -> Result<Option<SchemeId>> {
+        let Some(expected_id) = self.workspace.daily_queue_scheme_id(date) else {
+            return Ok(None);
+        };
+        if self.workspace.schemes.contains_key(&expected_id) {
+            return Ok(Some(expected_id));
+        }
+
+        match load_daily_queue_scheme(&self.workspace_path, date)? {
+            Some(scheme) if scheme.id == expected_id => {
+                self.workspace.schemes.insert(expected_id, scheme);
+                Ok(Some(expected_id))
+            }
+            Some(scheme) => Err(anyhow!(
+                "daily queue {} loaded with unexpected id {}, expected {}",
+                date,
+                scheme.id,
+                expected_id
+            )),
+            None => {
+                self.workspace.daily_queue.remove(&date);
+                Ok(None)
+            }
+        }
+    }
+
+    fn load_daily_queue_date_range(&mut self, start: NaiveDate, end: NaiveDate) -> Result<()> {
+        let first = start.min(end);
+        let last = start.max(end);
+        let dates = self
+            .workspace
+            .daily_queue
+            .range(first..=last)
+            .map(|(date, _)| *date)
+            .collect::<Vec<_>>();
+        let mut pruned_missing_entries = false;
+        for date in dates {
+            let had_entry = self.workspace.daily_queue_scheme_id(date).is_some();
+            let loaded = self.load_daily_queue_scheme_if_needed(date)?;
+            if had_entry && loaded.is_none() {
+                pruned_missing_entries = true;
+            }
+        }
+        if pruned_missing_entries {
+            self.save_workspace()?;
+        }
+        Ok(())
+    }
+
+    fn load_daily_queue_calendar_range(&mut self, start: NaiveDate, end: NaiveDate) -> Result<()> {
+        for (date, scheme) in
+            load_daily_queue_schemes_for_calendar_range(&self.workspace_path, start, end)?
+        {
+            let Some(expected_id) = self.workspace.daily_queue_scheme_id(date) else {
+                continue;
+            };
+            if scheme.id != expected_id {
+                return Err(anyhow!(
+                    "daily queue {} loaded with unexpected id {}, expected {}",
+                    date,
+                    scheme.id,
+                    expected_id
+                ));
+            }
+            self.workspace.schemes.entry(scheme.id).or_insert(scheme);
+        }
+        Ok(())
     }
 
     fn save_settings(&self) -> Result<()> {
@@ -1070,10 +1144,8 @@ impl MobileCoreInner {
     }
 
     fn ensure_daily_queue(&mut self, date: NaiveDate) -> Result<SchemeId> {
-        if let Some(id) = self.workspace.daily_queue_scheme_id(date) {
-            if self.workspace.schemes.contains_key(&id) {
-                return Ok(id);
-            }
+        if let Some(id) = self.load_daily_queue_scheme_if_needed(date)? {
+            return Ok(id);
         }
         let id = daily_queue_scheme_id(date);
         let mut scheme = Scheme::new(daily_queue_scheme_name(date), DAILY_QUEUE_COLOR_INDEX);
@@ -1279,6 +1351,15 @@ impl MobileCoreInner {
     }
 
     fn snapshot(&mut self, today: NaiveDate, week_offset: i32) -> Result<MobileSnapshot> {
+        let daily_start = today - Duration::days(3);
+        let daily_end = daily_start + Duration::days(13);
+        self.load_daily_queue_date_range(daily_start, daily_end)?;
+
+        let week_start = today + Duration::days((week_offset as i64) * 7);
+        let week_end = week_start + Duration::days(7);
+        let query_start = week_start - Duration::days(1);
+        self.load_daily_queue_calendar_range(query_start, week_end)?;
+
         let root = self.folder_node(self.workspace.root)?;
         let mut schemes: Vec<MobileScheme> = self
             .workspace
@@ -1296,7 +1377,6 @@ impl MobileCoreInner {
             .map(|scheme| self.mobile_scheme(scheme))
             .collect::<Vec<_>>();
 
-        let daily_start = today - Duration::days(3);
         let daily = (0..14)
             .filter_map(|offset| {
                 let date = daily_start + Duration::days(offset);
@@ -1310,9 +1390,6 @@ impl MobileCoreInner {
             })
             .collect();
 
-        let week_start = today + Duration::days((week_offset as i64) * 7);
-        let week_end = week_start + Duration::days(7);
-        let query_start = week_start - Duration::days(1);
         let indexed = IndexedWorkspace::build(self.workspace.clone());
         let range = knotq_date_util::DateRange {
             start: local_midnight_utc(query_start)?,
@@ -1375,7 +1452,7 @@ impl MobileCoreInner {
         })
     }
 
-    fn month_days(&self, year: i32, month: u32) -> Result<Vec<MobileCalendarDay>> {
+    fn month_days(&mut self, year: i32, month: u32) -> Result<Vec<MobileCalendarDay>> {
         let first = NaiveDate::from_ymd_opt(year, month, 1)
             .ok_or_else(|| anyhow!("invalid month {month}/{year}"))?;
         let next_month_first = if month >= 12 {
@@ -1388,6 +1465,8 @@ impl MobileCoreInner {
         // for the adjacent months still carry their event dots.
         let grid_start = first - Duration::days(7);
         let grid_end = next_month_first + Duration::days(7);
+        self.load_daily_queue_date_range(grid_start, grid_end)?;
+        self.load_daily_queue_calendar_range(grid_start, grid_end)?;
 
         let indexed = IndexedWorkspace::build(self.workspace.clone());
         let range = knotq_date_util::DateRange {
@@ -2725,6 +2804,59 @@ mod tests {
 
         let hits = core.search("bridge".to_string()).expect("search");
         assert!(hits.iter().any(|hit| hit.title == "Check mobile bridge"));
+
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn daily_queue_loads_old_entries_on_demand() {
+        let dir = std::env::temp_dir().join(format!("knotq-mobile-test-{}", uuid::Uuid::new_v4()));
+        let workspace_path = dir.join("workspace").join("workspace.json");
+        let old_date = NaiveDate::from_ymd_opt(2000, 1, 15).unwrap();
+        let old_id = daily_queue_scheme_id(old_date);
+        let mut workspace = Workspace::new();
+        let mut old_daily = Scheme::new(daily_queue_scheme_name(old_date), DAILY_QUEUE_COLOR_INDEX);
+        old_daily.id = old_id;
+        old_daily.items.push(Item::new("archived daily note"));
+        workspace.daily_queue.insert(old_date, old_id);
+        workspace.schemes.insert(old_id, old_daily);
+        save_workspace(&workspace_path, &workspace).expect("seed workspace");
+
+        let core = MobileCore::new(dir.display().to_string()).expect("open mobile core");
+        let current = core.snapshot(None, 0).expect("current snapshot");
+        assert!(!current.daily.iter().any(|entry| entry.date == old_date.to_string()));
+
+        let old = core
+            .snapshot(Some(old_date.to_string()), 0)
+            .expect("old snapshot");
+        let loaded = old
+            .daily
+            .iter()
+            .find(|entry| entry.date == old_date.to_string())
+            .expect("old daily loaded");
+        assert_eq!(loaded.scheme.items[0].text, "archived daily note");
+
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn new_daily_queue_is_empty() {
+        let dir = std::env::temp_dir().join(format!("knotq-mobile-test-{}", uuid::Uuid::new_v4()));
+        let core = MobileCore::new(dir.display().to_string()).expect("open mobile core");
+        let date = NaiveDate::from_ymd_opt(2026, 5, 26).unwrap();
+
+        core.ensure_daily_queue(Some(date.to_string()))
+            .expect("ensure daily");
+
+        let snapshot = core
+            .snapshot(Some(date.to_string()), 0)
+            .expect("snapshot after ensure");
+        let daily = snapshot
+            .daily
+            .iter()
+            .find(|entry| entry.date == date.to_string())
+            .expect("daily exists");
+        assert!(daily.scheme.items.is_empty());
 
         let _ = std::fs::remove_dir_all(dir);
     }

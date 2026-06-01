@@ -32,22 +32,24 @@ struct KnotQTheme {
         }
     }
 
-    // Desktop-matched dark: deep charcoal canvas with restrained raised surfaces,
-    // bright text, red "today" accent.
+    // OLED-black canvas (bgApp/bgSidebar) with subtly elevated surfaces for the
+    // floating "glass" chrome — the dock, quick-write buttons, calendar lip, and
+    // modal/sheet rows lift just above the black so they read as glass instead
+    // of melting into the background.
     static let dark = KnotQTheme(
         isDark: true,
-        bgApp: Color(hex: 0x18191a),
-        bgSidebar: Color(hex: 0x1c1d1f),
-        bgToolbar: Color(hex: 0x242527),
-        bgModal: Color(hex: 0x202123),
-        rowAlt: Color.white.opacity(0.03),
-        rowHover: Color.white.opacity(0.06),
-        rowSelected: Color.white.opacity(0.11),
-        buttonBg: Color.white.opacity(0.065),
-        divider: Color.white.opacity(0.10),
-        dividerSoft: Color.white.opacity(0.065),
-        dividerTiny: Color.white.opacity(0.035),
-        borderOverlay: Color.white.opacity(0.11),
+        bgApp: Color.black,
+        bgSidebar: Color.black,
+        bgToolbar: Color(hex: 0x151517),
+        bgModal: Color(hex: 0x0e0e10),
+        rowAlt: Color.white.opacity(0.045),
+        rowHover: Color.white.opacity(0.08),
+        rowSelected: Color.white.opacity(0.14),
+        buttonBg: Color.white.opacity(0.095),
+        divider: Color.white.opacity(0.13),
+        dividerSoft: Color.white.opacity(0.08),
+        dividerTiny: Color.white.opacity(0.05),
+        borderOverlay: Color.white.opacity(0.16),
         textPrimary: Color(hex: 0xf2f2f7),
         textDim: Color(hex: 0xb4bcc4).opacity(0.74),
         textMuted: Color(hex: 0x98a0aa).opacity(0.55),
@@ -85,6 +87,10 @@ let dailyQueueDisplayName = "Daily"
 
 func dailyQueueColor(dark: Bool) -> Color {
     dark ? Color(hex: 0xb8c9e8) : Color(hex: 0x5a7aad)
+}
+
+func calendarDayHighlightColor(dark: Bool) -> Color {
+    Color(hex: dark ? 0x0a84ff : 0x007aff)
 }
 
 func isDailyQueueOccurrence(_ occurrence: MobileOccurrence) -> Bool {

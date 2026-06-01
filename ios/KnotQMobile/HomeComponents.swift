@@ -40,7 +40,8 @@ struct HomeDashboardPane: View {
                         )
                     }
                     .frame(maxWidth: 720, alignment: .topLeading)
-                    .padding(14)
+                    .padding(.horizontal, 14)
+                    .padding(.bottom, 14)
                     .frame(maxWidth: .infinity, alignment: .topLeading)
                 }
                 .scrollDismissesKeyboard(.never)
@@ -131,11 +132,13 @@ struct HomeUpcomingSection: View {
 
 struct HomeNavigationPane: View {
     @EnvironmentObject private var model: AppModel
+    @Environment(\.dismissSearch) private var dismissSearch
     let snapshot: MobileSnapshot?
     let selectedDate: Date
     let theme: KnotQTheme
     let onToggleOccurrence: (MobileOccurrence) -> Void
     let onOpenOccurrence: (MobileOccurrence) -> Void
+    let onOpenCalendar: () -> Void
     let onCreateScheme: () -> String?
     let onNewFolder: () -> Void
     let onGoogleCalendar: (String?) -> Void
@@ -145,22 +148,48 @@ struct HomeNavigationPane: View {
     @Binding var titleFocusSchemeID: String?
     @Binding var navigationDepth: Int
     @State private var path: [HomeRoute] = []
+    @State private var searchQuery = ""
+    @State private var searchPresented = false
 
     var body: some View {
         NavigationStack(path: $path) {
-            HomeDashboardPane(
-                snapshot: snapshot,
-                selectedDate: selectedDate,
-                theme: theme,
-                onOpenDaily: openDailyInStack,
-                onOpenScheme: { path.append(.scheme($0)) },
-                onToggleOccurrence: onToggleOccurrence,
-                onOpenOccurrence: onOpenOccurrence,
-                onNewScheme: createSchemeInStack,
-                onNewFolder: onNewFolder,
-                onGoogleCalendar: onGoogleCalendar
+            Group {
+                if isSearching {
+                    HomeSearchResultsPane(
+                        hits: model.searchHits,
+                        query: trimmedSearchQuery,
+                        theme: theme,
+                        onOpenHit: openSearchHit
+                    )
+                } else {
+                    HomeDashboardPane(
+                        snapshot: snapshot,
+                        selectedDate: selectedDate,
+                        theme: theme,
+                        onOpenDaily: openDailyInStack,
+                        onOpenScheme: openSchemeInStack,
+                        onToggleOccurrence: onToggleOccurrence,
+                        onOpenOccurrence: onOpenOccurrence,
+                        onNewScheme: createSchemeInStack,
+                        onNewFolder: onNewFolder,
+                        onGoogleCalendar: onGoogleCalendar
+                    )
+                }
+            }
+            .navigationTitle("")
+            .navigationBarTitleDisplayMode(.inline)
+            .searchable(
+                text: $searchQuery,
+                isPresented: $searchPresented,
+                placement: .navigationBarDrawer(displayMode: .automatic),
+                prompt: "Search KnotQ"
             )
-            .toolbar(.hidden, for: .navigationBar)
+            .onSubmit(of: .search) {
+                updateSearchResults(for: searchQuery)
+            }
+            .onChange(of: searchQuery) { _, value in
+                updateSearchResults(for: value)
+            }
             .ignoresSafeArea(.keyboard, edges: .bottom)
             .navigationDestination(for: HomeRoute.self) { route in
                 switch route {
@@ -169,15 +198,16 @@ struct HomeNavigationPane: View {
                         IntegratedSchemeEditorPane(
                             scheme: scheme,
                             theme: theme,
-                            onBack: nil,
+                            onBack: { popHomeRoute() },
                             onAdd: { onAddItem(scheme.id) },
-                            usesNativeNavigation: true,
+                            usesNativeNavigation: false,
                             showsEditorNavigation: true,
                             autoFocusOnAppear: titleFocusSchemeID != scheme.id,
                             autoFocusTitleOnAppear: titleFocusSchemeID == scheme.id,
                             onAutoFocusTitleConsumed: { consumeTitleFocus(for: scheme.id) }
                         )
-                        .toolbar(.visible, for: .navigationBar)
+                        .navigationBarBackButtonHidden(true)
+                        .toolbar(.hidden, for: .navigationBar)
                     } else {
                         EmptyState(title: "Scheme missing", detail: "It may have been archived or deleted.", theme: theme)
                             .toolbar(.visible, for: .navigationBar)
@@ -210,6 +240,23 @@ struct HomeNavigationPane: View {
         }
     }
 
+    private var trimmedSearchQuery: String {
+        searchQuery.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private var isSearching: Bool {
+        !trimmedSearchQuery.isEmpty
+    }
+
+    private func updateSearchResults(for query: String) {
+        let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed.isEmpty {
+            model.searchHits = []
+        } else {
+            model.search(query)
+        }
+    }
+
     private func consumeTitleFocus(for id: String) {
         if titleFocusSchemeID == id {
             titleFocusSchemeID = nil
@@ -218,12 +265,120 @@ struct HomeNavigationPane: View {
 
     private func createSchemeInStack() {
         guard let id = onCreateScheme() else { return }
+        openSchemeInStack(id)
+    }
+
+    private func openSchemeInStack(_ id: String) {
+        closeHomeSearch()
         path.append(.scheme(id))
     }
 
     private func openDailyInStack() {
+        closeHomeSearch()
         onPrepareDaily()
         path.append(.daily)
+    }
+
+    private func closeHomeSearch() {
+        dismissSearch()
+        searchQuery = ""
+        searchPresented = false
+        model.searchHits = []
+    }
+
+    private func popHomeRoute() {
+        guard !path.isEmpty else { return }
+        path.removeLast()
+    }
+
+    private func openSearchHit(_ hit: MobileSearchHit) {
+        if hit.targetKind == "calendar" {
+            closeHomeSearch()
+            onOpenCalendar()
+        } else if hit.targetKind == "daily_queue", hit.schemeId == nil {
+            openDailyInStack()
+        } else if let schemeID = hit.schemeId {
+            openSchemeInStack(schemeID)
+        }
+    }
+}
+
+struct HomeSearchResultsPane: View {
+    let hits: [MobileSearchHit]
+    let query: String
+    let theme: KnotQTheme
+    let onOpenHit: (MobileSearchHit) -> Void
+
+    var body: some View {
+        ScrollView {
+            LazyVStack(spacing: 2) {
+                if hits.isEmpty {
+                    EmptyState(
+                        title: "No Results",
+                        detail: "Nothing matches \"\(query)\".",
+                        theme: theme
+                    )
+                    .padding(.top, 56)
+                } else {
+                    ForEach(Array(hits.enumerated()), id: \.element.id) { idx, hit in
+                        Button {
+                            onOpenHit(hit)
+                        } label: {
+                            HomeSearchHitRow(hit: hit, theme: theme, striped: idx % 2 == 1)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+            }
+            .frame(maxWidth: 720, alignment: .topLeading)
+            .padding(.horizontal, 14)
+            .padding(.bottom, 180)
+            .frame(maxWidth: .infinity, alignment: .topLeading)
+        }
+        .scrollDismissesKeyboard(.interactively)
+        .background(theme.bgApp)
+        .ignoresSafeArea(.container, edges: .bottom)
+    }
+}
+
+struct HomeSearchHitRow: View {
+    let hit: MobileSearchHit
+    let theme: KnotQTheme
+    let striped: Bool
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Rectangle()
+                .fill(searchHitColor(hit, dark: theme.isDark))
+                .frame(width: 2)
+                .padding(.vertical, 8)
+
+            VStack(alignment: .leading, spacing: 3) {
+                HStack(spacing: 8) {
+                    Text(hit.schemeName.isEmpty ? hit.targetKind.capitalized : hit.schemeName)
+                        .font(.system(size: 11, weight: .bold))
+                        .foregroundStyle(searchHitColor(hit, dark: theme.isDark))
+                        .lineLimit(1)
+
+                    Spacer(minLength: 8)
+
+                    Text(hit.detail)
+                        .font(.system(size: 10, weight: .bold, design: .monospaced))
+                        .foregroundStyle(theme.textSoft)
+                        .lineLimit(1)
+                }
+
+                Text(hit.title)
+                    .font(.system(size: 15))
+                    .foregroundStyle(theme.textPrimary)
+                    .lineLimit(2)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .padding(.vertical, 8)
+            .padding(.trailing, 8)
+        }
+        .background(striped ? theme.rowAlt : Color.clear, in: RoundedRectangle(cornerRadius: 5, style: .continuous))
+        .contentShape(Rectangle())
     }
 }
 

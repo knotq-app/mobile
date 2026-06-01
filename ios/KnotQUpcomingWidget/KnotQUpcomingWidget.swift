@@ -56,9 +56,9 @@ private struct KnotQUpcomingWidgetView: View {
             case .systemSmall:
                 systemBody(limit: 3)
             case .systemMedium:
-                systemBody(limit: 6, columns: 2)
+                systemBody(limit: 6, columns: 2, dense: true)
             case .systemLarge:
-                systemBody(limit: 24, columns: 2)
+                systemBody(limit: 24, columns: 2, dense: true)
             default:
                 systemBody(limit: 3)
             }
@@ -67,14 +67,15 @@ private struct KnotQUpcomingWidgetView: View {
     }
 
     private var accessoryRectangular: some View {
-        VStack(alignment: .leading, spacing: 5) {
+        VStack(alignment: .leading, spacing: 3) {
+            currentDateHeader
             if let first = visibleItems.first {
                 WidgetOccurrenceCompactRow(
                     item: first,
                     time: timeLabel(for: first),
                     theme: theme,
                     striped: false,
-                    compact: false
+                    compact: true
                 )
                 if visibleItems.count > 1 {
                     Text("+ \(visibleItems.count - 1) more")
@@ -93,7 +94,8 @@ private struct KnotQUpcomingWidgetView: View {
     }
 
     private func systemBody(limit: Int, columns: Int = 1, dense: Bool = false) -> some View {
-        VStack(alignment: .leading, spacing: dense ? 1 : 4) {
+        VStack(alignment: .leading, spacing: dense ? 1 : 3) {
+            currentDateHeader
             if visibleItems.isEmpty {
                 Text("Nothing scheduled")
                     .font(.system(size: 12))
@@ -109,7 +111,7 @@ private struct KnotQUpcomingWidgetView: View {
                                 time: timeLabel(for: item),
                                 theme: theme,
                                 striped: false,
-                                compact: false
+                                compact: true
                             )
 
                             if idx != min(limit, visibleItems.count) - 1 {
@@ -119,19 +121,23 @@ private struct KnotQUpcomingWidgetView: View {
                         }
                     }
                 } else {
-                    let columnsArray = Array(repeating: GridItem(.flexible(minimum: 82), spacing: dense ? 2 : 4), count: columns)
-                    LazyVGrid(columns: columnsArray, spacing: dense ? 2 : 4) {
-                        ForEach(Array(visibleItems.prefix(limit).enumerated()), id: \.element.id) { idx, item in
-                            WidgetOccurrenceCompactRow(
-                                item: item,
-                                time: timeLabel(for: item),
-                                theme: theme,
-                                striped: false,
-                                compact: dense
-                            )
+                    HStack(alignment: .top, spacing: dense ? 5 : 8) {
+                        ForEach(Array(columnFilledItems(limit: limit, columns: columns).enumerated()), id: \.offset) { _, columnItems in
+                            VStack(spacing: dense ? 1 : 3) {
+                                ForEach(columnItems, id: \.element.id) { _, item in
+                                    WidgetOccurrenceCompactRow(
+                                        item: item,
+                                        time: timeLabel(for: item),
+                                        theme: theme,
+                                        striped: false,
+                                        compact: dense
+                                    )
+                                }
+                            }
+                            .frame(maxWidth: .infinity, alignment: .topLeading)
                         }
                     }
-                    .frame(maxWidth: .infinity)
+                    .frame(maxWidth: .infinity, alignment: .topLeading)
                 }
             }
         }
@@ -139,8 +145,32 @@ private struct KnotQUpcomingWidgetView: View {
         .padding(.vertical, dense ? 2 : 3)
     }
 
+    private var currentDateHeader: some View {
+        Text(currentDateLabel)
+            .font(.system(size: 10, weight: .semibold))
+            .foregroundStyle(theme.textMuted)
+            .lineLimit(1)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, 2)
+            .padding(.bottom, 1)
+    }
+
     private var visibleItems: [KnotQWidgetOccurrence] {
         entry.snapshot.items.filter { !$0.done }
+    }
+
+    private func columnFilledItems(
+        limit: Int,
+        columns: Int
+    ) -> [[(offset: Int, element: KnotQWidgetOccurrence)]] {
+        let visible = Array(visibleItems.prefix(limit).enumerated())
+        let rowsPerColumn = max(1, Int(ceil(Double(limit) / Double(max(1, columns)))))
+        return (0..<columns).map { column in
+            let start = column * rowsPerColumn
+            guard start < visible.count else { return [] }
+            let end = min(start + rowsPerColumn, visible.count)
+            return Array(visible[start..<end])
+        }
     }
 
     private var inlineSummary: String {
@@ -163,7 +193,7 @@ private struct KnotQUpcomingWidgetView: View {
             return "Due \(formattedDateTime(end))"
         }
         if let start = item.start, let end = item.end {
-            return "\(formattedDateTime(start)) - \(formattedDateTime(end))"
+            return formattedRange(start: start, end: end)
         }
         if let start = item.start {
             return formattedDateTime(start)
@@ -174,6 +204,22 @@ private struct KnotQUpcomingWidgetView: View {
         return item.kind.capitalized
     }
 
+    private func formattedRange(start: String, end: String) -> String {
+        guard let startDate = Self.iso.date(from: start),
+              let endDate = Self.iso.date(from: end) else {
+            return "\(formattedDateTime(start)) -> \(formattedDateTime(end))"
+        }
+        if Calendar.current.isDate(startDate, inSameDayAs: endDate) {
+            let prefix = upcomingDatePrefix(for: startDate)
+            let startTime = formattedTime(start)
+            let endTime = formattedTime(end)
+            return prefix.isEmpty
+                ? "\(startTime) -> \(endTime)"
+                : "\(prefix) \(startTime) -> \(endTime)"
+        }
+        return "\(formattedDateTime(start)) -> \(formattedDateTime(end))"
+    }
+
     private func formattedDateTime(_ raw: String) -> String {
         guard let date = Self.iso.date(from: raw) else { return raw }
         let calendar = Calendar.current
@@ -182,9 +228,6 @@ private struct KnotQUpcomingWidgetView: View {
         let time = formattedTime(raw)
         if target == today {
             return time
-        }
-        if let tomorrow = calendar.date(byAdding: .day, value: 1, to: today), target == tomorrow {
-            return "Tomorrow \(time)"
         }
         let prefix = upcomingDatePrefix(for: date)
         return prefix.isEmpty ? time : "\(prefix) \(time)"
@@ -210,6 +253,13 @@ private struct KnotQUpcomingWidgetView: View {
         WidgetTheme.make(dark: isDark)
     }
 
+    private var currentDateLabel: String {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.dateFormat = "EEE, MMM d"
+        return formatter.string(from: entry.date)
+    }
+
     private static let iso: ISO8601DateFormatter = {
         let formatter = ISO8601DateFormatter()
         formatter.formatOptions = [.withInternetDateTime]
@@ -225,34 +275,34 @@ private struct WidgetOccurrenceCompactRow: View {
     let compact: Bool
 
     var body: some View {
-            HStack(spacing: compact ? 1 : 6) {
-                Rectangle()
-                    .fill(schemeAccent)
-                    .frame(width: 2)
-                    .padding(.vertical, compact ? 1 : 8)
+        HStack(spacing: compact ? 2 : 6) {
+            Rectangle()
+                .fill(schemeAccent)
+                .frame(width: 2)
+                .padding(.vertical, compact ? 2 : 8)
 
             VStack(alignment: .leading, spacing: compact ? 0 : 2) {
                 HStack(alignment: .firstTextBaseline) {
                     Text(schemeLabel)
-                        .font(.system(size: compact ? 7 : 10, weight: .bold))
+                        .font(.system(size: compact ? 9 : 11, weight: .bold))
                         .foregroundStyle(schemeAccent)
                         .lineLimit(1)
 
                     Spacer(minLength: 6)
 
                     Text(time)
-                        .font(.system(size: compact ? 6 : 9, weight: .bold, design: .monospaced))
+                        .font(.system(size: compact ? 8 : 10, weight: .bold, design: .monospaced))
                         .foregroundStyle(occurrenceTimeColor)
                         .lineLimit(1)
                 }
 
                 Text(titleLabel)
-                    .font(.system(size: compact ? 7 : 11))
+                    .font(.system(size: compact ? 10 : 12))
                     .lineLimit(1)
                     .foregroundStyle(theme.textPrimary)
             }
-            .padding(.vertical, compact ? 0.5 : 6)
-            .padding(.trailing, compact ? 1 : 6)
+            .padding(.vertical, compact ? 1 : 6)
+            .padding(.trailing, compact ? 2 : 6)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(striped ? theme.rowAlt : Color.clear)
@@ -364,9 +414,6 @@ private func upcomingDatePrefix(for date: Date) -> String {
     let today = calendar.startOfDay(for: Date())
     let target = calendar.startOfDay(for: date)
     if target == today { return "" }
-    if let tomorrow = calendar.date(byAdding: .day, value: 1, to: today), target == tomorrow {
-        return "Tomorrow"
-    }
     if let inAWeek = calendar.date(byAdding: .day, value: 7, to: today), target < inAWeek && target > today {
         let formatter = DateFormatter()
         formatter.locale = Locale(identifier: "en_US_POSIX")

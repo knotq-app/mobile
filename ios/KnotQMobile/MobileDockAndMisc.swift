@@ -171,7 +171,7 @@ struct MobileDock: View {
     let theme: KnotQTheme
     let onSelect: (MobilePane) -> Void
 
-    private let panes: [MobilePane] = [.home, .calendar, .search, .settings]
+    private let panes: [MobilePane] = [.home, .calendar, .settings]
 
     var body: some View {
         HStack(spacing: 2) {
@@ -294,8 +294,20 @@ struct MonthGridView: View {
     var body: some View {
         VStack(spacing: 0) {
             header
-            weekdayRow
-            grid
+            VStack(spacing: 0) {
+                weekdayRow
+                grid
+            }
+            .padding(.vertical, 10)
+            .background(
+                RoundedRectangle(cornerRadius: 20, style: .continuous)
+                    .fill(theme.bgModal)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 20, style: .continuous)
+                    .stroke(theme.borderOverlay, lineWidth: 0.8)
+            )
+            .padding(.horizontal, 12)
             Spacer(minLength: 0)
         }
         .padding(.top, 18)
@@ -308,21 +320,28 @@ struct MonthGridView: View {
 
     private var header: some View {
         HStack {
-            Button { shiftMonth(-1) } label: {
-                Image(systemName: "chevron.left").font(.system(size: 16, weight: .semibold))
-            }
+            chevronButton(systemName: "chevron.left") { shiftMonth(-1) }
             Spacer()
             Text(monthTitle)
-                .font(.system(size: 19, weight: .bold))
+                .font(.system(size: 20, weight: .bold))
                 .foregroundStyle(theme.textPrimary)
             Spacer()
-            Button { shiftMonth(1) } label: {
-                Image(systemName: "chevron.right").font(.system(size: 16, weight: .semibold))
-            }
+            chevronButton(systemName: "chevron.right") { shiftMonth(1) }
         }
-        .foregroundStyle(theme.textPrimary)
         .padding(.horizontal, 20)
-        .padding(.bottom, 10)
+        .padding(.bottom, 14)
+    }
+
+    private func chevronButton(systemName: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: systemName)
+                .font(.system(size: 15, weight: .bold))
+                .foregroundStyle(theme.accent)
+                .frame(width: 34, height: 34)
+                .background(Circle().fill(theme.buttonBg))
+                .contentShape(Circle())
+        }
+        .buttonStyle(.plain)
     }
 
     private var weekdayRow: some View {
@@ -330,7 +349,7 @@ struct MonthGridView: View {
             ForEach(Array(calendar.veryShortStandaloneWeekdaySymbols.enumerated()), id: \.offset) { _, symbol in
                 Text(symbol)
                     .font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(theme.textMuted)
+                    .foregroundStyle(theme.textMuted.opacity(theme.isDark ? 0.72 : 0.78))
                     .frame(maxWidth: .infinity)
             }
         }
@@ -363,18 +382,14 @@ struct MonthGridView: View {
         } label: {
             VStack(spacing: 3) {
                 Text("\(calendar.component(.day, from: date))")
-                    .font(.system(size: 15, weight: isToday ? .bold : .regular))
-                    .foregroundStyle(dayColor(inMonth: inMonth, isToday: isToday))
-                    .frame(width: 30, height: 30)
-                    .background(Circle().fill(isToday ? theme.accent : Color.clear))
+                    .font(.system(size: 15, weight: (isToday || (isSelected && !isToday)) ? .semibold : .regular))
+                    .foregroundStyle(dayTextColor(inMonth: inMonth, isToday: isToday, isSelected: isSelected))
+                    .frame(width: 34, height: 34)
+                    .background(dayBackground(isToday: isToday, isSelected: isSelected))
                 dots(for: occurrences)
             }
             .frame(maxWidth: .infinity)
             .frame(height: 50)
-            .background(
-                RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    .stroke(isSelected && !isToday ? theme.accent : Color.clear, lineWidth: 1.5)
-            )
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -404,9 +419,17 @@ struct MonthGridView: View {
         return result
     }
 
-    private func dayColor(inMonth: Bool, isToday: Bool) -> Color {
-        if isToday { return theme.isDark ? .black : .white }
-        return inMonth ? theme.textPrimary : theme.textMuted.opacity(0.45)
+    @ViewBuilder
+    private func dayBackground(isToday: Bool, isSelected: Bool) -> some View {
+        let dayHighlight = calendarDayHighlightColor(dark: theme.isDark)
+        if isToday || isSelected {
+            Circle().fill(dayHighlight)
+        }
+    }
+
+    private func dayTextColor(inMonth: Bool, isToday: Bool, isSelected: Bool) -> Color {
+        if isToday || isSelected { return .white }
+        return inMonth ? theme.textPrimary : theme.textMuted.opacity(0.35)
     }
 
     private var monthCells: [Date] {

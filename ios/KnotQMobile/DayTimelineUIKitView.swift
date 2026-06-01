@@ -45,15 +45,11 @@ private struct DayTimelineGeometry {
 }
 
 final class DayTimelineUIKitView: UIView, UIGestureRecognizerDelegate, UIScrollViewDelegate {
+    private let headerSurface = UIView()
     private let titleLabel = UILabel()
     private let titleButton = UIButton(type: .custom)
     private let titleChevron = UIImageView()
-    private let titleBackdrop: UIVisualEffectView = {
-        if #available(iOS 26.0, *) {
-            return UIVisualEffectView(effect: UIGlassEffect())
-        }
-        return UIVisualEffectView(effect: UIBlurEffect(style: .systemUltraThinMaterial))
-    }()
+    private let titleBackdrop = UIView()
     private let weekStrip = UIView()
     private let separator = UIView()
     private let scrollView = UIScrollView()
@@ -64,6 +60,16 @@ final class DayTimelineUIKitView: UIView, UIGestureRecognizerDelegate, UIScrollV
     private let draftView = UIView()
     private let draftTimeLabel = UILabel()
     private let draftTitleLabel = UILabel()
+    private let topStickyIndicatorStacks = [
+        [DayTimelineStickyIndicatorView(), DayTimelineStickyIndicatorView(), DayTimelineStickyIndicatorView()],
+        [DayTimelineStickyIndicatorView(), DayTimelineStickyIndicatorView(), DayTimelineStickyIndicatorView()],
+        [DayTimelineStickyIndicatorView(), DayTimelineStickyIndicatorView(), DayTimelineStickyIndicatorView()],
+    ]
+    private let bottomStickyIndicatorStacks = [
+        [DayTimelineStickyIndicatorView(), DayTimelineStickyIndicatorView(), DayTimelineStickyIndicatorView()],
+        [DayTimelineStickyIndicatorView(), DayTimelineStickyIndicatorView(), DayTimelineStickyIndicatorView()],
+        [DayTimelineStickyIndicatorView(), DayTimelineStickyIndicatorView(), DayTimelineStickyIndicatorView()],
+    ]
 
     private var calendarSnapshot: MobileCalendar?
     private var selectedDate = Date()
@@ -88,8 +94,8 @@ final class DayTimelineUIKitView: UIView, UIGestureRecognizerDelegate, UIScrollV
     private var needsFullRender = true
     private var resetToken = 0
 
-    private static let titleHeight: CGFloat = 47
-    private static let weekHeight: CGFloat = 63
+    private static let titleHeight: CGFloat = 42
+    private static let weekHeight: CGFloat = 66
     private static let separatorHeight: CGFloat = 1
     private static let hourHeight: CGFloat = 44
     private static let gutterWidth: CGFloat = 50
@@ -97,39 +103,46 @@ final class DayTimelineUIKitView: UIView, UIGestureRecognizerDelegate, UIScrollV
     private static let hoursInDay = 24
     private static let bottomPadding: CGFloat = 88
     private static let timelineHeight = timeYOffset + CGFloat(hoursInDay) * hourHeight
+    private static let stickyIndicatorHeight: CGFloat = 26
+    private static let stickyFadeDistance: CGFloat = 44
+    private static let stickyStackSpacing: CGFloat = 4
+    private static let bottomStickyChromeInset: CGFloat = 104
     private static let dayDecorationLayerName = "knotq.dayTimeline.decoration"
     private static let gutterDecorationLayerName = "knotq.dayTimeline.gutterDecoration"
 
     override init(frame: CGRect) {
         super.init(frame: frame)
         clipsToBounds = true
+        addSubview(headerSurface)
         addSubview(titleButton)
         addSubview(weekStrip)
         addSubview(separator)
         addSubview(scrollView)
+        stickyIndicators.forEach(addSubview)
         scrollView.addSubview(contentView)
         contentView.addSubview(dayClip)
         contentView.addSubview(timeGutter)
         dayClip.addSubview(dayCanvas)
         dayCanvas.addSubview(draftView)
 
-        // The month/year title is a tappable liquid-glass capsule that opens
-        // the month overview. Glass falls back to an ultra-thin material below
-        // iOS 26 so the pill still reads on older OSes.
+        // The month/year title is a compact header control that opens the
+        // month overview, matching the desktop calendar's flatter chrome.
+        headerSurface.isUserInteractionEnabled = false
         titleBackdrop.isUserInteractionEnabled = false
         titleBackdrop.clipsToBounds = true
-        titleBackdrop.layer.borderWidth = 1
+        titleBackdrop.layer.borderWidth = 0.75
         titleButton.addSubview(titleBackdrop)
         titleButton.addSubview(titleLabel)
         titleButton.addSubview(titleChevron)
         titleLabel.isUserInteractionEnabled = false
         titleLabel.textAlignment = .center
-        titleLabel.font = .systemFont(ofSize: 21, weight: .bold)
+        titleLabel.lineBreakMode = .byTruncatingTail
+        titleLabel.font = .systemFont(ofSize: 18, weight: .bold)
         titleChevron.isUserInteractionEnabled = false
         titleChevron.contentMode = .center
         titleChevron.image = UIImage(
             systemName: "chevron.down",
-            withConfiguration: UIImage.SymbolConfiguration(pointSize: 12, weight: .bold)
+            withConfiguration: UIImage.SymbolConfiguration(pointSize: 11, weight: .bold)
         )
         titleButton.addTarget(self, action: #selector(handleTitleTap), for: .touchUpInside)
         titleButton.addTarget(self, action: #selector(handleTitlePressDown), for: [.touchDown, .touchDragEnter])
@@ -156,6 +169,7 @@ final class DayTimelineUIKitView: UIView, UIGestureRecognizerDelegate, UIScrollV
         draftTitleLabel.text = "New"
         draftTitleLabel.textAlignment = .center
         draftTitleLabel.font = .systemFont(ofSize: 11, weight: .bold)
+        hideStickyIndicators()
 
         let pan = UIPanGestureRecognizer(target: self, action: #selector(handleDayPan(_:)))
         pan.delegate = self
@@ -167,6 +181,10 @@ final class DayTimelineUIKitView: UIView, UIGestureRecognizerDelegate, UIScrollV
         createPress.minimumPressDuration = 0.45
         createPress.allowableMovement = 600
         scrollView.addGestureRecognizer(createPress)
+    }
+
+    private var stickyIndicators: [DayTimelineStickyIndicatorView] {
+        topStickyIndicatorStacks.flatMap { $0 } + bottomStickyIndicatorStacks.flatMap { $0 }
     }
 
     @available(*, unavailable)
@@ -220,10 +238,29 @@ final class DayTimelineUIKitView: UIView, UIGestureRecognizerDelegate, UIScrollV
         }
         creatingEvent = isCreatingEvent
         backgroundColor = UIColor(theme.bgApp)
+        let calendarBlue = UIColor(calendarDayHighlightColor(dark: theme.isDark))
+        // The calendar lip is intentionally darker than the rest of the mobile
+        // chrome so the active-day blue carries the hierarchy.
+        headerSurface.backgroundColor = theme.isDark ? UIColor(hex: 0x030306) : UIColor(theme.bgToolbar)
+        headerSurface.layer.shadowColor = UIColor.black.cgColor
+        headerSurface.layer.shadowOpacity = theme.isDark ? 0 : 0.07
+        headerSurface.layer.shadowRadius = 5
+        headerSurface.layer.shadowOffset = CGSize(width: 0, height: 2)
+        weekStrip.backgroundColor = .clear
         titleLabel.textColor = UIColor(theme.textPrimary)
-        titleChevron.tintColor = UIColor(theme.textMuted)
-        titleBackdrop.layer.borderColor = UIColor(theme.dividerSoft).cgColor
-        separator.backgroundColor = UIColor(theme.dividerSoft)
+        titleChevron.tintColor = calendarBlue
+        titleBackdrop.isHidden = false
+        titleBackdrop.backgroundColor = theme.isDark
+            ? UIColor(hex: 0x0b0c10)
+            : UIColor(theme.buttonBg)
+        titleBackdrop.layer.borderColor = (theme.isDark
+            ? UIColor.white.withAlphaComponent(0.08)
+            : UIColor(theme.borderOverlay)
+        ).cgColor
+        separator.isHidden = false
+        separator.backgroundColor = theme.isDark
+            ? UIColor.white.withAlphaComponent(0.07)
+            : UIColor(theme.dividerSoft)
         if renderInputsChanged || shouldReset {
             needsFullRender = true
             setNeedsLayout()
@@ -233,6 +270,8 @@ final class DayTimelineUIKitView: UIView, UIGestureRecognizerDelegate, UIScrollV
 
     override func layoutSubviews() {
         super.layoutSubviews()
+        headerSurface.frame = CGRect(x: 0, y: 0, width: bounds.width, height: Self.titleHeight + Self.weekHeight)
+        headerSurface.layer.shadowPath = UIBezierPath(rect: headerSurface.bounds).cgPath
         weekStrip.frame = CGRect(x: 0, y: Self.titleHeight, width: bounds.width, height: Self.weekHeight)
         separator.frame = CGRect(x: 0, y: Self.titleHeight + Self.weekHeight, width: bounds.width, height: Self.separatorHeight)
         scrollView.frame = CGRect(
@@ -247,23 +286,30 @@ final class DayTimelineUIKitView: UIView, UIGestureRecognizerDelegate, UIScrollV
         }
         renderedBoundsSize = bounds.size
         layoutTitleButton()
+        updateStickyIndicators()
     }
 
     private func layoutTitleButton() {
+        // Centered month control: compact enough for the lip, but still clearly
+        // tappable as the month overview affordance.
         titleLabel.sizeToFit()
         let textWidth = ceil(titleLabel.bounds.width)
         let chevronWidth: CGFloat = 16
         let gap: CGFloat = 3
-        let hPad: CGFloat = 15
-        let capsuleHeight: CGFloat = 34
-        let capsuleWidth = textWidth + gap + chevronWidth + hPad * 2
-        let capsuleX = ((bounds.width - capsuleWidth) / 2).rounded()
-        let capsuleY = ((Self.titleHeight - capsuleHeight) / 2).rounded()
-        titleButton.frame = CGRect(x: capsuleX, y: capsuleY, width: capsuleWidth, height: capsuleHeight)
+        let hPad: CGFloat = 12
+        let buttonHeight: CGFloat = 31
+        let maxContentWidth = max(0, bounds.width - 32 - hPad * 2)
+        let contentWidth = min(maxContentWidth, textWidth + gap + chevronWidth)
+        let labelWidth = max(0, contentWidth - gap - chevronWidth)
+        let buttonWidth = contentWidth + hPad * 2
+        let buttonX = ((bounds.width - buttonWidth) / 2).rounded()
+        let buttonY = ((Self.titleHeight - buttonHeight) / 2).rounded()
+        titleButton.frame = CGRect(x: buttonX, y: buttonY, width: buttonWidth, height: buttonHeight)
         titleBackdrop.frame = titleButton.bounds
-        titleBackdrop.layer.cornerRadius = capsuleHeight / 2
-        titleLabel.frame = CGRect(x: hPad, y: 0, width: textWidth, height: capsuleHeight)
-        titleChevron.frame = CGRect(x: hPad + textWidth + gap, y: 0, width: chevronWidth, height: capsuleHeight)
+        titleBackdrop.layer.cornerRadius = buttonHeight / 2
+        titleBackdrop.layer.cornerCurve = .continuous
+        titleLabel.frame = CGRect(x: hPad, y: 0, width: labelWidth, height: buttonHeight)
+        titleChevron.frame = CGRect(x: hPad + labelWidth + gap, y: 0, width: chevronWidth, height: buttonHeight)
     }
 
     @objc private func handleTitleTap() {
@@ -299,33 +345,71 @@ final class DayTimelineUIKitView: UIView, UIGestureRecognizerDelegate, UIScrollV
         weekStrip.subviews.forEach { $0.removeFromSuperview() }
         let sunday = weekStart(for: selectedDate)
         let cellWidth = bounds.width / 7
+        // Active days use standard iOS blue on the darker lip.
+        let accent = UIColor(calendarDayHighlightColor(dark: theme.isDark))
+        let onAccent = onAccentTextColor(accent)
+        let weekdayTextColor = UIColor(theme.textMuted).withAlphaComponent(theme.isDark ? 0.42 : 0.50)
+        let visibleKeys = visibleDayKeys()
+        let weekDates = (0..<7).map { index in
+            Calendar.current.date(byAdding: .day, value: index, to: sunday) ?? sunday
+        }
+        let pillTop = DayTimelineDayCell.pillTop
+        let pillHeight = DayTimelineDayCell.pillHeight
+
+        // One capsule per contiguous run of visible days, drawn behind the cells.
+        func addAccentPill(start: Int, end: Int) {
+            let inset: CGFloat = 6
+            let span = CGFloat(end - start + 1) * cellWidth
+            let width = max(pillHeight, span - inset * 2)
+            // Degenerate single-day runs (week boundaries) center a circle.
+            let x = CGFloat(start) * cellWidth + (span - width) / 2
+            let pill = UIView(frame: CGRect(x: x, y: pillTop, width: width, height: pillHeight))
+            pill.isUserInteractionEnabled = false
+            pill.backgroundColor = accent
+            pill.layer.cornerRadius = pillHeight / 2
+            pill.layer.cornerCurve = .continuous
+            weekStrip.addSubview(pill)
+        }
+        var runStart: Int?
         for index in 0..<7 {
-            let date = Calendar.current.date(byAdding: .day, value: index, to: sunday) ?? sunday
+            let isVisible = visibleKeys.contains(AppModel.dateOnly(weekDates[index]))
+            if isVisible, runStart == nil {
+                runStart = index
+            } else if !isVisible, let start = runStart {
+                addAccentPill(start: start, end: index - 1)
+                runStart = nil
+            }
+        }
+        if let start = runStart {
+            addAccentPill(start: start, end: 6)
+        }
+
+        for index in 0..<7 {
+            let date = weekDates[index]
             let cell = DayTimelineDayCell(frame: CGRect(x: CGFloat(index) * cellWidth, y: 0, width: cellWidth, height: weekStrip.bounds.height))
             cell.date = date
             cell.weekdayLabel.text = weekdayInitial(date)
             cell.dayLabel.text = dayNumber(date)
-            // Cohesive accent treatment matching the month grid: today is a
-            // filled accent circle, visible days get a soft accent pill.
-            let todayCell = isToday(date)
-            let visibleCell = visibleDayKeys().contains(AppModel.dateOnly(date))
-            cell.isTodayCell = todayCell
-            cell.weekdayLabel.textColor = (todayCell || visibleCell)
-                ? UIColor(theme.textPrimary)
-                : UIColor(theme.textMuted)
-            if todayCell {
-                cell.rangeBackground.backgroundColor = UIColor(theme.accent)
-                cell.dayLabel.textColor = theme.isDark ? .black : .white
-            } else if visibleCell {
-                cell.rangeBackground.backgroundColor = UIColor(theme.accent).withAlphaComponent(theme.isDark ? 0.16 : 0.12)
-                cell.dayLabel.textColor = UIColor(theme.textPrimary)
-            } else {
-                cell.rangeBackground.backgroundColor = .clear
-                cell.dayLabel.textColor = UIColor(theme.textPrimary)
-            }
+            let visible = visibleKeys.contains(AppModel.dateOnly(date))
+            let today = isToday(date)
+            // Weekday initials stay neutral; only the day number/pill carries
+            // the active blue.
+            cell.weekdayLabel.textColor = weekdayTextColor
+            cell.dayLabel.textColor = visible ? onAccent : (today ? accent : UIColor(theme.textPrimary))
+            cell.todayDot.isHidden = !today
+            cell.todayDot.backgroundColor = accent
             cell.addTarget(self, action: #selector(handleWeekdayTap(_:)), for: .touchUpInside)
             weekStrip.addSubview(cell)
         }
+    }
+
+    /// Black or white ink for text sitting on the accent pill, chosen by the
+    /// accent's perceived luminance so it stays legible across every theme.
+    private func onAccentTextColor(_ accent: UIColor) -> UIColor {
+        var r: CGFloat = 0, g: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 0
+        accent.getRed(&r, green: &g, blue: &b, alpha: &a)
+        let luma = r * 0.299 + g * 0.587 + b * 0.114
+        return luma > 0.6 ? UIColor(hex: 0x101216) : .white
     }
 
     private func renderTimeline(theme: KnotQTheme, preserveScroll: Bool) {
@@ -369,6 +453,7 @@ final class DayTimelineUIKitView: UIView, UIGestureRecognizerDelegate, UIScrollV
             let maxY = max(0, scrollView.contentSize.height - scrollView.bounds.height)
             scrollView.setContentOffset(CGPoint(x: 0, y: min(max(0, previousOffset.y), maxY)), animated: false)
         }
+        updateStickyIndicators()
     }
 
     private func removeDecorationLayers(from layer: CALayer, named name: String) {
@@ -396,12 +481,12 @@ final class DayTimelineUIKitView: UIView, UIGestureRecognizerDelegate, UIScrollV
         timeGutter.layer.addSublayer(divider)
     }
 
-    /// Tints the already-elapsed part of each day blue, mirroring the desktop
+    /// Tints the already-elapsed part of each day, mirroring the desktop
     /// `cal_past` shade: a full column for past days, and top-to-now for today.
     /// Sits behind the grid, now-line, and events.
     private func drawPastShade(theme: KnotQTheme, geometry: DayTimelineGeometry) {
         let today = Calendar.current.startOfDay(for: Date())
-        let shade = UIColor(theme.accent).withAlphaComponent(theme.isDark ? 0.13 : 0.15).cgColor
+        let shade = UIColor(calendarDayHighlightColor(dark: theme.isDark)).withAlphaComponent(theme.isDark ? 0.11 : 0.13).cgColor
         for index in geometry.renderDayRange {
             let date = Calendar.current.startOfDay(for: dayDate(index))
             let height: CGFloat
@@ -552,6 +637,154 @@ final class DayTimelineUIKitView: UIView, UIGestureRecognizerDelegate, UIScrollV
         draftView.isHidden = false
     }
 
+    func scrollViewDidScroll(_ scrollView: UIScrollView) {
+        updateStickyIndicators()
+    }
+
+    private func updateStickyIndicators() {
+        guard let theme,
+              scrollView.bounds.height > 1,
+              dayClip.bounds.width > 1,
+              calendarSnapshot != nil else {
+            hideStickyIndicators()
+            return
+        }
+
+        let geometry = currentGeometry()
+        let bottomCutoff = bottomStickyCutoff()
+        let visibleMinY = max(0, scrollView.contentOffset.y)
+        let visibleMaxY = min(
+            Self.timelineHeight,
+            scrollView.contentOffset.y + scrollView.bounds.height - bottomCutoff
+        )
+        guard visibleMaxY > visibleMinY else {
+            hideStickyIndicators()
+            return
+        }
+
+        hideStickyIndicators()
+        let bottomY = max(
+            scrollView.frame.minY + 7,
+            min(
+                scrollView.frame.maxY - bottomCutoff - Self.stickyIndicatorHeight - 10,
+                bounds.height - bottomCutoff - Self.stickyIndicatorHeight - 10
+            )
+        )
+
+        for dayIndex in geometry.visibleDayRange {
+            guard let topIndicators = stickyIndicators(top: true, forDayIndex: dayIndex),
+                  let bottomIndicators = stickyIndicators(top: false, forDayIndex: dayIndex) else {
+                continue
+            }
+
+            let dayEvents = laidEvents(forDayIndex: dayIndex, geometry: geometry)
+            let topCandidates = dayEvents
+                .filter { $0.frame.minY < visibleMinY }
+                .sorted { lhs, rhs in
+                    if lhs.frame.minY != rhs.frame.minY {
+                        return lhs.frame.minY > rhs.frame.minY
+                    }
+                    return lhs.frame.minX < rhs.frame.minX
+                }
+            let bottomCandidates = dayEvents
+                .filter { $0.frame.minY > visibleMaxY }
+                .sorted { lhs, rhs in
+                    if lhs.frame.minY != rhs.frame.minY {
+                        return lhs.frame.minY < rhs.frame.minY
+                    }
+                    return lhs.frame.minX < rhs.frame.minX
+                }
+
+            configureStickyIndicators(
+                topIndicators,
+                candidates: Array(topCandidates.prefix(topIndicators.count).reversed()),
+                alphaForCandidate: { stickyAlpha(distance: visibleMinY - $0.frame.minY) },
+                geometry: geometry,
+                yForIndex: { scrollView.frame.minY + 7 + CGFloat($0) * (Self.stickyIndicatorHeight + Self.stickyStackSpacing) },
+                theme: theme
+            )
+            configureStickyIndicators(
+                bottomIndicators,
+                candidates: Array(bottomCandidates.prefix(bottomIndicators.count).reversed()),
+                alphaForCandidate: { stickyAlpha(distance: $0.frame.minY - visibleMaxY) },
+                geometry: geometry,
+                yForIndex: { max(scrollView.frame.minY + 7, bottomY - CGFloat($0) * (Self.stickyIndicatorHeight + Self.stickyStackSpacing)) },
+                theme: theme
+            )
+        }
+    }
+
+    private func configureStickyIndicators(
+        _ indicators: [DayTimelineStickyIndicatorView],
+        candidates: [DayTimelineLaidOccurrence],
+        alphaForCandidate: (DayTimelineLaidOccurrence) -> CGFloat,
+        geometry: DayTimelineGeometry,
+        yForIndex: (Int) -> CGFloat,
+        theme: KnotQTheme
+    ) {
+        for (index, indicator) in indicators.enumerated() {
+            guard index < candidates.count else {
+                indicator.isHidden = true
+                continue
+            }
+            configureStickyIndicator(
+                indicator,
+                candidate: candidates[index],
+                alpha: alphaForCandidate(candidates[index]),
+                geometry: geometry,
+                y: yForIndex(index),
+                theme: theme
+            )
+        }
+    }
+
+    private func configureStickyIndicator(
+        _ indicator: DayTimelineStickyIndicatorView,
+        candidate: DayTimelineLaidOccurrence,
+        alpha: CGFloat,
+        geometry: DayTimelineGeometry,
+        y: CGFloat,
+        theme: KnotQTheme
+    ) {
+        guard alpha > 0.02 else {
+            indicator.isHidden = true
+            return
+        }
+        let columnClipX = geometry.clipX(forCanvasX: geometry.canvasX(forDayIndex: candidate.dayIndex))
+        let width = min(max(96, geometry.columnWidth - 14), bounds.width - dayClip.frame.minX - 14)
+        let unclampedX = dayClip.frame.minX + columnClipX + 7
+        let minX = dayClip.frame.minX + 7
+        let maxX = max(minX, bounds.width - width - 7)
+        indicator.frame = CGRect(
+            x: min(max(unclampedX, minX), maxX),
+            y: y,
+            width: max(70, width),
+            height: Self.stickyIndicatorHeight
+        )
+        indicator.configure(occurrence: candidate.occurrence, theme: theme)
+        indicator.onTap = { [weak self] occurrence in self?.onOpenOccurrence(occurrence) }
+        indicator.alpha = alpha
+        indicator.isHidden = false
+    }
+
+    private func stickyAlpha(distance: CGFloat) -> CGFloat {
+        min(1, max(0, distance / Self.stickyFadeDistance))
+    }
+
+    private func stickyIndicators(top: Bool, forDayIndex dayIndex: Int) -> [DayTimelineStickyIndicatorView]? {
+        let stacks = top ? topStickyIndicatorStacks : bottomStickyIndicatorStacks
+        guard dayIndex >= 0, dayIndex < stacks.count else { return nil }
+        return stacks[dayIndex]
+    }
+
+    private func bottomStickyCutoff() -> CGFloat {
+        max(Self.bottomStickyChromeInset, safeAreaInsets.bottom + 64)
+    }
+
+    private func hideStickyIndicators() {
+        stickyIndicators.forEach { $0.isHidden = true }
+    }
+
     @objc private func handleWeekdayTap(_ sender: UIControl) {
         guard let sender = sender as? DayTimelineDayCell else { return }
         UIImpactFeedbackGenerator(style: .light).impactOccurred()
@@ -615,6 +848,7 @@ final class DayTimelineUIKitView: UIView, UIGestureRecognizerDelegate, UIScrollV
 
     private func layoutDayCanvas(colWidth: CGFloat) {
         dayCanvas.frame.origin.x = -colWidth + swipeOffset
+        updateStickyIndicators()
     }
 
     @objc private func handleCreateLongPress(_ recognizer: UILongPressGestureRecognizer) {

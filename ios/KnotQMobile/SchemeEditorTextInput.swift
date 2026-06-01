@@ -50,6 +50,7 @@ struct SchemeTextView: UIViewRepresentable {
     let titleValidator: (String) -> String?
     let onRenameTitle: (String) -> Void
     let onDate: () -> Void
+    let onImageUpload: () -> Void
     let readOnly: Bool
 
     func makeCoordinator() -> EditorCoordinator {
@@ -64,6 +65,7 @@ struct SchemeTextView: UIViewRepresentable {
         coordinator.theme = theme
         coordinator.accentColor = UIColor(accent)
         coordinator.onDateRequested = onDate
+        coordinator.onImageUploadRequested = onImageUpload
         coordinator.readOnly = readOnly
         view.coordinator = coordinator
         view.theme = theme
@@ -106,6 +108,7 @@ struct SchemeTextView: UIViewRepresentable {
         coordinator.theme = theme
         coordinator.accentColor = UIColor(accent)
         coordinator.onDateRequested = onDate
+        coordinator.onImageUploadRequested = onImageUpload
         coordinator.readOnly = readOnly
         uiView.theme = theme
         uiView.accentColor = UIColor(accent)
@@ -130,6 +133,7 @@ final class EditorCoordinator: NSObject, UITextViewDelegate, @preconcurrency NST
     var theme: KnotQTheme = .dark
     var accentColor: UIColor = .systemBlue
     var onDateRequested: (() -> Void)?
+    var onImageUploadRequested: (() -> Void)?
     var readOnly = false
 
     private var suppressDelegateDepth = 0
@@ -539,6 +543,12 @@ final class EditorCoordinator: NSObject, UITextViewDelegate, @preconcurrency NST
             toolbarButton("bold") { [weak self] in self?.view?.toggleWrappedMarkdown("*", theme: self?.theme ?? .dark) },
             toolbarButton("italic") { [weak self] in self?.view?.toggleWrappedMarkdown("_", theme: self?.theme ?? .dark) },
             toolbarButton("textformat.size") { [weak self] in self?.view?.toggleHeading(theme: self?.theme ?? .dark) },
+            separator(),
+            toolbarButton("photo.badge.plus") { [weak self] in
+                guard let self else { return }
+                self.controller?.prepareImageUploadTarget()
+                self.onImageUploadRequested?()
+            },
         ].forEach(stack.addArrangedSubview)
 
         NSLayoutConstraint.activate([

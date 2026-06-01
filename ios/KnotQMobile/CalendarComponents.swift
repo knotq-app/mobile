@@ -243,7 +243,7 @@ struct CalendarEventBlock: View {
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(7)
-            .background(theme.isDark ? Color(hex: 0x232426).opacity(0.88) : Color(hex: 0xd3d2ce).opacity(0.86), in: RoundedRectangle(cornerRadius: 4))
+            .background(theme.isDark ? Color(hex: 0x333333).opacity(0.94) : Color(hex: 0xd3d2ce).opacity(0.86), in: RoundedRectangle(cornerRadius: 4))
             .overlay(alignment: .leading) {
                 Rectangle()
                     .fill(occurrenceSchemeColor(occurrence, dark: theme.isDark))
@@ -423,4 +423,3 @@ private struct FastPressGestureOverlay: UIViewRepresentable {
         }
     }
 }
-

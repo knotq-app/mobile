@@ -456,7 +456,7 @@ func extractEdits(from storage: NSAttributedString) -> [MobileItemEdit] {
     // A single blank-marker, empty-text line means "no items" (matches the
     // pre-invariant semantics for an empty document).
     if edits.count == 1, let only = edits.first,
-       only.text.isEmpty, only.marker == "blank", only.indent == 0, !only.done {
+       only.text.isEmpty, only.marker == "blank", only.indent == 0, !only.done, only.media.isEmpty {
         return []
     }
     return edits

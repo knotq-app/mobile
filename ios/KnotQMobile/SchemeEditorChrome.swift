@@ -1,4 +1,6 @@
+import PhotosUI
 import SwiftUI
+import UniformTypeIdentifiers
 import UIKit
 
 private struct EditorDateTarget: Identifiable {
@@ -11,11 +13,19 @@ final class EditorController: ObservableObject {
     weak var view: EditorTextView?
     @Published var isDirty = false
     @Published var isEmpty = true
+    private var pendingImageLocation: Int?
 
     func load(items: [MobileItem], theme: KnotQTheme, timeFormat: String, placeCursorAtEnd: Bool = false) {
         view?.loadItems(items, theme: theme, timeFormat: timeFormat, placeCursorAtEnd: placeCursorAtEnd)
         isDirty = false
-        isEmpty = items.isEmpty || items.allSatisfy { $0.text.isEmpty && $0.marker == "blank" && $0.indent == 0 && $0.start == nil && $0.end == nil }
+        isEmpty = items.isEmpty || items.allSatisfy {
+            $0.text.isEmpty
+                && $0.marker == "blank"
+                && $0.indent == 0
+                && $0.start == nil
+                && $0.end == nil
+                && $0.media.isEmpty
+        }
     }
 
     func commit() -> [MobileItemEdit] {
@@ -40,6 +50,16 @@ final class EditorController: ObservableObject {
 
     func shiftCurrentIndent(_ delta: Int, theme: KnotQTheme) {
         view?.shiftCurrentIndent(delta, theme: theme)
+    }
+
+    func prepareImageUploadTarget() {
+        pendingImageLocation = view?.selectedRange.location
+    }
+
+    func attachImageMedia(_ media: MobileItemMedia, theme: KnotQTheme) {
+        view?.attachImageMedia(media, at: pendingImageLocation, theme: theme)
+        pendingImageLocation = nil
+        isEmpty = false
     }
 
     /// Activates the text view so the system shows the caret + keyboard.
@@ -75,6 +95,8 @@ struct IntegratedSchemeEditorPane: View {
     @State private var dateTarget: EditorDateTarget?
     @State private var pendingArchive: ArchiveTarget?
     @State private var loadedSchemeID: String?
+    @State private var showingImagePicker = false
+    @State private var imagePickerItem: PhotosPickerItem?
 
     private var accent: Color {
         schemeColor(scheme.colorIndex, dark: theme.isDark)
@@ -143,6 +165,10 @@ struct IntegratedSchemeEditorPane: View {
                         model.renameScheme(id: scheme.id, name: title)
                     },
                     onDate: openDateForLine,
+                    onImageUpload: {
+                        controller.prepareImageUploadTarget()
+                        showingImagePicker = true
+                    },
                     readOnly: scheme.isReadOnly
                 )
 
@@ -188,6 +214,14 @@ struct IntegratedSchemeEditorPane: View {
             loadDocument(force: false)
         }
         .onChange(of: timeFormat) { _, _ in loadDocument(force: true) }
+        .onChange(of: imagePickerItem) { _, item in
+            handlePickedImage(item)
+        }
+        .photosPicker(
+            isPresented: $showingImagePicker,
+            selection: $imagePickerItem,
+            matching: .images
+        )
         .onDisappear {
             controller.blur()
             commitDocument()
@@ -268,6 +302,99 @@ struct IntegratedSchemeEditorPane: View {
         }
     }
 
+    private func handlePickedImage(_ item: PhotosPickerItem?) {
+        guard let item else { return }
+        Task {
+            do {
+                guard let data = try await item.loadTransferable(type: Data.self) else {
+                    await MainActor.run { imagePickerItem = nil }
+                    return
+                }
+                let media = try Self.storeImageData(data, contentTypes: item.supportedContentTypes)
+                await MainActor.run {
+                    controller.attachImageMedia(media, theme: theme)
+                    imagePickerItem = nil
+                }
+            } catch {
+                await MainActor.run {
+                    model.errorMessage = error.localizedDescription
+                    imagePickerItem = nil
+                }
+            }
+        }
+    }
+
+    private static func storeImageData(_ rawData: Data, contentTypes: [UTType]) throws -> MobileItemMedia {
+        guard let image = UIImage(data: rawData) else {
+            throw CocoaError(.fileReadCorruptFile)
+        }
+
+        let detected = supportedImageFormat(for: contentTypes)
+        let payload: Data
+        let format: String
+        let fileExtension: String
+        if let detected {
+            payload = rawData
+            format = detected.format
+            fileExtension = detected.fileExtension
+        } else if let jpeg = image.jpegData(compressionQuality: 0.92) {
+            payload = jpeg
+            format = "jpeg"
+            fileExtension = "jpg"
+        } else {
+            throw CocoaError(.fileWriteUnknown)
+        }
+
+        let directory = try imageAssetsDirectory()
+        let url = directory.appendingPathComponent(UUID().uuidString).appendingPathExtension(fileExtension)
+        try payload.write(to: url, options: [.atomic])
+
+        let width = image.cgImage.map { Int32($0.width) } ?? Int32((image.size.width * image.scale).rounded())
+        let height = image.cgImage.map { Int32($0.height) } ?? Int32((image.size.height * image.scale).rounded())
+        return MobileItemMedia(
+            kind: "image",
+            path: url.path,
+            format: format,
+            width: width,
+            height: height
+        )
+    }
+
+    private static func supportedImageFormat(for contentTypes: [UTType]) -> (format: String, fileExtension: String)? {
+        if contentTypes.contains(where: { $0.conforms(to: .png) }) {
+            return ("png", "png")
+        }
+        if contentTypes.contains(where: { $0.conforms(to: .jpeg) }) {
+            return ("jpeg", "jpg")
+        }
+        if contentTypes.contains(where: { $0.conforms(to: .gif) }) {
+            return ("gif", "gif")
+        }
+        if contentTypes.contains(where: { $0.conforms(to: .tiff) }) {
+            return ("tiff", "tiff")
+        }
+        if contentTypes.contains(where: { $0.preferredFilenameExtension?.lowercased() == "webp" }) {
+            return ("webp", "webp")
+        }
+        return nil
+    }
+
+    private static func imageAssetsDirectory() throws -> URL {
+        let support = try FileManager.default.url(
+            for: .applicationSupportDirectory,
+            in: .userDomainMask,
+            appropriateFor: nil,
+            create: true
+        )
+        let directory = support
+            .appendingPathComponent("KnotQMobile", isDirectory: true)
+            .appendingPathComponent("workspace", isDirectory: true)
+            .appendingPathComponent("assets", isDirectory: true)
+            .appendingPathComponent("images", isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        return directory
+    }
+
     private func openDateForLine() {
         guard !scheme.isReadOnly else { return }
         commitDocument()
@@ -279,7 +406,12 @@ struct IntegratedSchemeEditorPane: View {
 
     private func signature(for scheme: MobileScheme) -> String {
         scheme.items
-            .map { "\($0.id)|\($0.text)|\($0.marker)|\($0.indent)|\($0.done)|\($0.start ?? "")|\($0.end ?? "")" }
+            .map {
+                let media = $0.media
+                    .map { "\($0.kind):\($0.path ?? ""):\($0.format):\($0.width ?? -1)x\($0.height ?? -1)" }
+                    .joined(separator: ",")
+                return "\($0.id)|\($0.text)|\($0.marker)|\($0.indent)|\($0.done)|\($0.start ?? "")|\($0.end ?? "")|\(media)"
+            }
             .joined(separator: "\n")
     }
 

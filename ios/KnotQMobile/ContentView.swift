@@ -167,7 +167,7 @@ struct ContentView: View {
                     // Floating liquid-glass nav. It hovers over the content
                     // rather than reserving a strip.
                     MobileDock(
-                        selected: (pane == .scheme || pane == .daily) ? .home : pane,
+                        selected: (pane == .scheme || pane == .daily || pane == .search) ? .home : pane,
                         theme: theme,
                         onSelect: { selected in
                             // Re-tapping Calendar while already there jumps back
@@ -189,6 +189,11 @@ struct ContentView: View {
             .background(theme.bgApp.ignoresSafeArea())
             .foregroundStyle(theme.textPrimary)
             .preferredColorScheme(theme.isDark ? .dark : .light)
+            .onChange(of: wide) { _, isWide in
+                if !isWide, pane == .search {
+                    pane = .home
+                }
+            }
             // The window itself is black by default, so it shows through the
             // bottom safe-area lip and behind the transparent keyboard toolbar.
             // Paint it with the theme background so those gaps match the app.
@@ -300,6 +305,7 @@ struct ContentView: View {
                     theme: theme,
                     onToggleOccurrence: handleOccurrenceTap,
                     onOpenOccurrence: { eventEditor = .edit($0) },
+                    onOpenCalendar: { pane = .calendar },
                     onCreateScheme: quickCreateSchemeID,
                     onNewFolder: { showingNewFolder = true },
                     onGoogleCalendar: { startGoogleCalendarImport(parentID: $0) },

@@ -60,20 +60,27 @@ struct DayTimelineMoveTarget: Equatable {
 final class DayTimelineDayCell: UIControl {
     let weekdayLabel = UILabel()
     let dayLabel = UILabel()
-    let rangeBackground = UIView()
+    let todayDot = UIView()
     var date = Date()
-    var isTodayCell = false { didSet { setNeedsLayout() } }
+
+    // The active-day pill is drawn behind the whole visible run in the strip;
+    // these constants keep the cell's number centered inside it and let the
+    // strip lay the capsule out with the same geometry.
+    static let pillTop: CGFloat = 21
+    static let pillHeight: CGFloat = 37
 
     override init(frame: CGRect) {
         super.init(frame: frame)
-        addSubview(rangeBackground)
         addSubview(weekdayLabel)
         addSubview(dayLabel)
+        addSubview(todayDot)
         weekdayLabel.textAlignment = .center
         weekdayLabel.font = .systemFont(ofSize: 10, weight: .semibold)
         dayLabel.textAlignment = .center
         dayLabel.font = .systemFont(ofSize: 18, weight: .medium)
-        rangeBackground.isUserInteractionEnabled = false
+        todayDot.isUserInteractionEnabled = false
+        todayDot.layer.cornerCurve = .continuous
+        todayDot.isHidden = true
     }
 
     @available(*, unavailable)
@@ -83,18 +90,16 @@ final class DayTimelineDayCell: UIControl {
 
     override func layoutSubviews() {
         super.layoutSubviews()
-        weekdayLabel.frame = CGRect(x: 0, y: 3, width: bounds.width, height: 14)
-        // Today is a compact circle (matching the month grid); a visible-day
-        // pill spans the cell width.
-        if isTodayCell {
-            let diameter: CGFloat = 34
-            rangeBackground.frame = CGRect(x: (bounds.width - diameter) / 2, y: 23, width: diameter, height: diameter)
-        } else {
-            rangeBackground.frame = CGRect(x: 5, y: 23, width: max(0, bounds.width - 10), height: 34)
-        }
-        rangeBackground.layer.cornerRadius = 17
-        rangeBackground.layer.cornerCurve = .continuous
-        dayLabel.frame = CGRect(x: 0, y: 23, width: bounds.width, height: 34)
+        weekdayLabel.frame = CGRect(x: 0, y: 6, width: bounds.width, height: 12)
+        dayLabel.frame = CGRect(x: 0, y: Self.pillTop, width: bounds.width, height: Self.pillHeight)
+        let dotSize: CGFloat = 5
+        todayDot.frame = CGRect(
+            x: (bounds.width - dotSize) / 2,
+            y: Self.pillTop + Self.pillHeight + 1,
+            width: dotSize,
+            height: dotSize
+        )
+        todayDot.layer.cornerRadius = dotSize / 2
     }
 }
 
@@ -141,12 +146,12 @@ final class DayTimelineEventBlockView: UIControl {
         timeLabel.textColor = Self.timeColor(for: laid.occurrence, theme: theme)
         let isPill = laid.occurrence.kind == "reminder" || laid.occurrence.kind == "assignment"
         backgroundColor = theme.isDark
-            ? UIColor(hex: 0x232426).withAlphaComponent(0.66)
+            ? UIColor(hex: 0x333333).withAlphaComponent(0.94)
             : UIColor(hex: 0xe6e8ec).withAlphaComponent(0.62)
         layer.cornerRadius = isPill ? 0 : 3
         layer.borderWidth = isPill ? 0 : 1.5
-        layer.borderColor = (theme.isDark ? UIColor.white.withAlphaComponent(0.84) : UIColor(hex: 0x24272d).withAlphaComponent(0.80)).cgColor
-        borderLine.backgroundColor = theme.isDark ? UIColor.white.withAlphaComponent(0.84) : UIColor(hex: 0x24272d).withAlphaComponent(0.80)
+        layer.borderColor = (theme.isDark ? UIColor.white.withAlphaComponent(0.78) : UIColor(hex: 0x24272d).withAlphaComponent(0.80)).cgColor
+        borderLine.backgroundColor = theme.isDark ? UIColor.white.withAlphaComponent(0.78) : UIColor(hex: 0x24272d).withAlphaComponent(0.80)
         borderLine.isHidden = !isPill
         setNeedsLayout()
     }
@@ -265,5 +270,60 @@ final class DayTimelineEventBlockView: UIControl {
             blue: luma + (rgb.2 - luma) * amount,
             alpha: done ? 0.78 : 1
         )
+    }
+}
+
+final class DayTimelineStickyIndicatorView: UIControl {
+    private let dotView = UIView()
+    private let titleLabel = UILabel()
+    private var occurrence: MobileOccurrence?
+    var onTap: ((MobileOccurrence) -> Void)?
+
+    override init(frame: CGRect) {
+        super.init(frame: frame)
+        clipsToBounds = true
+        layer.cornerRadius = 13
+        layer.cornerCurve = .continuous
+        addSubview(dotView)
+        addSubview(titleLabel)
+        dotView.isUserInteractionEnabled = false
+        dotView.layer.cornerRadius = 3.5
+        dotView.layer.cornerCurve = .continuous
+        titleLabel.isUserInteractionEnabled = false
+        titleLabel.font = .systemFont(ofSize: 12, weight: .semibold)
+        titleLabel.lineBreakMode = .byTruncatingTail
+        addTarget(self, action: #selector(tapped), for: .touchUpInside)
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    func configure(occurrence: MobileOccurrence, theme: KnotQTheme) {
+        self.occurrence = occurrence
+        let title = occurrence.title.trimmingCharacters(in: .whitespacesAndNewlines)
+        titleLabel.text = title.isEmpty ? occurrence.kind.capitalized : title
+        titleLabel.textColor = UIColor(theme.textPrimary)
+        dotView.backgroundColor = UIColor(occurrenceSchemeColor(occurrence, dark: theme.isDark))
+        backgroundColor = theme.isDark
+            ? UIColor(hex: 0x333333).withAlphaComponent(0.92)
+            : UIColor(theme.bgApp).withAlphaComponent(0.86)
+        layer.borderWidth = 0.75
+        layer.borderColor = theme.isDark
+            ? UIColor.white.withAlphaComponent(0.18).cgColor
+            : UIColor(theme.dividerSoft).cgColor
+        setNeedsLayout()
+    }
+
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        dotView.frame = CGRect(x: 9, y: (bounds.height - 7) / 2, width: 7, height: 7)
+        titleLabel.frame = CGRect(x: 22, y: 0, width: max(0, bounds.width - 30), height: bounds.height)
+    }
+
+    @objc private func tapped() {
+        guard let occurrence else { return }
+        onTap?(occurrence)
     }
 }
