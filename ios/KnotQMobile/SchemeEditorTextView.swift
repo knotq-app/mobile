@@ -107,6 +107,7 @@ private final class EditorInlineTitleView: UIView, UITextFieldDelegate {
 final class EditorTextView: UITextView {
     var theme: KnotQTheme = .dark { didSet { setNeedsDisplay() } }
     var accentColor: UIColor = .systemBlue { didSet { setNeedsDisplay() } }
+    var timeFormat = "twelve_hour"
     weak var coordinator: EditorCoordinator?
 
     private let inlineTitleView = EditorInlineTitleView()
@@ -208,6 +209,7 @@ final class EditorTextView: UITextView {
     func loadItems(_ items: [MobileItem], theme: KnotQTheme, timeFormat: String, placeCursorAtEnd: Bool) {
         let savedSelection = selectedRange
         self.theme = theme
+        self.timeFormat = timeFormat
         coordinator?.suppress {
             let attributed = buildAttributedString(items: items, theme: theme, timeFormat: timeFormat)
             textStorage.setAttributedString(attributed)
@@ -291,6 +293,33 @@ final class EditorTextView: UITextView {
         lineMeta(at: clampedCaret(selectedRange.location, in: textStorage), in: textStorage).itemID
     }
 
+    override func copy(_ sender: Any?) {
+        if copyRichSelectionToPasteboard() {
+            return
+        }
+        super.copy(sender)
+    }
+
+    override func cut(_ sender: Any?) {
+        guard isEditable else {
+            copy(sender)
+            return
+        }
+        if let paragraphs = richSelectedParagraphs(), copyRichSelectionToPasteboard(paragraphs: paragraphs) {
+            deleteWholeParagraphs(paragraphs)
+            return
+        }
+        super.cut(sender)
+    }
+
+    override func paste(_ sender: Any?) {
+        guard isEditable else { return }
+        if pasteRichItemsFromPasteboard() {
+            return
+        }
+        super.paste(sender)
+    }
+
     func setCurrentMarker(_ marker: Marker, theme: KnotQTheme) {
         let para = editableParagraphRange(in: textStorage.string as NSString, at: selectedRange.location)
         let old = lineMeta(at: para.location, in: textStorage)
@@ -301,9 +330,150 @@ final class EditorTextView: UITextView {
             done: newDone,
             itemID: old.itemID,
             annotation: marker == .checkbox ? old.annotation : nil,
+            start: marker == .checkbox ? old.start : nil,
+            end: marker == .checkbox ? old.end : nil,
+            notificationOffsetSecs: marker == .checkbox ? old.notificationOffsetSecs : nil,
+            repeatRule: marker == .checkbox ? old.repeatRule : nil,
             media: old.media
         )
         applyMeta(new, paragraphRange: para, theme: theme)
+    }
+
+    private func copyRichSelectionToPasteboard(paragraphs: [EditorParagraphRange]? = nil) -> Bool {
+        guard let paragraphs = paragraphs ?? richSelectedParagraphs(), !paragraphs.isEmpty else {
+            return false
+        }
+        let ns = textStorage.string as NSString
+        let items = paragraphs.map { paragraph in
+            let meta = lineMeta(at: paragraph.fullRange.location, in: textStorage)
+            return EditorRichClipboardItem(text: bodyText(paragraphRange: paragraph.fullRange, in: textStorage), meta: meta)
+        }
+        let plain = paragraphs
+            .map { paragraph in
+                paragraph.lineRange.length > 0 ? ns.substring(with: paragraph.lineRange) : ""
+            }
+            .joined(separator: "\n")
+        guard !items.isEmpty,
+              let data = try? JSONEncoder().encode(EditorRichClipboardPayload(items: items)) else {
+            return false
+        }
+        UIPasteboard.general.setItems([[
+            "public.utf8-plain-text": plain,
+            editorRichClipboardType: data
+        ]])
+        return true
+    }
+
+    private func pasteRichItemsFromPasteboard() -> Bool {
+        guard let data = UIPasteboard.general.data(forPasteboardType: editorRichClipboardType),
+              let payload = try? JSONDecoder().decode(EditorRichClipboardPayload.self, from: data),
+              payload.format == editorRichClipboardFormat,
+              !payload.items.isEmpty else {
+            return false
+        }
+        if selectedRange.length > 0, richSelectedParagraphs() == nil {
+            return false
+        }
+
+        let replaceRange = richPasteReplacementRange()
+        let attributed = attributedString(forRichItems: payload.items)
+        guard attributed.length > 0 else { return false }
+        coordinator?.suppress {
+            textStorage.beginEditing()
+            textStorage.replaceCharacters(in: replaceRange, with: attributed)
+            ensureWellFormed(textStorage, theme: theme)
+            textStorage.endEditing()
+        }
+        let caret = clampedCaret(replaceRange.location + max(0, attributed.length - 1), in: textStorage)
+        selectedRange = NSRange(location: caret, length: 0)
+        typingAttributes = EditorAttributes.bodyAttributes(
+            meta: lineMeta(at: caret, in: textStorage),
+            theme: theme
+        )
+        coordinator?.markDirty()
+        coordinator?.refreshEmpty()
+        setNeedsDisplay()
+        return true
+    }
+
+    private func attributedString(forRichItems items: [EditorRichClipboardItem]) -> NSAttributedString {
+        let result = NSMutableAttributedString()
+        for item in items {
+            let meta = item.lineMeta(timeFormat: timeFormat)
+            let attrs = EditorAttributes.bodyAttributes(meta: meta, theme: theme)
+            let bodyLocation = result.length
+            result.append(NSAttributedString(string: item.text, attributes: attrs))
+            let bodyRange = NSRange(location: bodyLocation, length: (item.text as NSString).length)
+            result.append(NSAttributedString(string: "\n", attributes: attrs))
+            applyInlineMarkdownStyling(body: item.text, bodyRange: bodyRange, in: result)
+        }
+        return result
+    }
+
+    private func richSelectedParagraphs() -> [EditorParagraphRange]? {
+        let range = selectedRange
+        guard range.length > 0 else { return nil }
+        let ns = textStorage.string as NSString
+        guard ns.length > 0,
+              range.location >= 0,
+              NSMaxRange(range) <= ns.length else {
+            return nil
+        }
+        let all = paragraphRanges(in: ns)
+        guard let startIndex = all.firstIndex(where: { $0.fullRange.location == range.location }) else {
+            return nil
+        }
+        let end = NSMaxRange(range)
+        for index in startIndex..<all.count {
+            let paragraph = all[index]
+            if end == NSMaxRange(paragraph.lineRange) || end == NSMaxRange(paragraph.fullRange) {
+                return Array(all[startIndex...index])
+            }
+            if end < NSMaxRange(paragraph.fullRange) {
+                return nil
+            }
+        }
+        return nil
+    }
+
+    private func richPasteReplacementRange() -> NSRange {
+        if let paragraphs = richSelectedParagraphs(),
+           let first = paragraphs.first,
+           let last = paragraphs.last {
+            return NSRange(location: first.fullRange.location, length: NSMaxRange(last.fullRange) - first.fullRange.location)
+        }
+
+        let ns = textStorage.string as NSString
+        let caret = clampedCaret(selectedRange.location, in: textStorage)
+        let paragraph = editableParagraphRange(in: ns, at: caret)
+        let line = lineRange(from: paragraph, in: ns)
+        if line.length == 0 {
+            return paragraph
+        }
+        if caret <= paragraph.location {
+            return NSRange(location: paragraph.location, length: 0)
+        }
+        return NSRange(location: NSMaxRange(paragraph), length: 0)
+    }
+
+    private func deleteWholeParagraphs(_ paragraphs: [EditorParagraphRange]) {
+        guard let first = paragraphs.first, let last = paragraphs.last else { return }
+        let deleteRange = NSRange(
+            location: first.fullRange.location,
+            length: NSMaxRange(last.fullRange) - first.fullRange.location
+        )
+        coordinator?.suppress {
+            textStorage.beginEditing()
+            textStorage.replaceCharacters(in: deleteRange, with: NSAttributedString(string: ""))
+            ensureWellFormed(textStorage, theme: theme)
+            textStorage.endEditing()
+        }
+        let caret = clampedCaret(deleteRange.location, in: textStorage)
+        selectedRange = NSRange(location: caret, length: 0)
+        typingAttributes = EditorAttributes.bodyAttributes(meta: lineMeta(at: caret, in: textStorage), theme: theme)
+        coordinator?.markDirty()
+        coordinator?.refreshEmpty()
+        setNeedsDisplay()
     }
 
     func shiftCurrentIndent(_ delta: Int, theme: KnotQTheme) {
@@ -715,7 +885,8 @@ final class EditorTextView: UITextView {
     private func markerRect(for meta: LineMeta, fragment: CGRect) -> CGRect {
         CGRect(
             x: textContainerInset.left + CGFloat(meta.indent) * DesktopEditorMetrics.indentWidth,
-            y: fragment.minY + (fragment.height - DesktopEditorMetrics.checkboxSize) / 2,
+            y: fragment.minY + (fragment.height - DesktopEditorMetrics.checkboxSize) / 2
+                + DesktopEditorMetrics.markerVerticalNudge,
             width: DesktopEditorMetrics.checkboxSize,
             height: DesktopEditorMetrics.checkboxSize
         )

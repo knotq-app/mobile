@@ -1,6 +1,49 @@
 import SwiftUI
 import UIKit
 
+private struct DayTimelineGeometry {
+    let visibleCount: Int
+    let columnWidth: CGFloat
+    let canvasOffsetX: CGFloat
+
+    var canvasWidth: CGFloat {
+        columnWidth * CGFloat(visibleCount + 2)
+    }
+
+    var renderDayRange: ClosedRange<Int> {
+        -1...visibleCount
+    }
+
+    var visibleDayRange: ClosedRange<Int> {
+        0...max(0, visibleCount - 1)
+    }
+
+    func canvasX(forDayIndex dayIndex: Int) -> CGFloat {
+        CGFloat(dayIndex + 1) * columnWidth
+    }
+
+    func canvasX(forClipX clipX: CGFloat) -> CGFloat {
+        clipX - canvasOffsetX
+    }
+
+    func clipX(forCanvasX canvasX: CGFloat) -> CGFloat {
+        canvasX + canvasOffsetX
+    }
+
+    func canvasPoint(fromClipPoint point: CGPoint) -> CGPoint {
+        CGPoint(x: canvasX(forClipX: point.x), y: point.y)
+    }
+
+    func dayIndex(forClipX clipX: CGFloat, in range: ClosedRange<Int>) -> Int {
+        dayIndex(forCanvasX: canvasX(forClipX: clipX), in: range)
+    }
+
+    func dayIndex(forCanvasX canvasX: CGFloat, in range: ClosedRange<Int>) -> Int {
+        let raw = Int(floor(canvasX / columnWidth)) - 1
+        return min(range.upperBound, max(range.lowerBound, raw))
+    }
+}
+
 final class DayTimelineUIKitView: UIView, UIGestureRecognizerDelegate, UIScrollViewDelegate {
     private let titleLabel = UILabel()
     private let titleButton = UIButton(type: .custom)
@@ -38,11 +81,12 @@ final class DayTimelineUIKitView: UIView, UIGestureRecognizerDelegate, UIScrollV
     private var activeCreateDraft: DayTimelineCreateDraft?
     private var activeDragView: DayTimelineEventBlockView?
     private var activeDragStartFrame: CGRect = .zero
-    private var activeDragStartLocation: CGPoint = .zero
+    private var activeDragGrabOffset: CGPoint = .zero
     private var activeDragTarget: DayTimelineMoveTarget?
     private var activeDragSnapKey: String?
     private var creatingEvent = false
     private var needsFullRender = true
+    private var resetToken = 0
 
     private static let titleHeight: CGFloat = 47
     private static let weekHeight: CGFloat = 63
@@ -140,9 +184,11 @@ final class DayTimelineUIKitView: UIView, UIGestureRecognizerDelegate, UIScrollV
         onOpenOccurrence: @escaping (MobileOccurrence) -> Void,
         onMoveOccurrence: @escaping (MobileOccurrence, Date?, Date?) -> Void,
         onTapTitle: @escaping () -> Void,
-        isCreatingEvent: Bool
+        isCreatingEvent: Bool,
+        resetToken: Int
     ) {
         let nextSelectedDate = Calendar.current.startOfDay(for: selectedDate)
+        let shouldReset = self.resetToken != resetToken
         let renderInputsChanged = calendarSnapshot != calendar
             || self.selectedDate != nextSelectedDate
             || self.theme?.isDark != theme.isDark
@@ -158,11 +204,19 @@ final class DayTimelineUIKitView: UIView, UIGestureRecognizerDelegate, UIScrollV
         self.onOpenOccurrence = onOpenOccurrence
         self.onMoveOccurrence = onMoveOccurrence
         self.onTapTitle = onTapTitle
+        self.resetToken = resetToken
         // The create draft is held on screen while its editor popover is open;
         // clear it on the true->false transition (the popover just closed).
         if createClosed {
             activeCreateDraft = nil
             draftView.isHidden = true
+        }
+        if shouldReset {
+            activeDragView = nil
+            activeDragTarget = nil
+            activeDragSnapKey = nil
+            scrollView.isScrollEnabled = true
+            needsFullRender = true
         }
         creatingEvent = isCreatingEvent
         backgroundColor = UIColor(theme.bgApp)
@@ -170,10 +224,10 @@ final class DayTimelineUIKitView: UIView, UIGestureRecognizerDelegate, UIScrollV
         titleChevron.tintColor = UIColor(theme.textMuted)
         titleBackdrop.layer.borderColor = UIColor(theme.dividerSoft).cgColor
         separator.backgroundColor = UIColor(theme.dividerSoft)
-        if renderInputsChanged {
+        if renderInputsChanged || shouldReset {
             needsFullRender = true
             setNeedsLayout()
-            renderAllIfReady()
+            renderAllIfReady(force: shouldReset)
         }
     }
 
@@ -279,13 +333,17 @@ final class DayTimelineUIKitView: UIView, UIGestureRecognizerDelegate, UIScrollV
         let visibleCount = visibleDayCount()
         let width = max(1, bounds.width)
         let colWidth = max(1, (width - Self.gutterWidth) / CGFloat(visibleCount))
-        let dayCanvasWidth = colWidth * CGFloat(visibleCount + 2)
+        let geometry = DayTimelineGeometry(
+            visibleCount: visibleCount,
+            columnWidth: colWidth,
+            canvasOffsetX: -colWidth + swipeOffset
+        )
 
         contentView.frame = CGRect(x: 0, y: 0, width: width, height: Self.timelineHeight + Self.bottomPadding)
         scrollView.contentSize = contentView.bounds.size
         dayClip.frame = CGRect(x: Self.gutterWidth, y: 0, width: max(0, width - Self.gutterWidth), height: Self.timelineHeight)
         timeGutter.frame = CGRect(x: 0, y: 0, width: Self.gutterWidth, height: Self.timelineHeight)
-        dayCanvas.frame = CGRect(x: -colWidth + swipeOffset, y: 0, width: dayCanvasWidth, height: Self.timelineHeight)
+        dayCanvas.frame = CGRect(x: geometry.canvasOffsetX, y: 0, width: geometry.canvasWidth, height: Self.timelineHeight)
 
         timeGutter.subviews.forEach { $0.removeFromSuperview() }
         removeDecorationLayers(from: timeGutter.layer, named: Self.gutterDecorationLayerName)
@@ -296,11 +354,11 @@ final class DayTimelineUIKitView: UIView, UIGestureRecognizerDelegate, UIScrollV
         }
 
         drawTimeGutter(theme: theme)
-        drawPastShade(theme: theme, colWidth: colWidth, visibleCount: visibleCount)
-        drawGrid(theme: theme, colWidth: colWidth, visibleCount: visibleCount)
-        drawNowLine(theme: theme, colWidth: colWidth, visibleCount: visibleCount)
-        drawEvents(theme: theme, colWidth: colWidth, visibleCount: visibleCount)
-        updateDraftView(colWidth: colWidth)
+        drawPastShade(theme: theme, geometry: geometry)
+        drawGrid(theme: theme, geometry: geometry)
+        drawNowLine(theme: theme, geometry: geometry)
+        drawEvents(theme: theme, geometry: geometry)
+        updateDraftView(geometry: geometry)
 
         if !didInitialScroll {
             didInitialScroll = true
@@ -341,10 +399,10 @@ final class DayTimelineUIKitView: UIView, UIGestureRecognizerDelegate, UIScrollV
     /// Tints the already-elapsed part of each day blue, mirroring the desktop
     /// `cal_past` shade: a full column for past days, and top-to-now for today.
     /// Sits behind the grid, now-line, and events.
-    private func drawPastShade(theme: KnotQTheme, colWidth: CGFloat, visibleCount: Int) {
+    private func drawPastShade(theme: KnotQTheme, geometry: DayTimelineGeometry) {
         let today = Calendar.current.startOfDay(for: Date())
         let shade = UIColor(theme.accent).withAlphaComponent(theme.isDark ? 0.13 : 0.15).cgColor
-        for index in -1...visibleCount {
+        for index in geometry.renderDayRange {
             let date = Calendar.current.startOfDay(for: dayDate(index))
             let height: CGFloat
             if date < today {
@@ -360,21 +418,20 @@ final class DayTimelineUIKitView: UIView, UIGestureRecognizerDelegate, UIScrollV
             let layer = CALayer()
             layer.name = Self.dayDecorationLayerName
             layer.backgroundColor = shade
-            layer.frame = CGRect(x: CGFloat(index + 1) * colWidth, y: 0, width: colWidth, height: height)
+            layer.frame = CGRect(x: geometry.canvasX(forDayIndex: index), y: 0, width: geometry.columnWidth, height: height)
             dayCanvas.layer.insertSublayer(layer, at: 0)
         }
     }
 
-    private func drawGrid(theme: KnotQTheme, colWidth: CGFloat, visibleCount: Int) {
+    private func drawGrid(theme: KnotQTheme, geometry: DayTimelineGeometry) {
         let path = UIBezierPath()
-        let width = colWidth * CGFloat(visibleCount + 2)
         for hour in 0...Self.hoursInDay {
             let y = min(Self.timelineHeight - 1, Self.timeYOffset + CGFloat(hour) * Self.hourHeight)
             path.move(to: CGPoint(x: 0, y: y))
-            path.addLine(to: CGPoint(x: width, y: y))
+            path.addLine(to: CGPoint(x: geometry.canvasWidth, y: y))
         }
-        for index in 0...(visibleCount + 2) {
-            let x = CGFloat(index) * colWidth
+        for index in 0...(geometry.visibleCount + 2) {
+            let x = CGFloat(index) * geometry.columnWidth
             path.move(to: CGPoint(x: x, y: 0))
             path.addLine(to: CGPoint(x: x, y: Self.timelineHeight))
         }
@@ -387,14 +444,14 @@ final class DayTimelineUIKitView: UIView, UIGestureRecognizerDelegate, UIScrollV
         dayCanvas.layer.addSublayer(layer)
     }
 
-    private func drawNowLine(theme: KnotQTheme, colWidth: CGFloat, visibleCount: Int) {
-        guard let todayIndex = (-1...visibleCount).first(where: { isToday(dayDate($0)) }) else { return }
+    private func drawNowLine(theme: KnotQTheme, geometry: DayTimelineGeometry) {
+        guard let todayIndex = geometry.renderDayRange.first(where: { isToday(dayDate($0)) }) else { return }
         let minute = Calendar.current.component(.hour, from: Date()) * 60 + Calendar.current.component(.minute, from: Date())
         let y = Self.timeYOffset + CGFloat(minute) / 60 * Self.hourHeight
-        let x = CGFloat(todayIndex + 1) * colWidth
+        let x = geometry.canvasX(forDayIndex: todayIndex)
         let path = UIBezierPath()
         path.move(to: CGPoint(x: x, y: y))
-        path.addLine(to: CGPoint(x: x + colWidth, y: y))
+        path.addLine(to: CGPoint(x: x + geometry.columnWidth, y: y))
         let line = CAShapeLayer()
         line.name = Self.dayDecorationLayerName
         line.path = path.cgPath
@@ -403,9 +460,9 @@ final class DayTimelineUIKitView: UIView, UIGestureRecognizerDelegate, UIScrollV
         dayCanvas.layer.addSublayer(line)
     }
 
-    private func drawEvents(theme: KnotQTheme, colWidth: CGFloat, visibleCount: Int) {
-        for dayIndex in -1...visibleCount {
-            for laid in laidEvents(forDayIndex: dayIndex, colWidth: colWidth) {
+    private func drawEvents(theme: KnotQTheme, geometry: DayTimelineGeometry) {
+        for dayIndex in geometry.renderDayRange {
+            for laid in laidEvents(forDayIndex: dayIndex, geometry: geometry) {
                 let view = DayTimelineEventBlockView(frame: laid.frame)
                 view.configure(laid: laid, theme: theme, timeFormat: timeFormat)
                 view.onTap = { [weak self] occurrence in self?.onOpenOccurrence(occurrence) }
@@ -422,7 +479,7 @@ final class DayTimelineUIKitView: UIView, UIGestureRecognizerDelegate, UIScrollV
         dayCanvas.bringSubviewToFront(draftView)
     }
 
-    private func laidEvents(forDayIndex dayIndex: Int, colWidth: CGFloat) -> [DayTimelineLaidOccurrence] {
+    private func laidEvents(forDayIndex dayIndex: Int, geometry: DayTimelineGeometry) -> [DayTimelineLaidOccurrence] {
         struct Slot {
             let occurrence: MobileOccurrence
             let startMinute: CGFloat
@@ -454,8 +511,8 @@ final class DayTimelineUIKitView: UIView, UIGestureRecognizerDelegate, UIScrollV
         }
 
         let subCount = max(1, columnEnd.count)
-        let subWidth = colWidth / CGFloat(subCount)
-        let columnX = CGFloat(dayIndex + 1) * colWidth
+        let subWidth = geometry.columnWidth / CGFloat(subCount)
+        let columnX = geometry.canvasX(forDayIndex: dayIndex)
         return slots.enumerated().map { index, slot in
             let y = Self.timeYOffset + slot.startMinute / 60 * Self.hourHeight
             let minimumHeight: CGFloat = slot.occurrence.kind == "event" ? 20 : 34
@@ -476,14 +533,14 @@ final class DayTimelineUIKitView: UIView, UIGestureRecognizerDelegate, UIScrollV
         }
     }
 
-    private func updateDraftView(colWidth: CGFloat) {
+    private func updateDraftView(geometry: DayTimelineGeometry) {
         guard let draft = activeCreateDraft, let theme else {
             draftView.isHidden = true
             return
         }
         let y = Self.timeYOffset + draft.startMinute / 60 * Self.hourHeight
-        let x = CGFloat(draft.dayIndex + 1) * colWidth + 1
-        draftView.frame = CGRect(x: x, y: y, width: max(8, colWidth - 2), height: Self.hourHeight - 2)
+        let x = geometry.canvasX(forDayIndex: draft.dayIndex) + 1
+        draftView.frame = CGRect(x: x, y: y, width: max(8, geometry.columnWidth - 2), height: Self.hourHeight - 2)
         draftView.backgroundColor = UIColor(theme.accent).withAlphaComponent(theme.isDark ? 0.32 : 0.22)
         draftView.layer.borderColor = UIColor(theme.accent).cgColor
         draftTimeLabel.text = draftTime(draft)
@@ -561,22 +618,21 @@ final class DayTimelineUIKitView: UIView, UIGestureRecognizerDelegate, UIScrollV
     }
 
     @objc private func handleCreateLongPress(_ recognizer: UILongPressGestureRecognizer) {
-        let point = contentPoint(from: recognizer.location(in: scrollView))
-        let visibleCount = visibleDayCount()
-        let colWidth = max(1, (bounds.width - Self.gutterWidth) / CGFloat(visibleCount))
+        let point = recognizer.location(in: dayClip)
+        let geometry = currentGeometry()
         switch recognizer.state {
         case .began:
-            guard point.x >= Self.gutterWidth, hitEvent(at: point) == nil else { return }
+            guard dayClip.bounds.contains(point), hitEvent(atClipPoint: point, geometry: geometry) == nil else { return }
             scrollView.isScrollEnabled = false
-            activeCreateDraft = createDraft(at: point, colWidth: colWidth, visibleCount: visibleCount)
+            activeCreateDraft = createDraft(at: point, geometry: geometry)
             UIImpactFeedbackGenerator(style: .medium).impactOccurred()
-            updateDraftView(colWidth: colWidth)
+            updateDraftView(geometry: geometry)
         case .changed:
-            let next = createDraft(at: point, colWidth: colWidth, visibleCount: visibleCount)
+            let next = createDraft(at: point, geometry: geometry)
             if next != activeCreateDraft {
                 activeCreateDraft = next
                 UISelectionFeedbackGenerator().selectionChanged()
-                updateDraftView(colWidth: colWidth)
+                updateDraftView(geometry: geometry)
             }
         case .ended:
             scrollView.isScrollEnabled = true
@@ -604,26 +660,25 @@ final class DayTimelineUIKitView: UIView, UIGestureRecognizerDelegate, UIScrollV
         guard let view = recognizer.view as? DayTimelineEventBlockView,
               let laid = view.laid,
               !laid.occurrence.isReadOnly else { return }
-        let visibleCount = visibleDayCount()
-        let colWidth = max(1, (bounds.width - Self.gutterWidth) / CGFloat(visibleCount))
+        let geometry = currentGeometry()
         let location = recognizer.location(in: dayClip)
         switch recognizer.state {
         case .began:
             activeDragView = view
             activeDragStartFrame = view.frame
-            activeDragStartLocation = location
+            activeDragGrabOffset = CGPoint(
+                x: location.x - geometry.clipX(forCanvasX: view.frame.minX),
+                y: location.y - view.frame.minY
+            )
             activeDragTarget = nil
             activeDragSnapKey = nil
             scrollView.isScrollEnabled = false
             dayCanvas.bringSubviewToFront(view)
             UIImpactFeedbackGenerator(style: .medium).impactOccurred()
         case .changed:
-            let translation = CGPoint(x: location.x - activeDragStartLocation.x, y: location.y - activeDragStartLocation.y)
-            let target = moveTarget(for: laid, translation: translation, colWidth: colWidth, visibleCount: visibleCount)
+            let target = moveTarget(for: laid, locationInClip: location, grabOffset: activeDragGrabOffset, geometry: geometry)
             activeDragTarget = target
-            // Keep the calendar columns fixed while dragging an event — only the
-            // event follows the finger, so the calendar never swipes left/right.
-            view.frame = frameForDragging(laid: laid, target: target, translation: translation, colWidth: colWidth)
+            view.frame = target.frame
             let snapKey = "\(target.dayIndex)-\(Int(target.startMinute))"
             if snapKey != activeDragSnapKey {
                 activeDragSnapKey = snapKey
@@ -631,7 +686,7 @@ final class DayTimelineUIKitView: UIView, UIGestureRecognizerDelegate, UIScrollV
             }
         case .ended:
             let target = activeDragTarget
-            cleanupEventDrag(view: view, colWidth: colWidth, restoreStartFrame: target == nil)
+            cleanupEventDrag(view: view, colWidth: geometry.columnWidth, restoreStartFrame: target == nil)
             if let target {
                 UIImpactFeedbackGenerator(style: .light).impactOccurred()
                 DispatchQueue.main.async {
@@ -639,7 +694,7 @@ final class DayTimelineUIKitView: UIView, UIGestureRecognizerDelegate, UIScrollV
                 }
             }
         case .cancelled, .failed:
-            cleanupEventDrag(view: view, colWidth: colWidth, restoreStartFrame: true)
+            cleanupEventDrag(view: view, colWidth: geometry.columnWidth, restoreStartFrame: true)
         default:
             break
         }
@@ -661,50 +716,47 @@ final class DayTimelineUIKitView: UIView, UIGestureRecognizerDelegate, UIScrollV
         }
     }
 
-    private func frameForDragging(laid: DayTimelineLaidOccurrence, target: DayTimelineMoveTarget, translation: CGPoint, colWidth: CGFloat) -> CGRect {
-        let targetY = Self.timeYOffset + target.startMinute / 60 * Self.hourHeight
-        let x = CGFloat(target.dayIndex + 1) * colWidth + max(1, activeDragStartFrame.minX - CGFloat(laid.dayIndex + 1) * colWidth)
-        return CGRect(
-            x: x,
-            y: targetY,
-            width: min(activeDragStartFrame.width, colWidth - 2),
-            height: activeDragStartFrame.height
-        )
-    }
-
-    private func moveTarget(for laid: DayTimelineLaidOccurrence, translation: CGPoint, colWidth: CGFloat, visibleCount: Int) -> DayTimelineMoveTarget {
-        let startCenterInClip = CGPoint(
-            x: activeDragStartFrame.midX + dayCanvas.frame.minX,
-            y: activeDragStartFrame.midY
-        )
-        let proposedCenterX = startCenterInClip.x + translation.x
-        let proposedCanvasX = proposedCenterX - dayCanvas.frame.minX
-        let rawSlot = Int(floor(proposedCanvasX / colWidth))
-        let dayIndex = min(visibleCount, max(-1, rawSlot - 1))
+    private func moveTarget(
+        for laid: DayTimelineLaidOccurrence,
+        locationInClip: CGPoint,
+        grabOffset: CGPoint,
+        geometry: DayTimelineGeometry
+    ) -> DayTimelineMoveTarget {
+        let proposedMinClipX = locationInClip.x - grabOffset.x
+        let proposedCenterClipX = proposedMinClipX + activeDragStartFrame.width / 2
+        let dayIndex = geometry.dayIndex(forClipX: proposedCenterClipX, in: geometry.visibleDayRange)
         let duration = max(15, laid.endMinute - laid.startMinute)
         let maxStart = laid.occurrence.kind == "event"
             ? CGFloat(Self.hoursInDay * 60) - duration
             : CGFloat(Self.hoursInDay * 60 - 15)
-        let rawMinute = (activeDragStartFrame.minY + translation.y - Self.timeYOffset) / Self.hourHeight * 60
+        let proposedMinY = locationInClip.y - grabOffset.y
+        let rawMinute = (proposedMinY - Self.timeYOffset) / Self.hourHeight * 60
         let snapped = (rawMinute / 15).rounded() * 15
         let startMinute = max(0, min(maxStart, snapped))
+        let width = min(activeDragStartFrame.width, geometry.columnWidth - 2)
+        let sourceColumnOffset = activeDragStartFrame.minX - geometry.canvasX(forDayIndex: laid.dayIndex)
+        let maxColumnOffset = max(1, geometry.columnWidth - width - 1)
+        let columnOffset = min(max(1, sourceColumnOffset), maxColumnOffset)
+        let frame = CGRect(
+            x: geometry.canvasX(forDayIndex: dayIndex) + columnOffset,
+            y: Self.timeYOffset + startMinute / 60 * Self.hourHeight,
+            width: width,
+            height: activeDragStartFrame.height
+        )
         let base = Calendar.current.startOfDay(for: dayDate(dayIndex))
         let anchor = Calendar.current.date(byAdding: .minute, value: Int(startMinute), to: base)
         if laid.occurrence.kind == "assignment" {
-            return DayTimelineMoveTarget(dayIndex: dayIndex, startMinute: startMinute, start: nil, end: anchor)
+            return DayTimelineMoveTarget(dayIndex: dayIndex, startMinute: startMinute, frame: frame, start: nil, end: anchor)
         }
         if laid.occurrence.kind == "reminder" {
-            return DayTimelineMoveTarget(dayIndex: dayIndex, startMinute: startMinute, start: anchor, end: nil)
+            return DayTimelineMoveTarget(dayIndex: dayIndex, startMinute: startMinute, frame: frame, start: anchor, end: nil)
         }
         let end = anchor.flatMap { Calendar.current.date(byAdding: .minute, value: Int(duration), to: $0) }
-        return DayTimelineMoveTarget(dayIndex: dayIndex, startMinute: startMinute, start: anchor, end: end)
+        return DayTimelineMoveTarget(dayIndex: dayIndex, startMinute: startMinute, frame: frame, start: anchor, end: end)
     }
 
-    private func createDraft(at point: CGPoint, colWidth: CGFloat, visibleCount: Int) -> DayTimelineCreateDraft {
-        let clipX = point.x - Self.gutterWidth
-        let canvasX = clipX - dayCanvas.frame.minX
-        let rawSlot = Int(floor(canvasX / colWidth))
-        let dayIndex = min(visibleCount, max(-1, rawSlot - 1))
+    private func createDraft(at point: CGPoint, geometry: DayTimelineGeometry) -> DayTimelineCreateDraft {
+        let dayIndex = geometry.dayIndex(forClipX: point.x, in: geometry.visibleDayRange)
         let rawMinute = max(0, (point.y - Self.timeYOffset) / Self.hourHeight * 60)
         let snapped = (rawMinute / 5).rounded(.down) * 5
         let clamped = max(0, min(CGFloat(Self.hoursInDay * 60 - 60), snapped))
@@ -724,15 +776,20 @@ final class DayTimelineUIKitView: UIView, UIGestureRecognizerDelegate, UIScrollV
         return formatter.string(from: date)
     }
 
-    private func contentPoint(from point: CGPoint) -> CGPoint {
-        point
+    private func currentGeometry() -> DayTimelineGeometry {
+        let visibleCount = visibleDayCount()
+        let width = max(1, bounds.width)
+        let colWidth = max(1, (width - Self.gutterWidth) / CGFloat(visibleCount))
+        let canvasOffset = dayCanvas.bounds.width > 0 ? dayCanvas.frame.minX : -colWidth + swipeOffset
+        return DayTimelineGeometry(
+            visibleCount: visibleCount,
+            columnWidth: colWidth,
+            canvasOffsetX: canvasOffset
+        )
     }
 
-    private func hitEvent(at contentPoint: CGPoint) -> DayTimelineEventBlockView? {
-        let canvasPoint = CGPoint(
-            x: contentPoint.x - Self.gutterWidth - dayCanvas.frame.minX,
-            y: contentPoint.y
-        )
+    private func hitEvent(atClipPoint point: CGPoint, geometry: DayTimelineGeometry) -> DayTimelineEventBlockView? {
+        let canvasPoint = geometry.canvasPoint(fromClipPoint: point)
         return dayCanvas.subviews.reversed().compactMap { $0 as? DayTimelineEventBlockView }.first { $0.frame.contains(canvasPoint) }
     }
 
@@ -742,15 +799,15 @@ final class DayTimelineUIKitView: UIView, UIGestureRecognizerDelegate, UIScrollV
             // dragged (the drag owns horizontal motion as a day-peek reveal).
             guard activeDragView == nil else { return false }
             let velocity = (gestureRecognizer as? UIPanGestureRecognizer)?.velocity(in: scrollView) ?? .zero
-            let point = contentPoint(from: gestureRecognizer.location(in: scrollView))
-            return point.x >= Self.gutterWidth
+            let point = gestureRecognizer.location(in: dayClip)
+            return dayClip.bounds.contains(point)
                 && abs(velocity.x) > abs(velocity.y) * 1.15
-                && hitEvent(at: point) == nil
+                && hitEvent(atClipPoint: point, geometry: currentGeometry()) == nil
         }
         if gestureRecognizer is UILongPressGestureRecognizer,
            gestureRecognizer.view === scrollView {
-            let point = contentPoint(from: gestureRecognizer.location(in: scrollView))
-            return point.x >= Self.gutterWidth && hitEvent(at: point) == nil
+            let point = gestureRecognizer.location(in: dayClip)
+            return dayClip.bounds.contains(point) && hitEvent(atClipPoint: point, geometry: currentGeometry()) == nil
         }
         return true
     }
@@ -776,7 +833,16 @@ final class DayTimelineUIKitView: UIView, UIGestureRecognizerDelegate, UIScrollV
 
     private func occurrences(forDayIndex index: Int) -> [MobileOccurrence] {
         let key = AppModel.dateOnly(dayDate(index))
-        return calendarSnapshot?.days.first { $0.date == key }?.occurrences ?? []
+        guard let calendarSnapshot else { return [] }
+        var seen = Set<String>()
+        var out: [MobileOccurrence] = []
+        for occurrence in calendarSnapshot.days.flatMap(\.occurrences) {
+            guard occurrence.localAnchorDateKey == key, seen.insert(occurrence.id).inserted else {
+                continue
+            }
+            out.append(occurrence)
+        }
+        return out
     }
 
     private func minuteOfDay(_ raw: String?) -> CGFloat? {

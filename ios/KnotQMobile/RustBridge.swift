@@ -79,6 +79,10 @@ final class RustBridge: @unchecked Sendable {
         try core.addItem(schemeId: schemeID, text: text, marker: marker.rawValue, position: nil, indent: indent)
     }
 
+    func addTodayDailyItem(today: String, text: String, marker: Marker, indent: Int32) throws {
+        try core.addTodayDailyItem(today: today, text: text, marker: marker.rawValue, indent: indent)
+    }
+
     func updateItemText(schemeID: String, itemID: String, text: String) throws {
         try core.updateItemText(schemeId: schemeID, itemId: itemID, text: text)
     }

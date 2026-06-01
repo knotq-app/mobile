@@ -5,7 +5,7 @@ use std::str::FromStr;
 use std::sync::{Mutex, MutexGuard};
 
 use anyhow::{anyhow, Context, Result};
-use chrono::{DateTime, Duration, NaiveDate, TimeZone, Utc};
+use chrono::{DateTime, Duration, Local, NaiveDate, TimeZone, Utc};
 use knotq_commands::{
     event_popup_commit_commands, event_popup_delete_command, recurrence_can_delete_future, Command,
     DateEditScope, DateKind, EventDeleteScope, EventPopupDraft, WorkspaceCommandExt,
@@ -317,6 +317,33 @@ impl MobileCore {
             .map_err(Into::into)
     }
 
+    pub fn add_today_daily_item(
+        &self,
+        today: String,
+        text: String,
+        marker: Option<String>,
+        indent: Option<i32>,
+    ) -> Result<(), MobileError> {
+        let today = parse_date_or_today(Some(&today))?;
+        let mut inner = self.lock()?;
+        let scheme_id = inner.ensure_daily_queue(today)?;
+        let mut item = Item::new(text);
+        item.marker = parse_marker(marker.as_deref())?;
+        item.indent = as_u8(indent.unwrap_or(0), "indent")?;
+        let position = inner
+            .workspace
+            .scheme(scheme_id)
+            .map(|scheme| scheme.items.len())
+            .unwrap_or(0);
+        inner
+            .apply(Command::InsertItem {
+                scheme: scheme_id,
+                position,
+                item,
+            })
+            .map_err(Into::into)
+    }
+
     pub fn add_calendar_item(
         &self,
         scheme_id: Option<String>,
@@ -326,11 +353,11 @@ impl MobileCore {
         start: Option<String>,
         end: Option<String>,
     ) -> Result<(), MobileError> {
-        let date = parse_date_or_today(date.as_deref())?;
+        let _date = parse_date_or_today(date.as_deref())?;
         let mut inner = self.lock()?;
         let scheme_id = match scheme_id {
             Some(id) => parse_id(&id)?,
-            None => inner.ensure_daily_queue(date)?,
+            None => inner.ensure_daily_queue(default_today())?,
         };
         let mut item = Item::new(text);
         item.marker = ItemMarker::Checkbox;
@@ -1252,7 +1279,6 @@ impl MobileCoreInner {
     }
 
     fn snapshot(&mut self, today: NaiveDate, week_offset: i32) -> Result<MobileSnapshot> {
-        self.ensure_daily_queue(today)?;
         let root = self.folder_node(self.workspace.root)?;
         let mut schemes: Vec<MobileScheme> = self
             .workspace
@@ -1289,8 +1315,8 @@ impl MobileCoreInner {
         let query_start = week_start - Duration::days(1);
         let indexed = IndexedWorkspace::build(self.workspace.clone());
         let range = knotq_date_util::DateRange {
-            start: midnight_utc(query_start)?,
-            end: midnight_utc(week_end)?,
+            start: local_midnight_utc(query_start)?,
+            end: local_midnight_utc(week_end)?,
         };
         let occurrences = indexed
             .calendar_query()
@@ -1365,8 +1391,8 @@ impl MobileCoreInner {
 
         let indexed = IndexedWorkspace::build(self.workspace.clone());
         let range = knotq_date_util::DateRange {
-            start: midnight_utc(grid_start)?,
-            end: midnight_utc(grid_end)?,
+            start: local_midnight_utc(grid_start)?,
+            end: local_midnight_utc(grid_end)?,
         };
         let occurrences = indexed
             .calendar_query()
@@ -1638,23 +1664,44 @@ impl MobileCoreInner {
 
         for draft in drafts {
             let existing_id = draft.id.as_deref().map(parse_id::<ItemId>).transpose()?;
-            let mut item = existing_id
-                .and_then(|id| {
-                    if used_ids.contains(&id) {
-                        return None;
-                    }
-                    existing.iter().find(|item| item.id == id).cloned()
-                })
-                .unwrap_or_else(|| Item::new(""));
+            let existing_item = existing_id.and_then(|id| {
+                if used_ids.contains(&id) {
+                    return None;
+                }
+                existing.iter().find(|item| item.id == id).cloned()
+            });
+            let has_rich_metadata = draft.start.is_some()
+                || draft.end.is_some()
+                || draft.notification_offset_secs.is_some()
+                || draft
+                    .repeat_rule
+                    .as_deref()
+                    .is_some_and(|rule| !rule.trim().is_empty())
+                || !draft.media.is_empty();
+            let should_apply_rich_metadata = existing_item.is_none() || has_rich_metadata;
+            let mut item = existing_item.unwrap_or_else(|| Item::new(""));
 
             used_ids.push(item.id);
             item.text = draft.text;
             item.marker = parse_marker(Some(&draft.marker))?;
             item.indent = as_u8(draft.indent, "indent")?.min(8);
+            if should_apply_rich_metadata {
+                item.start = parse_datetime_opt(draft.start.as_deref())?;
+                item.end = parse_datetime_opt(draft.end.as_deref())?;
+                item.repeats = recurrence_from_rrule(draft.repeat_rule);
+                item.media = draft
+                    .media
+                    .iter()
+                    .filter_map(|media| mobile_media_to_item_media(media, &self.image_assets_dir))
+                    .collect();
+            }
             item.enforce_marker_constraints();
             if item.marker == ItemMarker::Checkbox {
-                item.state_for_occurrence_mut(OccurrenceId::Single).progress =
-                    if draft.done { -1 } else { 0 };
+                let state = item.state_for_occurrence_mut(OccurrenceId::Single);
+                state.progress = if draft.done { -1 } else { 0 };
+                if should_apply_rich_metadata {
+                    state.notification_offset_secs = draft.notification_offset_secs.map(i64::from);
+                }
                 item.normalize_state();
             }
             next_items.push(item);
@@ -1668,6 +1715,41 @@ impl MobileCoreInner {
         self.workspace.normalize_item_markers();
         self.record_crdt_changes(WorkspaceCrdtChangeSet::default().touch_scheme(scheme_id))?;
         self.save_workspace()
+    }
+}
+
+fn mobile_media_to_item_media(
+    media: &MobileItemMedia,
+    image_assets_dir: &Path,
+) -> Option<ItemMedia> {
+    if media.kind != "image" {
+        return None;
+    }
+    let path = media.path.as_deref()?;
+    let path = Path::new(path);
+    let asset = path.file_stem()?.to_str()?.parse().ok()?;
+    let format = parse_image_format(&media.format)?;
+    if !path.starts_with(image_assets_dir) {
+        return None;
+    }
+    Some(ItemMedia::Image {
+        asset,
+        format,
+        width: media.width.and_then(|value| u32::try_from(value).ok()),
+        height: media.height.and_then(|value| u32::try_from(value).ok()),
+    })
+}
+
+fn parse_image_format(raw: &str) -> Option<ImageAssetFormat> {
+    match raw {
+        "png" => Some(ImageAssetFormat::Png),
+        "jpeg" | "jpg" => Some(ImageAssetFormat::Jpeg),
+        "webp" => Some(ImageAssetFormat::Webp),
+        "gif" => Some(ImageAssetFormat::Gif),
+        "svg" => Some(ImageAssetFormat::Svg),
+        "bmp" => Some(ImageAssetFormat::Bmp),
+        "tiff" => Some(ImageAssetFormat::Tiff),
+        _ => None,
     }
 }
 
@@ -2122,6 +2204,11 @@ pub struct MobileItemEdit {
     pub marker: String,
     pub indent: i32,
     pub done: bool,
+    pub start: Option<String>,
+    pub end: Option<String>,
+    pub notification_offset_secs: Option<i32>,
+    pub repeat_rule: Option<String>,
+    pub media: Vec<MobileItemMedia>,
 }
 
 impl MobileItem {
@@ -2236,7 +2323,7 @@ impl MobileOccurrence {
             .occurrence
             .start
             .or(context.occurrence.end)
-            .map(|dt| dt.date_naive().to_string());
+            .map(|dt| dt.with_timezone(&Local).date_naive().to_string());
         let occurrence_json = serde_json::to_string(&context.occurrence.id).unwrap_or_default();
         let occurrence_index =
             i32::try_from(context.occurrence.occurrence_index).unwrap_or(i32::MAX);
@@ -2439,14 +2526,20 @@ fn parse_datetime(raw: &str) -> Result<DateTime<Utc>> {
 }
 
 fn default_today() -> NaiveDate {
-    Utc::now().date_naive()
+    Local::now().date_naive()
 }
 
-fn midnight_utc(date: NaiveDate) -> Result<DateTime<Utc>> {
+fn local_midnight_utc(date: NaiveDate) -> Result<DateTime<Utc>> {
     let naive = date
         .and_hms_opt(0, 0, 0)
         .ok_or_else(|| anyhow!("invalid midnight for {date}"))?;
-    Ok(Utc.from_utc_datetime(&naive))
+    let local = Local
+        .from_local_datetime(&naive)
+        .single()
+        .or_else(|| Local.from_local_datetime(&naive).earliest())
+        .or_else(|| Local.from_local_datetime(&naive).latest())
+        .ok_or_else(|| anyhow!("invalid local midnight for {date}"))?;
+    Ok(local.with_timezone(&Utc))
 }
 
 fn mobile_upcoming(
@@ -2637,6 +2730,141 @@ mod tests {
     }
 
     #[test]
+    fn daily_add_always_targets_today_not_selected_snapshot_date() {
+        let dir = std::env::temp_dir().join(format!("knotq-mobile-test-{}", uuid::Uuid::new_v4()));
+        let core = MobileCore::new(dir.display().to_string()).expect("open mobile core");
+        let future_date = (default_today() + Duration::days(30))
+            .format("%Y-%m-%d")
+            .to_string();
+
+        let future = core
+            .snapshot(Some(future_date.clone()), 0)
+            .expect("future snapshot");
+        assert!(!future.daily.iter().any(|entry| entry.date == future_date));
+
+        core.add_today_daily_item(
+            "2026-05-26".to_string(),
+            "Write daily note".to_string(),
+            Some("checkbox".to_string()),
+            Some(0),
+        )
+        .expect("add today daily");
+
+        let today = core
+            .snapshot(Some("2026-05-26".to_string()), 0)
+            .expect("today snapshot");
+        let daily = today
+            .daily
+            .iter()
+            .find(|entry| entry.date == "2026-05-26")
+            .expect("today daily exists");
+        assert_eq!(daily.scheme.items[0].text, "Write daily note");
+
+        let future = core
+            .snapshot(Some(future_date.clone()), 0)
+            .expect("future snapshot after add");
+        assert!(!future.daily.iter().any(|entry| entry.date == future_date));
+
+        core.add_calendar_item(
+            None,
+            Some(future_date.clone()),
+            "Future scheduled task".to_string(),
+            "reminder".to_string(),
+            Some(format!("{future_date}T09:00:00Z")),
+            None,
+        )
+        .expect("add future scheduled daily task");
+
+        let future = core
+            .snapshot(Some(future_date.clone()), 0)
+            .expect("future snapshot after calendar add");
+        assert!(!future.daily.iter().any(|entry| entry.date == future_date));
+
+        let actual_today = default_today().format("%Y-%m-%d").to_string();
+        let today = core
+            .snapshot(Some(actual_today.clone()), 0)
+            .expect("actual today snapshot");
+        let today_daily = today
+            .daily
+            .iter()
+            .find(|entry| entry.date == actual_today)
+            .expect("actual today daily exists");
+        assert!(today_daily
+            .scheme
+            .items
+            .iter()
+            .any(|item| item.text == "Future scheduled task"));
+
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn calendar_snapshot_groups_occurrences_by_local_day() {
+        let dir = std::env::temp_dir().join(format!("knotq-mobile-test-{}", uuid::Uuid::new_v4()));
+        let core = MobileCore::new(dir.display().to_string()).expect("open mobile core");
+        let local_start = Local
+            .with_ymd_and_hms(2026, 6, 1, 23, 30, 0)
+            .single()
+            .or_else(|| Local.with_ymd_and_hms(2026, 6, 1, 23, 30, 0).earliest())
+            .or_else(|| Local.with_ymd_and_hms(2026, 6, 1, 23, 30, 0).latest())
+            .expect("local start");
+        let local_end = local_start + Duration::minutes(30);
+        let local_date = local_start.date_naive().to_string();
+        let utc_date = local_start.with_timezone(&Utc).date_naive().to_string();
+
+        core.create_scheme(None, "Calendar".to_string(), Some(1), None)
+            .expect("create scheme");
+        let scheme_id = core
+            .snapshot(Some(local_date.clone()), 0)
+            .expect("snapshot")
+            .schemes
+            .into_iter()
+            .find(|scheme| scheme.display_name == "Calendar")
+            .expect("scheme")
+            .id;
+
+        core.add_calendar_item(
+            Some(scheme_id),
+            Some(local_date.clone()),
+            "Late local event".to_string(),
+            "event".to_string(),
+            Some(local_start.with_timezone(&Utc).to_rfc3339()),
+            Some(local_end.with_timezone(&Utc).to_rfc3339()),
+        )
+        .expect("add event");
+
+        let snapshot = core
+            .snapshot(Some(local_date.clone()), 0)
+            .expect("snapshot after event");
+        let local_day = snapshot
+            .calendar
+            .days
+            .iter()
+            .find(|day| day.date == local_date)
+            .expect("local day");
+        let occurrence = local_day
+            .occurrences
+            .iter()
+            .find(|occurrence| occurrence.title == "Late local event")
+            .expect("event on local day");
+        assert_eq!(occurrence.local_date.as_deref(), Some(local_date.as_str()));
+
+        if utc_date != local_date {
+            let utc_day = snapshot
+                .calendar
+                .days
+                .iter()
+                .find(|day| day.date == utc_date);
+            assert!(!utc_day.is_some_and(|day| day
+                .occurrences
+                .iter()
+                .any(|occurrence| occurrence.title == "Late local event")));
+        }
+
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
     fn replace_scheme_items_preserves_existing_metadata() {
         let dir = std::env::temp_dir().join(format!("knotq-mobile-test-{}", uuid::Uuid::new_v4()));
         let core = MobileCore::new(dir.display().to_string()).expect("open mobile core");
@@ -2687,6 +2915,11 @@ mod tests {
                     marker: "checkbox".to_string(),
                     indent: 1,
                     done: true,
+                    start: None,
+                    end: None,
+                    notification_offset_secs: None,
+                    repeat_rule: None,
+                    media: Vec::new(),
                 },
                 MobileItemEdit {
                     id: None,
@@ -2694,6 +2927,11 @@ mod tests {
                     marker: "bullet".to_string(),
                     indent: 2,
                     done: false,
+                    start: None,
+                    end: None,
+                    notification_offset_secs: None,
+                    repeat_rule: None,
+                    media: Vec::new(),
                 },
             ],
         )
@@ -2784,6 +3022,11 @@ mod tests {
                 marker: "blank".to_string(),
                 indent: 0,
                 done: false,
+                start: None,
+                end: None,
+                notification_offset_secs: None,
+                repeat_rule: None,
+                media: Vec::new(),
             }],
         )
         .expect("replace items");
@@ -2804,6 +3047,64 @@ mod tests {
         assert_eq!(item.start, None);
         assert_eq!(item.end, None);
         assert_eq!(item.repeat_rule, None);
+
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn replace_scheme_items_applies_rich_metadata_for_new_items() {
+        let dir = std::env::temp_dir().join(format!("knotq-mobile-test-{}", uuid::Uuid::new_v4()));
+        let core = MobileCore::new(dir.display().to_string()).expect("open mobile core");
+
+        core.create_scheme(None, "Editor".to_string(), Some(2), None)
+            .expect("create scheme");
+        let scheme_id = core
+            .snapshot(Some("2026-05-26".to_string()), 0)
+            .expect("snapshot")
+            .schemes
+            .into_iter()
+            .find(|scheme| scheme.display_name == "Editor")
+            .expect("created scheme")
+            .id;
+
+        core.replace_scheme_items(
+            scheme_id.clone(),
+            vec![MobileItemEdit {
+                id: None,
+                text: "Copied event".to_string(),
+                marker: "checkbox".to_string(),
+                indent: 2,
+                done: true,
+                start: Some("2026-05-27T12:00:00Z".to_string()),
+                end: Some("2026-05-27T13:00:00Z".to_string()),
+                notification_offset_secs: Some(600),
+                repeat_rule: Some("FREQ=WEEKLY;INTERVAL=1;BYDAY=MO,WE".to_string()),
+                media: Vec::new(),
+            }],
+        )
+        .expect("replace items");
+
+        let item = core
+            .snapshot(Some("2026-05-26".to_string()), 0)
+            .expect("snapshot")
+            .schemes
+            .into_iter()
+            .find(|scheme| scheme.id == scheme_id)
+            .expect("scheme")
+            .items
+            .into_iter()
+            .find(|item| item.text == "Copied event")
+            .expect("item");
+        assert_eq!(item.marker, "checkbox");
+        assert_eq!(item.indent, 2);
+        assert!(item.done);
+        assert_eq!(item.start.as_deref(), Some("2026-05-27T12:00:00Z"));
+        assert_eq!(item.end.as_deref(), Some("2026-05-27T13:00:00Z"));
+        assert_eq!(item.notification_offset_secs, Some(600));
+        assert_eq!(
+            item.repeat_rule.as_deref(),
+            Some("FREQ=WEEKLY;INTERVAL=1;BYDAY=MO,WE")
+        );
 
         let _ = std::fs::remove_dir_all(dir);
     }

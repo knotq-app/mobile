@@ -271,6 +271,10 @@ enum MobileDate {
         return shortDayFormatter().string(from: date)
     }
 
+    static func dateOnly(_ date: Date) -> String {
+        dateOnlyFormatter().string(from: date)
+    }
+
     static func formatFullDay(_ raw: String) -> String {
         guard let date = dateOnlyFormatter().date(from: raw) else { return raw }
         return fullDayFormatter().string(from: date)

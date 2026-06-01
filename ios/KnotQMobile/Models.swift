@@ -21,6 +21,13 @@ extension MobileCalendar {
 
 extension MobileOccurrence: Identifiable {
     public var id: String { "\(schemeId)-\(itemId)-\(occurrenceJson)-\(start ?? end ?? kind)" }
+
+    var localAnchorDateKey: String? {
+        guard let date = MobileDate.parseDateTime(start ?? end) else {
+            return localDate
+        }
+        return MobileDate.dateOnly(date)
+    }
 }
 
 extension MobileNotificationRequest: Identifiable {}
@@ -246,7 +253,7 @@ let occurrenceNotificationOptions: [NotificationLeadTimeOption] = [
 func defaultNotificationOffset(kind: CalendarKind, settings: MobileSettings?) -> Int32 {
     switch kind {
     case .event:
-        return settings?.eventNotificationOffsetSecs ?? 0
+        return settings?.eventNotificationOffsetSecs ?? 10 * 60
     case .assignment:
         return settings?.assignmentNotificationOffsetSecs ?? 2 * 60 * 60
     case .reminder, .task:

@@ -187,8 +187,8 @@ struct HomeNavigationPane: View {
                         entries: model.snapshot?.daily ?? [],
                         selectedDate: model.selectedDate,
                         theme: theme,
-                        onPrevious: { model.ensureDailyQueue(date: Calendar.current.date(byAdding: .day, value: -1, to: model.selectedDate) ?? model.selectedDate) },
-                        onNext: { model.ensureDailyQueue(date: Calendar.current.date(byAdding: .day, value: 1, to: model.selectedDate) ?? model.selectedDate) },
+                        onPrevious: { model.selectDate(Calendar.current.date(byAdding: .day, value: -1, to: model.selectedDate) ?? model.selectedDate) },
+                        onNext: { model.selectDate(Calendar.current.date(byAdding: .day, value: 1, to: model.selectedDate) ?? model.selectedDate) },
                         onDate: onSelectDailyDate,
                         onBack: {},
                         onAdd: {

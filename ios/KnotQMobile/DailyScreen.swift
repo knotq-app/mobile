@@ -14,23 +14,21 @@ struct DailyScreen: View {
             entries: model.snapshot?.daily ?? [],
             selectedDate: model.selectedDate,
             theme: theme,
-            onPrevious: { model.ensureDailyQueue(date: Calendar.current.date(byAdding: .day, value: -1, to: model.selectedDate) ?? model.selectedDate) },
-            onNext: { model.ensureDailyQueue(date: Calendar.current.date(byAdding: .day, value: 1, to: model.selectedDate) ?? model.selectedDate) },
+            onPrevious: { model.selectDate(Calendar.current.date(byAdding: .day, value: -1, to: model.selectedDate) ?? model.selectedDate) },
+            onNext: { model.selectDate(Calendar.current.date(byAdding: .day, value: 1, to: model.selectedDate) ?? model.selectedDate) },
             onDate: { date in
                 if AppModel.dateOnly(date) != AppModel.dateOnly(model.selectedDate) {
-                    model.ensureDailyQueue(date: date)
+                    model.selectDate(date)
                 }
             },
             onBack: { dismiss() },
             onAdd: {
-                if let scheme = model.snapshot?.daily.first(where: { $0.date == AppModel.dateOnly(model.selectedDate) })?.scheme {
-                    model.addItem(schemeID: scheme.id, text: "", marker: .checkbox)
-                }
+                model.addTodayDailyItem(text: "", marker: .checkbox)
             }
         )
         .navigationTitle("")
         .onAppear {
-            model.ensureDailyQueue(date: model.selectedDate)
+            model.ensureTodayDailyQueue()
         }
     }
 }

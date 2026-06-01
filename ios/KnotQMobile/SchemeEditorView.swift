@@ -7,6 +7,75 @@ extension NSAttributedString.Key {
     static let knotqLine = NSAttributedString.Key("knotqLine")
 }
 
+let editorRichClipboardType = "com.enigmadux.knotq.scheme-items.v1"
+let editorRichClipboardFormat = "knotq.mobile.scheme_items.v1"
+
+struct EditorRichClipboardPayload: Codable {
+    var format = editorRichClipboardFormat
+    var items: [EditorRichClipboardItem]
+}
+
+struct EditorRichClipboardItem: Codable {
+    var text: String
+    var marker: String
+    var indent: Int32
+    var done: Bool
+    var start: String?
+    var end: String?
+    var notificationOffsetSecs: Int32?
+    var repeatRule: String?
+    var media: [EditorRichClipboardMedia]
+
+    init(text: String, meta: LineMeta) {
+        self.text = text
+        marker = meta.marker.rawValue
+        indent = Int32(meta.indent)
+        done = meta.done
+        start = meta.start
+        end = meta.end
+        notificationOffsetSecs = meta.notificationOffsetSecs
+        repeatRule = meta.repeatRule
+        media = meta.media.map(EditorRichClipboardMedia.init(media:))
+    }
+
+    func lineMeta(timeFormat: String) -> LineMeta {
+        let marker = Marker(rawValue: marker) ?? .blank
+        return LineMeta(
+            marker: marker,
+            indent: Int(indent),
+            done: done,
+            itemID: nil,
+            annotation: LineMeta.annotationText(start: start, end: end, timeFormat: timeFormat),
+            start: marker == .checkbox ? start : nil,
+            end: marker == .checkbox ? end : nil,
+            notificationOffsetSecs: marker == .checkbox ? notificationOffsetSecs : nil,
+            repeatRule: marker == .checkbox ? repeatRule : nil,
+            media: media.map(\.mobileMedia)
+        )
+    }
+
+}
+
+struct EditorRichClipboardMedia: Codable {
+    var kind: String
+    var path: String?
+    var format: String
+    var width: Int32?
+    var height: Int32?
+
+    init(media: MobileItemMedia) {
+        kind = media.kind
+        path = media.path
+        format = media.format
+        width = media.width
+        height = media.height
+    }
+
+    var mobileMedia: MobileItemMedia {
+        MobileItemMedia(kind: kind, path: path, format: format, width: width, height: height)
+    }
+}
+
 // MARK: - Metrics
 
 enum DesktopEditorMetrics {
@@ -14,6 +83,10 @@ enum DesktopEditorMetrics {
     static let markerSlot: CGFloat = 21
     static let indentWidth: CGFloat = 15
     static let checkboxSize: CGFloat = 14
+    /// Nudges line markers down so they sit on the text's optical center the way
+    /// they do on desktop; centering on the bare line fragment leaves them a
+    /// hair high.
+    static let markerVerticalNudge: CGFloat = 1
     static let textFontSize: CGFloat = 16
     static let textLineHeight: CGFloat = 22
     static let headingFontSize: CGFloat = 24
@@ -41,14 +114,33 @@ enum DesktopEditorMetrics {
     let done: Bool
     let itemID: String?
     let annotation: String?
+    let start: String?
+    let end: String?
+    let notificationOffsetSecs: Int32?
+    let repeatRule: String?
     let media: [MobileItemMedia]
 
-    init(marker: Marker = .blank, indent: Int = 0, done: Bool = false, itemID: String? = nil, annotation: String? = nil, media: [MobileItemMedia] = []) {
+    init(
+        marker: Marker = .blank,
+        indent: Int = 0,
+        done: Bool = false,
+        itemID: String? = nil,
+        annotation: String? = nil,
+        start: String? = nil,
+        end: String? = nil,
+        notificationOffsetSecs: Int32? = nil,
+        repeatRule: String? = nil,
+        media: [MobileItemMedia] = []
+    ) {
         self.marker = marker
         self.indent = indent
         self.done = done
         self.itemID = itemID
         self.annotation = annotation
+        self.start = start
+        self.end = end
+        self.notificationOffsetSecs = notificationOffsetSecs
+        self.repeatRule = repeatRule
         self.media = media
         super.init()
     }
@@ -60,24 +152,52 @@ enum DesktopEditorMetrics {
             done: item.done,
             itemID: item.id.isEmpty ? nil : item.id,
             annotation: LineMeta.annotationText(start: item.start, end: item.end, timeFormat: timeFormat),
+            start: item.start,
+            end: item.end,
+            notificationOffsetSecs: item.notificationOffsetSecs,
+            repeatRule: item.repeatRule,
             media: item.media
         )
     }
 
-    func with(marker: Marker? = nil, indent: Int? = nil, done: Bool? = nil, itemID: String?? = nil, annotation: String?? = nil, media: [MobileItemMedia]? = nil) -> LineMeta {
+    func with(
+        marker: Marker? = nil,
+        indent: Int? = nil,
+        done: Bool? = nil,
+        itemID: String?? = nil,
+        annotation: String?? = nil,
+        start: String?? = nil,
+        end: String?? = nil,
+        notificationOffsetSecs: Int32?? = nil,
+        repeatRule: String?? = nil,
+        media: [MobileItemMedia]? = nil
+    ) -> LineMeta {
         LineMeta(
             marker: marker ?? self.marker,
             indent: indent ?? self.indent,
             done: done ?? self.done,
             itemID: itemID ?? self.itemID,
             annotation: annotation ?? self.annotation,
+            start: start ?? self.start,
+            end: end ?? self.end,
+            notificationOffsetSecs: notificationOffsetSecs ?? self.notificationOffsetSecs,
+            repeatRule: repeatRule ?? self.repeatRule,
             media: media ?? self.media
         )
     }
 
     override func isEqual(_ other: Any?) -> Bool {
         guard let o = other as? LineMeta else { return false }
-        return marker == o.marker && indent == o.indent && done == o.done && itemID == o.itemID && annotation == o.annotation && media == o.media
+        return marker == o.marker
+            && indent == o.indent
+            && done == o.done
+            && itemID == o.itemID
+            && annotation == o.annotation
+            && start == o.start
+            && end == o.end
+            && notificationOffsetSecs == o.notificationOffsetSecs
+            && repeatRule == o.repeatRule
+            && media == o.media
     }
 
     override var hash: Int {
@@ -87,6 +207,10 @@ enum DesktopEditorMetrics {
         h.combine(done)
         h.combine(itemID)
         h.combine(annotation)
+        h.combine(start)
+        h.combine(end)
+        h.combine(notificationOffsetSecs)
+        h.combine(repeatRule)
         h.combine(media)
         return h.finalize()
     }
@@ -159,8 +283,14 @@ func buildAttributedString(items: [MobileItem], theme: KnotQTheme, timeFormat: S
     for item in items {
         let meta = LineMeta(item: item, timeFormat: timeFormat)
         let attrs = EditorAttributes.bodyAttributes(meta: meta, theme: theme)
+        let bodyLocation = result.length
         result.append(NSAttributedString(string: item.text, attributes: attrs))
+        let bodyRange = NSRange(location: bodyLocation, length: (item.text as NSString).length)
         result.append(NSAttributedString(string: "\n", attributes: attrs))
+        // Heading / *bold* / _italic_ styling lives here too — not just in
+        // setLineMeta — so markdown renders correctly on the very first load
+        // instead of staying plain until the first edit.
+        applyInlineMarkdownStyling(body: item.text, bodyRange: bodyRange, in: result)
     }
     return result
 }
@@ -253,19 +383,27 @@ func setLineMeta(
         location: paragraphRange.location,
         length: (body as NSString).length
     )
+    applyInlineMarkdownStyling(body: body, bodyRange: bodyRange, in: storage)
+}
+
+/// Applies heading enlargement or `*…*`/`_…_` emphasis over a paragraph body.
+/// Shared by `setLineMeta` and `buildAttributedString` so styling is identical
+/// whether a line is edited or freshly loaded.
+func applyInlineMarkdownStyling(body: String, bodyRange: NSRange, in storage: NSMutableAttributedString) {
+    guard bodyRange.length > 0 else { return }
     if isMarkdownHeading(body) {
         storage.addAttribute(
             .font,
             value: UIFont.systemFont(ofSize: DesktopEditorMetrics.headingFontSize, weight: .bold),
             range: bodyRange
         )
-    } else if bodyRange.length > 0 {
+    } else {
         applyEmphasis(body: body, lineLocation: bodyRange.location, storage: storage)
     }
 }
 
 /// Standard emphasis pass: `*…*` → bold, `_…_` → italic.
-func applyEmphasis(body: String, lineLocation: Int, storage: NSTextStorage) {
+func applyEmphasis(body: String, lineLocation: Int, storage: NSMutableAttributedString) {
     let ns = body as NSString
     var i = 0
     while i < ns.length {
@@ -307,7 +445,12 @@ func extractEdits(from storage: NSAttributedString) -> [MobileItemEdit] {
             text: body,
             marker: meta.marker.rawValue,
             indent: Int32(meta.indent),
-            done: meta.done
+            done: meta.done,
+            start: meta.start,
+            end: meta.end,
+            notificationOffsetSecs: meta.notificationOffsetSecs,
+            repeatRule: meta.repeatRule,
+            media: meta.media
         )
     }
     // A single blank-marker, empty-text line means "no items" (matches the

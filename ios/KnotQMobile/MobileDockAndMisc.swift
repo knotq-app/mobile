@@ -5,10 +5,10 @@ struct SettingsThemeOption: View {
     let systemImage: String
 
     var body: some View {
-        HStack(spacing: 9) {
+        HStack(spacing: 0) {
             Image(systemName: systemImage)
                 .frame(width: 18, alignment: .center)
-            Text(title)
+            Text("  \(title)")
         }
     }
 }
@@ -40,7 +40,7 @@ struct NotificationDefaultsSettingsSection: View {
 
     private var eventOffsetBinding: Binding<Int32> {
         Binding(
-            get: { model.snapshot?.settings.eventNotificationOffsetSecs ?? 0 },
+            get: { model.snapshot?.settings.eventNotificationOffsetSecs ?? 10 * 60 },
             set: { offset in
                 model.setNotificationDefaults(
                     eventOffsetSecs: offset,
@@ -55,7 +55,7 @@ struct NotificationDefaultsSettingsSection: View {
             get: { model.snapshot?.settings.assignmentNotificationOffsetSecs ?? 2 * 60 * 60 },
             set: { offset in
                 model.setNotificationDefaults(
-                    eventOffsetSecs: model.snapshot?.settings.eventNotificationOffsetSecs ?? 0,
+                    eventOffsetSecs: model.snapshot?.settings.eventNotificationOffsetSecs ?? 10 * 60,
                     assignmentOffsetSecs: offset
                 )
             }
@@ -298,7 +298,7 @@ struct MonthGridView: View {
             grid
             Spacer(minLength: 0)
         }
-        .padding(.top, 10)
+        .padding(.top, 18)
         .background(theme.bgApp.ignoresSafeArea())
         .onAppear {
             displayMonth = startOfMonth(initialDate)
@@ -312,14 +312,9 @@ struct MonthGridView: View {
                 Image(systemName: "chevron.left").font(.system(size: 16, weight: .semibold))
             }
             Spacer()
-            VStack(spacing: 1) {
-                Text(monthTitle)
-                    .font(.system(size: 19, weight: .bold))
-                    .foregroundStyle(theme.textPrimary)
-                Button("Today") { goToToday() }
-                    .font(.caption)
-                    .foregroundStyle(theme.accent)
-            }
+            Text(monthTitle)
+                .font(.system(size: 19, weight: .bold))
+                .foregroundStyle(theme.textPrimary)
             Spacer()
             Button { shiftMonth(1) } label: {
                 Image(systemName: "chevron.right").font(.system(size: 16, weight: .semibold))
@@ -437,11 +432,6 @@ struct MonthGridView: View {
             displayMonth = startOfMonth(next)
             loadMonth()
         }
-    }
-
-    private func goToToday() {
-        displayMonth = startOfMonth(Date())
-        loadMonth()
     }
 
     private func loadMonth() {

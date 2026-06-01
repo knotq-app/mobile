@@ -35,8 +35,16 @@ enum MobilePane: String, CaseIterable, Identifiable {
     }
 }
 
-private struct SheetID: Identifiable {
-    let id: String
+private enum AddItemTarget: Identifiable {
+    case scheme(String)
+    case todayDaily
+
+    var id: String {
+        switch self {
+        case .scheme(let id): "scheme-\(id)"
+        case .todayDaily: "today-daily"
+        }
+    }
 }
 
 private struct PendingOccurrenceMove: Identifiable {
@@ -57,7 +65,7 @@ struct ContentView: View {
 
     @State private var pane: MobilePane = .home
     @State private var selectedSchemeID: String?
-    @State private var addItemTarget: SheetID?
+    @State private var addItemTarget: AddItemTarget?
     @State private var showingCalendarAdd = false
     @State private var showingMonthView = false
     @State private var showingNewFolder = false
@@ -66,6 +74,7 @@ struct ContentView: View {
     @State private var keyboardVisible = false
     @State private var titleFocusSchemeID: String?
     @State private var homeNavigationDepth = 0
+    @State private var timelineResetToken = 0
 
     private var theme: KnotQTheme {
         KnotQTheme.resolve(mode: model.snapshot?.settings.themeMode, systemScheme: systemScheme)
@@ -102,10 +111,10 @@ struct ContentView: View {
                         onSearch: { pane = .search },
                         onAddCalendar: { showingCalendarAdd = true },
                         onAddItem: {
-                            if pane == .daily, let daily = currentDailyScheme {
-                                addItemTarget = SheetID(id: daily.id)
+                            if pane == .daily {
+                                addItemTarget = .todayDaily
                             } else if let selectedSchemeID {
-                                addItemTarget = SheetID(id: selectedSchemeID)
+                                addItemTarget = .scheme(selectedSchemeID)
                             }
                         },
                         onNewScheme: quickCreateScheme,
@@ -208,8 +217,15 @@ struct ContentView: View {
             withAnimation(.easeOut(duration: 0.24)) { keyboardVisible = false }
         }
         .sheet(item: $addItemTarget) { target in
-            AddItemSheet(schemeID: target.id)
-                .presentationDetents([.fraction(0.50)])
+            Group {
+                switch target {
+                case .scheme(let id):
+                    AddItemSheet(schemeID: id)
+                case .todayDaily:
+                    AddItemSheet(todayDaily: true)
+                }
+            }
+            .presentationDetents([.fraction(0.50)])
         }
         .sheet(item: $eventEditor) { target in
             EventEditorSheet(theme: theme, target: target)
@@ -241,7 +257,7 @@ struct ContentView: View {
         .confirmationDialog("Recurring Task", isPresented: Binding(
             get: { pendingOccurrenceMove != nil },
             set: { showing in
-                if !showing { pendingOccurrenceMove = nil }
+                if !showing { cancelPendingOccurrenceMove() }
             }
         ), titleVisibility: .visible) {
             Button(EventOccurrenceScope.thisEvent.label) {
@@ -253,11 +269,11 @@ struct ContentView: View {
             Button(EventOccurrenceScope.allEvents.label) {
                 applyPendingOccurrenceMove(scope: .allEvents)
             }
-            Button("Cancel", role: .cancel) { pendingOccurrenceMove = nil }
+            Button("Cancel", role: .cancel) { cancelPendingOccurrenceMove() }
         } message: {
             Text("Which tasks should this move apply to?")
         }
-        .onAppear { model.ensureDailyQueue(date: model.selectedDate) }
+        .onAppear { model.ensureTodayDailyQueue() }
     }
 
     @ViewBuilder
@@ -287,7 +303,7 @@ struct ContentView: View {
                     onCreateScheme: quickCreateSchemeID,
                     onNewFolder: { showingNewFolder = true },
                     onGoogleCalendar: { startGoogleCalendarImport(parentID: $0) },
-                    onAddItem: { addItemTarget = SheetID(id: $0) },
+                    onAddItem: queueAddItem,
                     onPrepareDaily: prepareDaily,
                     onSelectDailyDate: selectDailyDate,
                     titleFocusSchemeID: $titleFocusSchemeID,
@@ -326,7 +342,8 @@ struct ContentView: View {
                     onOpenOccurrence: { occ in eventEditor = .edit(occ) },
                     onMoveOccurrence: moveOccurrence,
                     onTapTitle: { showingMonthView = true },
-                    isCreatingEvent: isCreatingEventDraft
+                    isCreatingEvent: isCreatingEventDraft,
+                    resetToken: timelineResetToken
                 )
                 // Extend the timeline to the screen's bottom edge so it scrolls
                 // all the way down with no leftover safe-area lip.
@@ -338,7 +355,7 @@ struct ContentView: View {
                     scheme: selectedScheme,
                     theme: theme,
                     onBack: returnHome,
-                    onAdd: { addItemTarget = SheetID(id: selectedScheme.id) },
+                    onAdd: { addItemTarget = .scheme(selectedScheme.id) },
                     autoFocusTitle: titleFocusSchemeID == selectedScheme.id,
                     onTitleFocusConsumed: { consumeTitleFocus(for: selectedScheme.id) }
                 )
@@ -350,25 +367,17 @@ struct ContentView: View {
                 entries: model.snapshot?.daily ?? [],
                 selectedDate: model.selectedDate,
                 theme: theme,
-                onPrevious: { model.ensureDailyQueue(date: Calendar.current.date(byAdding: .day, value: -1, to: model.selectedDate) ?? model.selectedDate) },
-                onNext: { model.ensureDailyQueue(date: Calendar.current.date(byAdding: .day, value: 1, to: model.selectedDate) ?? model.selectedDate) },
+                onPrevious: { selectDailyDate(Calendar.current.date(byAdding: .day, value: -1, to: model.selectedDate) ?? model.selectedDate) },
+                onNext: { selectDailyDate(Calendar.current.date(byAdding: .day, value: 1, to: model.selectedDate) ?? model.selectedDate) },
                 onDate: selectDailyDate,
                 onBack: returnHome,
-                onAdd: {
-                    if let daily = currentDailyScheme {
-                        addItemTarget = SheetID(id: daily.id)
-                    }
-                }
+                onAdd: { addItemTarget = .todayDaily }
             )
         case .search:
             DesktopSearchPane(theme: theme, keyboardVisible: keyboardVisible, onOpenScheme: selectScheme)
         case .settings:
             DesktopSettingsPane(theme: theme)
         }
-    }
-
-    private var currentDailyScheme: MobileScheme? {
-        model.snapshot?.daily.first { $0.date == AppModel.dateOnly(model.selectedDate) }?.scheme
     }
 
     private var currentTimeFormat: String {
@@ -388,8 +397,16 @@ struct ContentView: View {
     }
 
     private func prepareDaily() {
-        model.ensureDailyQueue(date: model.selectedDate)
+        model.ensureTodayDailyQueue()
         selectedSchemeID = nil
+    }
+
+    private func queueAddItem(for schemeID: String) {
+        if model.snapshot?.daily.contains(where: { $0.scheme.id == schemeID }) == true {
+            addItemTarget = .todayDaily
+        } else {
+            addItemTarget = .scheme(schemeID)
+        }
     }
 
     private func selectScheme(_ id: String) {
@@ -442,8 +459,8 @@ struct ContentView: View {
     private func selectDailyDate(_ date: Date) {
         let newKey = AppModel.dateOnly(date)
         let currentKey = AppModel.dateOnly(model.selectedDate)
-        if newKey != currentKey || currentDailyScheme == nil {
-            model.ensureDailyQueue(date: date)
+        if newKey != currentKey {
+            model.selectDate(date)
         }
     }
 
@@ -476,6 +493,12 @@ struct ContentView: View {
         guard let pending = pendingOccurrenceMove else { return }
         pendingOccurrenceMove = nil
         applyOccurrenceMove(pending.occurrence, start: pending.start, end: pending.end, scope: scope)
+    }
+
+    private func cancelPendingOccurrenceMove() {
+        guard pendingOccurrenceMove != nil else { return }
+        pendingOccurrenceMove = nil
+        timelineResetToken += 1
     }
 
     private func applyOccurrenceMove(_ occurrence: MobileOccurrence, start: Date?, end: Date?, scope: EventOccurrenceScope) {

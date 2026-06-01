@@ -262,7 +262,29 @@ internal class RustBridge(context: Context) : AutoCloseable {
                     text = item.optString("text"),
                     marker = item.optString("marker", "blank"),
                     indent = item.optInt("indent", 0),
-                    done = item.optBoolean("done", false)
+                    done = item.optBoolean("done", false),
+                    start = item.stringOrNull("start"),
+                    end = item.stringOrNull("end"),
+                    notificationOffsetSecs = item.intOrNull("notification_offset_secs") ?: item.intOrNull("notificationOffsetSecs"),
+                    repeatRule = item.stringOrNull("repeat_rule") ?: item.stringOrNull("repeatRule"),
+                    media = item.optJSONArray("media")?.toMobileItemMedia() ?: emptyList()
+                )
+            )
+        }
+        return out
+    }
+
+    private fun JSONArray.toMobileItemMedia(): List<MobileItemMedia> {
+        val out = ArrayList<MobileItemMedia>(length())
+        for (index in 0 until length()) {
+            val item = optJSONObject(index) ?: continue
+            out.add(
+                MobileItemMedia(
+                    kind = item.optString("kind"),
+                    path = item.stringOrNull("path"),
+                    format = item.optString("format"),
+                    width = item.intOrNull("width"),
+                    height = item.intOrNull("height")
                 )
             )
         }

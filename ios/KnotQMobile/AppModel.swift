@@ -144,8 +144,29 @@ final class AppModel: ObservableObject {
         mutate { try $0.ensureDailyQueue(date: Self.dateOnly(date)) }
     }
 
+    func ensureTodayDailyQueue() {
+        mutate { try $0.ensureDailyQueue(date: Self.dateOnly(Date())) }
+    }
+
+    func selectDate(_ date: Date) {
+        selectedDate = date
+        refresh()
+    }
+
     func addItem(schemeID: String, text: String, marker: Marker = .checkbox, indent: Int32 = 0) {
         mutate { try $0.addItem(schemeID: schemeID, text: text, marker: marker, indent: indent) }
+    }
+
+    func addTodayDailyItem(text: String, marker: Marker = .checkbox, indent: Int32 = 0) {
+        selectedDate = Date()
+        mutate {
+            try $0.addTodayDailyItem(
+                today: Self.dateOnly(Date()),
+                text: text,
+                marker: marker,
+                indent: indent
+            )
+        }
     }
 
     func updateItemText(schemeID: String, itemID: String, text: String) {
@@ -262,9 +283,13 @@ final class AppModel: ObservableObject {
         }
     }
 
+    func todayDailySchemeID() -> String? {
+        snapshot?.daily.first { $0.date == Self.dateOnly(Date()) }?.scheme.id
+    }
+
     /// Creates a calendar item and returns the new item's id so callers can
-    /// follow up (e.g. apply a recurrence). Resolves the daily-queue scheme for
-    /// `date` when `schemeID` is nil, then diffs that scheme's items.
+    /// follow up (e.g. apply a recurrence). Resolves nil schemes to today's
+    /// daily queue, then diffs that scheme's items.
     @discardableResult
     func createCalendarItemReturningID(
         kind: CalendarKind,
@@ -275,14 +300,14 @@ final class AppModel: ObservableObject {
         schemeID: String?
     ) -> String? {
         guard let bridge else { return nil }
-        let dateKey = Self.dateOnly(date)
         let targetID: String
         if let schemeID {
             targetID = schemeID
         } else {
-            try? bridge.ensureDailyQueue(date: dateKey)
+            let todayKey = Self.dateOnly(Date())
+            try? bridge.ensureDailyQueue(date: todayKey)
             refresh()
-            guard let dailyID = snapshot?.daily.first(where: { $0.date == dateKey })?.scheme.id else {
+            guard let dailyID = snapshot?.daily.first(where: { $0.date == todayKey })?.scheme.id else {
                 addCalendarItem(kind: kind, text: text, date: date, start: start, end: end, schemeID: nil)
                 return nil
             }

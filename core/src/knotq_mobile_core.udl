@@ -64,6 +64,11 @@ dictionary MobileItemEdit {
   string marker;
   i32 indent;
   boolean done;
+  string? start;
+  string? end;
+  i32? notification_offset_secs;
+  string? repeat_rule;
+  sequence<MobileItemMedia> media;
 };
 
 dictionary MobileDailyEntry {
@@ -213,6 +218,9 @@ interface MobileCore {
 
   [Throws=MobileError]
   void add_item(string scheme_id, string text, string? marker, i32? position, i32? indent);
+
+  [Throws=MobileError]
+  void add_today_daily_item(string today, string text, string? marker, i32? indent);
 
   [Throws=MobileError]
   void add_calendar_item(string? scheme_id, string? date, string text, string kind, string? start, string? end);

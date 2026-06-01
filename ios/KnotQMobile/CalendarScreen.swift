@@ -272,9 +272,6 @@ struct EventEditorSheet: View {
                 Section {
                     TextField("Title", text: $title)
                         .disabled(readOnly)
-                    if isEditing && !readOnly {
-                        Toggle("Completed", isOn: $completed)
-                    }
                     // Scheme lives with the title — they're usually set together.
                     if !isEditing {
                         Picker("Scheme", selection: $schemeID) {
@@ -287,9 +284,7 @@ struct EventEditorSheet: View {
                         }
                         .pickerStyle(.navigationLink)
                     }
-                }
 
-                Section {
                     CalendarKindSelector(selection: editorKindBinding, disabled: readOnly)
 
                     if hasStart {
@@ -303,6 +298,9 @@ struct EventEditorSheet: View {
                         DatePicker(hasStart ? "End" : "Due", selection: $end, in: (hasStart ? start : Date.distantPast)...)
                             .disabled(readOnly)
                     }
+                    if isEditing && !readOnly {
+                        Toggle("Completed", isOn: $completed)
+                    }
                     if hasStart || hasEnd {
                         Picker("Notification", selection: notificationOffsetBinding) {
                             ForEach(occurrenceNotificationOptionsIncluding(notificationOffsetBinding.wrappedValue)) { option in
@@ -310,16 +308,13 @@ struct EventEditorSheet: View {
                             }
                         }
                         .disabled(readOnly)
-                    }
-                }
 
-                if hasStart || hasEnd {
-                    Section {
                         Picker("Repeat", selection: $repeatChoice) {
                             ForEach(RepeatChoice.allCases) { choice in
                                 Text(choice.label).tag(choice)
                             }
                         }
+                        .disabled(readOnly)
                         .onChange(of: repeatChoice) { _, choice in
                             if choice == .weekly, weeklyRepeatDays.isEmpty {
                                 weeklyRepeatDays = [RepeatWeekdayChoice.defaultFor(date: repeatAnchorDate)]
@@ -329,17 +324,17 @@ struct EventEditorSheet: View {
                             WeeklyRepeatDaysPicker(selection: $weeklyRepeatDays, disabled: readOnly)
                         }
                     }
-                    .disabled(readOnly)
                 }
 
                 if isEditing && !readOnly {
                     Section {
                         Button(role: .destructive) { requestDelete() } label: {
-                            Label("Delete Task", systemImage: "trash")
+                            Label("Delete", systemImage: "trash")
                         }
                     }
                 }
             }
+            .contentMargins(.top, 6, for: .scrollContent)
             .navigationTitle(readOnly ? "Task Details" : (isEditing ? "Edit" : "New"))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -551,9 +546,7 @@ struct EventEditorSheet: View {
                 schemeID: schemeID
             )
             if let newID {
-                let resolvedScheme = schemeID ?? model.snapshot?.daily.first {
-                    $0.date == AppModel.dateOnly(anchorDay)
-                }?.scheme.id
+                let resolvedScheme = schemeID ?? model.todayDailySchemeID()
                 if let resolvedScheme {
                     if (hasStart || hasEnd), let choiceRule = repeatChoice.rrule(weekdays: weeklyRepeatDays) {
                         model.setItemRecurrence(schemeID: resolvedScheme, itemID: newID, rrule: choiceRule)
@@ -640,9 +633,7 @@ struct AddCalendarItemSheet: View {
                             schemeID: schemeID
                         )
                         if kind != .task, notificationDirty, let itemID {
-                            let resolvedSchemeID = schemeID ?? model.snapshot?.daily.first {
-                                $0.date == AppModel.dateOnly(date)
-                            }?.scheme.id
+                            let resolvedSchemeID = schemeID ?? model.todayDailySchemeID()
                             if let resolvedSchemeID {
                                 model.setOccurrenceNotificationOffset(
                                     schemeID: resolvedSchemeID,

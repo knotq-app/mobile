@@ -150,7 +150,7 @@ final class EditorCoordinator: NSObject, UITextViewDelegate, @preconcurrency NST
         controller?.isDirty = true
     }
 
-    private func refreshEmpty() {
+    func refreshEmpty() {
         guard let view, let controller else { return }
         let empty = view.isEffectivelyEmpty()
         if controller.isEmpty != empty {
@@ -218,6 +218,9 @@ final class EditorCoordinator: NSObject, UITextViewDelegate, @preconcurrency NST
             if handleClearMarkerBackspace(in: view, deletionRange: range) {
                 return false
             }
+            if handleMergeParagraphs(in: view, deletionRange: range) {
+                return false
+            }
         }
         // Any non-backspace edit clears the pending auto-bullet undo.
         if !(text.isEmpty && range.length == 1) {
@@ -260,6 +263,46 @@ final class EditorCoordinator: NSObject, UITextViewDelegate, @preconcurrency NST
         return true
     }
 
+    /// Deleting the "\n" between two paragraphs merges the lower line *into* the
+    /// upper one. Line meta is stored across every character of a paragraph
+    /// including its trailing "\n", and a merged paragraph is read from that
+    /// trailing newline — which belongs to the *lower* line. Left to UITextView,
+    /// the merge would therefore inherit the lower line's meta and drop the upper
+    /// line's marker, and when the upper line is empty (its "\n" is its only
+    /// character) the upper meta is destroyed outright. We perform the merge here
+    /// so the upper line's identity always wins, mirroring desktop.
+    private func handleMergeParagraphs(in view: EditorTextView, deletionRange: NSRange) -> Bool {
+        let storage = view.textStorage
+        let ns = storage.string as NSString
+        guard deletionRange.length == 1,
+              deletionRange.location < ns.length,
+              ns.character(at: deletionRange.location) == 10 else { return false }
+        // Never delete the document's trailing "\n" (invariant I1); there is no
+        // lower paragraph to merge in that case.
+        guard deletionRange.location < ns.length - 1 else { return false }
+
+        // The "\n" terminates the upper paragraph; capture its meta before the
+        // delete removes it.
+        let upperMeta = lineMeta(forParagraphAt: deletionRange.location, in: storage)
+        let upperAttrs = EditorAttributes.bodyAttributes(meta: upperMeta, theme: theme)
+        suppress {
+            storage.beginEditing()
+            storage.replaceCharacters(
+                in: deletionRange,
+                with: NSAttributedString(string: "", attributes: upperAttrs)
+            )
+            let merged = editableParagraphRange(in: storage.string as NSString, at: deletionRange.location)
+            setLineMeta(upperMeta, onParagraph: merged, in: storage, theme: theme)
+            storage.endEditing()
+        }
+        view.selectedRange = NSRange(location: deletionRange.location, length: 0)
+        view.typingAttributes = upperAttrs
+        autoBulletUndo = nil
+        markDirty()
+        refreshEmpty()
+        return true
+    }
+
     // MARK: - Edit handlers (called from shouldChangeTextIn)
 
     /// Backspace immediately after auto-bulletize → undo the conversion.
@@ -296,35 +339,15 @@ final class EditorCoordinator: NSObject, UITextViewDelegate, @preconcurrency NST
         return true
     }
 
-    /// Enter: either escape an empty marker line (clear marker, no insertion),
-    /// or split the current paragraph and continue the marker on the new line.
-    /// With invariant I3 the caret is always within a real paragraph, so the
-    /// "cursor past end of storage" edge case no longer needs special handling.
+    /// Enter: split the current paragraph and continue the marker on the new
+    /// line. Empty marker lines are treated no differently from non-empty ones —
+    /// pressing return duplicates the marker onto a fresh line rather than
+    /// stripping it. With invariant I3 the caret is always within a real
+    /// paragraph, so the "cursor past end of storage" edge case needs no
+    /// special handling.
     private func handleEnter(in view: EditorTextView, at cursor: Int) -> Bool {
         let storage = view.textStorage
-        let paraRange = editableParagraphRange(in: storage.string as NSString, at: cursor)
-        let body = bodyText(paragraphRange: paraRange, in: storage)
-        let currentMeta = lineMeta(at: paraRange.location, in: storage)
-
-        // Empty marker line → escape: clear marker without inserting a newline.
-        if body.isEmpty && currentMeta.marker != .blank {
-            let cleared = LineMeta(
-                marker: .blank,
-                indent: currentMeta.indent,
-                done: false,
-                itemID: currentMeta.itemID,
-                annotation: nil,
-                media: currentMeta.media
-            )
-            suppress {
-                storage.beginEditing()
-                setLineMeta(cleared, onParagraph: paraRange, in: storage, theme: theme)
-                storage.endEditing()
-            }
-            view.typingAttributes = EditorAttributes.bodyAttributes(meta: cleared, theme: theme)
-            markDirty()
-            return true
-        }
+        let currentMeta = lineMeta(at: editableParagraphRange(in: storage.string as NSString, at: cursor).location, in: storage)
 
         // Split the paragraph at the caret: old half keeps currentMeta, new half
         // gets continuation meta (fresh identity, same marker/indent/done-reset).

@@ -12,6 +12,7 @@ struct DayTimelinePane: UIViewRepresentable {
     let onMoveOccurrence: (MobileOccurrence, Date?, Date?) -> Void
     let onTapTitle: () -> Void
     let isCreatingEvent: Bool
+    let resetToken: Int
 
     func makeUIView(context: Context) -> DayTimelineUIKitView {
         DayTimelineUIKitView()
@@ -28,7 +29,8 @@ struct DayTimelinePane: UIViewRepresentable {
             onOpenOccurrence: onOpenOccurrence,
             onMoveOccurrence: onMoveOccurrence,
             onTapTitle: onTapTitle,
-            isCreatingEvent: isCreatingEvent
+            isCreatingEvent: isCreatingEvent,
+            resetToken: resetToken
         )
     }
 }
@@ -50,6 +52,7 @@ struct DayTimelineLaidOccurrence {
 struct DayTimelineMoveTarget: Equatable {
     let dayIndex: Int
     let startMinute: CGFloat
+    let frame: CGRect
     let start: Date?
     let end: Date?
 }
@@ -264,4 +267,3 @@ final class DayTimelineEventBlockView: UIControl {
         )
     }
 }
-

@@ -5,7 +5,8 @@ import SwiftUI
 struct AddItemSheet: View {
     @EnvironmentObject private var model: AppModel
     @Environment(\.dismiss) private var dismiss
-    let schemeID: String
+    var schemeID: String?
+    var todayDaily = false
     @State private var text = ""
     @State private var marker: Marker = .checkbox
 
@@ -26,7 +27,11 @@ struct AddItemSheet: View {
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Add") {
-                        model.addItem(schemeID: schemeID, text: text, marker: marker)
+                        if todayDaily {
+                            model.addTodayDailyItem(text: text, marker: marker)
+                        } else if let schemeID {
+                            model.addItem(schemeID: schemeID, text: text, marker: marker)
+                        }
                         dismiss()
                     }
                     .disabled(text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
