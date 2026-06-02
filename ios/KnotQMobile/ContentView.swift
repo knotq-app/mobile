@@ -85,6 +85,9 @@ struct ContentView: View {
     @State private var titleFocusSchemeID: String?
     @State private var homeNavigationDepth = 0
     @State private var timelineResetToken = 0
+    @AppStorage("knotq.mobile.onboardingCompleted.v1") private var onboardingCompleted = false
+    @State private var onboardingPhase: OnboardingPhase = .account
+    @State private var onboardingStep = 0
     // iPad NavigationSplitView state.
     @State private var columnVisibility: NavigationSplitViewVisibility = .all
     @State private var showingUpcoming = true
@@ -105,6 +108,27 @@ struct ContentView: View {
 
     private var selectedScheme: MobileScheme? {
         model.scheme(id: selectedSchemeID)
+    }
+
+    private var showOnboarding: Bool {
+        !onboardingCompleted && model.snapshot != nil
+    }
+
+    /// Drives the app to the pane a tour step describes, so the spotlighted
+    /// control matches the content behind the scrim (mirrors desktop).
+    private func focusOnboardingPane(_ target: MobilePane?) {
+        guard let target else { return }
+        homeNavigationDepth = 0
+        selectedSchemeID = nil
+        pane = target
+    }
+
+    private func finishOnboarding() {
+        homeNavigationDepth = 0
+        pane = .home
+        withAnimation(.easeOut(duration: 0.2)) {
+            onboardingCompleted = true
+        }
     }
 
     private var title: String {
@@ -148,6 +172,26 @@ struct ContentView: View {
                 }
             } message: {
                 Text(model.errorMessage ?? "")
+            }
+            // Spotlight onboarding lives in the app's own coordinate space (not a
+            // cover) so it can ring the real dock / sidebar controls behind it.
+            .overlayPreferenceValue(OnboardingAnchorKey.self) { anchors in
+                if showOnboarding {
+                    GeometryReader { proxy in
+                        OnboardingOverlay(
+                            theme: theme,
+                            size: proxy.size,
+                            resolve: { target in anchors[target].map { proxy[$0] } },
+                            phase: $onboardingPhase,
+                            step: $onboardingStep,
+                            onFocus: focusOnboardingPane,
+                            onComplete: finishOnboarding
+                        )
+                        .environmentObject(model)
+                    }
+                    .ignoresSafeArea()
+                    .transition(.opacity)
+                }
             }
         }
         .background(theme.bgApp.ignoresSafeArea())
@@ -363,7 +407,7 @@ struct ContentView: View {
                 IntegratedSchemeEditorPane(
                     scheme: selectedScheme,
                     theme: theme,
-                    onBack: nil,
+                    onBack: returnHome,
                     onAdd: { addItemTarget = .scheme(selectedScheme.id) },
                     usesNativeNavigation: true,
                     showsEditorNavigation: true,

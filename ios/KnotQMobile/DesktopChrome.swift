@@ -12,15 +12,41 @@ struct TitleIconButton: ButtonStyle {
     }
 }
 
+enum SyncAuthMode: String, CaseIterable, Identifiable {
+    case signIn
+    case createAccount
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .signIn: "Sign In"
+        case .createAccount: "Create Account"
+        }
+    }
+}
+
 struct SyncSignInSheet: View {
     @EnvironmentObject private var model: AppModel
     @Environment(\.dismiss) private var dismiss
     let theme: KnotQTheme
+    let onAuthenticated: (() -> Void)?
 
     @State private var apiBase = "http://127.0.0.1:8787"
     @State private var email = ""
     @State private var password = ""
     @State private var code = ""
+    @State private var mode: SyncAuthMode
+
+    init(
+        theme: KnotQTheme,
+        initialMode: SyncAuthMode = .signIn,
+        onAuthenticated: (() -> Void)? = nil
+    ) {
+        self.theme = theme
+        self.onAuthenticated = onAuthenticated
+        _mode = State(initialValue: initialMode)
+    }
 
     var body: some View {
         NavigationStack {
@@ -50,6 +76,7 @@ struct SyncSignInSheet: View {
                             Task {
                                 await model.verifyLoginCode(code)
                                 if model.syncSession != nil {
+                                    onAuthenticated?()
                                     dismiss()
                                 }
                             }
@@ -69,7 +96,14 @@ struct SyncSignInSheet: View {
                     }
                     .listRowBackground(theme.bgModal)
                 } else {
-                    Section("Local sync backend") {
+                    Section("Sync Account") {
+                        Picker("Mode", selection: $mode) {
+                            ForEach(SyncAuthMode.allCases) { candidate in
+                                Text(candidate.title).tag(candidate)
+                            }
+                        }
+                        .pickerStyle(.segmented)
+
                         TextField("Sync API", text: $apiBase)
                             .textInputAutocapitalization(.never)
                             .autocorrectionDisabled()
@@ -81,16 +115,30 @@ struct SyncSignInSheet: View {
                         SecureField("Password", text: $password)
                         Button {
                             Task {
-                                await model.signInToSync(apiBase: apiBase, email: email, password: password)
+                                switch mode {
+                                case .signIn:
+                                    await model.signInToSync(apiBase: apiBase, email: email, password: password)
+                                case .createAccount:
+                                    await model.createSyncAccount(apiBase: apiBase, email: email, password: password)
+                                    if model.syncSession != nil {
+                                        onAuthenticated?()
+                                        dismiss()
+                                    }
+                                }
                             }
                         } label: {
                             if model.syncAuthInProgress {
                                 ProgressView()
                             } else {
-                                Text("Sign in")
+                                Text(mode == .createAccount ? "Create account" : "Sign in")
                             }
                         }
                         .disabled(model.syncAuthInProgress)
+                        if mode == .createAccount {
+                            Text("Use at least 12 characters. Sync is optional; local-only workspaces keep working without an account.")
+                                .font(.footnote)
+                                .foregroundStyle(theme.textSoft)
+                        }
                     }
                     .listRowBackground(theme.bgModal)
                 }
@@ -106,6 +154,10 @@ struct SyncSignInSheet: View {
             .onAppear {
                 apiBase = model.syncSession?.apiBase ?? apiBase
                 email = model.syncSession?.email ?? email
+            }
+            .onChange(of: mode) { _, _ in
+                model.cancelLoginChallenge()
+                code = ""
             }
             // Against a dev backend the emailed code is echoed back; prefill it so
             // local testing is one tap. Real backends never send it.
@@ -320,7 +372,7 @@ struct IPadSidebar: View {
     @ViewBuilder
     private func row(_ item: SidebarItem, title: String, icon: String, color: Color) -> some View {
         let selected = selection == item
-        Button {
+        let button = Button {
             selection = item
         } label: {
             HStack(spacing: 11) {
@@ -342,6 +394,18 @@ struct IPadSidebar: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+
+        if let target = Self.onboardingTarget(for: item) {
+            button.onboardingTarget(target)
+        } else {
+            button
+        }
+    }
+
+    private static func onboardingTarget(for item: SidebarItem) -> OnboardingTarget? {
+        switch item {
+        case .calendar: return .calendar
+        default: return nil
+        }
     }
 }
-

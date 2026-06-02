@@ -12,6 +12,9 @@ final class AppModel: ObservableObject {
     @Published var weekOffset = 0
     @Published var syncSession: LocalSyncSession?
     @Published var syncAuthInProgress = false
+    // True while a destructive account action (cancel subscription / delete
+    // account) is in flight, so Settings can disable its buttons.
+    @Published var syncAccountActionInProgress = false
     // Set once a password login is accepted: the sign-in sheet then collects the
     // emailed 2FA code, which `verifyLoginCode` exchanges for a session.
     @Published var syncLoginChallenge: SyncLoginChallenge?
@@ -464,6 +467,47 @@ final class AppModel: ObservableObject {
         }
     }
 
+    func createSyncAccount(apiBase: String, email: String, password: String) async {
+        let apiBase = normalizedApiBase(apiBase)
+        guard !apiBase.isEmpty, let url = URL(string: "\(apiBase)/v1/auth/signup") else {
+            errorMessage = "Enter a sync API URL."
+            return
+        }
+        let email = email.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !email.isEmpty, !password.isEmpty else {
+            errorMessage = "Enter your email and password."
+            return
+        }
+
+        syncAuthInProgress = true
+        defer { syncAuthInProgress = false }
+
+        do {
+            var request = URLRequest(url: url)
+            request.httpMethod = "POST"
+            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            request.httpBody = try JSONSerialization.data(withJSONObject: [
+                "email": email,
+                "password": password
+            ])
+            let (data, response) = try await URLSession.shared.data(for: request)
+            guard let http = response as? HTTPURLResponse else {
+                throw SyncAuthError.message("Sync backend returned an invalid response.")
+            }
+            guard (200..<300).contains(http.statusCode) else {
+                let code = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
+                throw SyncAuthError.message(Self.syncErrorMessage(code?["code"] as? String))
+            }
+            let payload = try JSONDecoder().decode(SyncLoginResponse.self, from: data)
+            installSyncSession(payload, apiBase: apiBase)
+            syncLoginChallenge = nil
+            errorMessage = nil
+            await syncOnce()
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
     /// Second login step: exchange the emailed code for a session and finish signing in.
     func verifyLoginCode(_ code: String) async {
         guard let challenge = syncLoginChallenge,
@@ -496,25 +540,29 @@ final class AppModel: ObservableObject {
                 throw SyncAuthError.message(Self.syncErrorMessage(code?["code"] as? String))
             }
             let payload = try JSONDecoder().decode(SyncLoginResponse.self, from: data)
-            let session = LocalSyncSession(
-                apiBase: challenge.apiBase,
-                userId: payload.userId,
-                email: payload.email,
-                supportsSync: payload.supportsSync,
-                bearerToken: payload.bearerToken,
-                expiresAt: payload.expiresAt,
-                refreshToken: payload.refreshToken,
-                refreshExpiresAt: payload.refreshExpiresAt
-            )
-            syncSession = session
-            saveSyncSession(session)
+            installSyncSession(payload, apiBase: challenge.apiBase)
             syncLoginChallenge = nil
             errorMessage = nil
-            startSyncPolling()
             await syncOnce()
         } catch {
             errorMessage = error.localizedDescription
         }
+    }
+
+    private func installSyncSession(_ payload: SyncLoginResponse, apiBase: String) {
+        let session = LocalSyncSession(
+            apiBase: apiBase,
+            userId: payload.userId,
+            email: payload.email,
+            supportsSync: payload.supportsSync,
+            bearerToken: payload.bearerToken,
+            expiresAt: payload.expiresAt,
+            refreshToken: payload.refreshToken,
+            refreshExpiresAt: payload.refreshExpiresAt
+        )
+        syncSession = session
+        saveSyncSession(session)
+        startSyncPolling()
     }
 
     /// Abandon a pending 2FA challenge (e.g. to sign in as a different account).
@@ -527,6 +575,76 @@ final class AppModel: ObservableObject {
         syncPollTask?.cancel()
         syncPollTask = nil
         UserDefaults.standard.removeObject(forKey: syncSessionKey)
+    }
+
+    /// Turn off the sync entitlement for this account while keeping the account and
+    /// the local workspace intact (the in-app "cancel subscription" action). The
+    /// backend rotates the session, so we install the credentials it returns.
+    func cancelSyncSubscription() async {
+        guard syncSession != nil else { return }
+        syncAccountActionInProgress = true
+        defer { syncAccountActionInProgress = false }
+        // Use a fresh access token; refresh signs us out if the session is dead.
+        guard await refreshSyncSessionIfNeeded(),
+              let session = syncSession,
+              let url = URL(string: "\(session.apiBase)/v1/auth/subscription/cancel") else {
+            return
+        }
+        do {
+            var request = URLRequest(url: url)
+            request.httpMethod = "POST"
+            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            request.setValue("Bearer \(session.bearerToken)", forHTTPHeaderField: "Authorization")
+            request.httpBody = try JSONSerialization.data(withJSONObject: [:] as [String: Any])
+            let (data, response) = try await URLSession.shared.data(for: request)
+            guard let http = response as? HTTPURLResponse else {
+                throw SyncAuthError.message("Sync backend returned an invalid response.")
+            }
+            guard (200..<300).contains(http.statusCode) else {
+                let code = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
+                throw SyncAuthError.message(Self.accountActionErrorMessage(code?["code"] as? String))
+            }
+            let payload = try JSONDecoder().decode(SyncLoginResponse.self, from: data)
+            installSyncSession(payload, apiBase: session.apiBase)
+            errorMessage = "Sync has been turned off for this account. Your local workspace stays on this device, and you can sign in again later to re-enable sync."
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    /// Schedule account deletion: the account is immediately inaccessible but is
+    /// only purged after a 14-day grace window, so signing back in undoes it. Apple
+    /// requires this in-app path for any app that supports account creation.
+    func deleteSyncAccount() async {
+        guard syncSession != nil else { return }
+        syncAccountActionInProgress = true
+        defer { syncAccountActionInProgress = false }
+        guard await refreshSyncSessionIfNeeded(),
+              let session = syncSession,
+              let url = URL(string: "\(session.apiBase)/v1/auth/account") else {
+            return
+        }
+        do {
+            var request = URLRequest(url: url)
+            request.httpMethod = "DELETE"
+            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            request.setValue("Bearer \(session.bearerToken)", forHTTPHeaderField: "Authorization")
+            // The backend echoes the email back as a deliberate-action guard.
+            request.httpBody = try JSONSerialization.data(withJSONObject: ["confirm_email": session.email])
+            let (data, response) = try await URLSession.shared.data(for: request)
+            guard let http = response as? HTTPURLResponse else {
+                throw SyncAuthError.message("Sync backend returned an invalid response.")
+            }
+            guard (200..<300).contains(http.statusCode) else {
+                let code = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
+                throw SyncAuthError.message(Self.accountActionErrorMessage(code?["code"] as? String))
+            }
+            // The session is revoked server-side; drop it locally and tell the user.
+            signOutSync()
+            errorMessage = "Your account is scheduled for deletion. Sign in again within 14 days to cancel it; after that your synced data is permanently erased."
+        } catch {
+            errorMessage = error.localizedDescription
+        }
     }
 
     func syncOnce() async {
@@ -731,7 +849,13 @@ final class AppModel: ObservableObject {
 
     private static func syncErrorMessage(_ code: String?) -> String {
         switch code {
-        case "invalid_email", "unauthorized":
+        case "account_exists":
+            return "An account already exists for that email."
+        case "invalid_email":
+            return "Enter a valid email address."
+        case "password_too_short":
+            return "Use a password with at least 12 characters."
+        case "unauthorized":
             return "Email or password is incorrect."
         case "password_too_long":
             return "Password is too long."
@@ -742,18 +866,29 @@ final class AppModel: ObservableObject {
         case "too_many_attempts":
             return "Too many incorrect codes. Sign in again to get a new one."
         default:
-            return "Sign in failed."
+            return "Sync account request failed."
+        }
+    }
+
+    private static func accountActionErrorMessage(_ code: String?) -> String {
+        switch code {
+        case "unauthorized":
+            return "Your sync session expired. Sign in again, then retry."
+        case "delete_confirmation_mismatch":
+            return "Could not confirm the account. Please try again."
+        default:
+            return "The request to the sync backend failed."
         }
     }
 
     private static func googleOAuthConfigForImport() throws -> GoogleOAuthMobileConfig {
         guard let clientID = configuredGoogleClientID() else {
-            throw GoogleOAuthConfigError.message("Set KNOTQ_GOOGLE_CLIENT_ID or KnotQGoogleClientID to connect Google Calendar.")
+            throw GoogleOAuthConfigError.message("Bundle GoogleService-Info.plist or set KnotQGoogleClientID to connect Google Calendar.")
         }
         let redirectScheme = configuredGoogleRedirectScheme()
             ?? derivedGoogleRedirectScheme(clientID: clientID)
         guard let redirectScheme else {
-            throw GoogleOAuthConfigError.message("Set KNOTQ_GOOGLE_REDIRECT_SCHEME or KnotQGoogleRedirectScheme for the Google OAuth callback.")
+            throw GoogleOAuthConfigError.message("Bundle GoogleService-Info.plist or set KnotQGoogleRedirectScheme for the Google OAuth callback.")
         }
         let redirectURI = configuredGoogleRedirectURI() ?? "\(redirectScheme):/oauth2redirect"
         return GoogleOAuthMobileConfig(
@@ -766,6 +901,7 @@ final class AppModel: ObservableObject {
 
     private static func configuredGoogleClientID() -> String? {
         googleConfigString(infoKey: "KnotQGoogleClientID", envKeys: ["KNOTQ_GOOGLE_CLIENT_ID", "GOOGLE_CLIENT_ID"])
+            ?? bundledGoogleServiceValue("CLIENT_ID")
     }
 
     private static func configuredGoogleClientSecret() -> String? {
@@ -774,6 +910,7 @@ final class AppModel: ObservableObject {
 
     private static func configuredGoogleRedirectScheme() -> String? {
         googleConfigString(infoKey: "KnotQGoogleRedirectScheme", envKeys: ["KNOTQ_GOOGLE_REDIRECT_SCHEME", "GOOGLE_REDIRECT_SCHEME"])
+            ?? bundledGoogleServiceValue("REVERSED_CLIENT_ID")
     }
 
     private static func configuredGoogleRedirectURI() -> String? {
@@ -790,6 +927,17 @@ final class AppModel: ObservableObject {
             }
         }
         return nil
+    }
+
+    private static func bundledGoogleServiceValue(_ key: String) -> String? {
+        guard let url = Bundle.main.url(forResource: "GoogleService-Info", withExtension: "plist"),
+              let data = try? Data(contentsOf: url),
+              let object = try? PropertyListSerialization.propertyList(from: data, format: nil),
+              let dictionary = object as? [String: Any],
+              let value = dictionary[key] as? String else {
+            return nil
+        }
+        return usableGoogleConfigString(value)
     }
 
     private static func usableGoogleConfigString(_ raw: String?) -> String? {

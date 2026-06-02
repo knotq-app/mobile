@@ -190,22 +190,7 @@ struct MobileDock: View {
     var body: some View {
         HStack(spacing: 2) {
             ForEach(panes) { pane in
-                Button { onSelect(pane) } label: {
-                    Image(systemName: pane.icon)
-                        .font(.system(size: 19, weight: .semibold))
-                        .foregroundStyle(selected == pane ? theme.textPrimary : theme.textMuted)
-                        .frame(width: 46, height: 48)
-                        .background {
-                            if selected == pane {
-                                Circle()
-                                    .fill(theme.rowSelected)
-                                    .frame(width: 40, height: 40)
-                            }
-                        }
-                        .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel(pane.title)
+                dockButton(pane)
             }
         }
         .padding(.horizontal, 6)
@@ -213,6 +198,39 @@ struct MobileDock: View {
         .background(AnyShapeStyle(theme.bgToolbar), in: Capsule())
         .overlay(Capsule().strokeBorder(theme.borderOverlay, lineWidth: 0.5))
         .shadow(color: Color.black.opacity(theme.isDark ? 0.28 : 0.025), radius: theme.isDark ? 12 : 4, y: theme.isDark ? 4 : 1)
+    }
+
+    @ViewBuilder
+    private func dockButton(_ pane: MobilePane) -> some View {
+        let button = Button { onSelect(pane) } label: {
+            Image(systemName: pane.icon)
+                .font(.system(size: 19, weight: .semibold))
+                .foregroundStyle(selected == pane ? theme.textPrimary : theme.textMuted)
+                .frame(width: 46, height: 48)
+                .background {
+                    if selected == pane {
+                        Circle()
+                            .fill(theme.rowSelected)
+                            .frame(width: 40, height: 40)
+                    }
+                }
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(pane.title)
+
+        if let target = Self.onboardingTarget(for: pane) {
+            button.onboardingTarget(target)
+        } else {
+            button
+        }
+    }
+
+    private static func onboardingTarget(for pane: MobilePane) -> OnboardingTarget? {
+        switch pane {
+        case .calendar: return .calendar
+        default: return nil
+        }
     }
 }
 

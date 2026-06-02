@@ -4,6 +4,8 @@ struct SettingsScreen: View {
     @EnvironmentObject private var model: AppModel
     @Environment(\.colorScheme) private var systemScheme
     @State private var showingSyncSignIn = false
+    @State private var showingCancelConfirm = false
+    @State private var showingDeleteConfirm = false
 
     private var theme: KnotQTheme {
         KnotQTheme.resolve(mode: model.snapshot?.settings.themeMode, systemScheme: systemScheme)
@@ -46,9 +48,24 @@ struct SettingsScreen: View {
                     Button("Manage Sync Account", systemImage: "person.crop.circle") {
                         showingSyncSignIn = true
                     }
+                    if session.supportsSync {
+                        Button("Cancel Subscription", systemImage: "xmark.circle", role: .destructive) {
+                            showingCancelConfirm = true
+                        }
+                        .disabled(model.syncAccountActionInProgress)
+                    } else {
+                        LabeledContent("Subscription") {
+                            Text("Sync turned off")
+                                .foregroundStyle(.secondary)
+                        }
+                    }
                     Button("Sign Out", systemImage: "rectangle.portrait.and.arrow.right", role: .destructive) {
                         model.signOutSync()
                     }
+                    Button("Delete Account", systemImage: "trash", role: .destructive) {
+                        showingDeleteConfirm = true
+                    }
+                    .disabled(model.syncAccountActionInProgress)
                 } else {
                     LabeledContent("Status") {
                         Text("Not signed in")
@@ -73,6 +90,30 @@ struct SettingsScreen: View {
             SyncSignInSheet(theme: theme)
                 .environmentObject(model)
                 .presentationDetents([.medium])
+        }
+        .confirmationDialog(
+            "Cancel sync subscription?",
+            isPresented: $showingCancelConfirm,
+            titleVisibility: .visible
+        ) {
+            Button("Turn Off Sync", role: .destructive) {
+                Task { await model.cancelSyncSubscription() }
+            }
+            Button("Keep Sync", role: .cancel) {}
+        } message: {
+            Text("Sync stops on all your devices. Your local workspace stays on this device, and you can sign in again later to re-enable sync.")
+        }
+        .confirmationDialog(
+            "Delete account?",
+            isPresented: $showingDeleteConfirm,
+            titleVisibility: .visible
+        ) {
+            Button("Delete Account", role: .destructive) {
+                Task { await model.deleteSyncAccount() }
+            }
+            Button("Keep Account", role: .cancel) {}
+        } message: {
+            Text("Your account and synced data are scheduled for deletion. You have 14 days to undo this by signing back in before everything is permanently erased.")
         }
     }
 }

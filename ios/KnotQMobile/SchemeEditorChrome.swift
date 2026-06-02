@@ -169,12 +169,6 @@ struct IntegratedSchemeEditorPane: View {
                         controller.prepareImageUploadTarget()
                         showingImagePicker = true
                     },
-                    onBackSwipe: onBack.map { backAction in
-                        {
-                            commitDocument()
-                            backAction()
-                        }
-                    },
                     readOnly: scheme.isReadOnly
                 )
 
@@ -195,7 +189,7 @@ struct IntegratedSchemeEditorPane: View {
                             }
                         }
                     }
-                    .padding(.leading, 6)
+                    .padding(.leading, 12)
                 }
             }
         }
@@ -265,23 +259,19 @@ struct IntegratedSchemeEditorPane: View {
                     }
                 }
             }
-            .padding(.horizontal, 5)
-            .frame(height: 38)
-            .background {
-                SchemeLiquidGlassSurface(cornerRadius: 12)
-                    .background(theme.bgToolbar.opacity(theme.isDark ? 0.56 : 0.72), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-            }
-            .overlay {
-                RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .stroke(theme.borderOverlay.opacity(theme.isDark ? 0.78 : 0.88), lineWidth: 0.8)
-            }
         }
         .padding(.horizontal, 12)
         .frame(height: 54)
         .frame(maxWidth: .infinity)
         .contentShape(Rectangle())
-        .background(theme.bgApp.ignoresSafeArea(edges: .top))
-        .overlay(alignment: .bottom) { Rectangle().fill(theme.dividerSoft).frame(height: 1) }
+        // Transparent bar that reserves its own strip — the editor starts cleanly
+        // below the hairline divider and nothing ever scrolls under an opaque lip.
+        .background(Color.clear)
+        .overlay(alignment: .bottom) {
+            Rectangle()
+                .fill(theme.dividerSoft)
+                .frame(height: 1)
+        }
     }
 
     private func loadDocument(force: Bool) {
@@ -442,46 +432,22 @@ struct IntegratedSchemeEditorPane: View {
     }
 }
 
-private struct SchemeLiquidGlassSurface: UIViewRepresentable {
-    let cornerRadius: CGFloat
-
-    func makeUIView(context: Context) -> UIVisualEffectView {
-        let view: UIVisualEffectView
-        if #available(iOS 26.0, *) {
-            view = UIVisualEffectView(effect: UIGlassEffect())
-        } else {
-            view = UIVisualEffectView(effect: UIBlurEffect(style: .systemUltraThinMaterial))
-        }
-        view.backgroundColor = .clear
-        view.isOpaque = false
-        view.contentView.backgroundColor = .clear
-        view.layer.cornerCurve = .continuous
-        view.clipsToBounds = true
-        view.layer.cornerRadius = cornerRadius
-        return view
-    }
-
-    func updateUIView(_ uiView: UIVisualEffectView, context: Context) {
-        uiView.layer.cornerRadius = cornerRadius
-    }
-}
-
 private struct SchemeTopLipIconButton: ButtonStyle {
     let theme: KnotQTheme
 
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .font(.system(size: 13, weight: .semibold))
+            .font(.system(size: 15, weight: .semibold))
             .foregroundStyle(theme.textPrimary)
             .frame(width: 38, height: 38)
-            .background {
-                SchemeLiquidGlassSurface(cornerRadius: 12)
-                    .background(theme.bgToolbar.opacity(theme.isDark ? 0.56 : 0.72), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-            }
-            .overlay {
-                RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .stroke(theme.borderOverlay.opacity(theme.isDark ? 0.78 : 0.88), lineWidth: 0.8)
-            }
+            // No glass/material fill: a bare, transparent control so the chrome
+            // never reads as an opaque lip over the editor. Only a faint press
+            // state gives tap feedback.
+            .background(
+                configuration.isPressed ? theme.rowSelected.opacity(0.5) : Color.clear,
+                in: RoundedRectangle(cornerRadius: 10, style: .continuous)
+            )
+            .contentShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
             .scaleEffect(configuration.isPressed ? 0.96 : 1)
     }
 }

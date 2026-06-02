@@ -51,7 +51,6 @@ struct SchemeTextView: UIViewRepresentable {
     let onRenameTitle: (String) -> Void
     let onDate: () -> Void
     let onImageUpload: () -> Void
-    let onBackSwipe: (() -> Void)?
     let readOnly: Bool
 
     func makeCoordinator() -> EditorCoordinator {
@@ -67,7 +66,6 @@ struct SchemeTextView: UIViewRepresentable {
         coordinator.accentColor = UIColor(accent)
         coordinator.onDateRequested = onDate
         coordinator.onImageUploadRequested = onImageUpload
-        coordinator.onBackSwipeRequested = onBackSwipe
         coordinator.readOnly = readOnly
         view.coordinator = coordinator
         view.theme = theme
@@ -101,13 +99,6 @@ struct SchemeTextView: UIViewRepresentable {
         checkboxTap.cancelsTouchesInView = false
         coordinator.checkboxTapRecognizer = checkboxTap
         view.addGestureRecognizer(checkboxTap)
-        if onBackSwipe != nil {
-            let backSwipe = UIPanGestureRecognizer(target: coordinator, action: #selector(EditorCoordinator.handleBackSwipe(_:)))
-            backSwipe.delegate = coordinator
-            backSwipe.cancelsTouchesInView = false
-            coordinator.backSwipeRecognizer = backSwipe
-            view.addGestureRecognizer(backSwipe)
-        }
         controller.view = view
         view.typingAttributes = EditorAttributes.bodyAttributes(meta: LineMeta(), theme: theme)
         return view
@@ -119,7 +110,6 @@ struct SchemeTextView: UIViewRepresentable {
         coordinator.accentColor = UIColor(accent)
         coordinator.onDateRequested = onDate
         coordinator.onImageUploadRequested = onImageUpload
-        coordinator.onBackSwipeRequested = onBackSwipe
         coordinator.readOnly = readOnly
         uiView.theme = theme
         uiView.accentColor = UIColor(accent)
@@ -145,10 +135,8 @@ final class EditorCoordinator: NSObject, UITextViewDelegate, @preconcurrency NST
     var accentColor: UIColor = .systemBlue
     var onDateRequested: (() -> Void)?
     var onImageUploadRequested: (() -> Void)?
-    var onBackSwipeRequested: (() -> Void)?
     var readOnly = false
     weak var checkboxTapRecognizer: UITapGestureRecognizer?
-    weak var backSwipeRecognizer: UIPanGestureRecognizer?
 
     private var suppressDelegateDepth = 0
     private var autoBulletizePending = false
@@ -217,46 +205,10 @@ final class EditorCoordinator: NSObject, UITextViewDelegate, @preconcurrency NST
         _ = view.toggleCheckboxAt(point: recognizer.location(in: view))
     }
 
-    @objc func handleBackSwipe(_ recognizer: UIPanGestureRecognizer) {
-        guard recognizer.state == .ended,
-              let view = recognizer.view,
-              let onBackSwipeRequested else { return }
-        let translation = recognizer.translation(in: view)
-        let velocity = recognizer.velocity(in: view)
-        let horizontal = abs(translation.x) > max(60, abs(translation.y) * 1.35)
-        let fastLeft = velocity.x < -520 && abs(velocity.x) > abs(velocity.y) * 1.35
-        guard horizontal || fastLeft else { return }
-        guard translation.x < -72 || fastLeft else { return }
-        self.view?.resignFirstResponder()
-        onBackSwipeRequested()
-    }
-
     func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldReceive touch: UITouch) -> Bool {
-        if gestureRecognizer === backSwipeRecognizer {
-            return onBackSwipeRequested != nil
-        }
         guard gestureRecognizer === checkboxTapRecognizer, !readOnly else { return false }
         guard let view else { return false }
         return view.checkboxLineRange(at: touch.location(in: view)) != nil
-    }
-
-    func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
-        guard gestureRecognizer === backSwipeRecognizer,
-              let pan = gestureRecognizer as? UIPanGestureRecognizer,
-              let view = pan.view,
-              onBackSwipeRequested != nil else {
-            return true
-        }
-        let velocity = pan.velocity(in: view)
-        let horizontal = abs(velocity.x) > max(180, abs(velocity.y) * 1.25)
-        return horizontal && velocity.x < 0
-    }
-
-    func gestureRecognizer(
-        _ gestureRecognizer: UIGestureRecognizer,
-        shouldRecognizeSimultaneouslyWith otherGestureRecognizer: UIGestureRecognizer
-    ) -> Bool {
-        gestureRecognizer === backSwipeRecognizer || otherGestureRecognizer === backSwipeRecognizer
     }
 
     func textView(_ textView: UITextView, shouldChangeTextIn range: NSRange, replacementText text: String) -> Bool {

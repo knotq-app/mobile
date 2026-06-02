@@ -21,13 +21,24 @@
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
 	<key>KnotQGoogleClientID</key>
-	<string>$(KNOTQ_GOOGLE_CLIENT_ID)</string>
+	<string>419826075228-gn6gj1l20nltil67odvf00u3i7n8a2ld.apps.googleusercontent.com</string>
 	<key>KnotQGoogleClientSecret</key>
 	<string>$(KNOTQ_GOOGLE_CLIENT_SECRET)</string>
 	<key>KnotQGoogleRedirectScheme</key>
-	<string>$(KNOTQ_GOOGLE_REDIRECT_SCHEME)</string>
+	<string>com.googleusercontent.apps.419826075228-gn6gj1l20nltil67odvf00u3i7n8a2ld</string>
 	<key>KnotQGoogleRedirectURI</key>
-	<string>$(KNOTQ_GOOGLE_REDIRECT_URI)</string>
+	<string>com.googleusercontent.apps.419826075228-gn6gj1l20nltil67odvf00u3i7n8a2ld:/oauth2redirect</string>
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleURLName</key>
+			<string>com.enigmadux.knotq.google</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>com.googleusercontent.apps.419826075228-gn6gj1l20nltil67odvf00u3i7n8a2ld</string>
+			</array>
+		</dict>
+	</array>
 	<key>NSAppTransportSecurity</key>
 	<dict>
 		<key>NSAllowsArbitraryLoadsInLocalNetworking</key>

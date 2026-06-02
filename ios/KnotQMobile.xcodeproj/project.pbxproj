@@ -48,6 +48,7 @@
 		01000000000000000000002B /* SchemeEditorTextInput.swift in Sources */ = {isa = PBXBuildFile; fileRef = 02000000000000000000002B /* SchemeEditorTextInput.swift */; };
 		01000000000000000000002C /* SchemeEditorTextView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 02000000000000000000002C /* SchemeEditorTextView.swift */; };
 		01000000000000000000002D /* SchemeEditorSheets.swift in Sources */ = {isa = PBXBuildFile; fileRef = 02000000000000000000002D /* SchemeEditorSheets.swift */; };
+		01000000000000000000002E /* GoogleService-Info.plist in Resources */ = {isa = PBXBuildFile; fileRef = 02000000000000000000002E /* GoogleService-Info.plist */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -120,6 +121,7 @@
 		02000000000000000000002B /* SchemeEditorTextInput.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SchemeEditorTextInput.swift; sourceTree = "<group>"; };
 		02000000000000000000002C /* SchemeEditorTextView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SchemeEditorTextView.swift; sourceTree = "<group>"; };
 		02000000000000000000002D /* SchemeEditorSheets.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SchemeEditorSheets.swift; sourceTree = "<group>"; };
+		02000000000000000000002E /* GoogleService-Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = "GoogleService-Info.plist"; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -192,6 +194,7 @@
 				02000000000000000000000C /* SharedViews.swift */,
 				02000000000000000000000D /* KnotQMobile-Bridging-Header.h */,
 				02000000000000000000000E /* Info.plist */,
+				02000000000000000000002E /* GoogleService-Info.plist */,
 				020000000000000000000014 /* KnotQMobile.entitlements */,
 				020000000000000000000011 /* Assets.xcassets */,
 			);
@@ -313,6 +316,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				01000000000000000000000E /* Assets.xcassets in Resources */,
+				01000000000000000000002E /* GoogleService-Info.plist in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

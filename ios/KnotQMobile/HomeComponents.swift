@@ -1,4 +1,92 @@
 import SwiftUI
+import UIKit
+
+private struct NavigationStackInteractivePopEnabler: UIViewControllerRepresentable {
+    let enabled: Bool
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(enabled: enabled)
+    }
+
+    func makeUIViewController(context: Context) -> HostController {
+        let controller = HostController()
+        controller.view.backgroundColor = .clear
+        controller.view.isUserInteractionEnabled = false
+        controller.coordinator = context.coordinator
+        return controller
+    }
+
+    func updateUIViewController(_ uiViewController: HostController, context: Context) {
+        context.coordinator.enabled = enabled
+        uiViewController.coordinator = context.coordinator
+        context.coordinator.configure(from: uiViewController)
+    }
+
+    static func dismantleUIViewController(_ uiViewController: HostController, coordinator: Coordinator) {
+        coordinator.restoreIfNeeded()
+    }
+
+    final class HostController: UIViewController {
+        weak var coordinator: Coordinator?
+
+        override func viewDidAppear(_ animated: Bool) {
+            super.viewDidAppear(animated)
+            coordinator?.configure(from: self)
+        }
+
+        override func didMove(toParent parent: UIViewController?) {
+            super.didMove(toParent: parent)
+            DispatchQueue.main.async { [weak self] in
+                guard let self else { return }
+                self.coordinator?.configure(from: self)
+            }
+        }
+    }
+
+    @MainActor
+    final class Coordinator: NSObject, UIGestureRecognizerDelegate {
+        var enabled: Bool
+        private weak var navigationController: UINavigationController?
+        private weak var configuredGesture: UIGestureRecognizer?
+        private weak var originalDelegate: UIGestureRecognizerDelegate?
+
+        init(enabled: Bool) {
+            self.enabled = enabled
+        }
+
+        func configure(from controller: UIViewController) {
+            guard let navigationController = controller.navigationController,
+                  let gesture = navigationController.interactivePopGestureRecognizer else { return }
+            if configuredGesture !== gesture {
+                restoreIfNeeded()
+                configuredGesture = gesture
+                originalDelegate = gesture.delegate
+            }
+            self.navigationController = navigationController
+            gesture.isEnabled = enabled
+            gesture.delegate = self
+        }
+
+        func restoreIfNeeded() {
+            guard let gesture = configuredGesture else { return }
+            if gesture.delegate === self {
+                gesture.delegate = originalDelegate
+            }
+            configuredGesture = nil
+            originalDelegate = nil
+            navigationController = nil
+        }
+
+        func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
+            guard enabled,
+                  let navigationController,
+                  navigationController.viewControllers.count > 1 else {
+                return false
+            }
+            return navigationController.transitionCoordinator?.isAnimated != true
+        }
+    }
+}
 
 struct HomeDashboardPane: View {
     let snapshot: MobileSnapshot?
@@ -38,6 +126,10 @@ struct HomeDashboardPane: View {
                             onToggleOccurrence: onToggleOccurrence,
                             onOpenOccurrence: onOpenOccurrence
                         )
+                        .onboardingTarget(.upcoming)
+                        // Dock clearance lives outside the spotlight target so the
+                        // highlight hugs the list instead of 180pt of empty space.
+                        .padding(.bottom, 180)
                     }
                     .frame(maxWidth: 720, alignment: .topLeading)
                     .padding(.horizontal, 14)
@@ -106,7 +198,6 @@ struct HomeUpcomingSection: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.vertical, 10)
                     .padding(.horizontal, 2)
-                    .padding(.bottom, 180)
             } else {
                 LazyVStack(spacing: 2) {
                     ForEach(Array(occurrences.enumerated()), id: \.element.id) { idx, occurrence in
@@ -123,7 +214,6 @@ struct HomeUpcomingSection: View {
                         }
                     }
                 }
-                .padding(.bottom, 180)
             }
         }
         .frame(maxWidth: .infinity, alignment: .topLeading)
@@ -209,6 +299,9 @@ struct HomeNavigationPane: View {
                         )
                         .navigationBarBackButtonHidden(true)
                         .toolbar(.hidden, for: .navigationBar)
+                        .background {
+                            NavigationStackInteractivePopEnabler(enabled: true)
+                        }
                     } else {
                         EmptyState(title: "Scheme missing", detail: "It may have been archived or deleted.", theme: theme)
                             .toolbar(.visible, for: .navigationBar)
@@ -440,6 +533,7 @@ struct HomeSchemesSection: View {
                     }
                 }
                 .frame(height: maxHeight)
+                .onboardingTarget(.schemes)
 
                 Rectangle()
                     .fill(theme.dividerSoft)
@@ -455,6 +549,7 @@ struct HomeSchemesSection: View {
                 )
                 .padding(.horizontal, 4)
                 .padding(.vertical, 3)
+                .onboardingTarget(.daily)
             }
             .background(theme.rowSelected.opacity(theme.isDark ? 0.52 : 0.34), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
             .overlay {
