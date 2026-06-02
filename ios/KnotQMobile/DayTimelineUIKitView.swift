@@ -60,21 +60,17 @@ final class DayTimelineUIKitView: UIView, UIGestureRecognizerDelegate, UIScrollV
     private let draftView = UIView()
     private let draftTimeLabel = UILabel()
     private let draftTitleLabel = UILabel()
-    private let topStickyIndicatorStacks = [
-        [DayTimelineStickyIndicatorView(), DayTimelineStickyIndicatorView(), DayTimelineStickyIndicatorView()],
-        [DayTimelineStickyIndicatorView(), DayTimelineStickyIndicatorView(), DayTimelineStickyIndicatorView()],
-        [DayTimelineStickyIndicatorView(), DayTimelineStickyIndicatorView(), DayTimelineStickyIndicatorView()],
-    ]
-    private let bottomStickyIndicatorStacks = [
-        [DayTimelineStickyIndicatorView(), DayTimelineStickyIndicatorView(), DayTimelineStickyIndicatorView()],
-        [DayTimelineStickyIndicatorView(), DayTimelineStickyIndicatorView(), DayTimelineStickyIndicatorView()],
-        [DayTimelineStickyIndicatorView(), DayTimelineStickyIndicatorView(), DayTimelineStickyIndicatorView()],
-    ]
+    // One stack of indicators per rendered day column, including the previous
+    // and next offscreen columns used during horizontal day swipes.
+    private var topStickyIndicatorStacks: [[DayTimelineStickyIndicatorView]] = []
+    private var bottomStickyIndicatorStacks: [[DayTimelineStickyIndicatorView]] = []
+    private var stickyDayColumnCount = 0
 
     private var calendarSnapshot: MobileCalendar?
     private var selectedDate = Date()
     private var theme: KnotQTheme?
     private var timeFormat = "twelve_hour"
+    private var preferredVisibleDays: Int?
     private var onSetDate: (Date) -> Void = { _ in }
     private var onCreate: (Date) -> Void = { _ in }
     private var onOpenOccurrence: (MobileOccurrence) -> Void = { _ in }
@@ -106,6 +102,7 @@ final class DayTimelineUIKitView: UIView, UIGestureRecognizerDelegate, UIScrollV
     private static let stickyIndicatorHeight: CGFloat = 26
     private static let stickyFadeDistance: CGFloat = 44
     private static let stickyStackSpacing: CGFloat = 4
+    private static let stickyStackDepth = 3
     private static let bottomStickyChromeInset: CGFloat = 104
     private static let dayDecorationLayerName = "knotq.dayTimeline.decoration"
     private static let gutterDecorationLayerName = "knotq.dayTimeline.gutterDecoration"
@@ -118,7 +115,6 @@ final class DayTimelineUIKitView: UIView, UIGestureRecognizerDelegate, UIScrollV
         addSubview(weekStrip)
         addSubview(separator)
         addSubview(scrollView)
-        stickyIndicators.forEach(addSubview)
         scrollView.addSubview(contentView)
         contentView.addSubview(dayClip)
         contentView.addSubview(timeGutter)
@@ -203,7 +199,8 @@ final class DayTimelineUIKitView: UIView, UIGestureRecognizerDelegate, UIScrollV
         onMoveOccurrence: @escaping (MobileOccurrence, Date?, Date?) -> Void,
         onTapTitle: @escaping () -> Void,
         isCreatingEvent: Bool,
-        resetToken: Int
+        resetToken: Int,
+        preferredVisibleDays: Int?
     ) {
         let nextSelectedDate = Calendar.current.startOfDay(for: selectedDate)
         let shouldReset = self.resetToken != resetToken
@@ -211,12 +208,14 @@ final class DayTimelineUIKitView: UIView, UIGestureRecognizerDelegate, UIScrollV
             || self.selectedDate != nextSelectedDate
             || self.theme?.isDark != theme.isDark
             || self.timeFormat != timeFormat
+            || self.preferredVisibleDays != preferredVisibleDays
         let createClosed = creatingEvent && !isCreatingEvent
 
         self.calendarSnapshot = calendar
         self.selectedDate = nextSelectedDate
         self.theme = theme
         self.timeFormat = timeFormat
+        self.preferredVisibleDays = preferredVisibleDays
         self.onSetDate = onSetDate
         self.onCreate = onCreate
         self.onOpenOccurrence = onOpenOccurrence
@@ -641,7 +640,31 @@ final class DayTimelineUIKitView: UIView, UIGestureRecognizerDelegate, UIScrollV
         updateStickyIndicators()
     }
 
+    /// Rebuilds the per-column indicator stacks when the rendered day count
+    /// changes so every visible and swipe-adjacent column gets its own
+    /// top/bottom off-screen-event pills. Cheap no-op when unchanged.
+    private func ensureStickyStacks(columns: Int) {
+        let columns = max(1, columns)
+        guard columns != stickyDayColumnCount else { return }
+        stickyIndicators.forEach { $0.removeFromSuperview() }
+        func makeStacks() -> [[DayTimelineStickyIndicatorView]] {
+            (0..<columns).map { _ in
+                (0..<Self.stickyStackDepth).map { _ in DayTimelineStickyIndicatorView() }
+            }
+        }
+        topStickyIndicatorStacks = makeStacks()
+        bottomStickyIndicatorStacks = makeStacks()
+        // Re-added above scrollView (added after it in the view list), matching
+        // the original z-order so the pills stay tappable over the timeline.
+        stickyIndicators.forEach { indicator in
+            indicator.isHidden = true
+            addSubview(indicator)
+        }
+        stickyDayColumnCount = columns
+    }
+
     private func updateStickyIndicators() {
+        ensureStickyStacks(columns: visibleDayCount() + 2)
         guard let theme,
               scrollView.bounds.height > 1,
               dayClip.bounds.width > 1,
@@ -671,7 +694,7 @@ final class DayTimelineUIKitView: UIView, UIGestureRecognizerDelegate, UIScrollV
             )
         )
 
-        for dayIndex in geometry.visibleDayRange {
+        for dayIndex in geometry.renderDayRange {
             guard let topIndicators = stickyIndicators(top: true, forDayIndex: dayIndex),
                   let bottomIndicators = stickyIndicators(top: false, forDayIndex: dayIndex) else {
                 continue
@@ -751,6 +774,17 @@ final class DayTimelineUIKitView: UIView, UIGestureRecognizerDelegate, UIScrollV
             return
         }
         let columnClipX = geometry.clipX(forCanvasX: geometry.canvasX(forDayIndex: candidate.dayIndex))
+        let horizontalVisibleWidth = min(dayClip.bounds.width, columnClipX + geometry.columnWidth) - max(0, columnClipX)
+        guard horizontalVisibleWidth > 0 else {
+            indicator.isHidden = true
+            return
+        }
+        let horizontalAlpha = min(1, max(0, horizontalVisibleWidth / min(geometry.columnWidth, Self.stickyFadeDistance)))
+        let resolvedAlpha = alpha * horizontalAlpha
+        guard resolvedAlpha > 0.02 else {
+            indicator.isHidden = true
+            return
+        }
         let width = min(max(96, geometry.columnWidth - 14), bounds.width - dayClip.frame.minX - 14)
         let unclampedX = dayClip.frame.minX + columnClipX + 7
         let minX = dayClip.frame.minX + 7
@@ -763,7 +797,7 @@ final class DayTimelineUIKitView: UIView, UIGestureRecognizerDelegate, UIScrollV
         )
         indicator.configure(occurrence: candidate.occurrence, theme: theme)
         indicator.onTap = { [weak self] occurrence in self?.onOpenOccurrence(occurrence) }
-        indicator.alpha = alpha
+        indicator.alpha = resolvedAlpha
         indicator.isHidden = false
     }
 
@@ -773,8 +807,9 @@ final class DayTimelineUIKitView: UIView, UIGestureRecognizerDelegate, UIScrollV
 
     private func stickyIndicators(top: Bool, forDayIndex dayIndex: Int) -> [DayTimelineStickyIndicatorView]? {
         let stacks = top ? topStickyIndicatorStacks : bottomStickyIndicatorStacks
-        guard dayIndex >= 0, dayIndex < stacks.count else { return nil }
-        return stacks[dayIndex]
+        let stackIndex = dayIndex + 1
+        guard stackIndex >= 0, stackIndex < stacks.count else { return nil }
+        return stacks[stackIndex]
     }
 
     private func bottomStickyCutoff() -> CGFloat {
@@ -1054,7 +1089,10 @@ final class DayTimelineUIKitView: UIView, UIGestureRecognizerDelegate, UIScrollV
     }
 
     private func visibleDayCount() -> Int {
-        bounds.width >= 620 ? 3 : 2
+        if let preferredVisibleDays {
+            return max(2, min(7, preferredVisibleDays))
+        }
+        return bounds.width >= 620 ? 3 : 2
     }
 
     private func visibleDayKeys() -> Set<String> {

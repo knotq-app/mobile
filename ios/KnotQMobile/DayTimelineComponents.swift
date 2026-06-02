@@ -13,6 +13,9 @@ struct DayTimelinePane: UIViewRepresentable {
     let onTapTitle: () -> Void
     let isCreatingEvent: Bool
     let resetToken: Int
+    /// Forces a specific visible-day count (iPad shows 5); `nil` keeps the
+    /// width-based iPhone behavior (2, or 3 in landscape).
+    let preferredVisibleDays: Int?
 
     func makeUIView(context: Context) -> DayTimelineUIKitView {
         DayTimelineUIKitView()
@@ -30,7 +33,8 @@ struct DayTimelinePane: UIViewRepresentable {
             onMoveOccurrence: onMoveOccurrence,
             onTapTitle: onTapTitle,
             isCreatingEvent: isCreatingEvent,
-            resetToken: resetToken
+            resetToken: resetToken,
+            preferredVisibleDays: preferredVisibleDays
         )
     }
 }

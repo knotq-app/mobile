@@ -59,6 +59,16 @@ enum HomeRoute: Hashable {
     case daily
 }
 
+/// Selection in the iPad NavigationSplitView sidebar: the fixed destinations plus
+/// a specific scheme (driven by the embedded scheme tree).
+enum SidebarItem: Hashable {
+    case home
+    case calendar
+    case daily
+    case settings
+    case scheme(String)
+}
+
 struct ContentView: View {
     @EnvironmentObject private var model: AppModel
     @Environment(\.colorScheme) private var systemScheme
@@ -75,6 +85,9 @@ struct ContentView: View {
     @State private var titleFocusSchemeID: String?
     @State private var homeNavigationDepth = 0
     @State private var timelineResetToken = 0
+    // iPad NavigationSplitView state.
+    @State private var columnVisibility: NavigationSplitViewVisibility = .all
+    @State private var showingUpcoming = true
 
     private var theme: KnotQTheme {
         KnotQTheme.resolve(mode: model.snapshot?.settings.themeMode, systemScheme: systemScheme)
@@ -101,91 +114,14 @@ struct ContentView: View {
     var body: some View {
         GeometryReader { proxy in
             let wide = proxy.size.width >= 760
-            VStack(spacing: 0) {
+            Group {
                 if wide {
-                    DesktopTitleBar(
-                        title: title,
-                        pane: pane,
-                        scheme: selectedScheme,
-                        theme: theme,
-                        onSearch: { pane = .search },
-                        onAddCalendar: { showingCalendarAdd = true },
-                        onAddItem: {
-                            if pane == .daily {
-                                addItemTarget = .todayDaily
-                            } else if let selectedSchemeID {
-                                addItemTarget = .scheme(selectedSchemeID)
-                            }
-                        },
-                        onNewScheme: quickCreateScheme,
-                        onNewFolder: { showingNewFolder = true },
-                        onGoogleCalendar: { startGoogleCalendarImport() },
-                        onSettings: { pane = .settings }
-                    )
-                }
-
-                HStack(spacing: 0) {
-                    if wide {
-                        DesktopNavigator(
-                            root: model.snapshot?.root,
-                            selectedPane: pane,
-                            selectedSchemeID: selectedSchemeID,
-                            theme: theme,
-                            onSelectPane: { pane = $0 },
-                            onSelectScheme: selectScheme,
-                            onNewScheme: quickCreateScheme,
-                            onNewFolder: { showingNewFolder = true },
-                            onGoogleCalendar: { startGoogleCalendarImport(parentID: $0) }
-                        )
-                        .frame(width: 168)
-                        .padding(.leading, 6)
-                        .padding(.vertical, 6)
-
-                        if pane != .home {
-                        DesktopUpcomingRail(
-                            calendar: model.snapshot?.calendar,
-                            theme: theme,
-                            timeFormat: currentTimeFormat,
-                            onToggleOccurrence: handleOccurrenceTap,
-                            onOpenOccurrence: { eventEditor = .edit($0) }
-                        )
-                            .frame(width: 258)
-                        }
-                    }
-
-                    Rectangle()
-                        .fill(theme.dividerTiny)
-                        .frame(width: wide ? 1 : 0)
-
-                    mainPane(wide: wide)
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    iPadRoot()
+                } else {
+                    iPhoneRoot()
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .overlay(alignment: .bottom) {
-                if !wide && !keyboardVisible && homeNavigationDepth == 0 {
-                    // Floating liquid-glass nav. It hovers over the content
-                    // rather than reserving a strip.
-                    MobileDock(
-                        selected: (pane == .scheme || pane == .daily || pane == .search) ? .home : pane,
-                        theme: theme,
-                        onSelect: { selected in
-                            // Re-tapping Calendar while already there jumps back
-                            // to today (there's no nav bar to do it otherwise).
-                            if selected == .calendar, pane == .calendar,
-                               AppModel.dateOnly(model.selectedDate) != AppModel.dateOnly(Date()) {
-                                model.selectedDate = Date()
-                                model.weekOffset = 0
-                                model.refresh()
-                            }
-                            pane = selected
-                        }
-                    )
-                    .padding(.horizontal, 20)
-                    .padding(.bottom, 6)
-                    .transition(.move(edge: .bottom).combined(with: .opacity))
-                }
-            }
             .background(theme.bgApp.ignoresSafeArea())
             .foregroundStyle(theme.textPrimary)
             .preferredColorScheme(theme.isDark ? .dark : .light)
@@ -281,6 +217,219 @@ struct ContentView: View {
         .onAppear { model.ensureTodayDailyQueue() }
     }
 
+    // MARK: - iPhone (compact) root
+
+    @ViewBuilder
+    private func iPhoneRoot() -> some View {
+        mainPane(wide: false)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .overlay(alignment: .bottom) {
+                if !keyboardVisible && homeNavigationDepth == 0 {
+                    // Floating liquid-glass nav. It hovers over the content
+                    // rather than reserving a strip.
+                    MobileDock(
+                        selected: (pane == .scheme || pane == .daily || pane == .search) ? .home : pane,
+                        theme: theme,
+                        onSelect: { selected in
+                            // Re-tapping Calendar while already there jumps back
+                            // to today (there's no nav bar to do it otherwise).
+                            if selected == .calendar, pane == .calendar,
+                               AppModel.dateOnly(model.selectedDate) != AppModel.dateOnly(Date()) {
+                                model.selectedDate = Date()
+                                model.weekOffset = 0
+                                model.refresh()
+                            }
+                            pane = selected
+                        }
+                    )
+                    .padding(.horizontal, 20)
+                    .padding(.bottom, 6)
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+                }
+            }
+    }
+
+    // MARK: - iPad (regular) root — native NavigationSplitView
+
+    @ViewBuilder
+    private func iPadRoot() -> some View {
+        NavigationSplitView(columnVisibility: $columnVisibility) {
+            IPadSidebar(
+                root: model.snapshot?.root,
+                selection: sidebarSelectionBinding,
+                selectedSchemeID: pane == .scheme ? selectedSchemeID : nil,
+                theme: theme,
+                onSelectScheme: selectScheme,
+                onNewScheme: quickCreateScheme,
+                onNewFolder: { showingNewFolder = true },
+                onGoogleCalendar: { startGoogleCalendarImport(parentID: $0) }
+            )
+            .navigationSplitViewColumnWidth(min: 220, ideal: 264, max: 340)
+            .navigationTitle("KnotQ")
+        } detail: {
+            NavigationStack {
+                iPadDetail()
+            }
+        }
+        .navigationSplitViewStyle(.balanced)
+    }
+
+    /// Maps the existing `pane`/`selectedSchemeID` state to/from the sidebar's
+    /// selection so native rows highlight and selecting drives the detail.
+    private var sidebarSelectionBinding: Binding<SidebarItem?> {
+        Binding(
+            get: {
+                switch pane {
+                case .home: return .home
+                case .calendar: return .calendar
+                case .daily: return .daily
+                case .settings: return .settings
+                case .scheme: return selectedSchemeID.map(SidebarItem.scheme)
+                case .search: return nil
+                }
+            },
+            set: { newValue in
+                guard let newValue else { return }
+                switch newValue {
+                case .home: returnHome()
+                case .calendar: selectedSchemeID = nil; pane = .calendar
+                case .daily: openDaily()
+                case .settings: selectedSchemeID = nil; pane = .settings
+                case .scheme(let id): selectScheme(id)
+                }
+            }
+        )
+    }
+
+    @ViewBuilder
+    private func iPadDetail() -> some View {
+        switch pane {
+        case .home:
+            HomeDashboardPane(
+                snapshot: model.snapshot,
+                selectedDate: model.selectedDate,
+                theme: theme,
+                onOpenDaily: openDaily,
+                onOpenScheme: selectScheme,
+                onToggleOccurrence: handleOccurrenceTap,
+                onOpenOccurrence: { eventEditor = .edit($0) },
+                onNewScheme: quickCreateScheme,
+                onNewFolder: { showingNewFolder = true },
+                onGoogleCalendar: { startGoogleCalendarImport(parentID: $0) }
+            )
+            .navigationTitle("Home")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItemGroup(placement: .topBarTrailing) {
+                    searchToolbarButton
+                    upcomingToggleButton
+                }
+            }
+            .inspector(isPresented: $showingUpcoming) { upcomingInspector }
+        case .calendar:
+            DayTimelinePane(
+                calendar: model.snapshot?.calendar,
+                selectedDate: model.selectedDate,
+                theme: theme,
+                timeFormat: currentTimeFormat,
+                onSetDate: { date in
+                    model.selectedDate = date
+                    model.weekOffset = 0
+                    model.refresh()
+                },
+                onCreate: { date in eventEditor = .create(date) },
+                onOpenOccurrence: { occ in eventEditor = .edit(occ) },
+                onMoveOccurrence: moveOccurrence,
+                onTapTitle: { showingMonthView = true },
+                isCreatingEvent: isCreatingEventDraft,
+                resetToken: timelineResetToken,
+                preferredVisibleDays: 5
+            )
+            .ignoresSafeArea(.container, edges: .bottom)
+            .navigationTitle("")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItemGroup(placement: .topBarTrailing) {
+                    Button { showingCalendarAdd = true } label: {
+                        Image(systemName: "calendar.badge.plus")
+                    }
+                    searchToolbarButton
+                    upcomingToggleButton
+                }
+            }
+            .inspector(isPresented: $showingUpcoming) { upcomingInspector }
+        case .scheme:
+            if let selectedScheme {
+                IntegratedSchemeEditorPane(
+                    scheme: selectedScheme,
+                    theme: theme,
+                    onBack: nil,
+                    onAdd: { addItemTarget = .scheme(selectedScheme.id) },
+                    usesNativeNavigation: true,
+                    showsEditorNavigation: true,
+                    autoFocusTitleOnAppear: titleFocusSchemeID == selectedScheme.id,
+                    onAutoFocusTitleConsumed: { consumeTitleFocus(for: selectedScheme.id) }
+                )
+                .toolbar {
+                    ToolbarItem(placement: .topBarTrailing) {
+                        Button { addItemTarget = .scheme(selectedScheme.id) } label: {
+                            Image(systemName: "plus")
+                        }
+                        .disabled(selectedScheme.isReadOnly)
+                    }
+                }
+            } else {
+                EmptyState(title: "Pick a scheme", detail: "Choose a scheme from the sidebar.", theme: theme)
+            }
+        case .daily:
+            DailyFeedPane(
+                entries: model.snapshot?.daily ?? [],
+                selectedDate: model.selectedDate,
+                theme: theme,
+                onPrevious: { selectDailyDate(Calendar.current.date(byAdding: .day, value: -1, to: model.selectedDate) ?? model.selectedDate) },
+                onNext: { selectDailyDate(Calendar.current.date(byAdding: .day, value: 1, to: model.selectedDate) ?? model.selectedDate) },
+                onDate: selectDailyDate,
+                onBack: {},
+                onAdd: { addItemTarget = .todayDaily },
+                usesNativeNavigation: true
+            )
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button { addItemTarget = .todayDaily } label: { Image(systemName: "plus") }
+                }
+            }
+        case .settings:
+            SettingsForm(theme: theme)
+                .navigationTitle("Settings")
+                .navigationBarTitleDisplayMode(.inline)
+        case .search:
+            IPadSearchDetail(theme: theme, onOpenScheme: selectScheme)
+        }
+    }
+
+    private var upcomingInspector: some View {
+        DesktopUpcomingRail(
+            calendar: model.snapshot?.calendar,
+            theme: theme,
+            timeFormat: currentTimeFormat,
+            onToggleOccurrence: handleOccurrenceTap,
+            onOpenOccurrence: { eventEditor = .edit($0) }
+        )
+        .inspectorColumnWidth(min: 240, ideal: 282, max: 360)
+    }
+
+    private var upcomingToggleButton: some View {
+        Button { showingUpcoming.toggle() } label: {
+            Image(systemName: "sidebar.right")
+        }
+    }
+
+    private var searchToolbarButton: some View {
+        Button { pane = .search } label: {
+            Image(systemName: "magnifyingglass")
+        }
+    }
+
     @ViewBuilder
     private func mainPane(wide: Bool) -> some View {
         switch pane {
@@ -317,44 +466,29 @@ struct ContentView: View {
                 )
             }
         case .calendar:
-            if wide {
-                DesktopCalendarPane(
-                    calendar: model.snapshot?.calendar,
-                    theme: theme,
-                    wide: wide,
-                    onPrevious: { model.weekOffset -= 1; model.refresh() },
-                    onNext: { model.weekOffset += 1; model.refresh() },
-                    onToday: {
-                        model.weekOffset = 0
-                        model.selectedDate = Date()
-                        model.refresh()
-                    },
-                    onAdd: { showingCalendarAdd = true },
-                    timeFormat: currentTimeFormat,
-                    onOpenScheme: selectScheme
-                )
-            } else {
-                DayTimelinePane(
-                    calendar: model.snapshot?.calendar,
-                    selectedDate: model.selectedDate,
-                    theme: theme,
-                    timeFormat: currentTimeFormat,
-                    onSetDate: { date in
-                        model.selectedDate = date
-                        model.weekOffset = 0
-                        model.refresh()
-                    },
-                    onCreate: { date in eventEditor = .create(date) },
-                    onOpenOccurrence: { occ in eventEditor = .edit(occ) },
-                    onMoveOccurrence: moveOccurrence,
-                    onTapTitle: { showingMonthView = true },
-                    isCreatingEvent: isCreatingEventDraft,
-                    resetToken: timelineResetToken
-                )
-                // Extend the timeline to the screen's bottom edge so it scrolls
-                // all the way down with no leftover safe-area lip.
-                .ignoresSafeArea(.container, edges: .bottom)
-            }
+            // Same hour-grid timeline on every size; the iPad just shows more
+            // active days (5) alongside the sidebar and upcoming rail.
+            DayTimelinePane(
+                calendar: model.snapshot?.calendar,
+                selectedDate: model.selectedDate,
+                theme: theme,
+                timeFormat: currentTimeFormat,
+                onSetDate: { date in
+                    model.selectedDate = date
+                    model.weekOffset = 0
+                    model.refresh()
+                },
+                onCreate: { date in eventEditor = .create(date) },
+                onOpenOccurrence: { occ in eventEditor = .edit(occ) },
+                onMoveOccurrence: moveOccurrence,
+                onTapTitle: { showingMonthView = true },
+                isCreatingEvent: isCreatingEventDraft,
+                resetToken: timelineResetToken,
+                preferredVisibleDays: wide ? 5 : nil
+            )
+            // Extend the timeline to the screen's bottom edge so it scrolls
+            // all the way down with no leftover safe-area lip.
+            .ignoresSafeArea(.container, edges: .bottom)
         case .scheme:
             if let selectedScheme {
                 DesktopSchemePane(

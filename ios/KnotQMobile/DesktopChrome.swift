@@ -1,78 +1,5 @@
 import SwiftUI
 
-struct DesktopTitleBar: View {
-    let title: String
-    let pane: MobilePane
-    let scheme: MobileScheme?
-    let theme: KnotQTheme
-    let onSearch: () -> Void
-    let onAddCalendar: () -> Void
-    let onAddItem: () -> Void
-    let onNewScheme: () -> Void
-    let onNewFolder: () -> Void
-    let onGoogleCalendar: () -> Void
-    let onSettings: () -> Void
-
-    var body: some View {
-        HStack(spacing: 10) {
-            RoundedRectangle(cornerRadius: 3)
-                .fill(markerColor)
-                .frame(width: 14, height: 14)
-
-            Text(title)
-                .font(.system(size: 14, weight: .semibold))
-                .lineLimit(1)
-                .frame(maxWidth: .infinity)
-
-            HStack(spacing: 8) {
-                Button(action: onSearch) {
-                    Image(systemName: "magnifyingglass")
-                }
-                .buttonStyle(TitleIconButton(theme: theme))
-
-                Menu {
-                    Button("Calendar Item", systemImage: "calendar.badge.plus", action: onAddCalendar)
-                    Button("Item", systemImage: "plus", action: onAddItem)
-                        .disabled(!(pane == .daily || (pane == .scheme && scheme?.isReadOnly != true)))
-                    Button("New Scheme", systemImage: "doc.badge.plus", action: onNewScheme)
-                    Button("Folder", systemImage: "folder.badge.plus", action: onNewFolder)
-                    Button("Google Calendar", systemImage: "calendar.badge.plus", action: onGoogleCalendar)
-                } label: {
-                    Image(systemName: "plus")
-                }
-                .buttonStyle(TitleIconButton(theme: theme))
-
-                Button(action: onSettings) {
-                    Image(systemName: "gearshape")
-                }
-                .buttonStyle(TitleIconButton(theme: theme))
-            }
-        }
-        .frame(height: 34)
-        .padding(.horizontal, 12)
-        .background(theme.bgToolbar)
-        .overlay(alignment: .bottom) {
-            Rectangle().fill(theme.divider).frame(height: 1)
-        }
-    }
-
-    private var markerColor: Color {
-        if let scheme, pane == .scheme {
-            return schemeColor(scheme.colorIndex, dark: theme.isDark)
-        }
-        if pane == .daily {
-            return dailyQueueColor(dark: theme.isDark)
-        }
-        if pane == .home {
-            return theme.accent
-        }
-        if pane == .calendar {
-            return theme.textPrimary
-        }
-        return theme.textDim
-    }
-}
-
 struct TitleIconButton: ButtonStyle {
     let theme: KnotQTheme
 
@@ -93,6 +20,7 @@ struct SyncSignInSheet: View {
     @State private var apiBase = "http://127.0.0.1:8787"
     @State private var email = ""
     @State private var password = ""
+    @State private var code = ""
 
     var body: some View {
         NavigationStack {
@@ -109,33 +37,63 @@ struct SyncSignInSheet: View {
                     .listRowBackground(theme.bgModal)
                 }
 
-                Section("Local sync backend") {
-                    TextField("Sync API", text: $apiBase)
-                        .textInputAutocapitalization(.never)
-                        .autocorrectionDisabled()
-                        .keyboardType(.URL)
-                    TextField("Email", text: $email)
-                        .textInputAutocapitalization(.never)
-                        .autocorrectionDisabled()
-                        .keyboardType(.emailAddress)
-                    SecureField("Password", text: $password)
-                    Button {
-                        Task {
-                            await model.signInToSync(apiBase: apiBase, email: email, password: password)
-                            if model.syncSession != nil {
-                                dismiss()
+                if let challenge = model.syncLoginChallenge {
+                    Section("Two-factor code") {
+                        Text("Enter the code we emailed to \(challenge.email).")
+                            .font(.footnote)
+                            .foregroundStyle(theme.textSoft)
+                        TextField("6-digit code", text: $code)
+                            .textInputAutocapitalization(.never)
+                            .autocorrectionDisabled()
+                            .keyboardType(.numberPad)
+                        Button {
+                            Task {
+                                await model.verifyLoginCode(code)
+                                if model.syncSession != nil {
+                                    dismiss()
+                                }
+                            }
+                        } label: {
+                            if model.syncAuthInProgress {
+                                ProgressView()
+                            } else {
+                                Text("Verify")
                             }
                         }
-                    } label: {
-                        if model.syncAuthInProgress {
-                            ProgressView()
-                        } else {
-                            Text("Sign in")
+                        .disabled(model.syncAuthInProgress || code.trimmingCharacters(in: .whitespaces).isEmpty)
+                        Button("Use a different account") {
+                            model.cancelLoginChallenge()
+                            code = ""
                         }
+                        .foregroundStyle(theme.textDim)
                     }
-                    .disabled(model.syncAuthInProgress)
+                    .listRowBackground(theme.bgModal)
+                } else {
+                    Section("Local sync backend") {
+                        TextField("Sync API", text: $apiBase)
+                            .textInputAutocapitalization(.never)
+                            .autocorrectionDisabled()
+                            .keyboardType(.URL)
+                        TextField("Email", text: $email)
+                            .textInputAutocapitalization(.never)
+                            .autocorrectionDisabled()
+                            .keyboardType(.emailAddress)
+                        SecureField("Password", text: $password)
+                        Button {
+                            Task {
+                                await model.signInToSync(apiBase: apiBase, email: email, password: password)
+                            }
+                        } label: {
+                            if model.syncAuthInProgress {
+                                ProgressView()
+                            } else {
+                                Text("Sign in")
+                            }
+                        }
+                        .disabled(model.syncAuthInProgress)
+                    }
+                    .listRowBackground(theme.bgModal)
                 }
-                .listRowBackground(theme.bgModal)
             }
             .scrollContentBackground(.hidden)
             .background(theme.bgApp)
@@ -149,107 +107,15 @@ struct SyncSignInSheet: View {
                 apiBase = model.syncSession?.apiBase ?? apiBase
                 email = model.syncSession?.email ?? email
             }
+            // Against a dev backend the emailed code is echoed back; prefill it so
+            // local testing is one tap. Real backends never send it.
+            .onChange(of: model.syncLoginChallenge?.challengeId) { _, _ in
+                if let devCode = model.syncLoginChallenge?.devCode {
+                    code = devCode
+                }
+            }
         }
         .tint(theme.accent)
-    }
-}
-
-struct DesktopNavigator: View {
-    let root: MobileNode?
-    let selectedPane: MobilePane
-    let selectedSchemeID: String?
-    let theme: KnotQTheme
-    let onSelectPane: (MobilePane) -> Void
-    let onSelectScheme: (String) -> Void
-    let onNewScheme: () -> Void
-    let onNewFolder: () -> Void
-    let onGoogleCalendar: (String?) -> Void
-
-    var body: some View {
-        VStack(spacing: 0) {
-            VStack(spacing: 2) {
-                NavigatorSpecialRow(title: "Home", color: theme.accent, selected: selectedPane == .home, theme: theme) {
-                    onSelectPane(.home)
-                }
-                NavigatorSpecialRow(title: "Calendar", color: theme.textPrimary, selected: selectedPane == .calendar, theme: theme) {
-                    onSelectPane(.calendar)
-                }
-                NavigatorSpecialRow(title: "Daily", color: dailyQueueColor(dark: theme.isDark), selected: selectedPane == .daily, theme: theme) {
-                    onSelectPane(.daily)
-                }
-            }
-            .padding(.bottom, 7)
-
-            Rectangle().fill(theme.divider).frame(height: 1).padding(.horizontal, 3).padding(.bottom, 8)
-
-            SchemeNavigatorListView(
-                root: root,
-                selectedSchemeID: selectedSchemeID,
-                theme: theme,
-                compact: true,
-                onOpenScheme: onSelectScheme
-            )
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-
-            HStack(spacing: 6) {
-                Menu {
-                    Button("New Scheme", systemImage: "doc.badge.plus", action: onNewScheme)
-                    Button("Folder", systemImage: "folder.badge.plus", action: onNewFolder)
-                    Button("Google Calendar", systemImage: "calendar.badge.plus") {
-                        onGoogleCalendar(nil)
-                    }
-                } label: {
-                    Label("New", systemImage: "plus")
-                        .font(.system(size: 12, weight: .semibold))
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                }
-                .buttonStyle(.plain)
-                .foregroundStyle(theme.textDim)
-
-                Button {
-                    onSelectPane(.settings)
-                } label: {
-                    Image(systemName: "gearshape")
-                }
-                .buttonStyle(TitleIconButton(theme: theme))
-            }
-            .padding(.top, 5)
-        }
-        .padding(.top, 10)
-        .padding(.horizontal, 7)
-        .padding(.bottom, 8)
-        .background(theme.bgSidebar, in: RoundedRectangle(cornerRadius: 10))
-        .overlay {
-            RoundedRectangle(cornerRadius: 10).stroke(theme.borderOverlay, lineWidth: 1)
-        }
-        .shadow(color: .black.opacity(theme.isDark ? 0.18 : 0.035), radius: theme.isDark ? 9 : 5, x: 0, y: theme.isDark ? 5 : 2)
-    }
-}
-
-struct NavigatorSpecialRow: View {
-    let title: String
-    let color: Color
-    let selected: Bool
-    let theme: KnotQTheme
-    let action: () -> Void
-
-    var body: some View {
-        Button(action: action) {
-            HStack(spacing: 8) {
-                RoundedRectangle(cornerRadius: 2)
-                    .fill(color)
-                    .frame(width: 11, height: 11)
-                Text(title)
-                    .font(.system(size: 13, weight: .medium))
-                    .lineLimit(1)
-                Spacer(minLength: 0)
-            }
-            .frame(height: 25)
-            .padding(.horizontal, 6)
-            .foregroundStyle(theme.textPrimary)
-            .background(selected ? theme.rowSelected : Color.clear, in: RoundedRectangle(cornerRadius: 4))
-        }
-        .buttonStyle(.plain)
     }
 }
 
@@ -343,9 +209,9 @@ struct DesktopUpcomingRail: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 10) {
-                UpcomingSection(title: "Overdue", empty: "None", occurrences: calendar?.overdue ?? [], theme: theme, timeFormat: timeFormat, onToggleOccurrence: onToggleOccurrence, onOpenOccurrence: onOpenOccurrence)
-                UpcomingSection(title: "Today", empty: "None today", occurrences: todayOccurrences, theme: theme, timeFormat: timeFormat, onToggleOccurrence: onToggleOccurrence, onOpenOccurrence: onOpenOccurrence)
-                UpcomingSection(title: "Upcoming", empty: "None", occurrences: calendar?.upcoming ?? [], theme: theme, timeFormat: timeFormat, onToggleOccurrence: onToggleOccurrence, onOpenOccurrence: onOpenOccurrence)
+                UpcomingSection(title: "Assignments", empty: "None", occurrences: assignments, theme: theme, timeFormat: timeFormat, onToggleOccurrence: onToggleOccurrence, onOpenOccurrence: onOpenOccurrence)
+                UpcomingSection(title: "Reminders", empty: "None", occurrences: reminders, theme: theme, timeFormat: timeFormat, onToggleOccurrence: onToggleOccurrence, onOpenOccurrence: onOpenOccurrence)
+                UpcomingSection(title: "Upcoming", empty: "None today", occurrences: upcomingEvents, theme: theme, timeFormat: timeFormat, onToggleOccurrence: onToggleOccurrence, onOpenOccurrence: onOpenOccurrence)
             }
             .padding(.horizontal, 4)
             .padding(.top, 8)
@@ -358,6 +224,124 @@ struct DesktopUpcomingRail: View {
             return []
         }
         return today.occurrences
+    }
+
+    /// Mirrors the desktop upcoming panel (`render_upcoming`): due-dated tasks
+    /// (assignments) and alert points (reminders) span overdue + upcoming, while
+    /// the "Upcoming" bucket is today's (and still-overdue) events only.
+    private var assignments: [MobileOccurrence] {
+        bucket(kind: "assignment", base: overduePlusUpcoming)
+    }
+
+    private var reminders: [MobileOccurrence] {
+        bucket(kind: "reminder", base: overduePlusUpcoming)
+    }
+
+    private var upcomingEvents: [MobileOccurrence] {
+        bucket(kind: "event", base: (calendar?.overdue ?? []) + todayOccurrences)
+    }
+
+    private var overduePlusUpcoming: [MobileOccurrence] {
+        (calendar?.overdue ?? []) + (calendar?.upcoming ?? [])
+    }
+
+    private func bucket(kind: String, base: [MobileOccurrence]) -> [MobileOccurrence] {
+        var seen = Set<String>()
+        return base
+            .filter { $0.kind == kind && seen.insert($0.id).inserted }
+            .sorted { lhs, rhs in
+                let l = MobileDate.parseDateTime(lhs.start ?? lhs.end) ?? .distantFuture
+                let r = MobileDate.parseDateTime(rhs.start ?? rhs.end) ?? .distantFuture
+                return l < r
+            }
+    }
+}
+
+/// Native iPad sidebar for the NavigationSplitView: the fixed destinations
+/// (Home/Calendar/Daily/Settings) as native rows, then the reused UIKit scheme
+/// tree (folders, drag-drop, archive) sized up for iPad.
+struct IPadSidebar: View {
+    let root: MobileNode?
+    @Binding var selection: SidebarItem?
+    let selectedSchemeID: String?
+    let theme: KnotQTheme
+    let onSelectScheme: (String) -> Void
+    let onNewScheme: () -> Void
+    let onNewFolder: () -> Void
+    let onGoogleCalendar: (String?) -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            VStack(spacing: 2) {
+                row(.home, title: "Home", icon: "square.stack.3d.up", color: theme.accent)
+                row(.calendar, title: "Calendar", icon: "calendar", color: theme.textPrimary)
+                row(.daily, title: "Daily", icon: "checklist", color: dailyQueueColor(dark: theme.isDark))
+                row(.settings, title: "Settings", icon: "gearshape", color: theme.textDim)
+            }
+            .padding(.horizontal, 10)
+            .padding(.top, 10)
+
+            HStack(spacing: 6) {
+                Text("Schemes")
+                    .font(.footnote.weight(.semibold))
+                    .foregroundStyle(theme.textDim)
+                Spacer(minLength: 0)
+                Menu {
+                    Button("New Scheme", systemImage: "doc.badge.plus", action: onNewScheme)
+                    Button("Folder", systemImage: "folder.badge.plus", action: onNewFolder)
+                    Button("Google Calendar", systemImage: "calendar.badge.plus") {
+                        onGoogleCalendar(nil)
+                    }
+                } label: {
+                    Image(systemName: "plus")
+                        .font(.system(size: 15, weight: .semibold))
+                        .foregroundStyle(theme.textDim)
+                        .frame(width: 30, height: 30)
+                        .contentShape(Rectangle())
+                }
+            }
+            .padding(.horizontal, 18)
+            .padding(.top, 16)
+            .padding(.bottom, 2)
+
+            SchemeNavigatorListView(
+                root: root,
+                selectedSchemeID: selectedSchemeID,
+                theme: theme,
+                compact: false,
+                onOpenScheme: onSelectScheme
+            )
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .background(theme.bgSidebar.ignoresSafeArea())
+    }
+
+    @ViewBuilder
+    private func row(_ item: SidebarItem, title: String, icon: String, color: Color) -> some View {
+        let selected = selection == item
+        Button {
+            selection = item
+        } label: {
+            HStack(spacing: 11) {
+                Image(systemName: icon)
+                    .font(.system(size: 16, weight: .medium))
+                    .foregroundStyle(color)
+                    .frame(width: 26)
+                Text(title)
+                    .font(.body)
+                    .foregroundStyle(theme.textPrimary)
+                Spacer(minLength: 0)
+            }
+            .padding(.horizontal, 10)
+            .frame(height: 40)
+            .background(
+                selected ? theme.rowSelected : Color.clear,
+                in: RoundedRectangle(cornerRadius: 8, style: .continuous)
+            )
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
     }
 }
 

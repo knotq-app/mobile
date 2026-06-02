@@ -169,6 +169,12 @@ struct IntegratedSchemeEditorPane: View {
                         controller.prepareImageUploadTarget()
                         showingImagePicker = true
                     },
+                    onBackSwipe: onBack.map { backAction in
+                        {
+                            commitDocument()
+                            backAction()
+                        }
+                    },
                     readOnly: scheme.isReadOnly
                 )
 
@@ -246,7 +252,7 @@ struct IntegratedSchemeEditorPane: View {
                 }) {
                     Image(systemName: "chevron.left")
                 }
-                .buttonStyle(TitleIconButton(theme: theme))
+                .buttonStyle(SchemeTopLipIconButton(theme: theme))
             }
 
             Spacer()
@@ -259,11 +265,22 @@ struct IntegratedSchemeEditorPane: View {
                     }
                 }
             }
-            .padding(.leading, 6)
+            .padding(.horizontal, 5)
+            .frame(height: 38)
+            .background {
+                SchemeLiquidGlassSurface(cornerRadius: 12)
+                    .background(theme.bgToolbar.opacity(theme.isDark ? 0.56 : 0.72), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+            }
+            .overlay {
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .stroke(theme.borderOverlay.opacity(theme.isDark ? 0.78 : 0.88), lineWidth: 0.8)
+            }
         }
         .padding(.horizontal, 12)
-        .frame(height: 50)
-        .background(theme.bgApp)
+        .frame(height: 54)
+        .frame(maxWidth: .infinity)
+        .contentShape(Rectangle())
+        .background(theme.bgApp.ignoresSafeArea(edges: .top))
         .overlay(alignment: .bottom) { Rectangle().fill(theme.dividerSoft).frame(height: 1) }
     }
 
@@ -425,6 +442,50 @@ struct IntegratedSchemeEditorPane: View {
     }
 }
 
+private struct SchemeLiquidGlassSurface: UIViewRepresentable {
+    let cornerRadius: CGFloat
+
+    func makeUIView(context: Context) -> UIVisualEffectView {
+        let view: UIVisualEffectView
+        if #available(iOS 26.0, *) {
+            view = UIVisualEffectView(effect: UIGlassEffect())
+        } else {
+            view = UIVisualEffectView(effect: UIBlurEffect(style: .systemUltraThinMaterial))
+        }
+        view.backgroundColor = .clear
+        view.isOpaque = false
+        view.contentView.backgroundColor = .clear
+        view.layer.cornerCurve = .continuous
+        view.clipsToBounds = true
+        view.layer.cornerRadius = cornerRadius
+        return view
+    }
+
+    func updateUIView(_ uiView: UIVisualEffectView, context: Context) {
+        uiView.layer.cornerRadius = cornerRadius
+    }
+}
+
+private struct SchemeTopLipIconButton: ButtonStyle {
+    let theme: KnotQTheme
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .font(.system(size: 13, weight: .semibold))
+            .foregroundStyle(theme.textPrimary)
+            .frame(width: 38, height: 38)
+            .background {
+                SchemeLiquidGlassSurface(cornerRadius: 12)
+                    .background(theme.bgToolbar.opacity(theme.isDark ? 0.56 : 0.72), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+            }
+            .overlay {
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .stroke(theme.borderOverlay.opacity(theme.isDark ? 0.78 : 0.88), lineWidth: 0.8)
+            }
+            .scaleEffect(configuration.isPressed ? 0.96 : 1)
+    }
+}
+
 private struct SchemeArchiveButton: View {
     let theme: KnotQTheme
     let action: () -> Void
@@ -432,10 +493,10 @@ private struct SchemeArchiveButton: View {
     var body: some View {
         Button(action: action) {
             Image(systemName: "archivebox")
-                .font(.system(size: 12, weight: .semibold))
+                .font(.system(size: 15, weight: .semibold))
                 .foregroundStyle(theme.textPrimary)
-                .frame(width: 30, height: 34)
-                .contentShape(Rectangle())
+                .frame(width: 38, height: 38)
+                .contentShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
         }
         .buttonStyle(.plain)
         .accessibilityLabel("Archive")

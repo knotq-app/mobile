@@ -12,6 +12,9 @@ final class AppModel: ObservableObject {
     @Published var weekOffset = 0
     @Published var syncSession: LocalSyncSession?
     @Published var syncAuthInProgress = false
+    // Set once a password login is accepted: the sign-in sheet then collects the
+    // emailed 2FA code, which `verifyLoginCode` exchanges for a session.
+    @Published var syncLoginChallenge: SyncLoginChallenge?
     @Published var syncInProgress = false
     @Published var googleAuthInProgress = false
     @Published var googleSyncInProgress = false
@@ -446,9 +449,55 @@ final class AppModel: ObservableObject {
                 let code = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
                 throw SyncAuthError.message(Self.syncErrorMessage(code?["code"] as? String))
             }
+            // A correct password earns a 2FA challenge, not a session: the backend
+            // emailed a code that `verifyLoginCode` will exchange for the session.
+            let challenge = try JSONDecoder().decode(SyncLoginChallengeResponse.self, from: data)
+            syncLoginChallenge = SyncLoginChallenge(
+                apiBase: apiBase,
+                email: email.trimmingCharacters(in: .whitespacesAndNewlines),
+                challengeId: challenge.challengeId,
+                devCode: challenge.devCode
+            )
+            errorMessage = nil
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    /// Second login step: exchange the emailed code for a session and finish signing in.
+    func verifyLoginCode(_ code: String) async {
+        guard let challenge = syncLoginChallenge,
+              let url = URL(string: "\(challenge.apiBase)/v1/auth/login/verify") else {
+            return
+        }
+        let trimmedCode = code.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedCode.isEmpty else {
+            errorMessage = "Enter the code we emailed you."
+            return
+        }
+
+        syncAuthInProgress = true
+        defer { syncAuthInProgress = false }
+
+        do {
+            var request = URLRequest(url: url)
+            request.httpMethod = "POST"
+            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            request.httpBody = try JSONSerialization.data(withJSONObject: [
+                "challenge_id": challenge.challengeId,
+                "code": trimmedCode
+            ])
+            let (data, response) = try await URLSession.shared.data(for: request)
+            guard let http = response as? HTTPURLResponse else {
+                throw SyncAuthError.message("Sync backend returned an invalid response.")
+            }
+            guard (200..<300).contains(http.statusCode) else {
+                let code = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
+                throw SyncAuthError.message(Self.syncErrorMessage(code?["code"] as? String))
+            }
             let payload = try JSONDecoder().decode(SyncLoginResponse.self, from: data)
             let session = LocalSyncSession(
-                apiBase: apiBase,
+                apiBase: challenge.apiBase,
                 userId: payload.userId,
                 email: payload.email,
                 supportsSync: payload.supportsSync,
@@ -459,12 +508,18 @@ final class AppModel: ObservableObject {
             )
             syncSession = session
             saveSyncSession(session)
+            syncLoginChallenge = nil
             errorMessage = nil
             startSyncPolling()
             await syncOnce()
         } catch {
             errorMessage = error.localizedDescription
         }
+    }
+
+    /// Abandon a pending 2FA challenge (e.g. to sign in as a different account).
+    func cancelLoginChallenge() {
+        syncLoginChallenge = nil
     }
 
     func signOutSync() {
@@ -680,6 +735,12 @@ final class AppModel: ObservableObject {
             return "Email or password is incorrect."
         case "password_too_long":
             return "Password is too long."
+        case "invalid_code":
+            return "That code is incorrect."
+        case "code_expired", "invalid_or_expired_code":
+            return "That code has expired. Sign in again to get a new one."
+        case "too_many_attempts":
+            return "Too many incorrect codes. Sign in again to get a new one."
         default:
             return "Sign in failed."
         }
@@ -789,6 +850,31 @@ final class AppModel: ObservableObject {
         input.locale = Locale(identifier: "en_US_POSIX")
         input.dateFormat = "yyyy-MM-dd"
         return input.date(from: raw)
+    }
+}
+
+/// A pending two-factor login awaiting its emailed code. `devCode` is only set
+/// against a dev backend (EXPOSE_EMAIL_TOKENS) and prefills the field for local testing.
+struct SyncLoginChallenge: Equatable {
+    let apiBase: String
+    let email: String
+    let challengeId: String
+    let devCode: String?
+}
+
+private struct SyncLoginChallengeResponse: Decodable {
+    let challengeId: String
+    let devCode: String?
+
+    enum CodingKeys: String, CodingKey {
+        case challengeId = "challenge_id"
+        case devCode = "dev_code"
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        challengeId = try container.decode(String.self, forKey: .challengeId)
+        devCode = try container.decodeIfPresent(String.self, forKey: .devCode)
     }
 }
 

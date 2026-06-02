@@ -178,6 +178,7 @@ struct HomeNavigationPane: View {
             }
             .navigationTitle("")
             .navigationBarTitleDisplayMode(.inline)
+            .toolbarBackground(.hidden, for: .navigationBar)
             .searchable(
                 text: $searchQuery,
                 isPresented: $searchPresented,

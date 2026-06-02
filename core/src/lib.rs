@@ -2824,7 +2824,10 @@ mod tests {
 
         let core = MobileCore::new(dir.display().to_string()).expect("open mobile core");
         let current = core.snapshot(None, 0).expect("current snapshot");
-        assert!(!current.daily.iter().any(|entry| entry.date == old_date.to_string()));
+        assert!(!current
+            .daily
+            .iter()
+            .any(|entry| entry.date == old_date.to_string()));
 
         let old = core
             .snapshot(Some(old_date.to_string()), 0)

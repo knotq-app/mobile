@@ -47,6 +47,7 @@ pub(crate) struct GoogleCalendarImportResult {
 
 pub(crate) struct ImportedGoogleCalendar {
     pub(crate) account_id: String,
+    pub(crate) account_email: Option<String>,
     pub(crate) calendar_id: String,
     pub(crate) name: String,
     pub(crate) color_index: u8,
@@ -247,6 +248,7 @@ pub(crate) fn google_calendar_source(calendar: &ImportedGoogleCalendar) -> Schem
     SchemeSource::ImportedCalendar(ImportedCalendarSource {
         provider: CalendarProvider::Google,
         account_id: calendar.account_id.clone(),
+        account_email: calendar.account_email.clone(),
         calendar_id: calendar.calendar_id.clone(),
         sync_token: calendar.sync_token.clone(),
         read_only: true,
@@ -466,6 +468,7 @@ fn import_google_account_calendars(
 
         imported.push(ImportedGoogleCalendar {
             account_id: account.account_id.clone(),
+            account_email: account.email.clone(),
             calendar_id: calendar.id.clone(),
             name: google_calendar_name(&calendar),
             color_index: google_calendar_color_index(

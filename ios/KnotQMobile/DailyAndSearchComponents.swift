@@ -325,6 +325,51 @@ struct DesktopItemRow: View {
     }
 }
 
+/// iPad search detail: a native `.searchable` field in the nav bar over a plain
+/// results List, instead of the iPhone's bottom-floating search bar.
+struct IPadSearchDetail: View {
+    @EnvironmentObject private var model: AppModel
+    let theme: KnotQTheme
+    let onOpenScheme: (String) -> Void
+    @State private var query = ""
+
+    var body: some View {
+        List {
+            if model.searchHits.isEmpty {
+                Text(query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "Search across all schemes." : "No results.")
+                    .font(.system(size: 15))
+                    .foregroundStyle(theme.textMuted)
+                    .frame(maxWidth: .infinity, alignment: .center)
+                    .padding(.top, 40)
+                    .listRowBackground(Color.clear)
+                    .listRowSeparator(.hidden)
+            } else {
+                ForEach(Array(model.searchHits.enumerated()), id: \.element.id) { idx, hit in
+                    Button {
+                        if let schemeID = hit.schemeId {
+                            onOpenScheme(schemeID)
+                        }
+                    } label: {
+                        HomeSearchHitRow(hit: hit, theme: theme, striped: false)
+                    }
+                    .buttonStyle(.plain)
+                    .listRowBackground(idx % 2 == 1 ? theme.rowAlt : Color.clear)
+                    .listRowSeparator(.hidden)
+                }
+            }
+        }
+        .listStyle(.plain)
+        .scrollContentBackground(.hidden)
+        .background(theme.bgApp)
+        .searchable(text: $query, placement: .navigationBarDrawer(displayMode: .always), prompt: "Search KnotQ")
+        .autocorrectionDisabled()
+        .onChange(of: query) { _, value in model.search(value) }
+        .onAppear { model.search(query) }
+        .navigationTitle("Search")
+        .navigationBarTitleDisplayMode(.inline)
+    }
+}
+
 struct DesktopSearchPane: View {
     @EnvironmentObject private var model: AppModel
     let theme: KnotQTheme

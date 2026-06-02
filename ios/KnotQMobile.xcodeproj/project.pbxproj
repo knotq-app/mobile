@@ -19,7 +19,7 @@
 		01000000000000000000000A /* SearchScreen.swift in Sources */ = {isa = PBXBuildFile; fileRef = 02000000000000000000000A /* SearchScreen.swift */; };
 		01000000000000000000000B /* SettingsScreen.swift in Sources */ = {isa = PBXBuildFile; fileRef = 02000000000000000000000B /* SettingsScreen.swift */; };
 		01000000000000000000000C /* SharedViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 02000000000000000000000C /* SharedViews.swift */; };
-		01000000000000000000000D /* KnotQMobileCore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 020000000000000000000010 /* KnotQMobileCore.swift */; };
+		01000000000000000000000D /* Generated/KnotQMobileCore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 020000000000000000000010 /* Generated/KnotQMobileCore.swift */; };
 		01000000000000000000000E /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 020000000000000000000011 /* Assets.xcassets */; };
 		01000000000000000000000F /* MobileNotificationScheduler.swift in Sources */ = {isa = PBXBuildFile; fileRef = 020000000000000000000012 /* MobileNotificationScheduler.swift */; };
 		010000000000000000000010 /* AppIntents.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 020000000000000000000013 /* AppIntents.framework */; };
@@ -30,7 +30,7 @@
 		010000000000000000000015 /* KnotQUpcomingWidget.swift in Sources */ = {isa = PBXBuildFile; fileRef = 020000000000000000000019 /* KnotQUpcomingWidget.swift */; };
 		010000000000000000000016 /* WidgetKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 020000000000000000000017 /* WidgetKit.framework */; };
 		010000000000000000000017 /* SwiftUI.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 020000000000000000000018 /* SwiftUI.framework */; };
-		010000000000000000000018 /* KnotQUpcomingWidget.appex in Embed App Extensions */ = {isa = PBXBuildFile; fileRef = 02000000000000000000001C /* KnotQUpcomingWidget.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, CodeSignOnCopy, ); }; };
+		010000000000000000000018 /* KnotQUpcomingWidget.appex in Embed App Extensions */ = {isa = PBXBuildFile; fileRef = 02000000000000000000001C /* KnotQUpcomingWidget.appex */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
 		01000000000000000000001D /* ContentView+Components.swift in Sources */ = {isa = PBXBuildFile; fileRef = 02000000000000000000001D /* ContentView+Components.swift */; };
 		01000000000000000000001E /* SchemeEditorView+Components.swift in Sources */ = {isa = PBXBuildFile; fileRef = 02000000000000000000001E /* SchemeEditorView+Components.swift */; };
 		01000000000000000000001F /* Theme+Colors.swift in Sources */ = {isa = PBXBuildFile; fileRef = 02000000000000000000001F /* Theme+Colors.swift */; };
@@ -60,6 +60,20 @@
 		};
 /* End PBXContainerItemProxy section */
 
+/* Begin PBXCopyFilesBuildPhase section */
+		0C0000000000000000000001 /* Embed App Extensions */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 13;
+			files = (
+				010000000000000000000018 /* KnotQUpcomingWidget.appex in Embed App Extensions */,
+			);
+			name = "Embed App Extensions";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
+
 /* Begin PBXFileReference section */
 		020000000000000000000001 /* KnotQMobileApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KnotQMobileApp.swift; sourceTree = "<group>"; };
 		020000000000000000000002 /* Models.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Models.swift; sourceTree = "<group>"; };
@@ -76,7 +90,7 @@
 		02000000000000000000000D /* KnotQMobile-Bridging-Header.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = "KnotQMobile-Bridging-Header.h"; sourceTree = "<group>"; };
 		02000000000000000000000E /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		02000000000000000000000F /* KnotQMobile.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = KnotQMobile.app; sourceTree = BUILT_PRODUCTS_DIR; };
-		020000000000000000000010 /* KnotQMobileCore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Generated/KnotQMobileCore.swift; sourceTree = "<group>"; };
+		020000000000000000000010 /* Generated/KnotQMobileCore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Generated/KnotQMobileCore.swift; sourceTree = "<group>"; };
 		020000000000000000000011 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		020000000000000000000012 /* MobileNotificationScheduler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MobileNotificationScheduler.swift; sourceTree = "<group>"; };
 		020000000000000000000013 /* AppIntents.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = AppIntents.framework; path = System/Library/Frameworks/AppIntents.framework; sourceTree = SDKROOT; };
@@ -92,20 +106,20 @@
 		02000000000000000000001D /* ContentView+Components.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ContentView+Components.swift"; sourceTree = "<group>"; };
 		02000000000000000000001E /* SchemeEditorView+Components.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "SchemeEditorView+Components.swift"; sourceTree = "<group>"; };
 		02000000000000000000001F /* Theme+Colors.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Theme+Colors.swift"; sourceTree = "<group>"; };
-		020000000000000000000020 /* DesktopChrome.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "DesktopChrome.swift"; sourceTree = "<group>"; };
-		020000000000000000000021 /* HomeComponents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "HomeComponents.swift"; sourceTree = "<group>"; };
-		020000000000000000000022 /* SchemeNavigatorUIKit.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "SchemeNavigatorUIKit.swift"; sourceTree = "<group>"; };
-		020000000000000000000023 /* HomeDailyComponents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "HomeDailyComponents.swift"; sourceTree = "<group>"; };
-		020000000000000000000024 /* CalendarComponents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "CalendarComponents.swift"; sourceTree = "<group>"; };
-		020000000000000000000025 /* DayTimelineComponents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "DayTimelineComponents.swift"; sourceTree = "<group>"; };
-		020000000000000000000026 /* DayTimelineUIKitView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "DayTimelineUIKitView.swift"; sourceTree = "<group>"; };
-		020000000000000000000027 /* ArchiveAndSettingsComponents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ArchiveAndSettingsComponents.swift"; sourceTree = "<group>"; };
-		020000000000000000000028 /* DailyAndSearchComponents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "DailyAndSearchComponents.swift"; sourceTree = "<group>"; };
-		020000000000000000000029 /* MobileDockAndMisc.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MobileDockAndMisc.swift"; sourceTree = "<group>"; };
-		02000000000000000000002A /* SchemeEditorChrome.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "SchemeEditorChrome.swift"; sourceTree = "<group>"; };
-		02000000000000000000002B /* SchemeEditorTextInput.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "SchemeEditorTextInput.swift"; sourceTree = "<group>"; };
-		02000000000000000000002C /* SchemeEditorTextView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "SchemeEditorTextView.swift"; sourceTree = "<group>"; };
-		02000000000000000000002D /* SchemeEditorSheets.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "SchemeEditorSheets.swift"; sourceTree = "<group>"; };
+		020000000000000000000020 /* DesktopChrome.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DesktopChrome.swift; sourceTree = "<group>"; };
+		020000000000000000000021 /* HomeComponents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HomeComponents.swift; sourceTree = "<group>"; };
+		020000000000000000000022 /* SchemeNavigatorUIKit.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SchemeNavigatorUIKit.swift; sourceTree = "<group>"; };
+		020000000000000000000023 /* HomeDailyComponents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HomeDailyComponents.swift; sourceTree = "<group>"; };
+		020000000000000000000024 /* CalendarComponents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CalendarComponents.swift; sourceTree = "<group>"; };
+		020000000000000000000025 /* DayTimelineComponents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DayTimelineComponents.swift; sourceTree = "<group>"; };
+		020000000000000000000026 /* DayTimelineUIKitView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DayTimelineUIKitView.swift; sourceTree = "<group>"; };
+		020000000000000000000027 /* ArchiveAndSettingsComponents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ArchiveAndSettingsComponents.swift; sourceTree = "<group>"; };
+		020000000000000000000028 /* DailyAndSearchComponents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DailyAndSearchComponents.swift; sourceTree = "<group>"; };
+		020000000000000000000029 /* MobileDockAndMisc.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MobileDockAndMisc.swift; sourceTree = "<group>"; };
+		02000000000000000000002A /* SchemeEditorChrome.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SchemeEditorChrome.swift; sourceTree = "<group>"; };
+		02000000000000000000002B /* SchemeEditorTextInput.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SchemeEditorTextInput.swift; sourceTree = "<group>"; };
+		02000000000000000000002C /* SchemeEditorTextView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SchemeEditorTextView.swift; sourceTree = "<group>"; };
+		02000000000000000000002D /* SchemeEditorSheets.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SchemeEditorSheets.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -136,6 +150,7 @@
 				040000000000000000000002 /* KnotQMobile */,
 				040000000000000000000004 /* KnotQUpcomingWidget */,
 				040000000000000000000003 /* Products */,
+				B40A20D62FCCE44A00D5456E /* Recovered References */,
 			);
 			sourceTree = "<group>";
 		};
@@ -144,7 +159,7 @@
 			children = (
 				020000000000000000000001 /* KnotQMobileApp.swift */,
 				020000000000000000000002 /* Models.swift */,
-				020000000000000000000010 /* KnotQMobileCore.swift */,
+				020000000000000000000010 /* Generated/KnotQMobileCore.swift */,
 				020000000000000000000003 /* RustBridge.swift */,
 				020000000000000000000004 /* AppModel.swift */,
 				020000000000000000000012 /* MobileNotificationScheduler.swift */,
@@ -183,6 +198,15 @@
 			path = KnotQMobile;
 			sourceTree = "<group>";
 		};
+		040000000000000000000003 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				02000000000000000000000F /* KnotQMobile.app */,
+				02000000000000000000001C /* KnotQUpcomingWidget.appex */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
 		040000000000000000000004 /* KnotQUpcomingWidget */ = {
 			isa = PBXGroup;
 			children = (
@@ -193,13 +217,14 @@
 			path = KnotQUpcomingWidget;
 			sourceTree = "<group>";
 		};
-		040000000000000000000003 /* Products */ = {
+		B40A20D62FCCE44A00D5456E /* Recovered References */ = {
 			isa = PBXGroup;
 			children = (
-				02000000000000000000000F /* KnotQMobile.app */,
-				02000000000000000000001C /* KnotQUpcomingWidget.appex */,
+				020000000000000000000013 /* AppIntents.framework */,
+				020000000000000000000017 /* WidgetKit.framework */,
+				020000000000000000000018 /* SwiftUI.framework */,
 			);
-			name = Products;
+			name = "Recovered References";
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -251,16 +276,16 @@
 				BuildIndependentTargetsInParallel = 1;
 				LastSwiftUpdateCheck = 2650;
 				LastUpgradeCheck = 2650;
-					TargetAttributes = {
-						050000000000000000000001 = {
-							CreatedOnToolsVersion = 26.5;
-							ProvisioningStyle = Automatic;
-						};
-						050000000000000000000002 = {
-							CreatedOnToolsVersion = 26.5;
-							ProvisioningStyle = Automatic;
-						};
+				TargetAttributes = {
+					050000000000000000000001 = {
+						CreatedOnToolsVersion = 26.5;
+						ProvisioningStyle = Automatic;
 					};
+					050000000000000000000002 = {
+						CreatedOnToolsVersion = 26.5;
+						ProvisioningStyle = Automatic;
+					};
+				};
 			};
 			buildConfigurationList = 0B0000000000000000000001 /* Build configuration list for PBXProject "KnotQMobile" */;
 			developmentRegion = en;
@@ -281,20 +306,6 @@
 			);
 		};
 /* End PBXProject section */
-
-/* Begin PBXCopyFilesBuildPhase section */
-		0C0000000000000000000001 /* Embed App Extensions */ = {
-			isa = PBXCopyFilesBuildPhase;
-			buildActionMask = 2147483647;
-			dstPath = "";
-			dstSubfolderSpec = 13;
-			files = (
-				010000000000000000000018 /* KnotQUpcomingWidget.appex in Embed App Extensions */,
-			);
-			name = "Embed App Extensions";
-			runOnlyForDeploymentPostprocessing = 0;
-		};
-/* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXResourcesBuildPhase section */
 		070000000000000000000001 /* Resources */ = {
@@ -343,7 +354,7 @@
 			files = (
 				010000000000000000000001 /* KnotQMobileApp.swift in Sources */,
 				010000000000000000000002 /* Models.swift in Sources */,
-				01000000000000000000000D /* KnotQMobileCore.swift in Sources */,
+				01000000000000000000000D /* Generated/KnotQMobileCore.swift in Sources */,
 				010000000000000000000003 /* RustBridge.swift in Sources */,
 				010000000000000000000004 /* AppModel.swift in Sources */,
 				01000000000000000000000F /* MobileNotificationScheduler.swift in Sources */,
@@ -512,15 +523,15 @@
 			name = Release;
 		};
 		0A0000000000000000000003 /* Debug */ = {
-				isa = XCBuildConfiguration;
-				buildSettings = {
-					ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
-					CODE_SIGN_ENTITLEMENTS = KnotQMobile/KnotQMobile.entitlements;
-					CODE_SIGN_IDENTITY = "Apple Development";
-					CODE_SIGN_STYLE = Automatic;
-					CURRENT_PROJECT_VERSION = 1;
-					DEVELOPMENT_ASSET_PATHS = "";
-					DEVELOPMENT_TEAM = T35KD9JHQ6;
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_ENTITLEMENTS = KnotQMobile/KnotQMobile.entitlements;
+				CODE_SIGN_IDENTITY = "Apple Development";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_ASSET_PATHS = "";
+				DEVELOPMENT_TEAM = T35KD9JHQ6;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = KnotQMobile/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = KnotQ;
@@ -549,15 +560,15 @@
 			name = Debug;
 		};
 		0A0000000000000000000004 /* Release */ = {
-				isa = XCBuildConfiguration;
-				buildSettings = {
-					ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
-					CODE_SIGN_ENTITLEMENTS = KnotQMobile/KnotQMobile.entitlements;
-					CODE_SIGN_IDENTITY = "Apple Development";
-					CODE_SIGN_STYLE = Automatic;
-					CURRENT_PROJECT_VERSION = 1;
-					DEVELOPMENT_ASSET_PATHS = "";
-					DEVELOPMENT_TEAM = T35KD9JHQ6;
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_ENTITLEMENTS = KnotQMobile/KnotQMobile.entitlements;
+				CODE_SIGN_IDENTITY = "Apple Development";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_ASSET_PATHS = "";
+				DEVELOPMENT_TEAM = T35KD9JHQ6;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = KnotQMobile/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = KnotQ;
@@ -603,7 +614,7 @@
 					"@executable_path/../../Frameworks",
 				);
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.enigmadux.knotq.upcoming-widget;
+				PRODUCT_BUNDLE_IDENTIFIER = "com.enigmadux.knotq.upcoming-widget";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SKIP_INSTALL = YES;
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
@@ -630,7 +641,7 @@
 					"@executable_path/../../Frameworks",
 				);
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.enigmadux.knotq.upcoming-widget;
+				PRODUCT_BUNDLE_IDENTIFIER = "com.enigmadux.knotq.upcoming-widget";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SKIP_INSTALL = YES;
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";

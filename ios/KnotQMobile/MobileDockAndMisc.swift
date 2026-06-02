@@ -63,85 +63,100 @@ struct NotificationDefaultsSettingsSection: View {
     }
 }
 
+// iPhone settings: the shared `SettingsForm` wrapped in its own NavigationStack
+// (with dock clearance). On iPad the detail column provides the NavigationStack,
+// so it hosts `SettingsForm` directly instead.
 struct DesktopSettingsPane: View {
+    @EnvironmentObject private var model: AppModel
+    let theme: KnotQTheme
+
+    var body: some View {
+        NavigationStack {
+            SettingsForm(theme: theme)
+                .safeAreaInset(edge: .bottom) {
+                    Color.clear
+                        .frame(height: 118)
+                        .background(theme.bgApp)
+                }
+                .navigationTitle("Settings")
+        }
+        .tint(theme.accent)
+    }
+}
+
+/// The settings `Form` on its own (no NavigationStack), so it can be hosted inside
+/// either the iPhone NavigationStack or the iPad NavigationSplitView detail column.
+struct SettingsForm: View {
     @EnvironmentObject private var model: AppModel
     let theme: KnotQTheme
     @State private var showingSyncSignIn = false
 
     var body: some View {
-        NavigationStack {
-            Form {
-                Section {
-                    Picker("Theme", selection: themeBinding) {
-                        SettingsThemeOption(title: "Dark", systemImage: "moon.fill").tag("dark")
-                        SettingsThemeOption(title: "Light", systemImage: "sun.max.fill").tag("light")
-                        SettingsThemeOption(title: "System", systemImage: "circle.lefthalf.filled").tag("system")
-                    }
-                    .pickerStyle(.menu)
-                } header: {
-                    Text("Appearance")
+        Form {
+            Section {
+                Picker("Theme", selection: themeBinding) {
+                    SettingsThemeOption(title: "Dark", systemImage: "moon.fill").tag("dark")
+                    SettingsThemeOption(title: "Light", systemImage: "sun.max.fill").tag("light")
+                    SettingsThemeOption(title: "System", systemImage: "circle.lefthalf.filled").tag("system")
                 }
-                .listRowBackground(theme.bgModal)
-
-                Section {
-                    Picker("Clock", selection: timeBinding) {
-                        Text("12-hour").tag("twelve_hour")
-                        Text("24-hour").tag("twenty_four_hour")
-                    }
-                    .pickerStyle(.menu)
-                } header: {
-                    Text("Time")
-                }
-                .listRowBackground(theme.bgModal)
-
-                NotificationDefaultsSettingsSection(theme: theme)
-
-                SettingsArchiveSection(schemes: model.snapshot?.archivedSchemes ?? [], theme: theme)
-
-                GoogleCalendarSettingsSection(theme: theme)
-
-                Section {
-                    if let session = model.syncSession {
-                        LabeledContent("Account", value: session.email)
-                        LabeledContent("Backend", value: session.apiBase)
-                        LabeledContent("Status") {
-                            if model.syncInProgress {
-                                ProgressView()
-                            } else {
-                                Text(session.supportsSync ? "Enabled" : "Not allowed")
-                                    .foregroundStyle(session.supportsSync ? theme.textDim : theme.danger)
-                            }
-                        }
-                        Button("Manage Sync Account", systemImage: "person.crop.circle") {
-                            showingSyncSignIn = true
-                        }
-                        Button("Sign Out", systemImage: "rectangle.portrait.and.arrow.right", role: .destructive) {
-                            model.signOutSync()
-                        }
-                    } else {
-                        LabeledContent("Status") {
-                            Text("Not signed in")
-                                .foregroundStyle(theme.textDim)
-                        }
-                        Button("Sign in to Sync", systemImage: "person.crop.circle") {
-                            showingSyncSignIn = true
-                        }
-                    }
-                } header: {
-                    Text("Sync")
-                }
-                .listRowBackground(theme.bgModal)
-
+                .pickerStyle(.menu)
+            } header: {
+                Text("Appearance")
             }
-            .scrollContentBackground(.hidden)
-            .background(theme.bgApp)
-            .safeAreaInset(edge: .bottom) {
-                Color.clear
-                    .frame(height: 118)
-                    .background(theme.bgApp)
+            .listRowBackground(theme.bgModal)
+
+            Section {
+                Picker("Clock", selection: timeBinding) {
+                    Text("12-hour").tag("twelve_hour")
+                    Text("24-hour").tag("twenty_four_hour")
+                }
+                .pickerStyle(.menu)
+            } header: {
+                Text("Time")
             }
-            .navigationTitle("Settings")
+            .listRowBackground(theme.bgModal)
+
+            NotificationDefaultsSettingsSection(theme: theme)
+
+            SettingsArchiveSection(schemes: model.snapshot?.archivedSchemes ?? [], theme: theme)
+
+            GoogleCalendarSettingsSection(theme: theme)
+
+            Section {
+                if let session = model.syncSession {
+                    LabeledContent("Account", value: session.email)
+                    LabeledContent("Backend", value: session.apiBase)
+                    LabeledContent("Status") {
+                        if model.syncInProgress {
+                            ProgressView()
+                        } else {
+                            Text(session.supportsSync ? "Enabled" : "Not allowed")
+                                .foregroundStyle(session.supportsSync ? theme.textDim : theme.danger)
+                        }
+                    }
+                    Button("Manage Sync Account", systemImage: "person.crop.circle") {
+                        showingSyncSignIn = true
+                    }
+                    Button("Sign Out", systemImage: "rectangle.portrait.and.arrow.right", role: .destructive) {
+                        model.signOutSync()
+                    }
+                } else {
+                    LabeledContent("Status") {
+                        Text("Not signed in")
+                            .foregroundStyle(theme.textDim)
+                    }
+                    Button("Sign in to Sync", systemImage: "person.crop.circle") {
+                        showingSyncSignIn = true
+                    }
+                }
+            } header: {
+                Text("Sync")
+            }
+            .listRowBackground(theme.bgModal)
+
         }
+        .scrollContentBackground(.hidden)
+        .background(theme.bgApp)
         .tint(theme.accent)
         .sheet(isPresented: $showingSyncSignIn) {
             SyncSignInSheet(theme: theme)
@@ -163,7 +178,6 @@ struct DesktopSettingsPane: View {
             set: { model.setTimeFormat($0) }
         )
     }
-
 }
 
 struct MobileDock: View {

@@ -30,6 +30,7 @@ struct KnotQUpcomingWidget: Widget {
         .configurationDisplayName("Upcoming")
         .description("Shows upcoming KnotQ items.")
         .supportedFamilies([.systemSmall, .systemMedium, .systemLarge, .accessoryInline, .accessoryRectangular])
+        .containerBackgroundRemovable(false)
     }
 }
 
@@ -46,6 +47,20 @@ private struct KnotQUpcomingWidgetView: View {
     let entry: KnotQUpcomingEntry
 
     var body: some View {
+        content
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .background {
+                if family != .accessoryInline {
+                    theme.background
+                }
+            }
+            .containerBackground(for: .widget) {
+                theme.background
+            }
+    }
+
+    @ViewBuilder
+    private var content: some View {
         Group {
             switch family {
             case .accessoryInline:
@@ -54,16 +69,15 @@ private struct KnotQUpcomingWidgetView: View {
             case .accessoryRectangular:
                 accessoryRectangular
             case .systemSmall:
-                systemBody(limit: 3)
+                systemBody(limit: 3, rowHeight: 37)
             case .systemMedium:
-                systemBody(limit: 6, columns: 2, dense: true)
+                systemBody(limit: 6, columns: 2, dense: true, rowHeight: 34)
             case .systemLarge:
-                systemBody(limit: 24, columns: 2, dense: true)
+                systemBody(limit: 12, columns: 2, rowHeight: 44)
             default:
-                systemBody(limit: 3)
+                systemBody(limit: 3, rowHeight: 37)
             }
         }
-        .containerBackground(theme.background, for: .widget)
     }
 
     private var accessoryRectangular: some View {
@@ -77,6 +91,7 @@ private struct KnotQUpcomingWidgetView: View {
                     striped: false,
                     compact: true
                 )
+                .frame(height: 34, alignment: .center)
                 if visibleItems.count > 1 {
                     Text("+ \(visibleItems.count - 1) more")
                         .font(.caption2.monospacedDigit())
@@ -93,7 +108,7 @@ private struct KnotQUpcomingWidgetView: View {
         .padding(8)
     }
 
-    private func systemBody(limit: Int, columns: Int = 1, dense: Bool = false) -> some View {
+    private func systemBody(limit: Int, columns: Int = 1, dense: Bool = false, rowHeight: CGFloat) -> some View {
         VStack(alignment: .leading, spacing: dense ? 1 : 3) {
             currentDateHeader
             if visibleItems.isEmpty {
@@ -113,6 +128,7 @@ private struct KnotQUpcomingWidgetView: View {
                                 striped: false,
                                 compact: true
                             )
+                            .frame(height: rowHeight, alignment: .center)
 
                             if idx != min(limit, visibleItems.count) - 1 {
                                 Divider()
@@ -122,16 +138,22 @@ private struct KnotQUpcomingWidgetView: View {
                     }
                 } else {
                     HStack(alignment: .top, spacing: dense ? 5 : 8) {
-                        ForEach(Array(columnFilledItems(limit: limit, columns: columns).enumerated()), id: \.offset) { _, columnItems in
+                        ForEach(Array(columnFilledSlots(limit: limit, columns: columns).enumerated()), id: \.offset) { _, columnItems in
                             VStack(spacing: dense ? 1 : 3) {
-                                ForEach(columnItems, id: \.element.id) { _, item in
-                                    WidgetOccurrenceCompactRow(
-                                        item: item,
-                                        time: timeLabel(for: item),
-                                        theme: theme,
-                                        striped: false,
-                                        compact: dense
-                                    )
+                                ForEach(columnItems) { slot in
+                                    if let item = slot.item {
+                                        WidgetOccurrenceCompactRow(
+                                            item: item,
+                                            time: timeLabel(for: item),
+                                            theme: theme,
+                                            striped: false,
+                                            compact: dense
+                                        )
+                                        .frame(height: rowHeight, alignment: .center)
+                                    } else {
+                                        Color.clear
+                                            .frame(height: rowHeight)
+                                    }
                                 }
                             }
                             .frame(maxWidth: .infinity, alignment: .topLeading)
@@ -147,29 +169,30 @@ private struct KnotQUpcomingWidgetView: View {
 
     private var currentDateHeader: some View {
         Text(currentDateLabel)
-            .font(.system(size: 10, weight: .semibold))
-            .foregroundStyle(theme.textMuted)
+            .font(.system(size: 12, weight: .bold))
+            .foregroundStyle(theme.textPrimary)
             .lineLimit(1)
-            .frame(maxWidth: .infinity, alignment: .leading)
+            .multilineTextAlignment(.center)
+            .frame(maxWidth: .infinity, alignment: .center)
             .padding(.horizontal, 2)
-            .padding(.bottom, 1)
+            .padding(.bottom, 2)
     }
 
     private var visibleItems: [KnotQWidgetOccurrence] {
         entry.snapshot.items.filter { !$0.done }
     }
 
-    private func columnFilledItems(
+    private func columnFilledSlots(
         limit: Int,
         columns: Int
-    ) -> [[(offset: Int, element: KnotQWidgetOccurrence)]] {
+    ) -> [[WidgetColumnSlot]] {
         let visible = Array(visibleItems.prefix(limit).enumerated())
         let rowsPerColumn = max(1, Int(ceil(Double(limit) / Double(max(1, columns)))))
         return (0..<columns).map { column in
-            let start = column * rowsPerColumn
-            guard start < visible.count else { return [] }
-            let end = min(start + rowsPerColumn, visible.count)
-            return Array(visible[start..<end])
+            (0..<rowsPerColumn).map { row in
+                let index = column * rowsPerColumn + row
+                return WidgetColumnSlot(id: column * rowsPerColumn + row, item: index < visible.count ? visible[index].element : nil)
+            }
         }
     }
 
@@ -207,17 +230,17 @@ private struct KnotQUpcomingWidgetView: View {
     private func formattedRange(start: String, end: String) -> String {
         guard let startDate = Self.iso.date(from: start),
               let endDate = Self.iso.date(from: end) else {
-            return "\(formattedDateTime(start)) -> \(formattedDateTime(end))"
+            return "\(formattedDateTime(start)) → \(formattedDateTime(end))"
         }
         if Calendar.current.isDate(startDate, inSameDayAs: endDate) {
             let prefix = upcomingDatePrefix(for: startDate)
             let startTime = formattedTime(start)
             let endTime = formattedTime(end)
             return prefix.isEmpty
-                ? "\(startTime) -> \(endTime)"
-                : "\(prefix) \(startTime) -> \(endTime)"
+                ? "\(startTime) → \(endTime)"
+                : "\(prefix) \(startTime) → \(endTime)"
         }
-        return "\(formattedDateTime(start)) -> \(formattedDateTime(end))"
+        return "\(formattedDateTime(start)) → \(formattedDateTime(end))"
     }
 
     private func formattedDateTime(_ raw: String) -> String {
@@ -256,7 +279,7 @@ private struct KnotQUpcomingWidgetView: View {
     private var currentDateLabel: String {
         let formatter = DateFormatter()
         formatter.locale = Locale(identifier: "en_US_POSIX")
-        formatter.dateFormat = "EEE, MMM d"
+        formatter.dateFormat = "EEE, MMMM d"
         return formatter.string(from: entry.date)
     }
 
@@ -265,6 +288,11 @@ private struct KnotQUpcomingWidgetView: View {
         formatter.formatOptions = [.withInternetDateTime]
         return formatter
     }()
+}
+
+private struct WidgetColumnSlot: Identifiable {
+    let id: Int
+    let item: KnotQWidgetOccurrence?
 }
 
 private struct WidgetOccurrenceCompactRow: View {
@@ -280,6 +308,7 @@ private struct WidgetOccurrenceCompactRow: View {
                 .fill(schemeAccent)
                 .frame(width: 2)
                 .padding(.vertical, compact ? 2 : 8)
+                .offset(x: -2)
 
             VStack(alignment: .leading, spacing: compact ? 0 : 2) {
                 HStack(alignment: .firstTextBaseline) {
@@ -422,7 +451,7 @@ private func upcomingDatePrefix(for date: Date) -> String {
     }
     let formatter = DateFormatter()
     formatter.locale = Locale(identifier: "en_US_POSIX")
-    formatter.dateFormat = "MMM d"
+    formatter.dateFormat = "MMMM d"
     return formatter.string(from: date)
 }
 
