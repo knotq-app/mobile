@@ -1,3 +1,4 @@
+import StoreKit
 import SwiftUI
 
 struct SettingsScreen: View {
@@ -58,6 +59,28 @@ struct SettingsScreen: View {
                             Text("Sync turned off")
                                 .foregroundStyle(.secondary)
                         }
+                        if model.syncProducts.isEmpty {
+                            Text("Subscribe to sync your workspace across devices.")
+                                .font(.footnote)
+                                .foregroundStyle(theme.textMuted)
+                        }
+                        ForEach(model.syncProducts, id: \.id) { product in
+                            Button {
+                                Task { await model.purchaseSync(product) }
+                            } label: {
+                                HStack {
+                                    Label(product.displayName, systemImage: "icloud.and.arrow.up")
+                                    Spacer()
+                                    Text(product.displayPrice)
+                                        .foregroundStyle(.secondary)
+                                }
+                            }
+                            .disabled(model.purchaseInProgress)
+                        }
+                        Button("Restore Purchases", systemImage: "arrow.clockwise") {
+                            Task { await model.restorePurchases() }
+                        }
+                        .disabled(model.purchaseInProgress)
                     }
                     Button("Sign Out", systemImage: "rectangle.portrait.and.arrow.right", role: .destructive) {
                         model.signOutSync()
@@ -86,6 +109,13 @@ struct SettingsScreen: View {
                 .background(theme.bgApp)
         }
         .navigationTitle("Settings")
+        .task {
+            // Load products when an account has no entitlement, so the paywall can
+            // show real prices.
+            if let session = model.syncSession, !session.supportsSync {
+                await model.loadSyncProducts()
+            }
+        }
         .sheet(isPresented: $showingSyncSignIn) {
             SyncSignInSheet(theme: theme)
                 .environmentObject(model)

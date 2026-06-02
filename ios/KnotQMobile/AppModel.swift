@@ -1,5 +1,6 @@
 import AuthenticationServices
 import Foundation
+import StoreKit
 import SwiftUI
 import UIKit
 
@@ -22,6 +23,13 @@ final class AppModel: ObservableObject {
     @Published var googleAuthInProgress = false
     @Published var googleSyncInProgress = false
     @Published var googleCalendarStatus: String?
+    // Available StoreKit subscription products (empty until loaded / if unconfigured).
+    @Published var syncProducts: [Product] = []
+    @Published var purchaseInProgress = false
+
+    // App Store Connect product id(s) for the sync subscription. Replace with your
+    // own auto-renewable subscription product id(s).
+    static let syncProductIDs: Set<String> = ["com.knotq.sync.monthly"]
 
     private let bridge: RustBridge?
     private let iso = ISO8601DateFormatter()
@@ -29,6 +37,7 @@ final class AppModel: ObservableObject {
     private var syncPollTask: Task<Void, Never>?
     private var googleSyncTask: Task<Void, Never>?
     private var googleOAuthSession: GoogleOAuthSessionCoordinator?
+    private var transactionListener: Task<Void, Never>?
 
     init() {
         bridge = try? RustBridge()
@@ -47,6 +56,7 @@ final class AppModel: ObservableObject {
         MobileNotificationScheduler.shared.configure(model: self)
         refresh()
         startSyncPolling()
+        startTransactionListener()
         #if DEBUG
         seedEditorImageFixture()
         #endif
@@ -644,6 +654,127 @@ final class AppModel: ObservableObject {
             errorMessage = "Your account is scheduled for deletion. Sign in again within 14 days to cancel it; after that your synced data is permanently erased."
         } catch {
             errorMessage = error.localizedDescription
+        }
+    }
+
+    // MARK: - Subscriptions (StoreKit)
+
+    private func startTransactionListener() {
+        transactionListener = Task { [weak self] in
+            // StoreKit.Transaction, disambiguated from SwiftUI.Transaction.
+            for await update in StoreKit.Transaction.updates {
+                guard let self else { return }
+                await self.handle(transactionResult: update)
+            }
+        }
+    }
+
+    /// Load the subscription products from the App Store. If the product ids aren't
+    /// configured in App Store Connect yet, this just yields an empty list.
+    func loadSyncProducts() async {
+        do {
+            let products = try await Product.products(for: Self.syncProductIDs)
+            syncProducts = products.sorted { $0.price < $1.price }
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    /// Buy a sync subscription. The purchase carries appAccountToken = our account
+    /// id, so Apple's server notification maps the subscription back to this
+    /// account; entitlement is granted server-side and picked up on refresh.
+    func purchaseSync(_ product: Product) async {
+        guard let session = syncSession, !purchaseInProgress else { return }
+        purchaseInProgress = true
+        defer { purchaseInProgress = false }
+        do {
+            var options: Set<Product.PurchaseOption> = []
+            if let token = UUID(uuidString: session.userId) {
+                options.insert(.appAccountToken(token))
+            }
+            let result = try await product.purchase(options: options)
+            switch result {
+            case .success(let verification):
+                guard case .verified(let transaction) = verification else {
+                    errorMessage = "Could not verify the purchase. Please try again."
+                    return
+                }
+                await transaction.finish()
+                await refreshEntitlement()
+            case .userCancelled:
+                break
+            case .pending:
+                errorMessage = "Your purchase is pending approval."
+            @unknown default:
+                break
+            }
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    /// Restore an existing subscription tied to the App Store account. Required by
+    /// the App Store for any app offering subscription purchases.
+    func restorePurchases() async {
+        guard !purchaseInProgress else { return }
+        purchaseInProgress = true
+        defer { purchaseInProgress = false }
+        do {
+            try await AppStore.sync()
+        } catch {
+            errorMessage = error.localizedDescription
+            return
+        }
+        await refreshEntitlement()
+    }
+
+    private func handle(transactionResult: VerificationResult<StoreKit.Transaction>) async {
+        guard case .verified(let transaction) = transactionResult else { return }
+        await transaction.finish()
+        await refreshEntitlement()
+    }
+
+    /// Force a session refresh so a server-side entitlement change (granted by a
+    /// billing webhook) is reflected locally. Guarded by syncInProgress so it can't
+    /// race the poll loop into replaying the single-use refresh token.
+    func refreshEntitlement() async {
+        guard !syncInProgress,
+              let session = syncSession,
+              let refreshToken = session.refreshToken, !refreshToken.isEmpty,
+              let url = URL(string: "\(session.apiBase)/v1/auth/refresh") else {
+            return
+        }
+        syncInProgress = true
+        defer { syncInProgress = false }
+        do {
+            var request = URLRequest(url: url)
+            request.httpMethod = "POST"
+            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            request.httpBody = try JSONSerialization.data(withJSONObject: ["refresh_token": refreshToken])
+            let (data, response) = try await URLSession.shared.data(for: request)
+            guard let http = response as? HTTPURLResponse else { return }
+            if http.statusCode == 401 {
+                signOutSync()
+                errorMessage = "Your sync session expired. Please sign in again."
+                return
+            }
+            guard (200..<300).contains(http.statusCode) else { return }
+            let payload = try JSONDecoder().decode(SyncLoginResponse.self, from: data)
+            var updated = session
+            updated.bearerToken = payload.bearerToken
+            updated.expiresAt = payload.expiresAt
+            if let rotated = payload.refreshToken, !rotated.isEmpty {
+                updated.refreshToken = rotated
+            }
+            updated.refreshExpiresAt = payload.refreshExpiresAt
+            updated.supportsSync = payload.supportsSync
+            syncSession = updated
+            saveSyncSession(updated)
+            if updated.supportsSync {
+                Task { await self.syncOnce() }
+            }
+        } catch {
+            // Keep the current session; the user can retry.
         }
     }
 
