@@ -584,6 +584,8 @@ public protocol MobileCoreProtocol: AnyObject, Sendable {
     
     func setOccurrenceNotificationOffset(schemeId: String, itemId: String, occurrenceJson: String?, offsetSecs: Int32?) throws 
     
+    func setPushRegistration(token: String, environment: String) throws 
+    
     func setSchemeColor(schemeId: String, colorIndex: Int32) throws 
     
     func setThemeMode(themeMode: String) throws 
@@ -998,6 +1000,15 @@ open func setOccurrenceNotificationOffset(schemeId: String, itemId: String, occu
         FfiConverterString.lower(itemId),
         FfiConverterOptionString.lower(occurrenceJson),
         FfiConverterOptionInt32.lower(offsetSecs),$0
+    )
+}
+}
+    
+open func setPushRegistration(token: String, environment: String)throws   {try rustCallWithError(FfiConverterTypeMobileError_lift) {
+    uniffi_knotq_mobile_core_fn_method_mobilecore_set_push_registration(
+            self.uniffiCloneHandle(),
+        FfiConverterString.lower(token),
+        FfiConverterString.lower(environment),$0
     )
 }
 }
@@ -2747,6 +2758,9 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_knotq_mobile_core_checksum_method_mobilecore_set_occurrence_notification_offset() != 26565) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_knotq_mobile_core_checksum_method_mobilecore_set_push_registration() != 12534) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_knotq_mobile_core_checksum_method_mobilecore_set_scheme_color() != 60612) {

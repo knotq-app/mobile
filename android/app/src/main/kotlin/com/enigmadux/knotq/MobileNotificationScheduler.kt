@@ -20,8 +20,27 @@ import java.time.Instant
 internal object MobileNotificationScheduler {
     const val ACTION_DELIVER = "com.enigmadux.knotq.notifications.DELIVER"
     const val ACTION_MARK_DONE = "knotq.mark_done"
+    const val ACTION_SNOOZE_1_MINUTE = "knotq.snooze.1m"
+    const val ACTION_SNOOZE_5_MINUTES = "knotq.snooze.5m"
     const val ACTION_SNOOZE_10_MINUTES = "knotq.snooze.10m"
+    const val ACTION_SNOOZE_15_MINUTES = "knotq.snooze.15m"
+    const val ACTION_SNOOZE_30_MINUTES = "knotq.snooze.30m"
     const val ACTION_SNOOZE_1_HOUR = "knotq.snooze.1h"
+    const val ACTION_SNOOZE_2_HOURS = "knotq.snooze.2h"
+    const val ACTION_SNOOZE_1_DAY = "knotq.snooze.1d"
+    const val ACTION_SNOOZE_1_WEEK = "knotq.snooze.1w"
+
+    private val snoozeActions = listOf(
+        ACTION_SNOOZE_1_MINUTE to "Snooze 1m",
+        ACTION_SNOOZE_5_MINUTES to "Snooze 5m",
+        ACTION_SNOOZE_10_MINUTES to "Snooze 10m",
+        ACTION_SNOOZE_15_MINUTES to "Snooze 15m",
+        ACTION_SNOOZE_30_MINUTES to "Snooze 30m",
+        ACTION_SNOOZE_1_HOUR to "Snooze 1h",
+        ACTION_SNOOZE_2_HOURS to "Snooze 2h",
+        ACTION_SNOOZE_1_DAY to "Snooze 1d",
+        ACTION_SNOOZE_1_WEEK to "Snooze 1w"
+    )
 
     private const val CHANNEL_ID = "knotq-reminders"
     private const val PREFS = "knotq.notifications"
@@ -52,6 +71,9 @@ internal object MobileNotificationScheduler {
 
     fun isNotificationPermissionRequest(requestCode: Int): Boolean =
         requestCode == REQUEST_POST_NOTIFICATIONS
+
+    fun isNotificationAction(action: String?): Boolean =
+        action == ACTION_MARK_DONE || snoozeActions.any { it.first == action }
 
     fun refreshFromCore(context: Context) {
         val bridge = RustBridge(context.applicationContext)
@@ -103,7 +125,7 @@ internal object MobileNotificationScheduler {
         val title = intent.getStringExtra(EXTRA_TITLE)?.ifBlank { "KnotQ" } ?: "KnotQ"
         val body = intent.getStringExtra(EXTRA_BODY)?.ifBlank { "Scheduled item" } ?: "Scheduled item"
         val manager = appContext.getSystemService(NotificationManager::class.java)
-        val notification = Notification.Builder(appContext, CHANNEL_ID)
+        val builder = Notification.Builder(appContext, CHANNEL_ID)
             .setSmallIcon(R.mipmap.ic_launcher)
             .setContentTitle(title)
             .setContentText(body)
@@ -114,8 +136,10 @@ internal object MobileNotificationScheduler {
             .setAutoCancel(true)
             .setCategory(Notification.CATEGORY_REMINDER)
             .setContentIntent(openAppIntent(appContext, id))
-            .addAction(notificationAction(appContext, id, ACTION_SNOOZE_10_MINUTES, "Snooze 10m", intent))
-            .addAction(notificationAction(appContext, id, ACTION_SNOOZE_1_HOUR, "Snooze 1h", intent))
+        snoozeActions.forEach { (action, title) ->
+            builder.addAction(notificationAction(appContext, id, action, title, intent))
+        }
+        val notification = builder
             .addAction(notificationAction(appContext, id, ACTION_MARK_DONE, "Mark done", intent))
             .build()
         manager.notify(id, 0, notification)

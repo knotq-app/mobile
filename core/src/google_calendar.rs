@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::time::Duration as StdDuration;
 
 use anyhow::{anyhow, bail, Context as _, Result};
@@ -6,7 +6,8 @@ use base64::Engine as _;
 use chrono::{DateTime, Duration, Local, NaiveDate, TimeZone, Utc};
 use knotq_model::{
     CalendarDateTime, CalendarProvider, ExternalItemSource, GoogleOAuthAccount,
-    ImportedCalendarSource, Item, ItemMarker, Recurrence, Scheme, SchemeSource, Workspace,
+    ImportedCalendarSource, Item, ItemMarker, NodeRef, Recurrence, Scheme, SchemeId, SchemeSource,
+    Workspace,
 };
 use serde::de::DeserializeOwned;
 use serde::Deserialize;
@@ -212,6 +213,7 @@ pub(crate) fn google_calendar_sources(workspace: &Workspace) -> Vec<ExistingGoog
     workspace
         .schemes
         .values()
+        .filter(|scheme| !workspace.is_scheme_deleted(scheme.id))
         .filter_map(|scheme| {
             let SchemeSource::ImportedCalendar(source) = &scheme.source else {
                 return None;
@@ -228,20 +230,34 @@ pub(crate) fn google_calendar_sources(workspace: &Workspace) -> Vec<ExistingGoog
         .collect()
 }
 
-pub(crate) fn find_google_calendar_scheme(
+pub(crate) fn google_calendar_scheme_ids(
     workspace: &Workspace,
     account_id: &str,
     calendar_id: &str,
-) -> Option<knotq_model::SchemeId> {
-    workspace.schemes.values().find_map(|scheme| {
-        let SchemeSource::ImportedCalendar(source) = &scheme.source else {
-            return None;
-        };
-        (source.provider == CalendarProvider::Google
-            && source.account_id == account_id
-            && source.calendar_id == calendar_id)
-            .then_some(scheme.id)
-    })
+) -> Vec<SchemeId> {
+    let mut ids = Vec::new();
+    let mut seen_folders = HashSet::new();
+    let mut seen_schemes = HashSet::new();
+    collect_google_calendar_scheme_ids(
+        workspace,
+        workspace.root,
+        account_id,
+        calendar_id,
+        &mut seen_folders,
+        &mut seen_schemes,
+        &mut ids,
+    );
+
+    let mut unreferenced = workspace
+        .schemes
+        .keys()
+        .copied()
+        .filter(|id| !seen_schemes.contains(id))
+        .filter(|id| google_calendar_scheme_matches(workspace, *id, account_id, calendar_id))
+        .collect::<Vec<_>>();
+    unreferenced.sort_by_key(|id| id.to_string());
+    ids.extend(unreferenced);
+    ids
 }
 
 pub(crate) fn google_calendar_source(calendar: &ImportedGoogleCalendar) -> SchemeSource {
@@ -868,6 +884,62 @@ fn external_same_event(left: &ExternalItemSource, right: &ExternalItemSource) ->
         && left.calendar_id == right.calendar_id
         && left.event_id == right.event_id
         && left.instance_id == right.instance_id
+}
+
+fn collect_google_calendar_scheme_ids(
+    workspace: &Workspace,
+    folder_id: knotq_model::FolderId,
+    account_id: &str,
+    calendar_id: &str,
+    seen_folders: &mut HashSet<knotq_model::FolderId>,
+    seen_schemes: &mut HashSet<SchemeId>,
+    out: &mut Vec<SchemeId>,
+) {
+    if !seen_folders.insert(folder_id) {
+        return;
+    }
+    let Some(folder) = workspace.folders.get(&folder_id) else {
+        return;
+    };
+    for child in &folder.children {
+        match *child {
+            NodeRef::Scheme(id) => {
+                seen_schemes.insert(id);
+                if google_calendar_scheme_matches(workspace, id, account_id, calendar_id) {
+                    out.push(id);
+                }
+            }
+            NodeRef::Folder(id) => collect_google_calendar_scheme_ids(
+                workspace,
+                id,
+                account_id,
+                calendar_id,
+                seen_folders,
+                seen_schemes,
+                out,
+            ),
+        }
+    }
+}
+
+fn google_calendar_scheme_matches(
+    workspace: &Workspace,
+    scheme_id: SchemeId,
+    account_id: &str,
+    calendar_id: &str,
+) -> bool {
+    if workspace.is_scheme_deleted(scheme_id) {
+        return false;
+    }
+    let Some(scheme) = workspace.schemes.get(&scheme_id) else {
+        return false;
+    };
+    let SchemeSource::ImportedCalendar(source) = &scheme.source else {
+        return false;
+    };
+    source.provider == CalendarProvider::Google
+        && source.account_id == account_id
+        && source.calendar_id == calendar_id
 }
 
 fn google_event_to_item(

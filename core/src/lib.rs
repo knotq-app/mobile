@@ -29,9 +29,10 @@ use knotq_storage_json::{
     save_workspace, WorkspaceLoadOptions,
 };
 use knotq_sync::{
-    LocalSyncState, PendingCrdtEdit, PullUpdatesResponse, PushUpdatesRequest, PushUpdatesResponse,
-    StoredCrdtSnapshot, StoredCrdtUpdate, UpsertDocumentRequest, WorkspaceCrdtChangeSet,
-    WorkspaceCrdtDocuments,
+    DevicePlatform, LocalSyncState, NotificationPermissionState, NotificationScheduleSnapshot,
+    PendingCrdtEdit, PullUpdatesResponse, PushChannel, PushEnvironment, PushUpdatesRequest,
+    PushUpdatesResponse, RegisterDeviceRequest, RegisterDeviceResponse, StoredCrdtSnapshot,
+    StoredCrdtUpdate, UpsertDocumentRequest, WorkspaceCrdtChangeSet, WorkspaceCrdtDocuments,
 };
 use sha2::{Digest, Sha256};
 
@@ -41,9 +42,27 @@ use google_calendar::{GoogleCalendarImportResult, GoogleOAuthConfig};
 const DAILY_QUEUE_MARKER_COLOR: u32 = 0x42a5f5;
 const SYNC_BATCH_LIMIT: usize = 50;
 const NOTIFICATION_HORIZON_DAYS: i64 = 14;
+const ACTION_SNOOZE_1_MINUTE: &str = "knotq.snooze.1m";
+const ACTION_SNOOZE_5_MINUTES: &str = "knotq.snooze.5m";
 const ACTION_SNOOZE_10_MINUTES: &str = "knotq.snooze.10m";
+const ACTION_SNOOZE_15_MINUTES: &str = "knotq.snooze.15m";
+const ACTION_SNOOZE_30_MINUTES: &str = "knotq.snooze.30m";
 const ACTION_SNOOZE_1_HOUR: &str = "knotq.snooze.1h";
+const ACTION_SNOOZE_2_HOURS: &str = "knotq.snooze.2h";
+const ACTION_SNOOZE_1_DAY: &str = "knotq.snooze.1d";
+const ACTION_SNOOZE_1_WEEK: &str = "knotq.snooze.1w";
 const ACTION_MARK_DONE: &str = "knotq.mark_done";
+const NOTIFICATION_SNOOZE_ACTIONS: &[(&str, i64)] = &[
+    (ACTION_SNOOZE_1_MINUTE, 60),
+    (ACTION_SNOOZE_5_MINUTES, 5 * 60),
+    (ACTION_SNOOZE_10_MINUTES, 10 * 60),
+    (ACTION_SNOOZE_15_MINUTES, 15 * 60),
+    (ACTION_SNOOZE_30_MINUTES, 30 * 60),
+    (ACTION_SNOOZE_1_HOUR, 60 * 60),
+    (ACTION_SNOOZE_2_HOURS, 2 * 60 * 60),
+    (ACTION_SNOOZE_1_DAY, 24 * 60 * 60),
+    (ACTION_SNOOZE_1_WEEK, 7 * 24 * 60 * 60),
+];
 const SYNC_COMPACTED_SNAPSHOT_NOTICE: &str = "This device was far enough behind that the sync server had already compacted older CRDT changes. KnotQ applied the latest compacted snapshot and then continued syncing from there.";
 const EDITOR_IMAGE_FIXTURE_TEXT: &str = "Image layout test";
 const EDITOR_IMAGE_FIXTURE_PNG: &[u8] = &[
@@ -693,6 +712,33 @@ impl MobileCore {
         Ok(self.lock()?.sync_notice.take())
     }
 
+    /// Hand the core a push token (e.g. an FCM registration token) so the next
+    /// sync registers this device for silent background wake-ups. An empty token
+    /// clears the registration. Channel is FCM; environment is "sandbox"/"production".
+    pub fn set_push_registration(
+        &self,
+        token: String,
+        environment: String,
+    ) -> Result<(), MobileError> {
+        let mut inner = self.lock()?;
+        let token = token.trim().to_string();
+        if token.is_empty() {
+            inner.push_token = None;
+            inner.push_environment = None;
+            return Ok(());
+        }
+        if inner.push_token.as_deref() != Some(token.as_str()) {
+            // Token changed: force a re-register on the next sync.
+            inner.registered_push_token = None;
+        }
+        inner.push_environment = Some(match environment.as_str() {
+            "production" => PushEnvironment::Production,
+            _ => PushEnvironment::Sandbox,
+        });
+        inner.push_token = Some(token);
+        Ok(())
+    }
+
     pub fn seed_editor_image_fixture(&self) -> Result<(), MobileError> {
         self.lock()?.seed_editor_image_fixture().map_err(Into::into)
     }
@@ -713,6 +759,12 @@ struct MobileCoreInner {
     crdt: WorkspaceCrdtDocuments,
     next_sequence: u64,
     sync_notice: Option<String>,
+    // Push registration handed in from the platform (e.g. an FCM token from
+    // Firebase). Registered with the backend during sync_once; `registered_push_token`
+    // dedupes so we only re-register when the token changes within a session.
+    push_token: Option<String>,
+    push_environment: Option<PushEnvironment>,
+    registered_push_token: Option<String>,
 }
 
 impl MobileCoreInner {
@@ -760,6 +812,9 @@ impl MobileCoreInner {
             crdt,
             next_sequence,
             sync_notice: None,
+            push_token: None,
+            push_environment: None,
+            registered_push_token: None,
         })
     }
 
@@ -886,27 +941,26 @@ impl MobileCoreInner {
             return Ok(false);
         }
 
-        let command = match action_id {
-            ACTION_MARK_DONE => Command::ToggleOccurrence {
+        let command = if action_id == ACTION_MARK_DONE {
+            Command::ToggleOccurrence {
                 scheme: scheme_id,
                 item: item_id,
                 occurrence,
-            },
-            ACTION_SNOOZE_10_MINUTES => Command::SetOccurrenceNotificationOffset {
+            }
+        } else if let Some((_, delay_secs)) = NOTIFICATION_SNOOZE_ACTIONS
+            .iter()
+            .find(|(candidate, _)| *candidate == action_id)
+        {
+            Command::SetOccurrenceNotificationOffset {
                 scheme: scheme_id,
                 item: item_id,
                 occurrence,
                 offset_secs: Some(
-                    (trigger_at - (Utc::now() + Duration::minutes(10))).num_seconds(),
+                    (trigger_at - (Utc::now() + Duration::seconds(*delay_secs))).num_seconds(),
                 ),
-            },
-            ACTION_SNOOZE_1_HOUR => Command::SetOccurrenceNotificationOffset {
-                scheme: scheme_id,
-                item: item_id,
-                occurrence,
-                offset_secs: Some((trigger_at - (Utc::now() + Duration::hours(1))).num_seconds()),
-            },
-            other => return Err(anyhow!("unknown notification action {other}")),
+            }
+        } else {
+            return Err(anyhow!("unknown notification action {action_id}"));
         };
         self.apply(command)?;
         Ok(true)
@@ -1034,6 +1088,31 @@ impl MobileCoreInner {
         save_local_sync_state(&self.workspace_path, &sync_state)
     }
 
+    fn register_push_device(&mut self, client: &MobileSyncHttpClient) {
+        let Some(token) = self.push_token.clone() else {
+            return;
+        };
+        if self.registered_push_token.as_deref() == Some(token.as_str()) {
+            return;
+        }
+        let request = RegisterDeviceRequest {
+            replica_id: self.settings.replica_id,
+            display_name: None,
+            platform: DevicePlatform::Ios,
+            app_version: None,
+            push_channel: Some(PushChannel::Fcm),
+            push_token: Some(token.clone()),
+            push_environment: Some(self.push_environment.unwrap_or(PushEnvironment::Production)),
+            notification_permission: NotificationPermissionState::default(),
+            local_scheduler_supported: Some(true),
+        };
+        match client.register_device(self.workspace.id, &request) {
+            Ok(_) => self.registered_push_token = Some(token),
+            // Best effort: leave the marker unset so the next sync retries.
+            Err(_) => {}
+        }
+    }
+
     fn sync_once(&mut self, api_base: &str, bearer_token: &str) -> Result<bool> {
         let client = MobileSyncHttpClient {
             api_base: normalize_sync_api_base(api_base)?,
@@ -1046,6 +1125,10 @@ impl MobileCoreInner {
         sync_state.replica_id = Some(self.settings.replica_id);
         sync_state.server_url = Some(client.api_base.clone());
         sync_state.bearer_token = Some(client.bearer_token.clone());
+
+        // Register this device (with its push token, if any) so the backend can
+        // wake it via silent push. Best effort — never block sync on it.
+        self.register_push_device(&client);
 
         let mut remote_latest = HashMap::new();
         let mut remote_updates_applied = 0usize;
@@ -1127,7 +1210,18 @@ impl MobileCoreInner {
             self.settings.replica_id,
             &remote_latest,
         );
-        pushed_any |= mobile_push_pending_documents(&client, &mut sync_state, self.workspace.id)?;
+        let notification_schedule = mobile_notification_schedule_snapshot(
+            &self.workspace,
+            self.settings.notification_defaults,
+            Utc::now(),
+            0,
+        )?;
+        pushed_any |= mobile_push_pending_documents(
+            &client,
+            &mut sync_state,
+            self.workspace.id,
+            &notification_schedule,
+        )?;
 
         save_local_sync_state(&self.workspace_path, &sync_state)?;
         if remote_updates_applied > 0 {
@@ -1294,11 +1388,18 @@ impl MobileCoreInner {
         let mut insert_position = 0usize;
 
         for calendar in calendars {
-            let existing_scheme_id = google_calendar::find_google_calendar_scheme(
+            let existing_scheme_ids = google_calendar::google_calendar_scheme_ids(
                 &self.workspace,
                 &calendar.account_id,
                 &calendar.calendar_id,
             );
+            let existing_scheme_id = existing_scheme_ids.first().copied();
+            if self.delete_duplicate_google_calendar_schemes(
+                existing_scheme_ids.get(1..).unwrap_or(&[]),
+                &mut changes,
+            ) {
+                content_changed = true;
+            }
             let scheme_id = match existing_scheme_id {
                 Some(scheme_id) => scheme_id,
                 None if create_missing => {
@@ -1348,6 +1449,47 @@ impl MobileCoreInner {
             created_count,
             changes,
         })
+    }
+
+    fn delete_duplicate_google_calendar_schemes(
+        &mut self,
+        scheme_ids: &[SchemeId],
+        changes: &mut WorkspaceCrdtChangeSet,
+    ) -> bool {
+        let mut changed = false;
+        for scheme_id in scheme_ids.iter().copied() {
+            if self.workspace.is_scheme_deleted(scheme_id)
+                || !self.workspace.schemes.contains_key(&scheme_id)
+            {
+                continue;
+            }
+
+            let mut origin = None;
+            for (folder_id, folder) in self.workspace.folders.iter_mut() {
+                let mut index = 0usize;
+                while index < folder.children.len() {
+                    if folder.children[index] == NodeRef::Scheme(scheme_id) {
+                        if origin.is_none() {
+                            origin = Some((*folder_id, index));
+                        }
+                        folder.children.remove(index);
+                    } else {
+                        index += 1;
+                    }
+                }
+            }
+
+            if let Some((folder_id, position)) = origin {
+                self.workspace
+                    .mark_scheme_deleted_from(scheme_id, folder_id, position);
+            } else {
+                self.workspace.mark_scheme_deleted(scheme_id);
+            }
+            changes.workspace = true;
+            changes.schemes.insert(scheme_id);
+            changed = true;
+        }
+        changed
     }
 
     fn snapshot(&mut self, today: NaiveDate, week_offset: i32) -> Result<MobileSnapshot> {
@@ -1998,6 +2140,7 @@ fn mobile_push_pending_documents(
     client: &MobileSyncHttpClient,
     sync_state: &mut LocalSyncState,
     workspace_id: WorkspaceId,
+    notification_schedule: &NotificationScheduleSnapshot,
 ) -> Result<bool> {
     let mut pushed_any = false;
     loop {
@@ -2010,7 +2153,7 @@ fn mobile_push_pending_documents(
         }
         let kind = pending[0].kind;
         client.upsert_document(workspace_id, MobileSyncDocumentRef { document, kind })?;
-        let request = sync_state
+        let mut request = sync_state
             .next_push_request(document, SYNC_BATCH_LIMIT)
             .ok_or_else(|| anyhow!("missing push request for pending document"))?;
         let through_local_sequence = pending
@@ -2018,6 +2161,9 @@ fn mobile_push_pending_documents(
             .map(|edit| edit.local_sequence)
             .max()
             .unwrap_or(0);
+        let mut notification_schedule = notification_schedule.clone();
+        notification_schedule.sequence = through_local_sequence;
+        request.notification_schedule = Some(notification_schedule);
         let response = client.push_updates(workspace_id, document, &request)?;
         if response.accepted != request.updates.len() {
             return Err(anyhow!(
@@ -2032,7 +2178,64 @@ fn mobile_push_pending_documents(
     }
 }
 
+fn mobile_notification_schedule_snapshot(
+    workspace: &Workspace,
+    defaults: NotificationDefaults,
+    now: DateTime<Utc>,
+    sequence: u64,
+) -> Result<NotificationScheduleSnapshot> {
+    let window_start = DateTime::from_naive_utc_and_offset(
+        now.date_naive()
+            .and_hms_opt(0, 0, 0)
+            .ok_or_else(|| anyhow!("midnight is not representable"))?,
+        Utc,
+    );
+    let window_end = window_start + Duration::days(NOTIFICATION_HORIZON_DAYS);
+    let mut notifications = compute_due_notifications_with_lead_times(
+        workspace,
+        mobile_notification_lead_times(defaults),
+        window_start,
+        window_end,
+    );
+    notifications.sort_by(|left, right| {
+        left.fire_at
+            .cmp(&right.fire_at)
+            .then_with(|| left.key.cmp(&right.key))
+    });
+
+    let mut hasher = Sha256::new();
+    hasher.update(b"knotq.notification_schedule.v1");
+    hasher.update([0]);
+    hasher.update(window_start.to_rfc3339().as_bytes());
+    hasher.update([0]);
+    hasher.update(window_end.to_rfc3339().as_bytes());
+    for notification in &notifications {
+        hasher.update([0]);
+        let json = serde_json::to_vec(notification).unwrap_or_default();
+        hasher.update(json);
+    }
+    let digest = hasher.finalize();
+    let hash = digest.iter().map(|byte| format!("{byte:02x}")).collect();
+
+    Ok(NotificationScheduleSnapshot {
+        sequence,
+        hash,
+        window_start,
+        window_end,
+        occurrence_count: notifications.len(),
+    })
+}
+
 impl MobileSyncHttpClient {
+    fn register_device(
+        &self,
+        workspace_id: WorkspaceId,
+        request: &RegisterDeviceRequest,
+    ) -> Result<RegisterDeviceResponse> {
+        let url = format!("{}/v1/workspaces/{}/devices", self.api_base, workspace_id);
+        self.post_json(&url, request)
+    }
+
     fn upsert_document(&self, workspace_id: WorkspaceId, doc: MobileSyncDocumentRef) -> Result<()> {
         let url = format!(
             "{}/v1/workspaces/{}/documents/{}",
@@ -2771,6 +2974,7 @@ uniffi::include_scaffolding!("knotq_mobile_core");
 #[cfg(test)]
 mod tests {
     use super::*;
+    use knotq_model::{CalendarProvider, ImportedCalendarSource, SchemeSource};
 
     #[test]
     fn mobile_core_flow_creates_edits_and_searches() {
@@ -2860,6 +3064,58 @@ mod tests {
             .find(|entry| entry.date == date.to_string())
             .expect("daily exists");
         assert!(daily.scheme.items.is_empty());
+
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn google_calendar_sync_deletes_duplicate_imported_schemes_after_first() {
+        let dir = std::env::temp_dir().join(format!("knotq-mobile-test-{}", uuid::Uuid::new_v4()));
+        let mut inner = MobileCoreInner::open(dir.clone()).expect("open mobile core");
+        inner.workspace = Workspace::new();
+        let root = inner.workspace.root;
+
+        let first = imported_google_scheme("First", "account", "calendar");
+        let first_id = first.id;
+        let duplicate = imported_google_scheme("Duplicate", "account", "calendar");
+        let duplicate_id = duplicate.id;
+        inner.workspace.schemes.insert(first_id, first);
+        inner.workspace.schemes.insert(duplicate_id, duplicate);
+        inner
+            .workspace
+            .folders
+            .get_mut(&root)
+            .unwrap()
+            .children
+            .extend([NodeRef::Scheme(first_id), NodeRef::Scheme(duplicate_id)]);
+
+        let result = inner
+            .apply_imported_google_calendars(
+                vec![google_calendar::ImportedGoogleCalendar {
+                    account_id: "account".to_string(),
+                    account_email: Some("user@example.com".to_string()),
+                    calendar_id: "calendar".to_string(),
+                    name: "Calendar".to_string(),
+                    color_index: 3,
+                    sync_token: Some("token".to_string()),
+                    full_sync: true,
+                    items: Vec::new(),
+                    deleted: Vec::new(),
+                }],
+                false,
+                root,
+            )
+            .expect("apply imported calendars");
+
+        assert!(result.content_changed);
+        assert!(!inner.workspace.is_scheme_deleted(first_id));
+        assert!(inner.workspace.is_scheme_deleted(duplicate_id));
+        assert_eq!(
+            inner.workspace.folders[&root].children,
+            vec![NodeRef::Scheme(first_id)]
+        );
+        assert!(result.changes.workspace);
+        assert!(result.changes.schemes.contains(&duplicate_id));
 
         let _ = std::fs::remove_dir_all(dir);
     }
@@ -3609,5 +3865,19 @@ mod tests {
             }));
 
         let _ = std::fs::remove_dir_all(dir);
+    }
+
+    fn imported_google_scheme(name: &str, account_id: &str, calendar_id: &str) -> Scheme {
+        let mut scheme = Scheme::new(name, 0);
+        scheme.source = SchemeSource::ImportedCalendar(ImportedCalendarSource {
+            provider: CalendarProvider::Google,
+            account_id: account_id.to_string(),
+            account_email: Some("user@example.com".to_string()),
+            calendar_id: calendar_id.to_string(),
+            sync_token: None,
+            read_only: true,
+            last_synced_at: None,
+        });
+        scheme
     }
 }

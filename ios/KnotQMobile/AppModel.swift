@@ -6,6 +6,10 @@ import UIKit
 
 @MainActor
 final class AppModel: ObservableObject {
+    // Shared instance so the SwiftUI App and the UIApplicationDelegate (background
+    // tasks, push handling) operate on the same model + Rust core.
+    static let shared = AppModel()
+
     @Published var snapshot: MobileSnapshot?
     @Published var searchHits: [MobileSearchHit] = []
     @Published var errorMessage: String?
@@ -30,10 +34,13 @@ final class AppModel: ObservableObject {
     // App Store Connect product id(s) for the sync subscription. Replace with your
     // own auto-renewable subscription product id(s).
     static let syncProductIDs: Set<String> = ["com.knotq.sync.monthly"]
+    private static let foregroundGoogleSyncIntervalNanos: UInt64 = 120_000_000_000
+    private static let backgroundGoogleSyncInterval: TimeInterval = 6 * 60 * 60
 
     private let bridge: RustBridge?
     private let iso = ISO8601DateFormatter()
     private let syncSessionKey = "knotq.localSyncSession"
+    private let backgroundGoogleSyncKey = "knotq.lastBackgroundGoogleSyncAt"
     private var syncPollTask: Task<Void, Never>?
     private var googleSyncTask: Task<Void, Never>?
     private var googleOAuthSession: GoogleOAuthSessionCoordinator?
@@ -56,6 +63,7 @@ final class AppModel: ObservableObject {
         MobileNotificationScheduler.shared.configure(model: self)
         refresh()
         startSyncPolling()
+        BackgroundSyncCoordinator.shared.scheduleIfEligible()
         startTransactionListener()
         #if DEBUG
         seedEditorImageFixture()
@@ -70,6 +78,10 @@ final class AppModel: ObservableObject {
         }
     }
 
+    var backgroundRefreshEligible: Bool {
+        syncSession?.supportsSync == true || (snapshot?.settings.googleAccountCount ?? 0) > 0
+    }
+
     func refresh() {
         guard let bridge else { return }
         do {
@@ -78,6 +90,7 @@ final class AppModel: ObservableObject {
             KnotQWidgetSnapshotStore.publish(snapshot: nextSnapshot)
             rescheduleNotifications()
             configureGoogleSyncPolling(accountCount: nextSnapshot.settings.googleAccountCount)
+            BackgroundSyncCoordinator.shared.scheduleIfEligible()
             errorMessage = nil
         } catch {
             errorMessage = error.localizedDescription
@@ -403,9 +416,10 @@ final class AppModel: ObservableObject {
         }
     }
 
-    func syncGoogleCalendars(silent: Bool = false) async {
-        guard !googleSyncInProgress, let bridge else { return }
-        guard snapshot?.settings.googleAccountCount ?? 0 > 0 else { return }
+    @discardableResult
+    func syncGoogleCalendars(silent: Bool = false) async -> Bool {
+        guard !googleSyncInProgress, let bridge else { return false }
+        guard snapshot?.settings.googleAccountCount ?? 0 > 0 else { return false }
         googleSyncInProgress = true
         defer { googleSyncInProgress = false }
 
@@ -423,12 +437,14 @@ final class AppModel: ObservableObject {
             if !silent {
                 errorMessage = nil
             }
+            return result.importedCount > 0 || result.syncedCount > 0
         } catch {
             if silent {
                 googleCalendarStatus = error.localizedDescription
             } else {
                 errorMessage = error.localizedDescription
             }
+            return false
         }
     }
 
@@ -573,6 +589,7 @@ final class AppModel: ObservableObject {
         syncSession = session
         saveSyncSession(session)
         startSyncPolling()
+        BackgroundSyncCoordinator.shared.scheduleIfEligible()
     }
 
     /// Abandon a pending 2FA challenge (e.g. to sign in as a different account).
@@ -584,6 +601,7 @@ final class AppModel: ObservableObject {
         syncSession = nil
         syncPollTask?.cancel()
         syncPollTask = nil
+        BackgroundSyncCoordinator.shared.scheduleIfEligible()
         UserDefaults.standard.removeObject(forKey: syncSessionKey)
     }
 
@@ -770,12 +788,68 @@ final class AppModel: ObservableObject {
             updated.supportsSync = payload.supportsSync
             syncSession = updated
             saveSyncSession(updated)
+            BackgroundSyncCoordinator.shared.scheduleIfEligible()
             if updated.supportsSync {
                 Task { await self.syncOnce() }
             }
         } catch {
             // Keep the current session; the user can retry.
         }
+    }
+
+    /// Hand the Rust core a push token (e.g. an FCM token from Firebase) so the
+    /// next sync registers this device for silent background wake-ups.
+    func setPushToken(_ token: String, environment: String = "production") {
+        guard let bridge else { return }
+        do {
+            try bridge.setPushRegistration(token: token, environment: environment)
+        } catch {
+            return
+        }
+        if syncSession?.supportsSync == true {
+            Task { await runBackgroundSync() }
+        }
+    }
+
+    /// One-shot sync used by background app refresh and silent pushes. Guarded so it
+    /// can't race the foreground poll; returns whether remote changes were applied.
+    @discardableResult
+    func runBackgroundSync() async -> Bool {
+        guard !syncInProgress, let session = syncSession, session.supportsSync else { return false }
+        syncInProgress = true
+        defer { syncInProgress = false }
+        guard await refreshSyncSessionIfNeeded(), let bridge, let current = syncSession else {
+            return false
+        }
+        do {
+            let result = try await Task.detached {
+                let changed = try bridge.syncOnce(
+                    apiBase: current.apiBase,
+                    bearerToken: current.bearerToken,
+                )
+                let notice = try bridge.takeSyncNotice()
+                return (changed, notice)
+            }.value
+            if result.0 {
+                refresh()
+            }
+            if let notice = result.1 {
+                errorMessage = notice
+            }
+            return result.0
+        } catch {
+            return false
+        }
+    }
+
+    /// One-shot background maintenance used by BGAppRefreshTask. Cloud sync runs
+    /// whenever eligible; Google Calendar sync is throttled separately because it
+    /// can fan out into several Google API calls.
+    @discardableResult
+    func runBackgroundMaintenance() async -> Bool {
+        let remoteChanged = await runBackgroundSync()
+        let googleSynced = await runBackgroundGoogleCalendarSyncIfDue()
+        return remoteChanged || googleSynced
     }
 
     func syncOnce() async {
@@ -849,6 +923,7 @@ final class AppModel: ObservableObject {
             updated.supportsSync = payload.supportsSync
             syncSession = updated
             saveSyncSession(updated)
+            BackgroundSyncCoordinator.shared.scheduleIfEligible()
             return true
         } catch {
             // Network/parse hiccup: keep the current token, retry next tick.
@@ -937,11 +1012,23 @@ final class AppModel: ObservableObject {
         }
         guard googleSyncTask == nil else { return }
         googleSyncTask = Task { [weak self] in
+            await self?.syncGoogleCalendars(silent: true)
             while !Task.isCancelled {
-                try? await Task.sleep(nanoseconds: 300_000_000_000)
+                try? await Task.sleep(nanoseconds: Self.foregroundGoogleSyncIntervalNanos)
                 await self?.syncGoogleCalendars(silent: true)
             }
         }
+    }
+
+    private func runBackgroundGoogleCalendarSyncIfDue() async -> Bool {
+        guard snapshot?.settings.googleAccountCount ?? 0 > 0 else { return false }
+        let defaults = UserDefaults.standard
+        if let last = defaults.object(forKey: backgroundGoogleSyncKey) as? Date,
+           Date().timeIntervalSince(last) < Self.backgroundGoogleSyncInterval {
+            return false
+        }
+        defaults.set(Date(), forKey: backgroundGoogleSyncKey)
+        return await syncGoogleCalendars(silent: true)
     }
 
     private func saveSyncSession(_ session: LocalSyncSession) {

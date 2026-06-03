@@ -244,6 +244,10 @@ final class RustBridge: @unchecked Sendable {
         try core.syncOnce(apiBase: apiBase, bearerToken: bearerToken)
     }
 
+    func setPushRegistration(token: String, environment: String) throws {
+        try core.setPushRegistration(token: token, environment: environment)
+    }
+
     func takeSyncNotice() throws -> String? {
         try core.takeSyncNotice()
     }

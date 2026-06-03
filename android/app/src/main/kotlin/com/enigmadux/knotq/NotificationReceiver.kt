@@ -10,10 +10,12 @@ class NotificationReceiver : BroadcastReceiver() {
             MobileNotificationScheduler.ACTION_DELIVER -> {
                 MobileNotificationScheduler.deliver(context, intent)
             }
-            MobileNotificationScheduler.ACTION_MARK_DONE,
-            MobileNotificationScheduler.ACTION_SNOOZE_10_MINUTES,
-            MobileNotificationScheduler.ACTION_SNOOZE_1_HOUR -> runAsync {
-                MobileNotificationScheduler.handleAction(context, intent)
+            else -> {
+                if (MobileNotificationScheduler.isNotificationAction(intent.action)) {
+                    runAsync {
+                        MobileNotificationScheduler.handleAction(context, intent)
+                    }
+                }
             }
         }
     }

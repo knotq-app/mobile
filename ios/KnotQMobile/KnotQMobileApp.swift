@@ -2,7 +2,8 @@ import SwiftUI
 
 @main
 struct KnotQMobileApp: App {
-    @StateObject private var model = AppModel()
+    @UIApplicationDelegateAdaptor(KnotQAppDelegate.self) private var appDelegate
+    @StateObject private var model = AppModel.shared
 
     var body: some Scene {
         WindowGroup {

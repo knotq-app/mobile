@@ -289,5 +289,8 @@ interface MobileCore {
   string? take_sync_notice();
 
   [Throws=MobileError]
+  void set_push_registration(string token, string environment);
+
+  [Throws=MobileError]
   void seed_editor_image_fixture();
 };

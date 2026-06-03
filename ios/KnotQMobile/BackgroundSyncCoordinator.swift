@@ -1,0 +1,194 @@
+import BackgroundTasks
+import FirebaseCore
+import FirebaseMessaging
+import UIKit
+
+final class KnotQAppDelegate: NSObject, UIApplicationDelegate, MessagingDelegate {
+    func application(
+        _ application: UIApplication,
+        didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil
+    ) -> Bool {
+        BackgroundSyncCoordinator.shared.register()
+        configureFirebaseMessaging(application)
+        BackgroundSyncCoordinator.shared.scheduleIfEligible()
+        return true
+    }
+
+    func applicationDidEnterBackground(_ application: UIApplication) {
+        BackgroundSyncCoordinator.shared.scheduleIfEligible()
+    }
+
+    func application(
+        _ application: UIApplication,
+        didRegisterForRemoteNotificationsWithDeviceToken deviceToken: Data
+    ) {
+        guard FirebaseApp.app() != nil else { return }
+        Messaging.messaging().apnsToken = deviceToken
+        Messaging.messaging().token { token, _ in
+            guard let token else { return }
+            Task { @MainActor in
+                AppModel.shared.setPushToken(token, environment: Self.pushEnvironment)
+            }
+        }
+    }
+
+    func application(
+        _ application: UIApplication,
+        didFailToRegisterForRemoteNotificationsWithError error: Error
+    ) {
+        AppModel.shared.setPushToken("")
+    }
+
+    func application(
+        _ application: UIApplication,
+        didReceiveRemoteNotification userInfo: [AnyHashable: Any],
+        fetchCompletionHandler completionHandler: @escaping (UIBackgroundFetchResult) -> Void
+    ) {
+        if FirebaseApp.app() != nil {
+            Messaging.messaging().appDidReceiveMessage(userInfo)
+        }
+        BackgroundSyncCoordinator.shared.handleRemoteNotification(
+            userInfo: userInfo,
+            completionHandler: completionHandler
+        )
+    }
+
+    nonisolated func messaging(_ messaging: Messaging, didReceiveRegistrationToken fcmToken: String?) {
+        guard let fcmToken, !fcmToken.isEmpty else { return }
+        Task { @MainActor in
+            AppModel.shared.setPushToken(fcmToken, environment: Self.pushEnvironment)
+        }
+    }
+
+    private func configureFirebaseMessaging(_ application: UIApplication) {
+        guard FirebaseApp.app() == nil else {
+            Messaging.messaging().delegate = self
+            application.registerForRemoteNotifications()
+            return
+        }
+        guard let options = Self.firebaseOptionsIfConfigured() else {
+            return
+        }
+        FirebaseApp.configure(options: options)
+        Messaging.messaging().delegate = self
+        application.registerForRemoteNotifications()
+    }
+
+    private static func firebaseOptionsIfConfigured() -> FirebaseOptions? {
+        guard let path = Bundle.main.path(forResource: "GoogleService-Info", ofType: "plist"),
+              let plist = NSDictionary(contentsOfFile: path),
+              let appID = plist["GOOGLE_APP_ID"] as? String,
+              !appID.isEmpty,
+              let senderID = plist["GCM_SENDER_ID"] as? String,
+              !senderID.isEmpty
+        else {
+            return nil
+        }
+        return FirebaseOptions(contentsOfFile: path)
+    }
+
+    private static var pushEnvironment: String {
+        #if DEBUG
+        return "sandbox"
+        #else
+        return "production"
+        #endif
+    }
+}
+
+@MainActor
+final class BackgroundSyncCoordinator {
+    static let shared = BackgroundSyncCoordinator()
+
+    static let taskIdentifier = "com.enigmadux.knotq.background-sync"
+    private static let refreshInterval: TimeInterval = 3 * 60 * 60
+
+    private var registered = false
+
+    private init() {}
+
+    @MainActor
+    func register() {
+        guard !registered else { return }
+        registered = BGTaskScheduler.shared.register(
+            forTaskWithIdentifier: Self.taskIdentifier,
+            using: nil
+        ) { task in
+            guard let refreshTask = task as? BGAppRefreshTask else {
+                task.setTaskCompleted(success: false)
+                return
+            }
+            self.handle(refreshTask)
+        }
+    }
+
+    @MainActor
+    func scheduleIfEligible() {
+        guard AppModel.shared.backgroundRefreshEligible else {
+            cancel()
+            return
+        }
+        let request = BGAppRefreshTaskRequest(identifier: Self.taskIdentifier)
+        request.earliestBeginDate = Date(timeIntervalSinceNow: Self.refreshInterval)
+        do {
+            try BGTaskScheduler.shared.submit(request)
+        } catch {
+            return
+        }
+    }
+
+    func cancel() {
+        BGTaskScheduler.shared.cancel(taskRequestWithIdentifier: Self.taskIdentifier)
+    }
+
+    func handleRemoteNotification(
+        userInfo: [AnyHashable: Any],
+        completionHandler: @escaping (UIBackgroundFetchResult) -> Void
+    ) {
+        Task { @MainActor in
+            scheduleIfEligible()
+            guard Self.isKnotQBackgroundPush(userInfo) else {
+                completionHandler(.noData)
+                return
+            }
+            let changed = await AppModel.shared.runBackgroundSync()
+            completionHandler(changed ? .newData : .noData)
+        }
+    }
+
+    private func handle(_ task: BGAppRefreshTask) {
+        let completion = BackgroundTaskCompletion(task: task)
+        let operation = Task { @MainActor in
+            scheduleIfEligible()
+            let success = await AppModel.shared.runBackgroundMaintenance()
+            completion.finish(success: success)
+        }
+        task.expirationHandler = {
+            operation.cancel()
+            completion.finish(success: false)
+        }
+    }
+
+    private static func isKnotQBackgroundPush(_ userInfo: [AnyHashable: Any]) -> Bool {
+        guard let type = userInfo["type"] as? String else { return false }
+        return type == "notification_schedule_changed"
+    }
+}
+
+private final class BackgroundTaskCompletion {
+    private let lock = NSLock()
+    private var completed = false
+    private weak var task: BGTask?
+
+    init(task: BGTask) {
+        self.task = task
+    }
+
+    func finish(success: Bool) {
+        lock.lock()
+        defer { lock.unlock() }
+        guard !completed else { return }
+        completed = true
+        task?.setTaskCompleted(success: success)
+    }
+}
