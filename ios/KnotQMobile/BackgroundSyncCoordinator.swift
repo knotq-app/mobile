@@ -11,12 +11,12 @@ final class KnotQAppDelegate: NSObject, UIApplicationDelegate, MessagingDelegate
         FirebaseApp.configure()
         BackgroundSyncCoordinator.shared.register()
         configureFirebaseMessaging(application)
-        BackgroundSyncCoordinator.shared.scheduleIfEligible()
         return true
     }
 
     func applicationDidEnterBackground(_ application: UIApplication) {
-        BackgroundSyncCoordinator.shared.scheduleIfEligible()
+        let model = AppModel.shared
+        BackgroundSyncCoordinator.shared.scheduleIfEligible(model.backgroundRefreshEligible)
     }
 
     func application(
@@ -99,8 +99,8 @@ final class BackgroundSyncCoordinator {
     }
 
     @MainActor
-    func scheduleIfEligible() {
-        guard AppModel.shared.backgroundRefreshEligible else {
+    func scheduleIfEligible(_ eligible: Bool) {
+        guard eligible else {
             cancel()
             return
         }
@@ -122,12 +122,13 @@ final class BackgroundSyncCoordinator {
         completionHandler: @escaping (UIBackgroundFetchResult) -> Void
     ) {
         Task { @MainActor in
-            scheduleIfEligible()
             guard Self.isKnotQBackgroundPush(userInfo) else {
                 completionHandler(.noData)
                 return
             }
-            let changed = await AppModel.shared.runBackgroundSync()
+            let model = AppModel.shared
+            scheduleIfEligible(model.backgroundRefreshEligible)
+            let changed = await model.runBackgroundSync()
             completionHandler(changed ? .newData : .noData)
         }
     }
@@ -135,8 +136,9 @@ final class BackgroundSyncCoordinator {
     private func handle(_ task: BGAppRefreshTask) {
         let completion = BackgroundTaskCompletion(task: task)
         let operation = Task { @MainActor in
-            scheduleIfEligible()
-            let success = await AppModel.shared.runBackgroundMaintenance()
+            let model = AppModel.shared
+            scheduleIfEligible(model.backgroundRefreshEligible)
+            let success = await model.runBackgroundMaintenance()
             completion.finish(success: success)
         }
         task.expirationHandler = {

@@ -63,7 +63,6 @@ final class AppModel: ObservableObject {
         MobileNotificationScheduler.shared.configure(model: self)
         refresh()
         startSyncPolling()
-        BackgroundSyncCoordinator.shared.scheduleIfEligible()
         startTransactionListener()
         #if DEBUG
         seedEditorImageFixture()
@@ -90,7 +89,7 @@ final class AppModel: ObservableObject {
             KnotQWidgetSnapshotStore.publish(snapshot: nextSnapshot)
             rescheduleNotifications()
             configureGoogleSyncPolling(accountCount: nextSnapshot.settings.googleAccountCount)
-            BackgroundSyncCoordinator.shared.scheduleIfEligible()
+            BackgroundSyncCoordinator.shared.scheduleIfEligible(backgroundRefreshEligible)
             errorMessage = nil
         } catch {
             errorMessage = error.localizedDescription
@@ -589,7 +588,7 @@ final class AppModel: ObservableObject {
         syncSession = session
         saveSyncSession(session)
         startSyncPolling()
-        BackgroundSyncCoordinator.shared.scheduleIfEligible()
+        BackgroundSyncCoordinator.shared.scheduleIfEligible(backgroundRefreshEligible)
     }
 
     /// Abandon a pending 2FA challenge (e.g. to sign in as a different account).
@@ -601,7 +600,7 @@ final class AppModel: ObservableObject {
         syncSession = nil
         syncPollTask?.cancel()
         syncPollTask = nil
-        BackgroundSyncCoordinator.shared.scheduleIfEligible()
+        BackgroundSyncCoordinator.shared.scheduleIfEligible(backgroundRefreshEligible)
         UserDefaults.standard.removeObject(forKey: syncSessionKey)
     }
 
@@ -788,7 +787,7 @@ final class AppModel: ObservableObject {
             updated.supportsSync = payload.supportsSync
             syncSession = updated
             saveSyncSession(updated)
-            BackgroundSyncCoordinator.shared.scheduleIfEligible()
+            BackgroundSyncCoordinator.shared.scheduleIfEligible(backgroundRefreshEligible)
             if updated.supportsSync {
                 Task { await self.syncOnce() }
             }
@@ -923,7 +922,7 @@ final class AppModel: ObservableObject {
             updated.supportsSync = payload.supportsSync
             syncSession = updated
             saveSyncSession(updated)
-            BackgroundSyncCoordinator.shared.scheduleIfEligible()
+            BackgroundSyncCoordinator.shared.scheduleIfEligible(backgroundRefreshEligible)
             return true
         } catch {
             // Network/parse hiccup: keep the current token, retry next tick.
