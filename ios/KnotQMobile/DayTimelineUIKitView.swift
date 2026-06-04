@@ -346,6 +346,7 @@ final class DayTimelineUIKitView: UIView, UIGestureRecognizerDelegate, UIScrollV
         let cellWidth = bounds.width / 7
         // Active days use standard iOS blue on the darker lip.
         let accent = UIColor(calendarDayHighlightColor(dark: theme.isDark))
+        let rangeFill = theme.isDark ? UIColor(hex: 0x1d2a3a) : UIColor(hex: 0xd6e4f1)
         let onAccent = onAccentTextColor(accent)
         let weekdayTextColor = UIColor(theme.textMuted).withAlphaComponent(theme.isDark ? 0.42 : 0.50)
         let visibleKeys = visibleDayKeys()
@@ -356,7 +357,7 @@ final class DayTimelineUIKitView: UIView, UIGestureRecognizerDelegate, UIScrollV
         let pillHeight = DayTimelineDayCell.pillHeight
 
         // One capsule per contiguous run of visible days, drawn behind the cells.
-        func addAccentPill(start: Int, end: Int) {
+        func addRangePill(start: Int, end: Int) {
             let inset: CGFloat = 6
             let span = CGFloat(end - start + 1) * cellWidth
             let width = max(pillHeight, span - inset * 2)
@@ -364,23 +365,42 @@ final class DayTimelineUIKitView: UIView, UIGestureRecognizerDelegate, UIScrollV
             let x = CGFloat(start) * cellWidth + (span - width) / 2
             let pill = UIView(frame: CGRect(x: x, y: pillTop, width: width, height: pillHeight))
             pill.isUserInteractionEnabled = false
-            pill.backgroundColor = accent
+            pill.backgroundColor = rangeFill
             pill.layer.cornerRadius = pillHeight / 2
             pill.layer.cornerCurve = .continuous
             weekStrip.addSubview(pill)
         }
+
+        func addDayCircle(index: Int) {
+            let circle = UIView(frame: CGRect(
+                x: CGFloat(index) * cellWidth + (cellWidth - pillHeight) / 2,
+                y: pillTop,
+                width: pillHeight,
+                height: pillHeight
+            ))
+            circle.isUserInteractionEnabled = false
+            circle.backgroundColor = accent
+            circle.layer.cornerRadius = pillHeight / 2
+            circle.layer.cornerCurve = .continuous
+            weekStrip.addSubview(circle)
+        }
+
         var runStart: Int?
         for index in 0..<7 {
             let isVisible = visibleKeys.contains(AppModel.dateOnly(weekDates[index]))
             if isVisible, runStart == nil {
                 runStart = index
             } else if !isVisible, let start = runStart {
-                addAccentPill(start: start, end: index - 1)
+                addRangePill(start: start, end: index - 1)
                 runStart = nil
             }
         }
         if let start = runStart {
-            addAccentPill(start: start, end: 6)
+            addRangePill(start: start, end: 6)
+        }
+
+        for index in 0..<7 where visibleKeys.contains(AppModel.dateOnly(weekDates[index])) {
+            addDayCircle(index: index)
         }
 
         for index in 0..<7 {
@@ -395,7 +415,7 @@ final class DayTimelineUIKitView: UIView, UIGestureRecognizerDelegate, UIScrollV
             // the active blue.
             cell.weekdayLabel.textColor = weekdayTextColor
             cell.dayLabel.textColor = visible ? onAccent : (today ? accent : UIColor(theme.textPrimary))
-            cell.todayDot.isHidden = !today
+            cell.todayDot.isHidden = !today || visible
             cell.todayDot.backgroundColor = accent
             cell.addTarget(self, action: #selector(handleWeekdayTap(_:)), for: .touchUpInside)
             weekStrip.addSubview(cell)
