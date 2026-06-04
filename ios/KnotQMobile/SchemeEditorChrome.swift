@@ -179,6 +179,11 @@ struct IntegratedSchemeEditorPane: View {
         .navigationTitle("")
         .navigationBarTitleDisplayMode(.inline)
         .toolbarBackground(.hidden, for: .navigationBar)
+        .background {
+            if usesNativeNavigation {
+                SchemeEditorTransparentNavigationBar()
+            }
+        }
         .toolbar {
             if usesNativeNavigation && showsEditorNavigation {
                 ToolbarItem(placement: .topBarTrailing) {
@@ -430,6 +435,98 @@ struct IntegratedSchemeEditorPane: View {
         let root = model.snapshot?.root
         let folderID = WorkspaceNameValidation.parentFolderID(containingSchemeID: scheme.id, root: root)
         return WorkspaceNameValidation.schemeError(name, root: root, folderID: folderID, excludingID: scheme.id)
+    }
+}
+
+private struct SchemeEditorTransparentNavigationBar: UIViewControllerRepresentable {
+    func makeCoordinator() -> Coordinator {
+        Coordinator()
+    }
+
+    func makeUIViewController(context: Context) -> HostController {
+        let controller = HostController()
+        controller.view.backgroundColor = .clear
+        controller.view.isUserInteractionEnabled = false
+        controller.coordinator = context.coordinator
+        return controller
+    }
+
+    func updateUIViewController(_ uiViewController: HostController, context: Context) {
+        uiViewController.coordinator = context.coordinator
+        context.coordinator.configure(from: uiViewController)
+    }
+
+    static func dismantleUIViewController(_ uiViewController: HostController, coordinator: Coordinator) {
+        coordinator.restoreIfNeeded()
+    }
+
+    final class HostController: UIViewController {
+        weak var coordinator: Coordinator?
+
+        override func viewDidAppear(_ animated: Bool) {
+            super.viewDidAppear(animated)
+            coordinator?.configure(from: self)
+        }
+
+        override func didMove(toParent parent: UIViewController?) {
+            super.didMove(toParent: parent)
+            DispatchQueue.main.async { [weak self] in
+                guard let self else { return }
+                self.coordinator?.configure(from: self)
+            }
+        }
+    }
+
+    final class Coordinator {
+        private weak var navigationBar: UINavigationBar?
+        private var standardAppearance: UINavigationBarAppearance?
+        private var scrollEdgeAppearance: UINavigationBarAppearance?
+        private var compactAppearance: UINavigationBarAppearance?
+        private var compactScrollEdgeAppearance: UINavigationBarAppearance?
+        private var isTranslucent: Bool?
+
+        @MainActor
+        func configure(from controller: UIViewController) {
+            guard let navBar = controller.navigationController?.navigationBar else { return }
+            if navigationBar !== navBar {
+                restoreIfNeeded()
+                navigationBar = navBar
+                standardAppearance = navBar.standardAppearance
+                scrollEdgeAppearance = navBar.scrollEdgeAppearance
+                compactAppearance = navBar.compactAppearance
+                compactScrollEdgeAppearance = navBar.compactScrollEdgeAppearance
+                isTranslucent = navBar.isTranslucent
+            }
+
+            let transparent = UINavigationBarAppearance()
+            transparent.configureWithTransparentBackground()
+            transparent.backgroundColor = .clear
+            transparent.backgroundEffect = nil
+            transparent.shadowColor = .clear
+
+            navBar.isTranslucent = true
+            navBar.standardAppearance = transparent
+            navBar.scrollEdgeAppearance = transparent
+            navBar.compactAppearance = transparent
+            navBar.compactScrollEdgeAppearance = transparent
+        }
+
+        @MainActor
+        func restoreIfNeeded() {
+            guard let navBar = navigationBar else { return }
+            if let standardAppearance {
+                navBar.standardAppearance = standardAppearance
+            }
+            navBar.scrollEdgeAppearance = scrollEdgeAppearance
+            if let compactAppearance {
+                navBar.compactAppearance = compactAppearance
+            }
+            navBar.compactScrollEdgeAppearance = compactScrollEdgeAppearance
+            if let isTranslucent {
+                navBar.isTranslucent = isTranslucent
+            }
+            navigationBar = nil
+        }
     }
 }
 
