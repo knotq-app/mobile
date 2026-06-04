@@ -346,7 +346,8 @@ final class DayTimelineUIKitView: UIView, UIGestureRecognizerDelegate, UIScrollV
         let cellWidth = bounds.width / 7
         // Active days use standard iOS blue on the darker lip.
         let accent = UIColor(calendarDayHighlightColor(dark: theme.isDark))
-        let secondaryAccent = accent.withAlphaComponent(theme.isDark ? 0.26 : 0.18)
+        let secondaryAccent = UIColor(hex: theme.isDark ? 0x052547 : 0xbacada)
+        let connectorAccent = UIColor(hex: theme.isDark ? 0x06417e : 0x9abde0)
         let secondaryText = theme.isDark ? UIColor(hex: 0xb9dcff) : UIColor(hex: 0x0059b8)
         let onAccent = onAccentTextColor(accent)
         let weekdayTextColor = UIColor(theme.textMuted).withAlphaComponent(theme.isDark ? 0.42 : 0.50)
@@ -363,7 +364,7 @@ final class DayTimelineUIKitView: UIView, UIGestureRecognizerDelegate, UIScrollV
             guard end > start else { return }
             let x = CGFloat(start) * cellWidth + cellWidth / 2
             let width = CGFloat(end - start) * cellWidth
-            let barHeight: CGFloat = 3
+            let barHeight: CGFloat = 4
             let barYs = [
                 pillTop + pillHeight * 0.32,
                 pillTop + pillHeight * 0.68 - barHeight
@@ -371,7 +372,7 @@ final class DayTimelineUIKitView: UIView, UIGestureRecognizerDelegate, UIScrollV
             for y in barYs {
                 let bar = UIView(frame: CGRect(x: x, y: y, width: width, height: barHeight))
                 bar.isUserInteractionEnabled = false
-                bar.backgroundColor = secondaryAccent
+                bar.backgroundColor = connectorAccent
                 bar.layer.cornerRadius = barHeight / 2
                 bar.layer.cornerCurve = .continuous
                 weekStrip.addSubview(bar)
