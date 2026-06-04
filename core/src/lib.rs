@@ -10,6 +10,7 @@ use knotq_commands::{
     event_popup_commit_commands, event_popup_delete_command, recurrence_can_delete_future, Command,
     DateEditScope, DateKind, EventDeleteScope, EventPopupDraft, WorkspaceCommandExt,
 };
+use knotq_date_util::{upcoming_range, UPCOMING_LIMIT};
 use knotq_index::query::{SearchHitStatus, SearchOptions, SearchTarget};
 use knotq_index::IndexedWorkspace;
 use knotq_model::{
@@ -1557,7 +1558,7 @@ impl MobileCoreInner {
                 }
             })
             .collect();
-        let upcoming = mobile_upcoming(&indexed, Utc::now(), 12)
+        let upcoming = mobile_upcoming(&indexed, Utc::now(), UPCOMING_LIMIT)
             .into_iter()
             .map(|context| MobileOccurrence::from_context(&self.workspace, context))
             .collect();
@@ -2829,10 +2830,7 @@ fn mobile_upcoming(
     from: DateTime<Utc>,
     limit: usize,
 ) -> Vec<knotq_index::calendar::OccurrenceWithContext> {
-    let mut occurrences = indexed.calendar_query().range(knotq_date_util::DateRange {
-        start: from,
-        end: from + Duration::days(365),
-    });
+    let mut occurrences = indexed.calendar_query().range(upcoming_range(from));
     occurrences.retain(|event| occurrence_anchor(event) >= Some(from));
 
     let mut seen_recurring_items = HashSet::new();
@@ -3596,6 +3594,34 @@ mod tests {
             .filter(|occurrence| occurrence.title == "Daily standup")
             .count();
         assert_eq!(matches, 1);
+
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn mobile_upcoming_excludes_items_beyond_shared_horizon() {
+        let dir = std::env::temp_dir().join(format!("knotq-mobile-test-{}", uuid::Uuid::new_v4()));
+        let core = MobileCore::new(dir.display().to_string()).expect("open mobile core");
+        let start = Utc::now() + Duration::days(knotq_date_util::UPCOMING_HORIZON_DAYS + 1);
+        let end = start + Duration::minutes(30);
+        let today = Utc::now().date_naive().to_string();
+
+        core.add_calendar_item(
+            None,
+            Some(today.clone()),
+            "Far future review".to_string(),
+            "event".to_string(),
+            Some(format_datetime(start)),
+            Some(format_datetime(end)),
+        )
+        .expect("add event");
+
+        let snapshot = core.snapshot(Some(today), 0).expect("snapshot");
+        assert!(!snapshot
+            .calendar
+            .upcoming
+            .iter()
+            .any(|occurrence| occurrence.title == "Far future review"));
 
         let _ = std::fs::remove_dir_all(dir);
     }
