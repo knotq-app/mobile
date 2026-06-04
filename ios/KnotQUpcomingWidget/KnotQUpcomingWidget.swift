@@ -70,13 +70,13 @@ private struct KnotQUpcomingWidgetView: View {
             case .accessoryRectangular:
                 accessoryRectangular
             case .systemSmall:
-                systemBody(limit: 3, rowHeight: 37)
+                systemBody(limit: 3, rowHeight: 40)
             case .systemMedium:
-                systemBody(limit: 6, columns: 2, dense: true, rowHeight: 34)
+                systemBody(limit: 6, columns: 2, dense: true, rowHeight: 37)
             case .systemLarge:
-                systemBody(limit: 12, columns: 2, rowHeight: 44)
+                systemBody(limit: 12, columns: 2, rowHeight: 46)
             default:
-                systemBody(limit: 3, rowHeight: 37)
+                systemBody(limit: 3, rowHeight: 40)
             }
         }
     }
@@ -92,7 +92,7 @@ private struct KnotQUpcomingWidgetView: View {
                     striped: false,
                     compact: true
                 )
-                .frame(height: 34, alignment: .center)
+                .frame(height: 38, alignment: .center)
                 if visibleItems.count > 1 {
                     Text("+ \(visibleItems.count - 1) more")
                         .font(.caption2.monospacedDigit())
@@ -305,35 +305,42 @@ private struct WidgetOccurrenceCompactRow: View {
     let compact: Bool
 
     var body: some View {
-        HStack(spacing: compact ? 2 : 6) {
+        HStack(spacing: compact ? 5 : 7) {
             Rectangle()
                 .fill(schemeAccent)
-                .frame(width: 2)
-                .padding(.vertical, compact ? 2 : 8)
-                .offset(x: -2)
+                .frame(width: compact ? 2 : 3)
+                .padding(.vertical, compact ? 5 : 8)
 
-            VStack(alignment: .leading, spacing: compact ? 0 : 2) {
-                HStack(alignment: .firstTextBaseline) {
-                    Text(schemeLabel)
-                        .font(.system(size: compact ? 9 : 11, weight: .bold))
-                        .foregroundStyle(schemeAccent)
-                        .lineLimit(1)
+            VStack(alignment: .leading, spacing: compact ? 2 : 3) {
+                Text(titleLabel)
+                    .font(.system(size: compact ? 11 : 12, weight: .semibold))
+                    .lineLimit(1)
+                    .allowsTightening(true)
+                    .foregroundStyle(theme.textPrimary)
+                    .layoutPriority(2)
 
-                    Spacer(minLength: 6)
-
+                HStack(alignment: .firstTextBaseline, spacing: compact ? 4 : 6) {
                     Text(time)
-                        .font(.system(size: compact ? 8 : 10, weight: .bold, design: .monospaced))
+                        .font(.system(size: compact ? 9 : 10, weight: .bold, design: .monospaced))
                         .foregroundStyle(occurrenceTimeColor)
                         .lineLimit(1)
-                }
+                        .minimumScaleFactor(0.82)
+                        .allowsTightening(true)
+                        .layoutPriority(2)
 
-                Text(titleLabel)
-                    .font(.system(size: compact ? 10 : 12))
-                    .lineLimit(1)
-                    .foregroundStyle(theme.textPrimary)
+                    Spacer(minLength: 2)
+
+                    if !compact {
+                        Text(schemeLabel)
+                            .font(.system(size: 10, weight: .bold))
+                            .foregroundStyle(schemeAccent)
+                            .lineLimit(1)
+                            .truncationMode(.tail)
+                    }
+                }
             }
-            .padding(.vertical, compact ? 1 : 6)
-            .padding(.trailing, compact ? 2 : 6)
+            .padding(.vertical, compact ? 4 : 6)
+            .padding(.trailing, compact ? 4 : 6)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(striped ? theme.rowAlt : Color.clear)
