@@ -22,7 +22,7 @@ final class KnotQAppDelegate: NSObject, UIApplicationDelegate, MessagingDelegate
         _ application: UIApplication,
         didRegisterForRemoteNotificationsWithDeviceToken deviceToken: Data
     ) {
-        guard FirebaseApp.app() != nil else { return }
+        guard Self.firebaseConfigured else { return }
         Messaging.messaging().apnsToken = deviceToken
         Messaging.messaging().token { token, _ in
             guard let token else { return }
@@ -44,7 +44,7 @@ final class KnotQAppDelegate: NSObject, UIApplicationDelegate, MessagingDelegate
         didReceiveRemoteNotification userInfo: [AnyHashable: Any],
         fetchCompletionHandler completionHandler: @escaping (UIBackgroundFetchResult) -> Void
     ) {
-        if FirebaseApp.app() != nil {
+        if Self.firebaseConfigured {
             Messaging.messaging().appDidReceiveMessage(userInfo)
         }
         BackgroundSyncCoordinator.shared.handleRemoteNotification(
@@ -68,11 +68,14 @@ final class KnotQAppDelegate: NSObject, UIApplicationDelegate, MessagingDelegate
 
     @discardableResult
     static func configureFirebaseIfAvailable() -> Bool {
-        guard FirebaseApp.app() == nil else { return true }
+        guard !firebaseConfigured else { return true }
         guard let options = firebaseOptionsIfConfigured() else { return false }
         FirebaseApp.configure(options: options)
-        return FirebaseApp.app() != nil
+        firebaseConfigured = true
+        return true
     }
+
+    private static var firebaseConfigured = false
 
     private static func firebaseOptionsIfConfigured() -> FirebaseOptions? {
         guard let path = Bundle.main.path(forResource: "GoogleService-Info", ofType: "plist"),
