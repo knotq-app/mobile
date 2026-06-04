@@ -61,17 +61,17 @@ final class KnotQAppDelegate: NSObject, UIApplicationDelegate, MessagingDelegate
     }
 
     private func configureFirebaseMessaging(_ application: UIApplication) {
-        guard FirebaseApp.app() == nil else {
-            Messaging.messaging().delegate = self
-            application.registerForRemoteNotifications()
-            return
-        }
-        guard let options = Self.firebaseOptionsIfConfigured() else {
-            return
-        }
-        FirebaseApp.configure(options: options)
+        guard Self.configureFirebaseIfAvailable() else { return }
         Messaging.messaging().delegate = self
         application.registerForRemoteNotifications()
+    }
+
+    @discardableResult
+    static func configureFirebaseIfAvailable() -> Bool {
+        guard FirebaseApp.app() == nil else { return true }
+        guard let options = firebaseOptionsIfConfigured() else { return false }
+        FirebaseApp.configure(options: options)
+        return FirebaseApp.app() != nil
     }
 
     private static func firebaseOptionsIfConfigured() -> FirebaseOptions? {
