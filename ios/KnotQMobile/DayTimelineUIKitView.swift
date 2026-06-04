@@ -356,13 +356,12 @@ final class DayTimelineUIKitView: UIView, UIGestureRecognizerDelegate, UIScrollV
         let pillTop = DayTimelineDayCell.pillTop
         let pillHeight = DayTimelineDayCell.pillHeight
 
-        // One capsule per contiguous run of visible days, drawn behind the cells.
-        func addRangePill(start: Int, end: Int) {
-            let inset: CGFloat = 6
-            let span = CGFloat(end - start + 1) * cellWidth
-            let width = max(pillHeight, span - inset * 2)
-            // Degenerate single-day runs (week boundaries) center a circle.
-            let x = CGFloat(start) * cellWidth + (span - width) / 2
+        // One connector per contiguous run, drawn center-to-center so the day
+        // circles fully cover both ends and no capsule edge escapes.
+        func addRangeConnector(start: Int, end: Int) {
+            guard end > start else { return }
+            let x = CGFloat(start) * cellWidth + cellWidth / 2
+            let width = CGFloat(end - start) * cellWidth
             let pill = UIView(frame: CGRect(x: x, y: pillTop, width: width, height: pillHeight))
             pill.isUserInteractionEnabled = false
             pill.backgroundColor = rangeFill
@@ -371,16 +370,40 @@ final class DayTimelineUIKitView: UIView, UIGestureRecognizerDelegate, UIScrollV
             weekStrip.addSubview(pill)
         }
 
-        func addDayCircle(index: Int) {
+        func addDayCircle(index: Int, today: Bool) {
+            let circleSize = today ? pillHeight + 2 : pillHeight
+            let circleFrame = CGRect(
+                x: CGFloat(index) * cellWidth + (cellWidth - circleSize) / 2,
+                y: pillTop - (circleSize - pillHeight) / 2,
+                width: circleSize,
+                height: circleSize
+            )
+            if today {
+                let ringSize = circleSize + 4
+                let ring = UIView(frame: CGRect(
+                    x: CGFloat(index) * cellWidth + (cellWidth - ringSize) / 2,
+                    y: pillTop - (ringSize - pillHeight) / 2,
+                    width: ringSize,
+                    height: ringSize
+                ))
+                ring.isUserInteractionEnabled = false
+                ring.backgroundColor = .clear
+                ring.layer.borderColor = UIColor(theme.bgToolbar).withAlphaComponent(theme.isDark ? 0.96 : 0.90).cgColor
+                ring.layer.borderWidth = 2
+                ring.layer.cornerRadius = ringSize / 2
+                ring.layer.cornerCurve = .continuous
+                weekStrip.addSubview(ring)
+            }
+
             let circle = UIView(frame: CGRect(
-                x: CGFloat(index) * cellWidth + (cellWidth - pillHeight) / 2,
-                y: pillTop,
-                width: pillHeight,
-                height: pillHeight
+                x: circleFrame.minX,
+                y: circleFrame.minY,
+                width: circleFrame.width,
+                height: circleFrame.height
             ))
             circle.isUserInteractionEnabled = false
             circle.backgroundColor = accent
-            circle.layer.cornerRadius = pillHeight / 2
+            circle.layer.cornerRadius = circleSize / 2
             circle.layer.cornerCurve = .continuous
             weekStrip.addSubview(circle)
         }
@@ -391,16 +414,16 @@ final class DayTimelineUIKitView: UIView, UIGestureRecognizerDelegate, UIScrollV
             if isVisible, runStart == nil {
                 runStart = index
             } else if !isVisible, let start = runStart {
-                addRangePill(start: start, end: index - 1)
+                addRangeConnector(start: start, end: index - 1)
                 runStart = nil
             }
         }
         if let start = runStart {
-            addRangePill(start: start, end: 6)
+            addRangeConnector(start: start, end: 6)
         }
 
         for index in 0..<7 where visibleKeys.contains(AppModel.dateOnly(weekDates[index])) {
-            addDayCircle(index: index)
+            addDayCircle(index: index, today: isToday(weekDates[index]))
         }
 
         for index in 0..<7 {
@@ -411,9 +434,10 @@ final class DayTimelineUIKitView: UIView, UIGestureRecognizerDelegate, UIScrollV
             cell.dayLabel.text = dayNumber(date)
             let visible = visibleKeys.contains(AppModel.dateOnly(date))
             let today = isToday(date)
-            // Weekday initials stay neutral; only the day number/pill carries
-            // the active blue.
-            cell.weekdayLabel.textColor = weekdayTextColor
+            // Today gets a stronger weekday/number treatment; other active
+            // days rely on the circle and connector.
+            cell.weekdayLabel.textColor = today ? accent : weekdayTextColor
+            cell.dayLabel.font = .systemFont(ofSize: 18, weight: today ? .bold : .medium)
             cell.dayLabel.textColor = visible ? onAccent : (today ? accent : UIColor(theme.textPrimary))
             cell.todayDot.isHidden = !today || visible
             cell.todayDot.backgroundColor = accent
