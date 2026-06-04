@@ -48,7 +48,7 @@ private struct KnotQUpcomingWidgetView: View {
 
     var body: some View {
         content
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
             .background {
                 if family != .accessoryInline {
                     theme.background
@@ -109,7 +109,7 @@ private struct KnotQUpcomingWidgetView: View {
     }
 
     private func systemBody(limit: Int, columns: Int = 1, dense: Bool = false, rowHeight: CGFloat) -> some View {
-        VStack(alignment: .leading, spacing: dense ? 1 : 3) {
+        VStack(alignment: .leading, spacing: dense ? 0 : 2) {
             currentDateHeader
             if visibleItems.isEmpty {
                 Text("Nothing scheduled")
@@ -164,7 +164,8 @@ private struct KnotQUpcomingWidgetView: View {
             }
         }
         .padding(.horizontal, 2)
-        .padding(.vertical, dense ? 2 : 3)
+        .padding(.top, dense ? 0 : 1)
+        .padding(.bottom, dense ? 2 : 3)
     }
 
     private var currentDateHeader: some View {
@@ -175,7 +176,6 @@ private struct KnotQUpcomingWidgetView: View {
             .multilineTextAlignment(.center)
             .frame(maxWidth: .infinity, alignment: .center)
             .padding(.horizontal, 2)
-            .padding(.bottom, 2)
     }
 
     private var visibleItems: [KnotQWidgetOccurrence] {
