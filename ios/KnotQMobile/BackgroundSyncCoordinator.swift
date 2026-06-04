@@ -8,6 +8,7 @@ final class KnotQAppDelegate: NSObject, UIApplicationDelegate, MessagingDelegate
         _ application: UIApplication,
         didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil
     ) -> Bool {
+        FirebaseApp.configure()
         BackgroundSyncCoordinator.shared.register()
         configureFirebaseMessaging(application)
         BackgroundSyncCoordinator.shared.scheduleIfEligible()
@@ -22,7 +23,6 @@ final class KnotQAppDelegate: NSObject, UIApplicationDelegate, MessagingDelegate
         _ application: UIApplication,
         didRegisterForRemoteNotificationsWithDeviceToken deviceToken: Data
     ) {
-        guard Self.firebaseConfigured else { return }
         Messaging.messaging().apnsToken = deviceToken
         Messaging.messaging().token { token, _ in
             guard let token else { return }
@@ -44,9 +44,7 @@ final class KnotQAppDelegate: NSObject, UIApplicationDelegate, MessagingDelegate
         didReceiveRemoteNotification userInfo: [AnyHashable: Any],
         fetchCompletionHandler completionHandler: @escaping (UIBackgroundFetchResult) -> Void
     ) {
-        if Self.firebaseConfigured {
-            Messaging.messaging().appDidReceiveMessage(userInfo)
-        }
+        Messaging.messaging().appDidReceiveMessage(userInfo)
         BackgroundSyncCoordinator.shared.handleRemoteNotification(
             userInfo: userInfo,
             completionHandler: completionHandler
@@ -61,33 +59,8 @@ final class KnotQAppDelegate: NSObject, UIApplicationDelegate, MessagingDelegate
     }
 
     private func configureFirebaseMessaging(_ application: UIApplication) {
-        guard Self.configureFirebaseIfAvailable() else { return }
         Messaging.messaging().delegate = self
         application.registerForRemoteNotifications()
-    }
-
-    @discardableResult
-    static func configureFirebaseIfAvailable() -> Bool {
-        guard !firebaseConfigured else { return true }
-        guard let options = firebaseOptionsIfConfigured() else { return false }
-        FirebaseApp.configure(options: options)
-        firebaseConfigured = true
-        return true
-    }
-
-    private static var firebaseConfigured = false
-
-    private static func firebaseOptionsIfConfigured() -> FirebaseOptions? {
-        guard let path = Bundle.main.path(forResource: "GoogleService-Info", ofType: "plist"),
-              let plist = NSDictionary(contentsOfFile: path),
-              let appID = plist["GOOGLE_APP_ID"] as? String,
-              !appID.isEmpty,
-              let senderID = plist["GCM_SENDER_ID"] as? String,
-              !senderID.isEmpty
-        else {
-            return nil
-        }
-        return FirebaseOptions(contentsOfFile: path)
     }
 
     private static var pushEnvironment: String {

@@ -5,10 +5,6 @@ struct KnotQMobileApp: App {
     @UIApplicationDelegateAdaptor(KnotQAppDelegate.self) private var appDelegate
     @StateObject private var model = AppModel.shared
 
-    init() {
-        KnotQAppDelegate.configureFirebaseIfAvailable()
-    }
-
     var body: some Scene {
         WindowGroup {
             ContentView()
