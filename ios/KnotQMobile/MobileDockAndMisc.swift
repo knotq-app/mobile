@@ -13,6 +13,22 @@ struct SettingsThemeOption: View {
     }
 }
 
+struct SyncSettingsHeader: View {
+    let theme: KnotQTheme
+
+    var body: some View {
+        Label("Sync", systemImage: "icloud.and.arrow.up")
+            .font(.caption.weight(.bold))
+            .foregroundStyle(theme.accent)
+    }
+}
+
+func syncSettingsRowBackground(theme: KnotQTheme) -> Color {
+    theme.isDark
+        ? Color(hex: 0x121b2f)
+        : Color(hex: 0xf2d8ca)
+}
+
 struct NotificationDefaultsSettingsSection: View {
     @EnvironmentObject private var model: AppModel
     let theme: KnotQTheme
@@ -89,35 +105,6 @@ struct SettingsForm: View {
     var body: some View {
         Form {
             Section {
-                Picker("Theme", selection: themeBinding) {
-                    SettingsThemeOption(title: "Dark", systemImage: "moon.fill").tag("dark")
-                    SettingsThemeOption(title: "Light", systemImage: "sun.max.fill").tag("light")
-                    SettingsThemeOption(title: "System", systemImage: "circle.lefthalf.filled").tag("system")
-                }
-                .pickerStyle(.menu)
-            } header: {
-                Text("Appearance")
-            }
-            .listRowBackground(theme.bgModal)
-
-            Section {
-                Picker("Clock", selection: timeBinding) {
-                    Text("12-hour").tag("twelve_hour")
-                    Text("24-hour").tag("twenty_four_hour")
-                }
-                .pickerStyle(.menu)
-            } header: {
-                Text("Time")
-            }
-            .listRowBackground(theme.bgModal)
-
-            NotificationDefaultsSettingsSection(theme: theme)
-
-            SettingsArchiveSection(schemes: model.snapshot?.archivedSchemes ?? [], theme: theme)
-
-            GoogleCalendarSettingsSection(theme: theme)
-
-            Section {
                 if let session = model.syncSession {
                     LabeledContent("Account", value: session.email)
                     LabeledContent("Backend", value: session.apiBase)
@@ -145,9 +132,38 @@ struct SettingsForm: View {
                     }
                 }
             } header: {
-                Text("Sync")
+                SyncSettingsHeader(theme: theme)
+            }
+            .listRowBackground(syncSettingsRowBackground(theme: theme))
+
+            Section {
+                Picker("Theme", selection: themeBinding) {
+                    SettingsThemeOption(title: "Dark", systemImage: "moon.fill").tag("dark")
+                    SettingsThemeOption(title: "Light", systemImage: "sun.max.fill").tag("light")
+                    SettingsThemeOption(title: "System", systemImage: "circle.lefthalf.filled").tag("system")
+                }
+                .pickerStyle(.menu)
+            } header: {
+                Text("Appearance")
             }
             .listRowBackground(theme.bgModal)
+
+            Section {
+                Picker("Clock", selection: timeBinding) {
+                    Text("12-hour").tag("twelve_hour")
+                    Text("24-hour").tag("twenty_four_hour")
+                }
+                .pickerStyle(.menu)
+            } header: {
+                Text("Time")
+            }
+            .listRowBackground(theme.bgModal)
+
+            NotificationDefaultsSettingsSection(theme: theme)
+
+            SettingsArchiveSection(schemes: model.snapshot?.archivedSchemes ?? [], theme: theme)
+
+            GoogleCalendarSettingsSection(theme: theme)
 
         }
         .scrollContentBackground(.hidden)

@@ -14,7 +14,7 @@ struct SettingsScreen: View {
 
     var body: some View {
         Form {
-            Section("Sync") {
+            Section {
                 if let session = model.syncSession {
                     LabeledContent("Account", value: session.email)
                     LabeledContent("Backend", value: session.apiBase)
@@ -70,8 +70,10 @@ struct SettingsScreen: View {
                         showingSyncSignIn = true
                     }
                 }
+            } header: {
+                SyncSettingsHeader(theme: theme)
             }
-            .listRowBackground(theme.bgModal)
+            .listRowBackground(syncSettingsRowBackground(theme: theme))
 
             Section("Appearance") {
                 Picker("Theme", selection: Binding(
