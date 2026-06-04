@@ -49,7 +49,7 @@ private struct KnotQUpcomingWidgetView: View {
 
     var body: some View {
         content
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: contentAlignment)
             .background {
                 if family != .accessoryInline {
                     theme.background
@@ -165,8 +165,30 @@ private struct KnotQUpcomingWidgetView: View {
             }
         }
         .padding(.horizontal, 12)
-        .padding(.top, dense ? 5 : 6)
-        .padding(.bottom, dense ? 8 : 9)
+        .padding(.top, systemTopPadding(dense: dense))
+        .padding(.bottom, systemBottomPadding(dense: dense))
+    }
+
+    private var contentAlignment: Alignment {
+        shouldCenterFullSmallWidget ? .center : .top
+    }
+
+    private var shouldCenterFullSmallWidget: Bool {
+        family == .systemSmall && visibleItems.count >= 3
+    }
+
+    private func systemTopPadding(dense: Bool) -> CGFloat {
+        if shouldCenterFullSmallWidget {
+            return 9
+        }
+        return dense ? 5 : 6
+    }
+
+    private func systemBottomPadding(dense: Bool) -> CGFloat {
+        if shouldCenterFullSmallWidget {
+            return 6
+        }
+        return dense ? 8 : 9
     }
 
     private var currentDateHeader: some View {
