@@ -31,6 +31,7 @@ struct KnotQUpcomingWidget: Widget {
         .description("Shows upcoming KnotQ items.")
         .supportedFamilies([.systemSmall, .systemMedium, .systemLarge, .accessoryInline, .accessoryRectangular])
         .containerBackgroundRemovable(false)
+        .contentMarginsDisabled()
     }
 }
 
@@ -163,18 +164,19 @@ private struct KnotQUpcomingWidgetView: View {
                 }
             }
         }
-        .padding(.horizontal, 2)
-        .padding(.top, dense ? 0 : 1)
-        .padding(.bottom, dense ? 2 : 3)
+        .padding(.horizontal, 10)
+        .padding(.top, dense ? 4 : 5)
+        .padding(.bottom, dense ? 7 : 8)
     }
 
     private var currentDateHeader: some View {
         Text(currentDateLabel)
-            .font(.system(size: 12, weight: .bold))
+            .font(.system(size: 11, weight: .bold))
             .foregroundStyle(theme.textPrimary)
             .lineLimit(1)
             .multilineTextAlignment(.center)
             .frame(maxWidth: .infinity, alignment: .center)
+            .frame(height: 12, alignment: .top)
             .padding(.horizontal, 2)
     }
 
