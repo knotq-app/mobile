@@ -5,6 +5,8 @@ import com.enigmadux.knotq.ffi.MobileCalendar
 import com.enigmadux.knotq.ffi.MobileCalendarDay
 import com.enigmadux.knotq.ffi.MobileCore
 import com.enigmadux.knotq.ffi.MobileDailyEntry
+import com.enigmadux.knotq.ffi.MobileGoogleAuthRequest
+import com.enigmadux.knotq.ffi.MobileGoogleSyncResult
 import com.enigmadux.knotq.ffi.MobileItem
 import com.enigmadux.knotq.ffi.MobileItemEdit
 import com.enigmadux.knotq.ffi.MobileItemMedia
@@ -33,6 +35,23 @@ internal class RustBridge(context: Context) : AutoCloseable {
     fun request(body: JSONObject): JSONObject {
         when (body.getString("type")) {
             "snapshot" -> return core.snapshot(body.stringOrNull("today"), body.optInt("week_offset", 0)).toJson()
+            "google_auth_request" -> return core.googleAuthRequest(
+                body.getString("client_id"),
+                body.getString("redirect_uri")
+            ).toJson()
+            "complete_google_calendar_import" -> return core.completeGoogleCalendarImport(
+                body.getString("client_id"),
+                body.stringOrNull("client_secret"),
+                body.getString("redirect_uri"),
+                body.getString("state"),
+                body.getString("code_verifier"),
+                body.getString("callback_url"),
+                body.stringOrNull("parent_id")
+            ).toJson()
+            "sync_google_calendars" -> return core.syncGoogleCalendars(
+                body.stringOrNull("client_id"),
+                body.stringOrNull("client_secret")
+            ).toJson()
             "create_folder" -> core.createFolder(body.stringOrNull("parent_id"), body.getString("name"), body.intOrNull("position"))
             "rename_folder" -> core.renameFolder(body.getString("folder_id"), body.getString("name"))
             "delete_folder" -> core.deleteFolder(body.getString("folder_id"))
@@ -55,6 +74,12 @@ internal class RustBridge(context: Context) : AutoCloseable {
                 body.getInt("position")
             )
             "ensure_daily_queue" -> core.ensureDailyQueue(body.stringOrNull("date"))
+            "add_today_daily_item" -> core.addTodayDailyItem(
+                body.getString("today"),
+                body.getString("text"),
+                body.stringOrNull("marker"),
+                body.intOrNull("indent")
+            )
             "add_item" -> core.addItem(
                 body.getString("scheme_id"),
                 body.getString("text"),
@@ -91,6 +116,33 @@ internal class RustBridge(context: Context) : AutoCloseable {
                 body.getString("kind"),
                 body.stringOrNull("date")
             )
+            "set_item_recurrence" -> core.setItemRecurrence(
+                body.getString("scheme_id"),
+                body.getString("item_id"),
+                body.stringOrNull("rrule")
+            )
+            "set_occurrence_notification_offset" -> core.setOccurrenceNotificationOffset(
+                body.getString("scheme_id"),
+                body.getString("item_id"),
+                body.stringOrNull("occurrence_json"),
+                body.intOrNull("offset_secs")
+            )
+            "commit_event_edit" -> core.commitEventEdit(
+                body.getString("scheme_id"),
+                body.getString("item_id"),
+                body.getString("occurrence_json"),
+                body.optInt("occurrence_index", 0),
+                body.getString("title"),
+                body.stringOrNull("occurrence_start"),
+                body.stringOrNull("occurrence_end"),
+                body.stringOrNull("start"),
+                body.stringOrNull("end"),
+                body.stringOrNull("rrule"),
+                body.intOrNull("notification_offset_secs"),
+                body.optBoolean("notification_dirty", false),
+                body.optBoolean("done", false),
+                body.optString("scope", "all_events")
+            )
             "toggle_item" -> core.toggleItem(body.getString("scheme_id"), body.getString("item_id"))
             "toggle_occurrence" -> core.toggleOccurrence(
                 body.getString("scheme_id"),
@@ -98,6 +150,13 @@ internal class RustBridge(context: Context) : AutoCloseable {
                 body.getString("occurrence_json")
             )
             "delete_item" -> core.deleteItem(body.getString("scheme_id"), body.getString("item_id"))
+            "delete_event_occurrence" -> core.deleteEventOccurrence(
+                body.getString("scheme_id"),
+                body.getString("item_id"),
+                body.getString("occurrence_json"),
+                body.optInt("occurrence_index", 0),
+                body.optString("scope", "all_events")
+            )
             "reorder_item" -> core.reorderItem(
                 body.getString("scheme_id"),
                 body.getInt("from"),
@@ -109,6 +168,10 @@ internal class RustBridge(context: Context) : AutoCloseable {
             )
             "set_theme_mode" -> core.setThemeMode(body.getString("theme_mode"))
             "set_time_format" -> core.setTimeFormat(body.getString("time_format"))
+            "set_notification_defaults" -> core.setNotificationDefaults(
+                body.getInt("event_offset_secs"),
+                body.getInt("assignment_offset_secs")
+            )
             "reset_workspace" -> core.resetWorkspace()
             "apply_notification_action" -> return JSONObject().put(
                 "changed",
@@ -129,6 +192,11 @@ internal class RustBridge(context: Context) : AutoCloseable {
                 }
                 return response
             }
+            "set_push_registration" -> core.setPushRegistration(
+                body.getString("token"),
+                body.getString("environment")
+            )
+            "seed_editor_image_fixture" -> core.seedEditorImageFixture()
             else -> error("Unknown Rust request: ${body.getString("type")}")
         }
         return JSONObject()
@@ -137,6 +205,10 @@ internal class RustBridge(context: Context) : AutoCloseable {
     fun requestArray(body: JSONObject): JSONArray {
         return when (body.getString("type")) {
             "search" -> core.search(body.getString("query")).toJsonArray { it.toJson() }
+            "month_days" -> core.monthDays(
+                body.getInt("year"),
+                body.getInt("month").toUInt()
+            ).toJsonArray { it.toJson() }
             "pending_notifications" -> core.pendingNotifications(null, 14).toJsonArray { it.toJson() }
             else -> error("Unknown Rust array request: ${body.getString("type")}")
         }
@@ -161,6 +233,7 @@ internal class RustBridge(context: Context) : AutoCloseable {
         .put("name", name)
         .put("color_index", colorIndex ?: JSONObject.NULL)
         .put("is_daily_queue", isDailyQueue)
+        .put("is_read_only", isReadOnly)
         .put("children", children.toJsonArray { it.toJson() })
 
     private fun MobileScheme.toJson(): JSONObject = JSONObject()
@@ -169,6 +242,7 @@ internal class RustBridge(context: Context) : AutoCloseable {
         .put("display_name", displayName)
         .put("color_index", colorIndex)
         .put("is_daily_queue", isDailyQueue)
+        .put("is_read_only", isReadOnly)
         .put("date", date ?: JSONObject.NULL)
         .put("items", items.toJsonArray { it.toJson() })
 
@@ -181,6 +255,8 @@ internal class RustBridge(context: Context) : AutoCloseable {
         .put("done", done)
         .put("start", start ?: JSONObject.NULL)
         .put("end", end ?: JSONObject.NULL)
+        .put("notification_offset_secs", notificationOffsetSecs ?: JSONObject.NULL)
+        .put("repeat_rule", repeatRule ?: JSONObject.NULL)
         .put("media", media.toJsonArray { it.toJson() })
 
     private fun MobileItemMedia.toJson(): JSONObject = JSONObject()
@@ -209,19 +285,41 @@ internal class RustBridge(context: Context) : AutoCloseable {
         .put("scheme_id", schemeId)
         .put("item_id", itemId)
         .put("occurrence_json", occurrenceJson)
+        .put("occurrence_index", occurrenceIndex)
+        .put("is_recurring", isRecurring)
+        .put("can_delete_future", canDeleteFuture)
         .put("scheme_name", schemeName)
         .put("color_index", colorIndex)
+        .put("is_read_only", isReadOnly)
         .put("title", title)
         .put("kind", kind)
         .put("done", done)
         .put("start", start ?: JSONObject.NULL)
         .put("end", end ?: JSONObject.NULL)
+        .put("notification_offset_secs", notificationOffsetSecs ?: JSONObject.NULL)
         .put("local_date", localDate ?: JSONObject.NULL)
         .put("repeat_rule", repeatRule ?: JSONObject.NULL)
 
     private fun MobileSettings.toJson(): JSONObject = JSONObject()
         .put("theme_mode", themeMode)
         .put("time_format", timeFormat)
+        .put("event_notification_offset_secs", eventNotificationOffsetSecs)
+        .put("assignment_notification_offset_secs", assignmentNotificationOffsetSecs)
+        .put("google_account_count", googleAccountCount)
+
+    private fun MobileGoogleAuthRequest.toJson(): JSONObject = JSONObject()
+        .put("auth_url", authUrl)
+        .put("state", state)
+        .put("code_verifier", codeVerifier)
+        .put("redirect_uri", redirectUri)
+        .put("scope", scope)
+        .put("client_id", clientId)
+
+    private fun MobileGoogleSyncResult.toJson(): JSONObject = JSONObject()
+        .put("imported_count", importedCount)
+        .put("synced_count", syncedCount)
+        .put("failure_count", failureCount)
+        .put("message", message)
 
     private fun MobileNotificationRequest.toJson(): JSONObject = JSONObject()
         .put("id", id)

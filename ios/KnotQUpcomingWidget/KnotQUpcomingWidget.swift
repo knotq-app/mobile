@@ -410,7 +410,7 @@ private struct WidgetTheme {
         if dark {
             return WidgetTheme(
                 isDark: true,
-                background: Color(hex: 0x000000),
+                background: Color(hex: 0x151517),
                 rowAlt: Color(hex: 0xffffff).opacity(0.04),
                 divider: Color(hex: 0xffffff).opacity(0.10),
                 textPrimary: Color(hex: 0xf2f2f7),

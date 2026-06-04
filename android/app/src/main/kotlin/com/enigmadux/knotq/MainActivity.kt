@@ -3,6 +3,8 @@ package com.enigmadux.knotq
 import android.app.Activity
 import android.app.AlertDialog
 import android.app.DatePickerDialog
+import android.content.ActivityNotFoundException
+import android.content.Intent
 import android.content.res.Configuration
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
@@ -14,6 +16,7 @@ import android.graphics.Rect
 import android.graphics.RectF
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
+import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.os.Handler
@@ -38,6 +41,7 @@ import android.view.inputmethod.BaseInputConnection
 import android.view.inputmethod.EditorInfo
 import android.view.inputmethod.InputMethodManager
 import android.widget.ArrayAdapter
+import android.widget.CheckBox
 import android.widget.DatePicker
 import android.widget.EditText
 import android.widget.FrameLayout
@@ -82,6 +86,10 @@ private const val EDITOR_IMAGE_FALLBACK_WIDTH_DP = 320
 private const val EDITOR_IMAGE_FALLBACK_HEIGHT_DP = 180
 private const val SYNC_SESSION_PREF = "knotq.localSyncSession"
 private const val DEFAULT_SYNC_API_BASE = "http://10.0.2.2:8787"
+private const val GOOGLE_CLIENT_ID = "419826075228-gn6gj1l20nltil67odvf00u3i7n8a2ld.apps.googleusercontent.com"
+private const val GOOGLE_REDIRECT_SCHEME = "com.googleusercontent.apps.419826075228-gn6gj1l20nltil67odvf00u3i7n8a2ld"
+private const val GOOGLE_REDIRECT_URI = "$GOOGLE_REDIRECT_SCHEME:/oauth2redirect"
+private const val GOOGLE_SYNC_INTERVAL_MS = 120_000L
 
 private data class SyncSession(
     val apiBase: String,
@@ -96,6 +104,18 @@ private data class SyncSession(
     // refresh token just forces a one-time re-login.
     val refreshToken: String? = null,
     val refreshExpiresAt: String? = null
+)
+
+private data class SyncLoginChallenge(
+    val apiBase: String,
+    val email: String,
+    val challengeId: String,
+    val devCode: String?
+)
+
+private data class SyncLoginStart(
+    val challenge: SyncLoginChallenge?,
+    val session: SyncSession?
 )
 
 private data class FolderDestination(val id: String, val name: String, val depth: Int)
@@ -116,13 +136,28 @@ class MainActivity : Activity() {
     private var keyboardActive = false
     private val editorSchemeIds = WeakHashMap<EditText, String>()
     private var syncSession: SyncSession? = null
+    private var syncLoginChallenge: SyncLoginChallenge? = null
     private var syncAuthInProgress = false
+    private var syncAccountActionInProgress = false
     private var syncInProgress = false
+    private var googleAuthInProgress = false
+    private var googleSyncInProgress = false
+    private var googleSyncPollingActive = false
+    private var googleCalendarStatus: String? = null
+    private var pendingGoogleAuthRequest: JSONObject? = null
+    private var pendingGoogleParentId: String? = null
     private val syncPollHandler = Handler(Looper.getMainLooper())
     private val syncPollRunnable = object : Runnable {
         override fun run() {
             syncOnce()
             syncPollHandler.postDelayed(this, 30_000)
+        }
+    }
+    private val googleSyncHandler = Handler(Looper.getMainLooper())
+    private val googleSyncRunnable = object : Runnable {
+        override fun run() {
+            syncGoogleCalendars(silent = true)
+            googleSyncHandler.postDelayed(this, GOOGLE_SYNC_INTERVAL_MS)
         }
     }
 
@@ -138,6 +173,8 @@ class MainActivity : Activity() {
             MobileNotificationScheduler.requestPermission(this)
             rescheduleNotifications()
             startSyncPolling()
+            configureGoogleSyncPolling()
+            handleGoogleCallback(intent?.data)
         } catch (error: Throwable) {
             theme = UiTheme.dark
             showFatal(error.message)
@@ -146,10 +183,17 @@ class MainActivity : Activity() {
 
     override fun onDestroy() {
         syncPollHandler.removeCallbacks(syncPollRunnable)
+        googleSyncHandler.removeCallbacks(googleSyncRunnable)
         if (::bridge.isInitialized) {
             bridge.close()
         }
         super.onDestroy()
+    }
+
+    override fun onNewIntent(intent: Intent?) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        handleGoogleCallback(intent?.data)
     }
 
     override fun onRequestPermissionsResult(
@@ -469,8 +513,10 @@ class MainActivity : Activity() {
                 addView(row)
             }, LinearLayout.LayoutParams(-1, 0, 1f))
         } else {
-            for (offset in 0 until phoneCalendarDayCount()) {
-                dayForDate(selectedDate.plusDays(offset.toLong()))?.let { body.addView(dayList(it), spaced()) }
+            if (days != null) {
+                for (index in 0 until min(phoneCalendarDayCount(), days.length())) {
+                    days.optJSONObject(index)?.let { body.addView(dayList(it), spaced()) }
+                }
             }
             root.addView(scroll(body), LinearLayout.LayoutParams(-1, 0, 1f))
         }
@@ -490,13 +536,29 @@ class MainActivity : Activity() {
 
     private fun calendarTitleView(): View =
         LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
+            orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER
             setPadding(dp(12), dp(8), dp(12), dp(4))
+            addView(iconChip("<") {
+                weekOffset -= 1
+                loadSnapshot()
+                render()
+            })
             addView(text(selectedDateTitle(), theme.textPrimary, 23f, true).apply {
                 gravity = Gravity.CENTER
                 includeFontPadding = false
-            }, LinearLayout.LayoutParams(-1, dp(32)))
+            }, LinearLayout.LayoutParams(0, dp(32), 1f))
+            addView(chip("Today") {
+                weekOffset = 0
+                selectedDate = LocalDate.now()
+                loadSnapshot()
+                render()
+            }, LinearLayout.LayoutParams(dp(64), dp(28)).apply { setMargins(dp(5), 0, dp(5), 0) })
+            addView(iconChip(">") {
+                weekOffset += 1
+                loadSnapshot()
+                render()
+            })
         }
 
     private fun calendarWeekStrip(): View =
@@ -504,11 +566,21 @@ class MainActivity : Activity() {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
             setPadding(dp(10), 0, dp(10), dp(4))
-            for (offset in 0 until 8) {
-                val date = weekStart(selectedDate).plusDays(offset.toLong())
+            val days = calendar().optJSONArray("days")
+            val stripDates = mutableListOf<LocalDate>()
+            if (days != null && days.length() > 0) {
+                for (index in 0 until min(8, days.length())) {
+                    runCatching { LocalDate.parse(days.optJSONObject(index)?.optString("date")) }
+                        .getOrNull()
+                        ?.let(stripDates::add)
+                }
+            }
+            if (stripDates.isEmpty()) {
+                for (offset in 0 until 8) stripDates.add(weekStart(selectedDate).plusDays(offset.toLong()))
+            }
+            stripDates.forEachIndexed { offset, date ->
                 val today = date == LocalDate.now()
-                val visibleOffset = date.toEpochDay() - selectedDate.toEpochDay()
-                val visible = visibleOffset >= 0 && visibleOffset < phoneCalendarDayCount()
+                val visible = offset < phoneCalendarDayCount()
                 addView(LinearLayout(this@MainActivity).apply {
                     orientation = LinearLayout.VERTICAL
                     gravity = Gravity.CENTER
@@ -516,7 +588,7 @@ class MainActivity : Activity() {
                         background = roundedHorizontalSegment(
                             calendarRangeFill(),
                             leadingRounded = date == selectedDate,
-                            trailingRounded = visibleOffset == phoneCalendarDayCount().toLong() - 1
+                            trailingRounded = offset == phoneCalendarDayCount() - 1
                         )
                     }
                     addView(text(date.dayOfWeek.getDisplayName(TextStyle.NARROW, Locale.getDefault()).uppercase(Locale.getDefault()), if (today || visible) theme.textPrimary else theme.textMuted, 10f, true).apply {
@@ -532,7 +604,7 @@ class MainActivity : Activity() {
                         render()
                     }
                 }, LinearLayout.LayoutParams(0, -1, 1f).apply {
-                    setMargins(if (visible && date != selectedDate) 0 else dp(1), dp(3), if (visible && visibleOffset == 0L) 0 else dp(1), dp(3))
+                    setMargins(if (visible && date != selectedDate) 0 else dp(1), dp(3), if (visible && offset == 0) 0 else dp(1), dp(3))
                 })
             }
         }
@@ -601,12 +673,17 @@ class MainActivity : Activity() {
             if (isReminder || isAssignment) {
                 addView(View(this@MainActivity).apply { setBackgroundColor(eventBorder()) }, FrameLayout.LayoutParams(-1, calendarPillStrokeWidth(), if (isReminder) Gravity.TOP else Gravity.BOTTOM))
             }
-            setOnClickListener { openScheme(occurrence.optString("scheme_id")) }
+            setOnClickListener { showEventEditorDialog(occurrence) }
+            setOnLongClickListener {
+                openScheme(occurrence.optString("scheme_id"))
+                true
+            }
         }
     }
 
     private fun renderSchemeEditor(scheme: JSONObject): LinearLayout {
         val schemeId = scheme.optString("id")
+        val readOnly = scheme.optBoolean("is_read_only", false)
         val originalLines = documentLines(scheme)
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -623,9 +700,11 @@ class MainActivity : Activity() {
                 render()
             })
             addView(View(this@MainActivity), LinearLayout.LayoutParams(0, 1, 1f))
-            addView(iconChip("+") {
-                activeEditor()?.let(::insertTaskLine) ?: showItemDialog(schemeId, null)
-            })
+            if (!readOnly) {
+                addView(iconChip("+") {
+                    activeEditor()?.let(::insertTaskLine) ?: showItemDialog(schemeId, null)
+                })
+            }
             addView(chip("More") { showSchemeActions(scheme) }, LinearLayout.LayoutParams(dp(64), dp(28)).apply { setMargins(dp(6), 0, 0, 0) })
         }, LinearLayout.LayoutParams(-1, dp(44)))
 
@@ -638,6 +717,7 @@ class MainActivity : Activity() {
             accentColor = editorChromeColor()
             lineAdornments = editorLineAdornments(scheme)
             markerTapHandler = { lineIndex -> toggleEditorLineMarker(this, lineIndex) }
+            isEnabled = !readOnly
             gravity = Gravity.TOP or Gravity.START
             setTextColor(theme.textPrimary)
             setHintTextColor(theme.textMuted)
@@ -653,6 +733,7 @@ class MainActivity : Activity() {
             overScrollMode = View.OVER_SCROLL_NEVER
             background = null
             setOnFocusChangeListener { _, hasFocus ->
+                if (readOnly) return@setOnFocusChangeListener
                 if (hasFocus) {
                     hidePhoneDockForEditing()
                 } else {
@@ -675,7 +756,14 @@ class MainActivity : Activity() {
             placeCursorAtDocumentEnd(editor)
             editorScroll.fullScroll(View.FOCUS_DOWN)
         }
-        root.addView(editorFormatBar(schemeId, editor), LinearLayout.LayoutParams(-1, dp(38)))
+        if (readOnly) {
+            root.addView(text("Imported calendar schemes are read-only.", theme.textMuted, 12f, false).apply {
+                gravity = Gravity.CENTER
+                setBackgroundColor(theme.bgToolbar)
+            }, LinearLayout.LayoutParams(-1, dp(38)))
+        } else {
+            root.addView(editorFormatBar(schemeId, editor), LinearLayout.LayoutParams(-1, dp(38)))
+        }
         return root
     }
 
@@ -684,6 +772,7 @@ class MainActivity : Activity() {
         val committed = scheme.optString("display_name", scheme.optString("name"))
         val input = edit(committed).apply {
             setSingleLine(true)
+            isEnabled = !scheme.optBoolean("is_read_only", false)
             inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_CAP_SENTENCES
             imeOptions = EditorInfo.IME_ACTION_DONE
             textSize = 26f
@@ -900,6 +989,13 @@ class MainActivity : Activity() {
         val searchNow = {
             renderSearchResults(results, query.text.toString())
         }
+        query.addTextChangedListener(object : TextWatcher {
+            override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) = Unit
+            override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {
+                searchNow()
+            }
+            override fun afterTextChanged(s: Editable?) = Unit
+        })
         query.setOnEditorActionListener { _, actionId, _ ->
             if (actionId == EditorInfo.IME_ACTION_SEARCH || actionId == EditorInfo.IME_ACTION_DONE) {
                 searchNow()
@@ -947,17 +1043,28 @@ class MainActivity : Activity() {
     private fun showSyncAccountDialog() {
         if (syncSession != null) {
             val session = syncSession ?: return
+            val actions = mutableListOf("Sync now", "Sign out", "Delete account")
+            if (session.supportsSync) {
+                actions.add(1, "Cancel subscription")
+            }
             AlertDialog.Builder(this)
                 .setTitle("Sync account")
                 .setMessage("Signed in as ${session.email}\n${session.apiBase}")
-                .setNegativeButton("Close", null)
-                .setPositiveButton("Sign out") { _, _ ->
-                    syncSession = null
-                    saveSyncSession(null)
-                    startSyncPolling()
-                    render()
+                .setItems(actions.toTypedArray()) { _, which ->
+                    when (actions[which]) {
+                        "Sync now" -> syncOnce()
+                        "Cancel subscription" -> confirmCancelSyncSubscription()
+                        "Sign out" -> signOutSync()
+                        "Delete account" -> confirmDeleteSyncAccount()
+                    }
                 }
+                .setNegativeButton("Close", null)
                 .show()
+            return
+        }
+
+        syncLoginChallenge?.let {
+            showLoginCodeDialog(it)
             return
         }
 
@@ -985,14 +1092,24 @@ class MainActivity : Activity() {
         form.addView(email)
         form.addView(password)
 
-        AlertDialog.Builder(this)
+        val dialog = AlertDialog.Builder(this)
             .setTitle("Sign in")
             .setView(form)
             .setNegativeButton("Cancel", null)
-            .setPositiveButton("Sign in") { _, _ ->
+            .setNeutralButton("Create account", null)
+            .setPositiveButton("Sign in", null)
+            .create()
+        dialog.setOnShowListener {
+            dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
+                dialog.dismiss()
                 signInToSync(api.text.toString(), email.text.toString(), password.text.toString())
             }
-            .show()
+            dialog.getButton(AlertDialog.BUTTON_NEUTRAL).setOnClickListener {
+                dialog.dismiss()
+                createSyncAccount(api.text.toString(), email.text.toString(), password.text.toString())
+            }
+        }
+        dialog.show()
     }
 
     private fun signInToSync(apiBaseRaw: String, emailRaw: String, password: String) {
@@ -1005,17 +1122,207 @@ class MainActivity : Activity() {
         }
         syncAuthInProgress = true
         Thread {
-            val result = runCatching { loginToSyncBackend(apiBase, email, password) }
+            val result = runCatching { requestSyncLoginStart(apiBase, email, password) }
+            runOnUiThread {
+                syncAuthInProgress = false
+                result.onSuccess { start ->
+                    val session = start.session
+                    if (session != null) {
+                        installSyncSession(session)
+                        Toast.makeText(this, "Signed in as ${session.email}", Toast.LENGTH_SHORT).show()
+                    } else if (start.challenge != null) {
+                        syncLoginChallenge = start.challenge
+                        showLoginCodeDialog(start.challenge)
+                    }
+                }.onFailure { error ->
+                    showError("Sign in failed", error.message)
+                }
+            }
+        }.start()
+    }
+
+    private fun createSyncAccount(apiBaseRaw: String, emailRaw: String, password: String) {
+        if (syncAuthInProgress) return
+        val apiBase = migrateSyncApiBase(apiBaseRaw)
+        val email = emailRaw.trim()
+        if (apiBase.isEmpty() || email.isEmpty() || password.isEmpty()) {
+            showError("Account creation failed", "Enter your sync API, email, and password")
+            return
+        }
+        syncAuthInProgress = true
+        Thread {
+            val result = runCatching {
+                parseSyncSession(
+                    httpJson("$apiBase/v1/auth/signup", "POST", JSONObject().put("email", email).put("password", password)),
+                    apiBase
+                )
+            }
             runOnUiThread {
                 syncAuthInProgress = false
                 result.onSuccess { session ->
-                    syncSession = session
-                    saveSyncSession(session)
+                    syncLoginChallenge = null
+                    installSyncSession(session)
                     Toast.makeText(this, "Signed in as ${session.email}", Toast.LENGTH_SHORT).show()
-                    startSyncPolling()
-                    render()
+                    syncOnce()
                 }.onFailure { error ->
-                    showError("Sign in failed", error.message)
+                    showError("Account creation failed", error.message)
+                }
+            }
+        }.start()
+    }
+
+    private fun showLoginCodeDialog(challenge: SyncLoginChallenge) {
+        val form = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(20), dp(8), dp(20), 0)
+        }
+        form.addView(text("Enter the code sent to ${challenge.email}.", theme.textDim, 13f, false), spaced())
+        val code = EditText(this).apply {
+            hint = "Code"
+            setText(challenge.devCode.orEmpty())
+            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_CAP_CHARACTERS
+            setSingleLine(true)
+        }
+        form.addView(code)
+        val dialog = AlertDialog.Builder(this)
+            .setTitle("Verify sign in")
+            .setView(form)
+            .setNegativeButton("Cancel", null)
+            .setNeutralButton("Different account", null)
+            .setPositiveButton("Verify", null)
+            .create()
+        dialog.setOnShowListener {
+            dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
+                dialog.dismiss()
+                verifyLoginCode(code.text.toString())
+            }
+            dialog.getButton(AlertDialog.BUTTON_NEUTRAL).setOnClickListener {
+                syncLoginChallenge = null
+                dialog.dismiss()
+                showSyncAccountDialog()
+            }
+        }
+        dialog.show()
+    }
+
+    private fun verifyLoginCode(codeRaw: String) {
+        val challenge = syncLoginChallenge ?: return
+        val code = codeRaw.trim()
+        if (code.isEmpty()) {
+            showError("Verification failed", "Enter the code we emailed you.")
+            return
+        }
+        syncAuthInProgress = true
+        Thread {
+            val result = runCatching {
+                parseSyncSession(
+                    httpJson(
+                        "${challenge.apiBase}/v1/auth/login/verify",
+                        "POST",
+                        JSONObject().put("challenge_id", challenge.challengeId).put("code", code)
+                    ),
+                    challenge.apiBase
+                )
+            }
+            runOnUiThread {
+                syncAuthInProgress = false
+                result.onSuccess { session ->
+                    syncLoginChallenge = null
+                    installSyncSession(session)
+                    Toast.makeText(this, "Signed in as ${session.email}", Toast.LENGTH_SHORT).show()
+                    syncOnce()
+                }.onFailure { error ->
+                    showError("Verification failed", error.message)
+                }
+            }
+        }.start()
+    }
+
+    private fun installSyncSession(session: SyncSession) {
+        syncSession = session
+        saveSyncSession(session)
+        startSyncPolling()
+        render()
+    }
+
+    private fun signOutSync() {
+        syncSession = null
+        syncLoginChallenge = null
+        saveSyncSession(null)
+        syncPollHandler.removeCallbacks(syncPollRunnable)
+        render()
+    }
+
+    private fun confirmCancelSyncSubscription() {
+        AlertDialog.Builder(this)
+            .setTitle("Cancel sync subscription?")
+            .setMessage("Sync stops on all your devices. Your local workspace stays on this device, and you can sign in again later to re-enable sync.")
+            .setNegativeButton("Keep sync", null)
+            .setPositiveButton("Turn off sync") { _, _ -> cancelSyncSubscription() }
+            .show()
+    }
+
+    private fun confirmDeleteSyncAccount() {
+        AlertDialog.Builder(this)
+            .setTitle("Delete account?")
+            .setMessage("Your account and synced data are scheduled for deletion. You have 14 days to undo this by signing back in before everything is permanently erased.")
+            .setNegativeButton("Keep account", null)
+            .setPositiveButton("Delete account") { _, _ -> deleteSyncAccount() }
+            .show()
+    }
+
+    private fun cancelSyncSubscription() {
+        val session = syncSession ?: return
+        if (syncAccountActionInProgress) return
+        syncAccountActionInProgress = true
+        Thread {
+            val result = runCatching {
+                val active = refreshSyncSessionIfNeeded(session) ?: throw RuntimeException(accountActionErrorMessage("unauthorized"))
+                parseSyncSession(
+                    httpJson(
+                        "${active.apiBase}/v1/auth/subscription/cancel",
+                        "POST",
+                        JSONObject(),
+                        bearerToken = active.bearerToken,
+                        accountAction = true
+                    ),
+                    active.apiBase
+                )
+            }
+            runOnUiThread {
+                syncAccountActionInProgress = false
+                result.onSuccess { updated ->
+                    installSyncSession(updated)
+                    showError("Sync turned off", "Your local workspace stays on this device, and you can sign in again later to re-enable sync.")
+                }.onFailure { error ->
+                    showError("Could not update account", error.message)
+                }
+            }
+        }.start()
+    }
+
+    private fun deleteSyncAccount() {
+        val session = syncSession ?: return
+        if (syncAccountActionInProgress) return
+        syncAccountActionInProgress = true
+        Thread {
+            val result = runCatching {
+                val active = refreshSyncSessionIfNeeded(session) ?: throw RuntimeException(accountActionErrorMessage("unauthorized"))
+                httpJson(
+                    "${active.apiBase}/v1/auth/account",
+                    "DELETE",
+                    JSONObject().put("confirm_email", active.email),
+                    bearerToken = active.bearerToken,
+                    accountAction = true
+                )
+            }
+            runOnUiThread {
+                syncAccountActionInProgress = false
+                result.onSuccess {
+                    signOutSync()
+                    showError("Account deletion scheduled", "Sign in again within 14 days to cancel deletion. After that, synced data is permanently erased.")
+                }.onFailure { error ->
+                    showError("Could not delete account", error.message)
                 }
             }
         }.start()
@@ -1130,32 +1437,29 @@ class MainActivity : Activity() {
         return expiry.isBefore(java.time.Instant.now().plusSeconds(120))
     }
 
-    private fun loginToSyncBackend(apiBase: String, email: String, password: String): SyncSession {
-        val connection = (URL("$apiBase/v1/auth/login").openConnection() as HttpURLConnection).apply {
-            requestMethod = "POST"
-            connectTimeout = 10_000
-            readTimeout = 10_000
-            doOutput = true
-            setRequestProperty("Content-Type", "application/json")
+    private fun requestSyncLoginStart(apiBase: String, email: String, password: String): SyncLoginStart {
+        val json = httpJson(
+            "$apiBase/v1/auth/login",
+            "POST",
+            JSONObject().put("email", email).put("password", password)
+        )
+        val challengeId = json.optString("challenge_id")
+        if (challengeId.isNotEmpty()) {
+            return SyncLoginStart(
+                challenge = SyncLoginChallenge(
+                    apiBase = apiBase,
+                    email = email,
+                    challengeId = challengeId,
+                    devCode = json.optString("dev_code").ifEmpty { null }
+                ),
+                session = null
+            )
         }
-        val body = JSONObject()
-            .put("email", email)
-            .put("password", password)
-            .toString()
-            .toByteArray(Charsets.UTF_8)
-        connection.outputStream.use { it.write(body) }
-        val status = connection.responseCode
-        val raw = if (status in 200..299) {
-            connection.inputStream.bufferedReader().use { it.readText() }
-        } else {
-            connection.errorStream?.bufferedReader()?.use { it.readText() }.orEmpty()
-        }
-        if (status !in 200..299) {
-            val code = runCatching { JSONObject(raw).optString("code") }.getOrDefault("")
-            throw RuntimeException(syncErrorMessage(code))
-        }
-        val json = JSONObject(raw)
-        return SyncSession(
+        return SyncLoginStart(challenge = null, session = parseSyncSession(json, apiBase))
+    }
+
+    private fun parseSyncSession(json: JSONObject, apiBase: String): SyncSession =
+        SyncSession(
             apiBase = apiBase,
             userId = json.optString("user_id"),
             email = json.optString("email"),
@@ -1165,6 +1469,37 @@ class MainActivity : Activity() {
             refreshToken = json.optString("refresh_token").ifEmpty { null },
             refreshExpiresAt = json.optString("refresh_expires_at").ifEmpty { null }
         )
+
+    private fun httpJson(
+        urlString: String,
+        method: String,
+        body: JSONObject,
+        bearerToken: String? = null,
+        accountAction: Boolean = false
+    ): JSONObject {
+        val connection = (URL(urlString).openConnection() as HttpURLConnection).apply {
+            requestMethod = method
+            connectTimeout = 10_000
+            readTimeout = 10_000
+            doInput = true
+            doOutput = method != "GET"
+            setRequestProperty("Content-Type", "application/json")
+            bearerToken?.let { setRequestProperty("Authorization", "Bearer $it") }
+        }
+        if (method != "GET") {
+            connection.outputStream.use { it.write(body.toString().toByteArray(Charsets.UTF_8)) }
+        }
+        val status = connection.responseCode
+        val raw = if (status in 200..299) {
+            connection.inputStream.bufferedReader().use { it.readText() }
+        } else {
+            connection.errorStream?.bufferedReader()?.use { it.readText() }.orEmpty()
+        }
+        if (status !in 200..299) {
+            val code = runCatching { JSONObject(raw).optString("code") }.getOrDefault("")
+            throw RuntimeException(if (accountAction) accountActionErrorMessage(code) else syncErrorMessage(code))
+        }
+        return if (raw.isBlank()) JSONObject() else JSONObject(raw)
     }
 
     private fun loadSyncSession(): SyncSession? {
@@ -1225,10 +1560,172 @@ class MainActivity : Activity() {
         raw.trim().trimEnd('/')
 
     private fun syncErrorMessage(code: String): String = when (code) {
-        "invalid_email", "unauthorized" -> "Email or password is incorrect."
+        "account_exists" -> "An account already exists for that email."
+        "invalid_email" -> "Enter a valid email address."
+        "password_too_short" -> "Use a password with at least 12 characters."
+        "unauthorized" -> "Email or password is incorrect."
         "password_too_long" -> "Password is too long."
-        else -> "Could not sign in to the local sync Worker."
+        "invalid_code" -> "That code is incorrect."
+        "code_expired", "invalid_or_expired_code" -> "That code has expired. Sign in again to get a new one."
+        "too_many_attempts" -> "Too many incorrect codes. Sign in again to get a new one."
+        else -> "Sync account request failed."
     }
+
+    private fun accountActionErrorMessage(code: String): String = when (code) {
+        "unauthorized" -> "Your sync session expired. Sign in again, then retry."
+        "delete_confirmation_mismatch" -> "Could not confirm the account. Please try again."
+        else -> "The request to the sync backend failed."
+    }
+
+    private fun startGoogleCalendarImport(parentId: String? = null) {
+        if (googleAuthInProgress) return
+        googleAuthInProgress = true
+        Thread {
+            val result = runCatching {
+                bridge.request(
+                    obj(
+                        "type" to "google_auth_request",
+                        "client_id" to GOOGLE_CLIENT_ID,
+                        "redirect_uri" to GOOGLE_REDIRECT_URI
+                    )
+                )
+            }
+            runOnUiThread {
+                result.onSuccess { request ->
+                    pendingGoogleAuthRequest = request
+                    pendingGoogleParentId = parentId
+                    savePendingGoogleAuth(request, parentId)
+                    try {
+                        startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(request.getString("auth_url"))))
+                    } catch (error: ActivityNotFoundException) {
+                        googleAuthInProgress = false
+                        clearPendingGoogleAuth()
+                        showError("Google Calendar", error.message)
+                    }
+                }.onFailure { error ->
+                    googleAuthInProgress = false
+                    showError("Google Calendar", error.message)
+                }
+            }
+        }.start()
+    }
+
+    private fun handleGoogleCallback(uri: Uri?) {
+        if (uri == null || uri.scheme != GOOGLE_REDIRECT_SCHEME) return
+        val request = pendingGoogleAuthRequest ?: loadPendingGoogleAuthRequest()
+        val parentId = pendingGoogleParentId ?: loadPendingGoogleParentId()
+        if (request == null) {
+            googleAuthInProgress = false
+            showError("Google Calendar", "Google OAuth callback arrived without a pending request.")
+            return
+        }
+        completeGoogleCalendarImport(request, uri.toString(), parentId)
+    }
+
+    private fun completeGoogleCalendarImport(request: JSONObject, callbackUrl: String, parentId: String?) {
+        googleAuthInProgress = true
+        Thread {
+            val result = runCatching {
+                bridge.request(
+                    obj(
+                        "type" to "complete_google_calendar_import",
+                        "client_id" to request.getString("client_id"),
+                        "client_secret" to googleClientSecret(),
+                        "redirect_uri" to request.getString("redirect_uri"),
+                        "state" to request.getString("state"),
+                        "code_verifier" to request.getString("code_verifier"),
+                        "callback_url" to callbackUrl,
+                        "parent_id" to parentId
+                    )
+                )
+            }
+            runOnUiThread {
+                googleAuthInProgress = false
+                clearPendingGoogleAuth()
+                result.onSuccess { response ->
+                    googleCalendarStatus = response.optString("message")
+                    loadSnapshot()
+                    rescheduleNotifications()
+                    render()
+                    if (syncSession != null) syncOnce()
+                }.onFailure { error ->
+                    showError("Google Calendar", error.message)
+                }
+            }
+        }.start()
+    }
+
+    private fun syncGoogleCalendars(silent: Boolean = false) {
+        if (googleSyncInProgress) return
+        if ((snapshot.optJSONObject("settings")?.optInt("google_account_count", 0) ?: 0) <= 0) return
+        googleSyncInProgress = true
+        Thread {
+            val result = runCatching {
+                bridge.request(
+                    obj(
+                        "type" to "sync_google_calendars",
+                        "client_id" to GOOGLE_CLIENT_ID,
+                        "client_secret" to googleClientSecret()
+                    )
+                )
+            }
+            runOnUiThread {
+                googleSyncInProgress = false
+                result.onSuccess { response ->
+                    googleCalendarStatus = response.optString("message")
+                    loadSnapshot()
+                    rescheduleNotifications()
+                    render()
+                    if (syncSession != null) syncOnce()
+                }.onFailure { error ->
+                    if (silent) {
+                        googleCalendarStatus = error.message
+                    } else {
+                        showError("Google Calendar", error.message)
+                    }
+                }
+            }
+        }.start()
+    }
+
+    private fun configureGoogleSyncPolling() {
+        val accountCount = snapshot.optJSONObject("settings")?.optInt("google_account_count", 0) ?: 0
+        if (accountCount <= 0) {
+            googleSyncPollingActive = false
+            googleSyncHandler.removeCallbacks(googleSyncRunnable)
+            return
+        }
+        if (googleSyncPollingActive) return
+        googleSyncPollingActive = true
+        googleSyncHandler.postDelayed(googleSyncRunnable, GOOGLE_SYNC_INTERVAL_MS)
+    }
+
+    private fun savePendingGoogleAuth(request: JSONObject, parentId: String?) {
+        getSharedPreferences("knotq", MODE_PRIVATE).edit()
+            .putString("knotq.googleAuthRequest", request.toString())
+            .putString("knotq.googleAuthParentId", parentId)
+            .apply()
+    }
+
+    private fun loadPendingGoogleAuthRequest(): JSONObject? {
+        val raw = getSharedPreferences("knotq", MODE_PRIVATE).getString("knotq.googleAuthRequest", null)
+            ?: return null
+        return runCatching { JSONObject(raw) }.getOrNull()
+    }
+
+    private fun loadPendingGoogleParentId(): String? =
+        getSharedPreferences("knotq", MODE_PRIVATE).getString("knotq.googleAuthParentId", null)
+
+    private fun clearPendingGoogleAuth() {
+        pendingGoogleAuthRequest = null
+        pendingGoogleParentId = null
+        getSharedPreferences("knotq", MODE_PRIVATE).edit()
+            .remove("knotq.googleAuthRequest")
+            .remove("knotq.googleAuthParentId")
+            .apply()
+    }
+
+    private fun googleClientSecret(): String? = null
 
     private fun renderSettings(): LinearLayout {
         val root = page()
@@ -1237,6 +1734,9 @@ class MainActivity : Activity() {
         val settings = snapshot.optJSONObject("settings")
         val themeMode = settings?.optString("theme_mode", "dark") ?: "dark"
         val timeFormat = settings?.optString("time_format", "twelve_hour") ?: "twelve_hour"
+        val eventOffset = settings?.optInt("event_notification_offset_secs", 10 * 60) ?: 10 * 60
+        val assignmentOffset = settings?.optInt("assignment_notification_offset_secs", 2 * 60 * 60) ?: 2 * 60 * 60
+        val googleAccountCount = settings?.optInt("google_account_count", 0) ?: 0
 
         root.addView(settingsSection("Appearance"))
         root.addView(choiceRow("System", themeMode == "system") { mutate(obj("type" to "set_theme_mode", "theme_mode" to "system")) })
@@ -1247,6 +1747,52 @@ class MainActivity : Activity() {
         root.addView(choiceRow("12-hour", timeFormat == "twelve_hour") { mutate(obj("type" to "set_time_format", "time_format" to "twelve_hour")) })
         root.addView(choiceRow("24-hour", timeFormat == "twenty_four_hour") { mutate(obj("type" to "set_time_format", "time_format" to "twenty_four_hour")) })
 
+        root.addView(settingsSection("Notifications"))
+        root.addView(choiceRow("Events: ${notificationLeadTimeLabel(eventOffset, eventDefault = true)}", false) {
+            showNotificationDefaultDialog("Event reminders", eventOffset, eventNotificationOptions()) { next ->
+                mutate(
+                    obj(
+                        "type" to "set_notification_defaults",
+                        "event_offset_secs" to next,
+                        "assignment_offset_secs" to assignmentOffset
+                    )
+                )
+            }
+        })
+        root.addView(choiceRow("Assignments: ${notificationLeadTimeLabel(assignmentOffset, eventDefault = false)}", false) {
+            showNotificationDefaultDialog("Assignment reminders", assignmentOffset, assignmentNotificationOptions()) { next ->
+                mutate(
+                    obj(
+                        "type" to "set_notification_defaults",
+                        "event_offset_secs" to eventOffset,
+                        "assignment_offset_secs" to next
+                    )
+                )
+            }
+        })
+
+        root.addView(settingsSection("Google Calendar"))
+        if (googleAccountCount > 0) {
+            root.addView(choiceRow("Connected accounts: $googleAccountCount", true) {
+                syncGoogleCalendars()
+            })
+            googleCalendarStatus?.takeIf { it.isNotBlank() }?.let { status ->
+                root.addView(text(status, theme.textMuted, 12f, false).apply {
+                    setPadding(dp(8), dp(3), dp(8), dp(6))
+                })
+            }
+            root.addView(choiceRow(if (googleSyncInProgress) "Syncing Google Calendars" else "Sync Google Calendars", false) {
+                syncGoogleCalendars()
+            })
+            root.addView(choiceRow(if (googleAuthInProgress) "Connecting Google Calendar" else "Connect another Google Calendar", false) {
+                startGoogleCalendarImport()
+            })
+        } else {
+            root.addView(choiceRow(if (googleAuthInProgress) "Connecting Google Calendar" else "Connect Google Calendar", false) {
+                startGoogleCalendarImport()
+            })
+        }
+
         root.addView(settingsSection("Archive"))
         val schemes = archivedSchemes()
         root.addView(choiceRow("Archived schemes ${schemes.length()}", false) {
@@ -1254,10 +1800,77 @@ class MainActivity : Activity() {
         })
 
         root.addView(settingsSection("Sync"))
-        root.addView(choiceRow(syncSession?.email ?: "Sign in to local backend", syncSession != null) {
+        val session = syncSession
+        val syncLabel = when {
+            session == null -> "Sign in to Sync"
+            session.supportsSync -> "Signed in: ${session.email}"
+            else -> "Signed in: ${session.email} (sync off)"
+        }
+        root.addView(choiceRow(syncLabel, session != null) {
             showSyncAccountDialog()
         })
         return root
+    }
+
+    private fun showNotificationDefaultDialog(
+        title: String,
+        current: Int,
+        options: List<Pair<String, Int>>,
+        onSelect: (Int) -> Unit
+    ) {
+        val labels = options.map { (label, value) ->
+            if (value == current) "$label ✓" else label
+        }.toTypedArray()
+        AlertDialog.Builder(this)
+            .setTitle(title)
+            .setItems(labels) { _, which -> onSelect(options[which].second) }
+            .show()
+    }
+
+    private fun eventNotificationOptions(): List<Pair<String, Int>> = listOf(
+        "At start" to 0,
+        "5 minutes before" to 5 * 60,
+        "10 minutes before" to 10 * 60,
+        "15 minutes before" to 15 * 60,
+        "30 minutes before" to 30 * 60,
+        "1 hour before" to 60 * 60,
+    )
+
+    private fun assignmentNotificationOptions(): List<Pair<String, Int>> = listOf(
+        "At due time" to 0,
+        "1 hour before" to 60 * 60,
+        "2 hours before" to 2 * 60 * 60,
+        "6 hours before" to 6 * 60 * 60,
+        "1 day before" to 24 * 60 * 60,
+        "2 days before" to 2 * 24 * 60 * 60,
+    )
+
+    private fun occurrenceNotificationOptions(current: Int): List<Pair<String, Int>> {
+        val base = listOf(
+            "At time" to 0,
+            "5 minutes before" to 5 * 60,
+            "10 minutes before" to 10 * 60,
+            "30 minutes before" to 30 * 60,
+            "1 hour before" to 60 * 60,
+            "1 day before" to 24 * 60 * 60,
+        )
+        return if (base.any { it.second == current }) base else (base + (notificationLeadTimeLabel(current, true) to current)).sortedBy { it.second }
+    }
+
+    private fun notificationLeadTimeLabel(offsetSecs: Int, eventDefault: Boolean): String {
+        if (offsetSecs == 0) return if (eventDefault) "At start" else "At due time"
+        val all = listOf(
+            "At time" to 0,
+            "5 minutes before" to 5 * 60,
+            "10 minutes before" to 10 * 60,
+            "30 minutes before" to 30 * 60,
+            "1 hour before" to 60 * 60,
+            "1 day before" to 24 * 60 * 60,
+        ) +
+            eventNotificationOptions() +
+            assignmentNotificationOptions()
+        all.firstOrNull { it.second == offsetSecs }?.let { return it.first }
+        return "${offsetSecs / 60} minutes before"
     }
 
     private fun addNode(parent: LinearLayout, node: JSONObject, depth: Int, spacious: Boolean = false) {
@@ -1582,12 +2195,18 @@ class MainActivity : Activity() {
         val nextLines = reconcileEditorLines(oldLines, parseEditorDocument(editor.text.toString(), preserveBlankDocument = oldLines.isNotEmpty()))
         val array = JSONArray()
         nextLines.forEach { line ->
+            val existing = line.id?.let { findItem(schemeId, it) }
             array.put(obj(
                 "id" to line.id,
                 "text" to line.text,
                 "marker" to line.marker,
                 "indent" to line.indent,
-                "done" to line.done
+                "done" to line.done,
+                "start" to existing?.optionalString("start"),
+                "end" to existing?.optionalString("end"),
+                "notification_offset_secs" to existing?.takeUnless { it.isNull("notification_offset_secs") }?.optInt("notification_offset_secs"),
+                "repeat_rule" to existing?.optionalString("repeat_rule"),
+                "media" to (existing?.optJSONArray("media") ?: JSONArray())
             ))
         }
         try {
@@ -1623,18 +2242,21 @@ class MainActivity : Activity() {
                 })
                 addView(text(occurrence.optString("title").ifEmpty { occurrence.optString("kind").replaceFirstChar(Char::titlecase) }, theme.textPrimary, 13f, false))
             }, LinearLayout.LayoutParams(0, -2, 1f))
-            setOnClickListener {
-                mutate(obj(
-                    "type" to "toggle_occurrence",
-                    "scheme_id" to occurrence.optString("scheme_id"),
-                    "item_id" to occurrence.optString("item_id"),
-                    "occurrence_json" to occurrence.optString("occurrence_json", "{\"kind\":\"single\"}")
-                ))
-            }
+            setOnClickListener { showEventEditorDialog(occurrence) }
             setOnLongClickListener {
                 AlertDialog.Builder(this@MainActivity)
                     .setTitle(occurrence.optString("title").ifEmpty { occurrence.optString("kind").replaceFirstChar(Char::titlecase) })
-                    .setItems(arrayOf("More About")) { _, _ -> openScheme(occurrence.optString("scheme_id")) }
+                    .setItems(arrayOf("Toggle Done", "Open Scheme")) { _, which ->
+                        when (which) {
+                            0 -> mutate(obj(
+                                "type" to "toggle_occurrence",
+                                "scheme_id" to occurrence.optString("scheme_id"),
+                                "item_id" to occurrence.optString("item_id"),
+                                "occurrence_json" to occurrence.optString("occurrence_json", "{\"kind\":\"single\"}")
+                            ))
+                            1 -> openScheme(occurrence.optString("scheme_id"))
+                        }
+                    }
                     .show()
                 true
             }
@@ -1685,31 +2307,355 @@ class MainActivity : Activity() {
     }
 
     private fun showCalendarItemDialog() {
-        val form = page(compact = true)
-        val title = edit("").apply { hint = "Title" }
-        val kind = spinner(arrayOf("event", "reminder", "assignment", "task"))
-        val date = DatePicker(this)
-        val start = TimePicker(this).apply { setIs24HourView(timeFormat24()) }
-        val end = TimePicker(this).apply { setIs24HourView(timeFormat24()) }
-        form.addView(title, spaced())
-        form.addView(kind, spaced())
-        form.addView(date, spaced())
-        form.addView(text("Start", theme.textMuted, 12f, true))
-        form.addView(start, spaced())
-        form.addView(text("End / Due", theme.textMuted, 12f, true))
-        form.addView(end)
-        AlertDialog.Builder(this)
-            .setTitle("New")
-            .setView(form)
-            .setPositiveButton("Add") { _, _ ->
-                val localDate = LocalDate.of(date.year, date.month + 1, date.dayOfMonth)
+        showEventEditorDialog(null)
+    }
+
+    private fun showEventEditorDialog(occurrence: JSONObject?) {
+        val editing = occurrence != null
+        val readOnly = occurrence?.optBoolean("is_read_only", false) == true
+        val initialKind = occurrence?.optString("kind")?.takeIf { it.isNotEmpty() } ?: "task"
+        val startDateTime = occurrence?.optionalString("start")?.let(::localDateTime)
+        val endDateTime = occurrence?.optionalString("end")?.let(::localDateTime)
+        val anchor = startDateTime ?: endDateTime ?: selectedDate.atStartOfDay(ZoneId.systemDefault())
+        val titleInput = edit(occurrence?.optString("title") ?: "").apply {
+            hint = "Title"
+            isEnabled = !readOnly
+        }
+        val kindValues = arrayOf("event", "reminder", "assignment", "task")
+        val kind = spinner(kindValues).apply {
+            setSelection(kindValues.indexOf(initialKind).coerceAtLeast(0))
+            isEnabled = !readOnly
+        }
+        val schemeLabels = mutableListOf("Daily")
+        val schemeIds = mutableListOf<String?>(null)
+        snapshot.optJSONArray("schemes")?.forEachObject { scheme ->
+            if (!scheme.optBoolean("is_daily_queue") && !scheme.optBoolean("is_read_only")) {
+                schemeLabels.add(scheme.optString("display_name"))
+                schemeIds.add(scheme.optString("id"))
+            }
+        }
+        val scheme = spinner(schemeLabels.toTypedArray()).apply {
+            val selected = occurrence?.optString("scheme_id")
+            val index = schemeIds.indexOfFirst { it == selected }
+            setSelection(index.coerceAtLeast(0))
+            isEnabled = !editing && !readOnly
+        }
+        val date = DatePicker(this).apply {
+            val local = anchor.toLocalDate()
+            updateDate(local.year, local.monthValue - 1, local.dayOfMonth)
+            isEnabled = !readOnly
+        }
+        val start = TimePicker(this).apply {
+            setIs24HourView(timeFormat24())
+            val local = startDateTime?.toLocalTime() ?: anchor.toLocalTime().takeIf { it != LocalTime.MIDNIGHT } ?: LocalTime.now().withSecond(0).withNano(0)
+            hour = local.hour
+            minute = local.minute
+            isEnabled = !readOnly
+        }
+        val end = TimePicker(this).apply {
+            setIs24HourView(timeFormat24())
+            val local = endDateTime?.toLocalTime() ?: startDateTime?.toLocalTime()?.plusHours(1) ?: LocalTime.now().plusHours(1).withSecond(0).withNano(0)
+            hour = local.hour
+            minute = local.minute
+            isEnabled = !readOnly
+        }
+        val repeatValues = arrayOf("none", "daily", "weekly", "monthly", "yearly")
+        val repeat = spinner(repeatValues).apply {
+            setSelection(repeatValues.indexOf(repeatChoiceFromRrule(occurrence?.optionalString("repeat_rule"))).coerceAtLeast(0))
+            isEnabled = !readOnly
+        }
+        val defaultOffset = defaultNotificationOffset(initialKind)
+        val currentOffset = occurrence?.takeUnless { it.isNull("notification_offset_secs") }?.optInt("notification_offset_secs") ?: defaultOffset
+        val notificationOptions = occurrenceNotificationOptions(currentOffset)
+        val notification = spinner(notificationOptions.map { it.first }.toTypedArray()).apply {
+            setSelection(notificationOptions.indexOfFirst { it.second == currentOffset }.coerceAtLeast(0))
+            isEnabled = !readOnly
+        }
+        val completed = CheckBox(this).apply {
+            text = "Completed"
+            setTextColor(theme.textPrimary)
+            isChecked = occurrence?.optBoolean("done", false) == true
+            isEnabled = !readOnly
+        }
+
+        val form = page(compact = true).apply {
+            setPadding(dp(18), dp(8), dp(18), 0)
+            addView(titleInput, spaced())
+            if (!editing) {
+                addView(text("Scheme", theme.textMuted, 12f, true))
+                addView(scheme, spaced())
+            }
+            addView(text("Type", theme.textMuted, 12f, true))
+            addView(kind, spaced())
+            addView(text("Date", theme.textMuted, 12f, true))
+            addView(date, spaced())
+            addView(text("Start / At", theme.textMuted, 12f, true))
+            addView(start, spaced())
+            addView(text("End / Due", theme.textMuted, 12f, true))
+            addView(end, spaced())
+            addView(text("Notification", theme.textMuted, 12f, true))
+            addView(notification, spaced())
+            addView(text("Repeat", theme.textMuted, 12f, true))
+            addView(repeat, spaced())
+            if (editing) addView(completed, spaced())
+            if (readOnly) {
+                addView(text("Imported calendar items are read-only.", theme.textMuted, 12f, false), spaced())
+            }
+        }
+
+        val dialog = AlertDialog.Builder(this)
+            .setTitle(if (readOnly) "Task details" else if (editing) "Edit" else "New")
+            .setView(scroll(form))
+            .setNegativeButton(if (readOnly) "Done" else "Cancel", null)
+            .setPositiveButton(if (readOnly) "Open Scheme" else "Save", null)
+            .also { builder ->
+                if (editing && !readOnly) {
+                    builder.setNeutralButton("Delete", null)
+                }
+            }
+            .create()
+        dialog.setOnShowListener {
+            dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
+                if (readOnly) {
+                    occurrence?.optString("scheme_id")?.let(::openScheme)
+                    dialog.dismiss()
+                    return@setOnClickListener
+                }
                 val selectedKind = kind.selectedItem.toString()
-                val startValue: Any? = if (selectedKind == "event" || selectedKind == "reminder") iso(localDate, start.hour, start.minute) else null
-                val endValue: Any? = if (selectedKind == "event" || selectedKind == "assignment") iso(localDate, end.hour, end.minute) else null
-                mutate(obj("type" to "add_calendar_item", "kind" to selectedKind, "text" to title.text.toString().trim(), "date" to localDate.toString(), "start" to startValue, "end" to endValue))
+                val localDate = LocalDate.of(date.year, date.month + 1, date.dayOfMonth)
+                val startValue = when (selectedKind) {
+                    "event", "reminder" -> iso(localDate, start.hour, start.minute)
+                    else -> null
+                }
+                val endValue = when (selectedKind) {
+                    "event", "assignment" -> iso(localDate, end.hour, end.minute)
+                    else -> null
+                }
+                val rrule = if (selectedKind == "task") null else rruleForRepeat(repeat.selectedItem.toString(), localDate)
+                val notificationOffset = if (selectedKind == "task") null else notificationOptions[notification.selectedItemPosition].second
+                if (occurrence != null) {
+                    val commit = { scope: String ->
+                        commitEventEdit(
+                            occurrence = occurrence,
+                            title = titleInput.text.toString().trim(),
+                            start = startValue,
+                            end = endValue,
+                            rrule = rrule,
+                            notificationOffsetSecs = notificationOffset,
+                            notificationDirty = selectedKind != "task",
+                            done = completed.isChecked,
+                            scope = scope
+                        )
+                    }
+                    if (occurrence.optBoolean("is_recurring", false)) {
+                        showOccurrenceScopeDialog("Recurring task", occurrence, forDelete = false) { scope ->
+                            commit(scope)
+                        }
+                    } else {
+                        commit("all_events")
+                    }
+                } else {
+                    val schemeId = schemeIds.getOrNull(scheme.selectedItemPosition)
+                    val newId = createCalendarItemReturningID(
+                        kind = selectedKind,
+                        text = titleInput.text.toString().trim(),
+                        date = localDate,
+                        start = startValue,
+                        end = endValue,
+                        schemeId = schemeId
+                    )
+                    val resolvedScheme = schemeId ?: todayDailySchemeId()
+                    if (newId != null && resolvedScheme != null) {
+                        if (rrule != null) {
+                            bridge.request(obj("type" to "set_item_recurrence", "scheme_id" to resolvedScheme, "item_id" to newId, "rrule" to rrule))
+                        }
+                        if (selectedKind != "task") {
+                            bridge.request(
+                                obj(
+                                    "type" to "set_occurrence_notification_offset",
+                                    "scheme_id" to resolvedScheme,
+                                    "item_id" to newId,
+                                    "occurrence_json" to null,
+                                    "offset_secs" to notificationOffset
+                                )
+                            )
+                        }
+                        loadSnapshot()
+                        rescheduleNotifications()
+                        render()
+                    }
+                }
+                dialog.dismiss()
+            }
+            dialog.getButton(AlertDialog.BUTTON_NEUTRAL)?.setOnClickListener {
+                if (occurrence == null) return@setOnClickListener
+                val delete = { scope: String -> deleteEventOccurrence(occurrence, scope) }
+                if (occurrence.optBoolean("is_recurring", false)) {
+                    showOccurrenceScopeDialog("Delete recurring task?", occurrence, forDelete = true, onScope = delete)
+                } else {
+                    AlertDialog.Builder(this)
+                        .setTitle("Delete this task?")
+                        .setNegativeButton("Cancel", null)
+                        .setPositiveButton("Delete") { _, _ -> delete("all_events") }
+                        .show()
+                }
+                dialog.dismiss()
+            }
+        }
+        dialog.show()
+    }
+
+    private fun commitEventEdit(
+        occurrence: JSONObject,
+        title: String,
+        start: String?,
+        end: String?,
+        rrule: String?,
+        notificationOffsetSecs: Int?,
+        notificationDirty: Boolean,
+        done: Boolean,
+        scope: String
+    ) {
+        mutate(
+            obj(
+                "type" to "commit_event_edit",
+                "scheme_id" to occurrence.optString("scheme_id"),
+                "item_id" to occurrence.optString("item_id"),
+                "occurrence_json" to occurrence.optString("occurrence_json", "{\"kind\":\"single\"}"),
+                "occurrence_index" to occurrence.optInt("occurrence_index", 0),
+                "title" to title,
+                "occurrence_start" to occurrence.optionalString("start"),
+                "occurrence_end" to occurrence.optionalString("end"),
+                "start" to start,
+                "end" to end,
+                "rrule" to rrule,
+                "notification_offset_secs" to notificationOffsetSecs,
+                "notification_dirty" to notificationDirty,
+                "done" to done,
+                "scope" to scope
+            )
+        )
+    }
+
+    private fun deleteEventOccurrence(occurrence: JSONObject, scope: String) {
+        mutate(
+            obj(
+                "type" to "delete_event_occurrence",
+                "scheme_id" to occurrence.optString("scheme_id"),
+                "item_id" to occurrence.optString("item_id"),
+                "occurrence_json" to occurrence.optString("occurrence_json", "{\"kind\":\"single\"}"),
+                "occurrence_index" to occurrence.optInt("occurrence_index", 0),
+                "scope" to scope
+            )
+        )
+    }
+
+    private fun showOccurrenceScopeDialog(
+        title: String,
+        occurrence: JSONObject,
+        forDelete: Boolean,
+        onScope: (String) -> Unit
+    ) {
+        val choices = mutableListOf("This task" to "this_event")
+        if (occurrence.optBoolean("can_delete_future", false)) {
+            choices.add("This and future tasks" to "all_future")
+        }
+        choices.add("All tasks" to "all_events")
+        AlertDialog.Builder(this)
+            .setTitle(title)
+            .setMessage(if (forDelete) "Which tasks should be deleted?" else "Which tasks should these changes apply to?")
+            .setItems(choices.map { it.first }.toTypedArray()) { _, which ->
+                onScope(choices[which].second)
             }
             .setNegativeButton("Cancel", null)
             .show()
+    }
+
+    private fun createCalendarItemReturningID(
+        kind: String,
+        text: String,
+        date: LocalDate,
+        start: String?,
+        end: String?,
+        schemeId: String?
+    ): String? {
+        val targetId = if (schemeId != null) {
+            schemeId
+        } else {
+            bridge.request(obj("type" to "ensure_daily_queue", "date" to LocalDate.now().toString()))
+            loadSnapshot()
+            todayDailySchemeId() ?: return null
+        }
+        val before = schemeItemIds(targetId)
+        bridge.request(
+            obj(
+                "type" to "add_calendar_item",
+                "scheme_id" to targetId,
+                "kind" to kind,
+                "text" to text,
+                "date" to date.toString(),
+                "start" to start,
+                "end" to end
+            )
+        )
+        loadSnapshot()
+        return schemeItemIds(targetId).firstOrNull { !before.contains(it) }
+    }
+
+    private fun schemeItemIds(schemeId: String): Set<String> {
+        val ids = mutableSetOf<String>()
+        findScheme(schemeId)?.optJSONArray("items")?.forEachObject { item ->
+            ids.add(item.optString("id"))
+        }
+        return ids
+    }
+
+    private fun todayDailySchemeId(): String? {
+        val today = LocalDate.now().toString()
+        val daily = snapshot.optJSONArray("daily") ?: return null
+        for (index in 0 until daily.length()) {
+            val entry = daily.optJSONObject(index) ?: continue
+            if (entry.optString("date") == today) return entry.optJSONObject("scheme")?.optString("id")
+        }
+        return null
+    }
+
+    private fun defaultNotificationOffset(kind: String): Int {
+        val settings = snapshot.optJSONObject("settings")
+        return when (kind) {
+            "event" -> settings?.optInt("event_notification_offset_secs", 10 * 60) ?: 10 * 60
+            "assignment" -> settings?.optInt("assignment_notification_offset_secs", 2 * 60 * 60) ?: 2 * 60 * 60
+            else -> 0
+        }
+    }
+
+    private fun repeatChoiceFromRrule(rrule: String?): String {
+        val upper = rrule?.uppercase(Locale.US) ?: return "none"
+        return when {
+            upper.contains("FREQ=DAILY") -> "daily"
+            upper.contains("FREQ=WEEKLY") -> "weekly"
+            upper.contains("FREQ=MONTHLY") -> "monthly"
+            upper.contains("FREQ=YEARLY") -> "yearly"
+            else -> "none"
+        }
+    }
+
+    private fun rruleForRepeat(choice: String, date: LocalDate): String? = when (choice) {
+        "daily" -> "FREQ=DAILY;INTERVAL=1"
+        "weekly" -> "FREQ=WEEKLY;INTERVAL=1;BYDAY=${weekdayCode(date)}"
+        "monthly" -> "FREQ=MONTHLY;INTERVAL=1"
+        "yearly" -> "FREQ=YEARLY;INTERVAL=1"
+        else -> null
+    }
+
+    private fun weekdayCode(date: LocalDate): String = when (date.dayOfWeek.value) {
+        1 -> "MO"
+        2 -> "TU"
+        3 -> "WE"
+        4 -> "TH"
+        5 -> "FR"
+        6 -> "SA"
+        else -> "SU"
     }
 
     private fun showMarkerDialog(schemeId: String, itemId: String) {
@@ -1787,6 +2733,13 @@ class MainActivity : Activity() {
     private fun showSchemeActions(nodeOrScheme: JSONObject) {
         val id = nodeOrScheme.optString("id")
         val isDaily = nodeOrScheme.optBoolean("is_daily_queue", false)
+        if (nodeOrScheme.optBoolean("is_read_only", false)) {
+            AlertDialog.Builder(this)
+                .setTitle(nodeOrScheme.optString("name", nodeOrScheme.optString("display_name")))
+                .setItems(arrayOf("Open Scheme")) { _, _ -> openScheme(id) }
+                .show()
+            return
+        }
         AlertDialog.Builder(this)
             .setTitle(nodeOrScheme.optString("name", nodeOrScheme.optString("display_name")))
             .setItems(arrayOf("Rename", "Color", "Move Up", "Move Down", "Move To Folder", "Archive")) { _, which ->
@@ -1961,6 +2914,7 @@ class MainActivity : Activity() {
 
     private fun loadSnapshot() {
         snapshot = bridge.request(obj("type" to "snapshot", "today" to selectedDate.toString(), "week_offset" to weekOffset))
+        configureGoogleSyncPolling()
     }
 
     private fun rescheduleNotifications() {
@@ -2180,8 +3134,14 @@ class MainActivity : Activity() {
         date.minusDays((date.dayOfWeek.value % 7).toLong())
 
     private fun selectedDateTitle(): String =
-        LocalDate.now().let { today ->
-            "${today.month.getDisplayName(TextStyle.FULL, Locale.getDefault())} ${today.dayOfMonth}, ${today.year}"
+        calendar().let { calendar ->
+            val start = calendar.optString("start_date")
+            val end = calendar.optString("end_date")
+            if (start.isNotEmpty() && end.isNotEmpty()) {
+                "${formatDay(start)} - ${formatDay(end)}"
+            } else {
+                "${selectedDate.month.getDisplayName(TextStyle.FULL, Locale.getDefault())} ${selectedDate.dayOfMonth}, ${selectedDate.year}"
+            }
         }
 
     private fun addOccurrenceSection(root: LinearLayout, title: String, empty: String, occurrences: JSONArray?) {
