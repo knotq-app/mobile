@@ -558,19 +558,11 @@ final class HomeDailyPreviewRendererView: UIView {
     }
 
     private func annotationText(for item: MobileItem) -> String? {
-        let start = MobileDate.formatTime(item.start, timeFormat: timeFormat)
-        let end = MobileDate.formatTime(item.end, timeFormat: timeFormat)
-        switch (start, end) {
-        case let (.some(start), .some(end)): return "\(start) → \(end)"
-        case let (.some(start), .none): return "At \(start)"
-        case let (.none, .some(end)): return "Due \(end)"
-        default: return nil
-        }
+        MobileDate.annotationText(start: item.start, end: item.end, timeFormat: timeFormat)
     }
 
     private var chromeColor: UIColor {
         UIColor(theme.isDark ? Color(hex: 0xb8c9e8) : Color(hex: 0x536a8f))
     }
 }
-
 

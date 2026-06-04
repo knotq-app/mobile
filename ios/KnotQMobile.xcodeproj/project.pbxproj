@@ -53,6 +53,7 @@
 		010000000000000000000030 /* BackgroundTasks.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 020000000000000000000030 /* BackgroundTasks.framework */; };
 		010000000000000000000031 /* FirebaseCore in Frameworks */ = {isa = PBXBuildFile; productRef = 0F0000000000000000000002 /* FirebaseCore */; };
 		010000000000000000000032 /* FirebaseMessaging in Frameworks */ = {isa = PBXBuildFile; productRef = 0F0000000000000000000003 /* FirebaseMessaging */; };
+		010000000000000000000033 /* MobileDate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 020000000000000000000033 /* MobileDate.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -128,6 +129,7 @@
 		02000000000000000000002E /* GoogleService-Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = "GoogleService-Info.plist"; sourceTree = "<group>"; };
 		02000000000000000000002F /* BackgroundSyncCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BackgroundSyncCoordinator.swift; sourceTree = "<group>"; };
 		020000000000000000000030 /* BackgroundTasks.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = BackgroundTasks.framework; path = System/Library/Frameworks/BackgroundTasks.framework; sourceTree = SDKROOT; };
+		020000000000000000000033 /* MobileDate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MobileDate.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -197,6 +199,7 @@
 				02000000000000000000002B /* SchemeEditorTextInput.swift */,
 				02000000000000000000002C /* SchemeEditorTextView.swift */,
 				02000000000000000000002D /* SchemeEditorSheets.swift */,
+				020000000000000000000033 /* MobileDate.swift */,
 				020000000000000000000008 /* CalendarScreen.swift */,
 				020000000000000000000009 /* DailyScreen.swift */,
 				02000000000000000000000A /* SearchScreen.swift */,
@@ -410,6 +413,7 @@
 				01000000000000000000002B /* SchemeEditorTextInput.swift in Sources */,
 				01000000000000000000002C /* SchemeEditorTextView.swift in Sources */,
 				01000000000000000000002D /* SchemeEditorSheets.swift in Sources */,
+				010000000000000000000033 /* MobileDate.swift in Sources */,
 				010000000000000000000007 /* SchemeEditorView.swift in Sources */,
 				010000000000000000000008 /* CalendarScreen.swift in Sources */,
 				010000000000000000000009 /* DailyScreen.swift in Sources */,

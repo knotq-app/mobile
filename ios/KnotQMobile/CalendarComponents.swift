@@ -116,7 +116,7 @@ struct OccurrenceCompactRow: View {
                         .foregroundStyle(occurrenceSchemeColor(occurrence, dark: theme.isDark))
                         .lineLimit(1)
                     Spacer(minLength: 6)
-                    Text(occurrenceTimeLabel(occurrence, timeFormat: timeFormat, showDay: showDayLabel))
+                    Text(MobileDate.occurrenceLabel(occurrence, timeFormat: timeFormat, showDay: showDayLabel))
                         .font(.system(size: 10, weight: .bold, design: .monospaced))
                         .foregroundStyle(occurrenceStatusTimeColor(occurrence, theme: theme))
                         .lineLimit(1)

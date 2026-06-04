@@ -105,14 +105,7 @@ struct OccurrenceRow: View {
 
     private var timeLabel: String {
         let timeFormat = model.snapshot?.settings.timeFormat ?? "twelve_hour"
-        let start = MobileDate.formatTime(occurrence.start, timeFormat: timeFormat)
-        let end = MobileDate.formatTime(occurrence.end, timeFormat: timeFormat)
-        if occurrence.kind == "reminder", let start { return "At \(start)" }
-        if occurrence.kind == "assignment", let end { return "Due \(end)" }
-        if let start, let end { return "\(start) - \(end)" }
-        if let start { return start }
-        if let end { return "Due \(end)" }
-        return occurrence.kind.capitalized
+        return MobileDate.occurrenceLabel(occurrence, timeFormat: timeFormat)
     }
 }
 

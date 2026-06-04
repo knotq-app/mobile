@@ -58,9 +58,6 @@ import java.time.Instant
 import java.time.LocalDate
 import java.time.LocalTime
 import java.time.ZoneId
-import java.time.ZoneOffset
-import java.time.ZonedDateTime
-import java.time.format.DateTimeFormatter
 import java.time.format.TextStyle
 import java.util.Locale
 import java.util.WeakHashMap
@@ -618,7 +615,7 @@ class MainActivity : Activity() {
             setPadding(dp(8), dp(8), dp(8), dp(8))
             background = rounded(if (theme.isDark) adjust(theme.bgModal, 0.42f) else theme.bgModal, dp(6), theme.dividerSoft)
         }
-        column.addView(text(formatFullDay(day.optString("date")), if (day.optString("date") == LocalDate.now().toString()) theme.textToday else theme.textDim, 12f, true), spaced())
+        column.addView(text(MobileDateFormatting.fullDay(day.optString("date")), if (day.optString("date") == LocalDate.now().toString()) theme.textToday else theme.textDim, 12f, true), spaced())
         val occurrences = day.optJSONArray("occurrences")
         if (occurrences == null || occurrences.length() == 0) {
             column.addView(text("None", theme.textMuted, 12f, false).apply {
@@ -635,7 +632,7 @@ class MainActivity : Activity() {
     private fun dayList(day: JSONObject): View {
         return LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            addView(text(formatFullDay(day.optString("date")), if (day.optString("date") == LocalDate.now().toString()) theme.textToday else theme.textDim, 12f, true))
+            addView(text(MobileDateFormatting.fullDay(day.optString("date")), if (day.optString("date") == LocalDate.now().toString()) theme.textToday else theme.textDim, 12f, true))
             val occurrences = day.optJSONArray("occurrences")
             if (occurrences == null || occurrences.length() == 0) {
                 addView(text("No calendar items", theme.textMuted, 13f, false).apply { setPadding(0, dp(6), 0, dp(6)) })
@@ -653,8 +650,8 @@ class MainActivity : Activity() {
             orientation = LinearLayout.VERTICAL
             gravity = Gravity.CENTER_HORIZONTAL
             setPadding(dp(if (isPill) 8 else 6), if (isReminder) dp(6) else dp(3), dp(if (isPill) 8 else 6), dp(4))
-            val time = eventTimeLabel(occurrence)
-            if (time.isNotEmpty() && !hideEventTime(occurrence)) {
+            val time = MobileDateFormatting.compactOccurrenceLabel(occurrence, timeFormat24())
+            if (time.isNotEmpty() && !MobileDateFormatting.isCompactEvent(occurrence)) {
                 addView(text(time, calendarTimeColor(occurrence), 9f, false).apply {
                     gravity = Gravity.CENTER
                     typeface = Typeface.MONOSPACE
@@ -855,7 +852,7 @@ class MainActivity : Activity() {
                 selectedDate = selectedDate.minusDays(1)
                 ensureDaily()
             })
-            addView(text(formatFullDay(selectedDate.toString()), theme.textPrimary, 14f, true).apply {
+            addView(text(MobileDateFormatting.fullDay(selectedDate.toString()), theme.textPrimary, 14f, true).apply {
                 gravity = Gravity.CENTER
                 setOnClickListener { showDatePicker() }
             }, LinearLayout.LayoutParams(0, -1, 1f))
@@ -893,7 +890,7 @@ class MainActivity : Activity() {
 
     private fun dailyDayEditor(day: JSONObject): View {
         val date = day.optString("date")
-        val scheme = day.optJSONObject("scheme") ?: return emptyState(formatFullDay(date), "Daily not ready")
+        val scheme = day.optJSONObject("scheme") ?: return emptyState(MobileDateFormatting.fullDay(date), "Daily not ready")
         val schemeId = scheme.optString("id")
         val selected = date == selectedDate.toString()
         val originalLines = documentLines(scheme)
@@ -908,7 +905,7 @@ class MainActivity : Activity() {
                 }, LinearLayout.LayoutParams(dp(7), dp(7)).apply {
                     setMargins(0, 0, dp(8), 0)
                 })
-                addView(text(formatFullDay(date), if (selected) theme.textPrimary else theme.textDim, 13f, true), LinearLayout.LayoutParams(0, -2, 1f))
+                addView(text(MobileDateFormatting.fullDay(date), if (selected) theme.textPrimary else theme.textDim, 13f, true), LinearLayout.LayoutParams(0, -2, 1f))
                 if ((scheme.optJSONArray("items")?.length() ?: 0) == 0) {
                     addView(text("+", theme.textMuted, 13f, true).apply { gravity = Gravity.CENTER }, LinearLayout.LayoutParams(dp(22), dp(22)))
                 }
@@ -2238,7 +2235,7 @@ class MainActivity : Activity() {
                 addView(LinearLayout(this@MainActivity).apply {
                     orientation = LinearLayout.HORIZONTAL
                     addView(text(occurrence.optString("scheme_name"), schemeColor(occurrence.optInt("color_index")), 11f, true), LinearLayout.LayoutParams(0, -2, 1f))
-                    addView(text(timeLabel(occurrence), theme.textSoft, 10f, true))
+                    addView(text(MobileDateFormatting.occurrenceLabel(occurrence, timeFormat24()), theme.textSoft, 10f, true))
                 })
                 addView(text(occurrence.optString("title").ifEmpty { occurrence.optString("kind").replaceFirstChar(Char::titlecase) }, theme.textPrimary, 13f, false))
             }, LinearLayout.LayoutParams(0, -2, 1f))
@@ -2314,8 +2311,8 @@ class MainActivity : Activity() {
         val editing = occurrence != null
         val readOnly = occurrence?.optBoolean("is_read_only", false) == true
         val initialKind = occurrence?.optString("kind")?.takeIf { it.isNotEmpty() } ?: "task"
-        val startDateTime = occurrence?.optionalString("start")?.let(::localDateTime)
-        val endDateTime = occurrence?.optionalString("end")?.let(::localDateTime)
+        val startDateTime = MobileDateFormatting.localDateTime(occurrence?.optionalString("start"))
+        val endDateTime = MobileDateFormatting.localDateTime(occurrence?.optionalString("end"))
         val anchor = startDateTime ?: endDateTime ?: selectedDate.atStartOfDay(ZoneId.systemDefault())
         val titleInput = edit(occurrence?.optString("title") ?: "").apply {
             hint = "Title"
@@ -2424,11 +2421,11 @@ class MainActivity : Activity() {
                 val selectedKind = kind.selectedItem.toString()
                 val localDate = LocalDate.of(date.year, date.month + 1, date.dayOfMonth)
                 val startValue = when (selectedKind) {
-                    "event", "reminder" -> iso(localDate, start.hour, start.minute)
+                    "event", "reminder" -> MobileDateFormatting.iso(localDate, start.hour, start.minute)
                     else -> null
                 }
                 val endValue = when (selectedKind) {
-                    "event", "assignment" -> iso(localDate, end.hour, end.minute)
+                    "event", "assignment" -> MobileDateFormatting.iso(localDate, end.hour, end.minute)
                     else -> null
                 }
                 val rrule = if (selectedKind == "task") null else rruleForRepeat(repeat.selectedItem.toString(), localDate)
@@ -2689,7 +2686,7 @@ class MainActivity : Activity() {
 
     private fun showItemDateDialog(schemeId: String, itemId: String, kind: String) {
         val form = page(compact = true)
-        val initial = findItem(schemeId, itemId)?.optionalString(kind)?.let(::localDateTime)
+        val initial = MobileDateFormatting.localDateTime(findItem(schemeId, itemId)?.optionalString(kind))
         val date = DatePicker(this).apply {
             val local = initial?.toLocalDate() ?: selectedDate
             updateDate(local.year, local.monthValue - 1, local.dayOfMonth)
@@ -2707,7 +2704,7 @@ class MainActivity : Activity() {
             .setView(form)
             .setPositiveButton("Save") { _, _ ->
                 val localDate = LocalDate.of(date.year, date.month + 1, date.dayOfMonth)
-                mutate(obj("type" to "set_item_date", "scheme_id" to schemeId, "item_id" to itemId, "kind" to kind, "date" to iso(localDate, time.hour, time.minute)))
+                mutate(obj("type" to "set_item_date", "scheme_id" to schemeId, "item_id" to itemId, "kind" to kind, "date" to MobileDateFormatting.iso(localDate, time.hour, time.minute)))
             }
             .setNegativeButton("Cancel", null)
             .show()
@@ -3001,13 +2998,6 @@ class MainActivity : Activity() {
         return null
     }
 
-    private fun localDateTime(raw: String): ZonedDateTime? =
-        try {
-            Instant.parse(raw).atZone(ZoneId.systemDefault())
-        } catch (_: RuntimeException) {
-            null
-        }
-
     private fun rootFolderId(): String? = snapshot.optJSONObject("root")?.optString("id")
 
     private fun parentFolderIdForScheme(schemeId: String): String? {
@@ -3138,7 +3128,7 @@ class MainActivity : Activity() {
             val start = calendar.optString("start_date")
             val end = calendar.optString("end_date")
             if (start.isNotEmpty() && end.isNotEmpty()) {
-                "${formatDay(start)} - ${formatDay(end)}"
+                "${MobileDateFormatting.shortDay(start)} - ${MobileDateFormatting.shortDay(end)}"
             } else {
                 "${selectedDate.month.getDisplayName(TextStyle.FULL, Locale.getDefault())} ${selectedDate.dayOfMonth}, ${selectedDate.year}"
             }
@@ -3309,51 +3299,12 @@ class MainActivity : Activity() {
         else -> " "
     }
 
-    private fun timeLabel(occurrence: JSONObject): String {
-        val start = time(occurrence.optionalString("start"))
-        val end = time(occurrence.optionalString("end"))
-        if (occurrence.optString("kind") == "reminder" && start.isNotEmpty()) return "At $start"
-        if (occurrence.optString("kind") == "assignment" && end.isNotEmpty()) return "Due $end"
-        return when {
-            start.isNotEmpty() && end.isNotEmpty() -> "$start - $end"
-            start.isNotEmpty() -> start
-            end.isNotEmpty() -> "Due $end"
-            else -> occurrence.optString("kind").replaceFirstChar(Char::titlecase)
-        }
-    }
-
-    private fun eventTimeLabel(occurrence: JSONObject): String {
-        if (occurrence.optString("kind") == "reminder") {
-            val start = time(occurrence.optionalString("start"))
-            return if (start.isNotEmpty()) "At $start" else ""
-        }
-        if (occurrence.optString("kind") == "assignment") {
-            val end = time(occurrence.optionalString("end"))
-            return if (end.isNotEmpty()) "Due $end" else ""
-        }
-        val start = eventTime(occurrence.optionalString("start"), includePeriod = false)
-        val end = eventTime(occurrence.optionalString("end"), includePeriod = true)
-        return when {
-            start.isNotEmpty() && end.isNotEmpty() -> "$start to $end"
-            start.isNotEmpty() -> start
-            end.isNotEmpty() -> end
-            else -> ""
-        }
-    }
-
-    private fun hideEventTime(occurrence: JSONObject): Boolean {
-        if (occurrence.optString("kind") != "event") return false
-        val start = instant(occurrence.optionalString("start")) ?: return false
-        val end = instant(occurrence.optionalString("end")) ?: return false
-        return end.epochSecond - start.epochSecond <= 30 * 60
-    }
-
     private fun calendarTimeColor(occurrence: JSONObject): Int {
         val default = if (theme.isDark) adjustAlpha(rgb(0xe8edf2), 0.90f) else adjustAlpha(rgb(0x2e291f), 0.90f)
         if (occurrence.optBoolean("done")) return default
-        val start = instant(occurrence.optionalString("start") ?: occurrence.optionalString("end")) ?: return default
+        val start = MobileDateFormatting.parseInstant(occurrence.optionalString("start") ?: occurrence.optionalString("end")) ?: return default
         val now = Instant.now()
-        val end = instant(occurrence.optionalString("end"))
+        val end = MobileDateFormatting.parseInstant(occurrence.optionalString("end"))
         if (end != null && !start.isAfter(now) && end.isAfter(now)) return todayTimeColor()
         if (start.isBefore(now)) return if (theme.isDark) rgb(0xff5a53) else rgb(0xd20f39)
         val startDay = start.atZone(ZoneId.systemDefault()).toLocalDate()
@@ -3381,61 +3332,6 @@ class MainActivity : Activity() {
         val alpha = if (done) (255 * 0.78f).roundToInt() else 255
         return Color.HSVToColor(alpha, hsv)
     }
-
-    private fun instant(raw: String?): Instant? {
-        if (raw.isNullOrEmpty() || raw == "null") return null
-        return try {
-            Instant.parse(raw)
-        } catch (_: RuntimeException) {
-            null
-        }
-    }
-
-    private fun eventTime(raw: String?, includePeriod: Boolean): String {
-        if (raw.isNullOrEmpty() || raw == "null") return ""
-        return try {
-            val pattern = if (timeFormat24()) "HH:mm" else if (includePeriod) "h:mm a" else "h:mm"
-            DateTimeFormatter.ofPattern(pattern).format(Instant.parse(raw).atZone(ZoneId.systemDefault()))
-        } catch (_: RuntimeException) {
-            raw
-        }
-    }
-
-    private fun time(raw: String?): String {
-        if (raw.isNullOrEmpty() || raw == "null") return ""
-        return try {
-            val pattern = if (timeFormat24()) "HH:mm" else "h:mm a"
-            DateTimeFormatter.ofPattern(pattern).format(Instant.parse(raw).atZone(ZoneId.systemDefault()))
-        } catch (_: RuntimeException) {
-            raw
-        }
-    }
-
-    private fun formatDay(raw: String): String = try {
-        val date = LocalDate.parse(raw)
-        "${date.month.getDisplayName(TextStyle.SHORT, Locale.getDefault())} ${date.dayOfMonth}"
-    } catch (_: RuntimeException) {
-        raw
-    }
-
-    private fun monthLabel(raw: String): String = try {
-        val date = LocalDate.parse(raw)
-        "${date.month.getDisplayName(TextStyle.FULL, Locale.getDefault())} ${date.year}"
-    } catch (_: RuntimeException) {
-        "Week"
-    }
-
-    private fun formatFullDay(raw: String): String = try {
-        val date = LocalDate.parse(raw)
-        "${date.dayOfWeek.getDisplayName(TextStyle.SHORT, Locale.getDefault())}, ${date.month.getDisplayName(TextStyle.SHORT, Locale.getDefault())} ${date.dayOfMonth}"
-    } catch (_: RuntimeException) {
-        raw
-    }
-
-    private fun iso(date: LocalDate, hour: Int, minute: Int): String =
-        ZonedDateTime.of(date, LocalTime.of(hour, minute), ZoneId.systemDefault())
-            .withZoneSameInstant(ZoneOffset.UTC)
-            .format(DateTimeFormatter.ISO_INSTANT)
 
     private fun timeFormat24(): Boolean =
         snapshot.optJSONObject("settings")?.optString("time_format") == "twenty_four_hour"
@@ -3567,12 +3463,7 @@ class MainActivity : Activity() {
             val item = items.optJSONObject(index) ?: continue
             val start = item.optString("start").takeIf { it.isNotEmpty() && it != "null" }
             val end = item.optString("end").takeIf { it.isNotEmpty() && it != "null" }
-            val annotation = when {
-                start != null && end != null -> "${time(start)} -> ${time(end)}"
-                start != null -> "At ${time(start)}"
-                end != null -> "Due ${time(end)}"
-                else -> null
-            }
+            val annotation = MobileDateFormatting.annotationLabel(start, end, timeFormat24())
             val media = ArrayList<EditorLineMedia>()
             item.optJSONArray("media")?.forEachObject { rawMedia ->
                 media.add(

@@ -1192,30 +1192,15 @@ final class AppModel: ObservableObject {
     #endif
 
     static func dateOnly(_ date: Date) -> String {
-        let formatter = DateFormatter()
-        formatter.calendar = Calendar(identifier: .gregorian)
-        formatter.locale = Locale(identifier: "en_US_POSIX")
-        formatter.dateFormat = "yyyy-MM-dd"
-        return formatter.string(from: date)
+        MobileDate.dateOnly(date)
     }
 
     static func displayDate(_ raw: String) -> String {
-        let input = DateFormatter()
-        input.calendar = Calendar(identifier: .gregorian)
-        input.locale = Locale(identifier: "en_US_POSIX")
-        input.dateFormat = "yyyy-MM-dd"
-        guard let date = input.date(from: raw) else { return raw }
-        let output = DateFormatter()
-        output.dateStyle = .medium
-        return output.string(from: date)
+        MobileDate.displayDate(raw)
     }
 
     static func date(from raw: String) -> Date? {
-        let input = DateFormatter()
-        input.calendar = Calendar(identifier: .gregorian)
-        input.locale = Locale(identifier: "en_US_POSIX")
-        input.dateFormat = "yyyy-MM-dd"
-        return input.date(from: raw)
+        MobileDate.parseDateOnly(raw)
     }
 }
 

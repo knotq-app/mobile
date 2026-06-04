@@ -45,7 +45,7 @@ struct EditorRichClipboardItem: Codable {
             indent: Int(indent),
             done: done,
             itemID: nil,
-            annotation: LineMeta.annotationText(start: start, end: end, timeFormat: timeFormat),
+            annotation: MobileDate.annotationText(start: start, end: end, timeFormat: timeFormat),
             start: marker == .checkbox ? start : nil,
             end: marker == .checkbox ? end : nil,
             notificationOffsetSecs: marker == .checkbox ? notificationOffsetSecs : nil,
@@ -151,7 +151,7 @@ enum DesktopEditorMetrics {
             indent: Int(item.indent),
             done: item.done,
             itemID: item.id.isEmpty ? nil : item.id,
-            annotation: LineMeta.annotationText(start: item.start, end: item.end, timeFormat: timeFormat),
+            annotation: MobileDate.annotationText(start: item.start, end: item.end, timeFormat: timeFormat),
             start: item.start,
             end: item.end,
             notificationOffsetSecs: item.notificationOffsetSecs,
@@ -215,16 +215,6 @@ enum DesktopEditorMetrics {
         return h.finalize()
     }
 
-    static func annotationText(start: String?, end: String?, timeFormat: String) -> String? {
-        let s = MobileDate.formatTime(start, timeFormat: timeFormat)
-        let e = MobileDate.formatTime(end, timeFormat: timeFormat)
-        switch (s, e) {
-        case let (.some(s), .some(e)): return "\(s) → \(e)"
-        case let (.some(s), .none): return "At \(s)"
-        case let (.none, .some(e)): return "Due \(e)"
-        default: return nil
-        }
-    }
 }
 
 // MARK: - Attribute composition

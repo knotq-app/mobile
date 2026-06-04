@@ -145,7 +145,7 @@ final class DayTimelineEventBlockView: UIControl {
         alpha = laid.occurrence.done ? 0.55 : 1
         let title = laid.occurrence.title.trimmingCharacters(in: .whitespacesAndNewlines)
         titleLabel.text = title.isEmpty ? laid.occurrence.kind.capitalized : title
-        timeLabel.text = Self.timeLabel(for: laid.occurrence, timeFormat: timeFormat)
+        timeLabel.text = MobileDate.compactOccurrenceLabel(laid.occurrence, timeFormat: timeFormat)
         titleLabel.textColor = Self.itemTextColor(for: laid.occurrence, done: laid.occurrence.done, dark: theme.isDark)
         timeLabel.textColor = Self.timeColor(for: laid.occurrence, theme: theme)
         let isPill = laid.occurrence.kind == "reminder" || laid.occurrence.kind == "assignment"
@@ -185,30 +185,6 @@ final class DayTimelineEventBlockView: UIControl {
     @objc private func tapped() {
         guard let occurrence else { return }
         onTap?(occurrence)
-    }
-
-    private static func timeLabel(for occurrence: MobileOccurrence, timeFormat: String) -> String {
-        if occurrence.kind == "reminder", let start = MobileDate.formatTime(occurrence.start, timeFormat: timeFormat) {
-            return "At \(start)"
-        }
-        if occurrence.kind == "assignment", let end = MobileDate.formatTime(occurrence.end, timeFormat: timeFormat) {
-            return "Due \(end)"
-        }
-        let start = formatEventTime(occurrence.start, timeFormat: timeFormat, includePeriod: false)
-        let end = formatEventTime(occurrence.end, timeFormat: timeFormat, includePeriod: true)
-        if let start, let end { return "\(start) to \(end)" }
-        if let start { return start }
-        if let end { return "Due \(end)" }
-        return ""
-    }
-
-    private static func formatEventTime(_ raw: String?, timeFormat: String, includePeriod: Bool) -> String? {
-        guard let date = MobileDate.parseDateTime(raw) else { return nil }
-        let formatter = DateFormatter()
-        formatter.calendar = Calendar(identifier: .gregorian)
-        formatter.locale = Locale(identifier: "en_US_POSIX")
-        formatter.dateFormat = timeFormat == "twenty_four_hour" ? "HH:mm" : (includePeriod ? "h:mm a" : "h:mm")
-        return formatter.string(from: date)
     }
 
     private static func hideTime(for occurrence: MobileOccurrence) -> Bool {
