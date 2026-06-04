@@ -14,34 +14,6 @@ struct SettingsScreen: View {
 
     var body: some View {
         Form {
-            Section("Appearance") {
-                Picker("Theme", selection: Binding(
-                    get: { model.snapshot?.settings.themeMode ?? "dark" },
-                    set: { model.setThemeMode($0) }
-                )) {
-                    Text("Dark").tag("dark")
-                    Text("Light").tag("light")
-                    Text("System").tag("system")
-                }
-                .pickerStyle(.menu)
-            }
-            .listRowBackground(theme.bgModal)
-
-            Section("Time") {
-                Picker("Clock", selection: Binding(
-                    get: { model.snapshot?.settings.timeFormat ?? "twelve_hour" },
-                    set: { model.setTimeFormat($0) }
-                )) {
-                    Text("12-hour").tag("twelve_hour")
-                    Text("24-hour").tag("twenty_four_hour")
-                }
-            }
-            .listRowBackground(theme.bgModal)
-
-            NotificationDefaultsSettingsSection(theme: theme)
-
-            GoogleCalendarSettingsSection(theme: theme)
-
             Section("Sync") {
                 if let session = model.syncSession {
                     LabeledContent("Account", value: session.email)
@@ -100,6 +72,34 @@ struct SettingsScreen: View {
                 }
             }
             .listRowBackground(theme.bgModal)
+
+            Section("Appearance") {
+                Picker("Theme", selection: Binding(
+                    get: { model.snapshot?.settings.themeMode ?? "dark" },
+                    set: { model.setThemeMode($0) }
+                )) {
+                    Text("Dark").tag("dark")
+                    Text("Light").tag("light")
+                    Text("System").tag("system")
+                }
+                .pickerStyle(.menu)
+            }
+            .listRowBackground(theme.bgModal)
+
+            Section("Time") {
+                Picker("Clock", selection: Binding(
+                    get: { model.snapshot?.settings.timeFormat ?? "twelve_hour" },
+                    set: { model.setTimeFormat($0) }
+                )) {
+                    Text("12-hour").tag("twelve_hour")
+                    Text("24-hour").tag("twenty_four_hour")
+                }
+            }
+            .listRowBackground(theme.bgModal)
+
+            NotificationDefaultsSettingsSection(theme: theme)
+
+            GoogleCalendarSettingsSection(theme: theme)
         }
         .scrollContentBackground(.hidden)
         .background(theme.bgApp)
