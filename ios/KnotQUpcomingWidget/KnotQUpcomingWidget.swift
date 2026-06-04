@@ -106,7 +106,7 @@ private struct KnotQUpcomingWidgetView: View {
                     .lineLimit(2)
             }
         }
-        .padding(8)
+        .padding(10)
     }
 
     private func systemBody(limit: Int, columns: Int = 1, dense: Bool = false, rowHeight: CGFloat) -> some View {
@@ -164,9 +164,9 @@ private struct KnotQUpcomingWidgetView: View {
                 }
             }
         }
-        .padding(.horizontal, 10)
-        .padding(.top, dense ? 4 : 5)
-        .padding(.bottom, dense ? 7 : 8)
+        .padding(.horizontal, 12)
+        .padding(.top, dense ? 5 : 6)
+        .padding(.bottom, dense ? 8 : 9)
     }
 
     private var currentDateHeader: some View {
