@@ -2358,7 +2358,7 @@ class MainActivity : Activity() {
         }
         val repeatValues = arrayOf("none", "daily", "weekly", "monthly", "yearly")
         val repeat = spinner(repeatValues).apply {
-            setSelection(repeatValues.indexOf(repeatChoiceFromRrule(occurrence?.optionalString("repeat_rule"))).coerceAtLeast(0))
+            setSelection(repeatValues.indexOf(MobileRecurrence.repeatChoiceFromRrule(occurrence?.optionalString("repeat_rule"))).coerceAtLeast(0))
             isEnabled = !readOnly
         }
         val defaultOffset = defaultNotificationOffset(initialKind)
@@ -2428,7 +2428,7 @@ class MainActivity : Activity() {
                     "event", "assignment" -> MobileDateFormatting.iso(localDate, end.hour, end.minute)
                     else -> null
                 }
-                val rrule = if (selectedKind == "task") null else rruleForRepeat(repeat.selectedItem.toString(), localDate)
+                val rrule = if (selectedKind == "task") null else MobileRecurrence.rruleForRepeat(repeat.selectedItem.toString(), localDate)
                 val notificationOffset = if (selectedKind == "task") null else notificationOptions[notification.selectedItemPosition].second
                 if (occurrence != null) {
                     val commit = { scope: String ->
@@ -2624,35 +2624,6 @@ class MainActivity : Activity() {
             "assignment" -> settings?.optInt("assignment_notification_offset_secs", 2 * 60 * 60) ?: 2 * 60 * 60
             else -> 0
         }
-    }
-
-    private fun repeatChoiceFromRrule(rrule: String?): String {
-        val upper = rrule?.uppercase(Locale.US) ?: return "none"
-        return when {
-            upper.contains("FREQ=DAILY") -> "daily"
-            upper.contains("FREQ=WEEKLY") -> "weekly"
-            upper.contains("FREQ=MONTHLY") -> "monthly"
-            upper.contains("FREQ=YEARLY") -> "yearly"
-            else -> "none"
-        }
-    }
-
-    private fun rruleForRepeat(choice: String, date: LocalDate): String? = when (choice) {
-        "daily" -> "FREQ=DAILY;INTERVAL=1"
-        "weekly" -> "FREQ=WEEKLY;INTERVAL=1;BYDAY=${weekdayCode(date)}"
-        "monthly" -> "FREQ=MONTHLY;INTERVAL=1"
-        "yearly" -> "FREQ=YEARLY;INTERVAL=1"
-        else -> null
-    }
-
-    private fun weekdayCode(date: LocalDate): String = when (date.dayOfWeek.value) {
-        1 -> "MO"
-        2 -> "TU"
-        3 -> "WE"
-        4 -> "TH"
-        5 -> "FR"
-        6 -> "SA"
-        else -> "SU"
     }
 
     private fun showMarkerDialog(schemeId: String, itemId: String) {
@@ -3401,22 +3372,6 @@ class MainActivity : Activity() {
 
     private fun Int.floorMod(mod: Int): Int = ((this % mod) + mod) % mod
 
-    private fun obj(vararg pairs: Pair<String, Any?>): JSONObject = JSONObject().apply {
-        pairs.forEach { (key, value) -> put(key, value ?: JSONObject.NULL) }
-    }
-
-    private fun JSONArray.forEachObject(callback: (JSONObject) -> Unit) {
-        for (index in 0 until length()) {
-            optJSONObject(index)?.let(callback)
-        }
-    }
-
-    private fun JSONArray.forEachIndexedObject(callback: (Int, JSONObject) -> Unit) {
-        for (index in 0 until length()) {
-            optJSONObject(index)?.let { callback(index, it) }
-        }
-    }
-
     private fun dp(value: Int): Int = (value * resources.displayMetrics.density).roundToInt()
 
     private fun toast(value: String?) {
@@ -3554,9 +3509,6 @@ class MainActivity : Activity() {
         return result
     }
 }
-
-private fun JSONObject.optionalString(name: String): String? =
-    if (isNull(name)) null else optString(name).takeIf { it.isNotEmpty() && it != "null" }
 
 private class MaxWidthLinearLayout(context: android.content.Context, private val maxWidthPx: Int) : LinearLayout(context) {
     override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {

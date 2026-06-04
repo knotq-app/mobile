@@ -57,8 +57,8 @@ internal object MobileDateFormatting {
 
     fun occurrenceLabel(occurrence: JSONObject, twentyFourHour: Boolean, fallbackToKind: Boolean = true): String {
         val kind = occurrence.optString("kind")
-        val start = time(occurrence.optionalStringForDate("start"), twentyFourHour)
-        val end = time(occurrence.optionalStringForDate("end"), twentyFourHour)
+        val start = time(occurrence.optionalString("start"), twentyFourHour)
+        val end = time(occurrence.optionalString("end"), twentyFourHour)
         if (kind == "reminder" && start.isNotEmpty()) return "At $start"
         if (kind == "assignment" && end.isNotEmpty()) return "Due $end"
         return when {
@@ -73,15 +73,15 @@ internal object MobileDateFormatting {
     fun compactOccurrenceLabel(occurrence: JSONObject, twentyFourHour: Boolean): String {
         val kind = occurrence.optString("kind")
         if (kind == "reminder") {
-            val start = time(occurrence.optionalStringForDate("start"), twentyFourHour)
+            val start = time(occurrence.optionalString("start"), twentyFourHour)
             return if (start.isNotEmpty()) "At $start" else ""
         }
         if (kind == "assignment") {
-            val end = time(occurrence.optionalStringForDate("end"), twentyFourHour)
+            val end = time(occurrence.optionalString("end"), twentyFourHour)
             return if (end.isNotEmpty()) "Due $end" else ""
         }
-        val start = compactEventTime(occurrence.optionalStringForDate("start"), twentyFourHour, includePeriod = false)
-        val end = compactEventTime(occurrence.optionalStringForDate("end"), twentyFourHour, includePeriod = true)
+        val start = compactEventTime(occurrence.optionalString("start"), twentyFourHour, includePeriod = false)
+        val end = compactEventTime(occurrence.optionalString("end"), twentyFourHour, includePeriod = true)
         return when {
             start.isNotEmpty() && end.isNotEmpty() -> "$start to $end"
             start.isNotEmpty() -> start
@@ -103,11 +103,8 @@ internal object MobileDateFormatting {
 
     fun isCompactEvent(occurrence: JSONObject): Boolean {
         if (occurrence.optString("kind") != "event") return false
-        val start = parseInstant(occurrence.optionalStringForDate("start")) ?: return false
-        val end = parseInstant(occurrence.optionalStringForDate("end")) ?: return false
+        val start = parseInstant(occurrence.optionalString("start")) ?: return false
+        val end = parseInstant(occurrence.optionalString("end")) ?: return false
         return end.epochSecond - start.epochSecond <= 30 * 60
     }
 }
-
-private fun JSONObject.optionalStringForDate(name: String): String? =
-    if (isNull(name)) null else optString(name).takeIf { it.isNotEmpty() && it != "null" }
