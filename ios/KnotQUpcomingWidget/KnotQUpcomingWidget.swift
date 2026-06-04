@@ -418,7 +418,7 @@ private struct WidgetOccurrenceCompactRow: View {
         if dayDiff <= 1 {
             return theme.isDark ? Color(hex: 0xe5e5ff) : Color(hex: 0x4f5f8f)
         }
-        return theme.textSoft
+        return theme.isDark ? Color(hex: 0xb9c0c8) : theme.textSoft
     }
 
     private static let iso: ISO8601DateFormatter = {
