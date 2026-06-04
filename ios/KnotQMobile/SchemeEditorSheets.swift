@@ -78,41 +78,25 @@ struct ItemDateSheet: View {
         NavigationStack {
             Form {
                 Section {
-                    CalendarKindSelector(selection: kindBinding)
-
-                    if hasStart {
-                        DatePicker(hasEnd ? "Start" : "At", selection: $start)
-                            .onChange(of: start) { _, value in
-                                if hasEnd, end < value { end = value.addingTimeInterval(3600) }
-                            }
-                    }
-                    if hasEnd {
-                        DatePicker(hasStart ? "End" : "Due", selection: $end, in: (hasStart ? start : Date.distantPast)...)
-                    }
+                    ScheduledDateFields(
+                        kind: kindBinding,
+                        hasStart: $hasStart,
+                        hasEnd: $hasEnd,
+                        start: $start,
+                        end: $end
+                    )
                     if hasStart || hasEnd {
-                        Picker("Notification", selection: notificationOffsetBinding) {
-                            ForEach(occurrenceNotificationOptionsIncluding(notificationOffsetBinding.wrappedValue)) { option in
-                                Text(option.label).tag(option.offsetSecs)
-                            }
-                        }
+                        NotificationLeadTimePicker(selection: notificationOffsetBinding)
                     }
                 }
 
                 if hasStart || hasEnd {
                     Section {
-                        Picker("Repeat", selection: $repeatChoice) {
-                            ForEach(RepeatChoice.allCases) { choice in
-                                Text(choice.label).tag(choice)
-                            }
-                        }
-                        .onChange(of: repeatChoice) { _, choice in
-                            if choice == .weekly, weeklyRepeatDays.isEmpty {
-                                weeklyRepeatDays = [RepeatWeekdayChoice.defaultFor(date: repeatAnchorDate)]
-                            }
-                        }
-                        if repeatChoice == .weekly {
-                            WeeklyRepeatDaysPicker(selection: $weeklyRepeatDays)
-                        }
+                        RepeatRulePicker(
+                            selection: $repeatChoice,
+                            weekdays: $weeklyRepeatDays,
+                            anchorDate: repeatAnchorDate
+                        )
                     }
                 }
             }

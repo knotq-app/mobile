@@ -123,52 +123,6 @@ enum EventEditorTarget: Identifiable {
     }
 }
 
-enum RepeatChoice: String, CaseIterable, Identifiable {
-    case none, daily, weekly, monthly, yearly
-    var id: String { rawValue }
-
-    var label: String {
-        switch self {
-        case .none: "Never"
-        case .daily: "Every Day"
-        case .weekly: "Every Week"
-        case .monthly: "Every Month"
-        case .yearly: "Every Year"
-        }
-    }
-
-    /// Bare RRULE body, matching `CalendarRecurrence.rrules` elsewhere.
-    var rrule: String? {
-        rrule(weekdays: Set<RepeatWeekdayChoice>())
-    }
-
-    func rrule(weekdays: Set<RepeatWeekdayChoice>) -> String? {
-        switch self {
-        case .none:
-            return nil
-        case .daily:
-            return "FREQ=DAILY;INTERVAL=1"
-        case .weekly:
-            let codes = RepeatWeekdayChoice.orderedCodes(weekdays)
-            if codes.isEmpty { return "FREQ=WEEKLY;INTERVAL=1" }
-            return "FREQ=WEEKLY;INTERVAL=1;BYDAY=\(codes.joined(separator: ","))"
-        case .monthly:
-            return "FREQ=MONTHLY;INTERVAL=1"
-        case .yearly:
-            return "FREQ=YEARLY;INTERVAL=1"
-        }
-    }
-
-    static func from(rrule: String?) -> RepeatChoice {
-        guard let rrule = rrule?.uppercased() else { return .none }
-        if rrule.contains("FREQ=DAILY") { return .daily }
-        if rrule.contains("FREQ=WEEKLY") { return .weekly }
-        if rrule.contains("FREQ=MONTHLY") { return .monthly }
-        if rrule.contains("FREQ=YEARLY") { return .yearly }
-        return .none
-    }
-}
-
 private enum EventScopePromptAction: String {
     case save
     case delete
@@ -267,55 +221,28 @@ struct EventEditorSheet: View {
                         .disabled(readOnly)
                     // Scheme lives with the title — they're usually set together.
                     if !isEditing {
-                        Picker("Scheme", selection: $schemeID) {
-                            calendarSchemeRow(name: "Daily", color: dailyQueueColor(dark: theme.isDark))
-                                .tag(String?.none)
-                            ForEach(model.snapshot?.schemes.filter { !$0.isDailyQueue && !$0.isReadOnly } ?? []) { scheme in
-                                calendarSchemeRow(name: scheme.displayName, color: schemeColor(scheme.colorIndex, dark: theme.isDark))
-                                    .tag(String?.some(scheme.id))
-                            }
-                        }
-                        .pickerStyle(.navigationLink)
+                        CalendarSchemePicker(selection: $schemeID, theme: theme)
                     }
 
-                    CalendarKindSelector(selection: editorKindBinding, disabled: readOnly)
-
-                    if hasStart {
-                        DatePicker(hasEnd ? "Start" : "At", selection: $start)
-                            .disabled(readOnly)
-                            .onChange(of: start) { _, value in
-                                if hasEnd, end < value { end = value.addingTimeInterval(3600) }
-                            }
-                    }
-                    if hasEnd {
-                        DatePicker(hasStart ? "End" : "Due", selection: $end, in: (hasStart ? start : Date.distantPast)...)
-                            .disabled(readOnly)
-                    }
+                    ScheduledDateFields(
+                        kind: editorKindBinding,
+                        hasStart: $hasStart,
+                        hasEnd: $hasEnd,
+                        start: $start,
+                        end: $end,
+                        disabled: readOnly
+                    )
                     if isEditing && !readOnly {
                         Toggle("Completed", isOn: $completed)
                     }
                     if hasStart || hasEnd {
-                        Picker("Notification", selection: notificationOffsetBinding) {
-                            ForEach(occurrenceNotificationOptionsIncluding(notificationOffsetBinding.wrappedValue)) { option in
-                                Text(option.label).tag(option.offsetSecs)
-                            }
-                        }
-                        .disabled(readOnly)
-
-                        Picker("Repeat", selection: $repeatChoice) {
-                            ForEach(RepeatChoice.allCases) { choice in
-                                Text(choice.label).tag(choice)
-                            }
-                        }
-                        .disabled(readOnly)
-                        .onChange(of: repeatChoice) { _, choice in
-                            if choice == .weekly, weeklyRepeatDays.isEmpty {
-                                weeklyRepeatDays = [RepeatWeekdayChoice.defaultFor(date: repeatAnchorDate)]
-                            }
-                        }
-                        if repeatChoice == .weekly {
-                            WeeklyRepeatDaysPicker(selection: $weeklyRepeatDays, disabled: readOnly)
-                        }
+                        NotificationLeadTimePicker(selection: notificationOffsetBinding, disabled: readOnly)
+                        RepeatRulePicker(
+                            selection: $repeatChoice,
+                            weekdays: $weeklyRepeatDays,
+                            anchorDate: repeatAnchorDate,
+                            disabled: readOnly
+                        )
                     }
                 }
 
@@ -569,7 +496,7 @@ struct AddCalendarItemSheet: View {
     @State private var end = Date().addingTimeInterval(60 * 60)
     @State private var notificationOffsetSecs: Int32?
     @State private var notificationDirty = false
-    @State private var selectedSchemeID = ""
+    @State private var selectedSchemeID: String?
 
     private var theme: KnotQTheme {
         KnotQTheme.resolve(mode: model.snapshot?.settings.themeMode, systemScheme: systemScheme)
@@ -580,15 +507,7 @@ struct AddCalendarItemSheet: View {
             Form {
                 Section {
                     TextField("Title", text: $text)
-                    Picker("Scheme", selection: $selectedSchemeID) {
-                        calendarSchemeRow(name: "Daily", color: dailyQueueColor(dark: theme.isDark))
-                            .tag("")
-                        ForEach(model.snapshot?.schemes.filter { !$0.isDailyQueue && !$0.isReadOnly } ?? []) { scheme in
-                            calendarSchemeRow(name: scheme.displayName, color: schemeColor(scheme.colorIndex, dark: theme.isDark))
-                                .tag(scheme.id)
-                        }
-                    }
-                    .pickerStyle(.navigationLink)
+                    CalendarSchemePicker(selection: $selectedSchemeID, theme: theme)
                 }
 
                 Section {
@@ -601,11 +520,7 @@ struct AddCalendarItemSheet: View {
                         DatePicker(kind == .event ? "End" : "Due", selection: $end)
                     }
                     if kind != .task {
-                        Picker("Notification", selection: notificationOffsetBinding) {
-                            ForEach(occurrenceNotificationOptionsIncluding(notificationOffsetBinding.wrappedValue)) { option in
-                                Text(option.label).tag(option.offsetSecs)
-                            }
-                        }
+                        NotificationLeadTimePicker(selection: notificationOffsetBinding)
                     }
                 }
             }
@@ -616,17 +531,16 @@ struct AddCalendarItemSheet: View {
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Add") {
-                        let schemeID = selectedSchemeID.isEmpty ? nil : selectedSchemeID
                         let itemID = model.createCalendarItemReturningID(
                             kind: kind,
                             text: text,
                             date: date,
                             start: kind == .event || kind == .reminder ? start : nil,
                             end: kind == .event || kind == .assignment ? end : nil,
-                            schemeID: schemeID
+                            schemeID: selectedSchemeID
                         )
                         if kind != .task, notificationDirty, let itemID {
-                            let resolvedSchemeID = schemeID ?? model.todayDailySchemeID()
+                            let resolvedSchemeID = selectedSchemeID ?? model.todayDailySchemeID()
                             if let resolvedSchemeID {
                                 model.setOccurrenceNotificationOffset(
                                     schemeID: resolvedSchemeID,
@@ -654,14 +568,5 @@ struct AddCalendarItemSheet: View {
                 notificationDirty = true
             }
         )
-    }
-}
-
-private func calendarSchemeRow(name: String, color: Color) -> some View {
-    HStack(spacing: 8) {
-        Circle()
-            .fill(color)
-            .frame(width: 10, height: 10)
-        Text(name)
     }
 }
