@@ -73,11 +73,6 @@ struct DesktopSettingsPane: View {
     var body: some View {
         NavigationStack {
             SettingsForm(theme: theme)
-                .safeAreaInset(edge: .bottom) {
-                    Color.clear
-                        .frame(height: 118)
-                        .background(theme.bgApp)
-                }
                 .navigationTitle("Settings")
         }
         .tint(theme.accent)

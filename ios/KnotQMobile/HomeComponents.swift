@@ -291,14 +291,21 @@ struct HomeNavigationPane: View {
                             theme: theme,
                             onBack: { popHomeRoute() },
                             onAdd: { onAddItem(scheme.id) },
-                            usesNativeNavigation: false,
+                            usesNativeNavigation: true,
                             showsEditorNavigation: true,
                             autoFocusOnAppear: titleFocusSchemeID != scheme.id,
                             autoFocusTitleOnAppear: titleFocusSchemeID == scheme.id,
                             onAutoFocusTitleConsumed: { consumeTitleFocus(for: scheme.id) }
                         )
-                        .navigationBarBackButtonHidden(true)
-                        .toolbar(.hidden, for: .navigationBar)
+                        .toolbar(.visible, for: .navigationBar)
+                        .toolbar {
+                            ToolbarItem(placement: .topBarTrailing) {
+                                Button { onAddItem(scheme.id) } label: {
+                                    Image(systemName: "plus")
+                                }
+                                .disabled(scheme.isReadOnly)
+                            }
+                        }
                         .background {
                             NavigationStackInteractivePopEnabler(enabled: true)
                         }

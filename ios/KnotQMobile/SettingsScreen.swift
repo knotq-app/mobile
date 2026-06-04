@@ -103,11 +103,6 @@ struct SettingsScreen: View {
         }
         .scrollContentBackground(.hidden)
         .background(theme.bgApp)
-        .safeAreaInset(edge: .bottom) {
-            Color.clear
-                .frame(height: 118)
-                .background(theme.bgApp)
-        }
         .navigationTitle("Settings")
         .task {
             // Load products when an account has no entitlement, so the paywall can
