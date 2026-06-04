@@ -414,14 +414,6 @@ struct ContentView: View {
                     autoFocusTitleOnAppear: titleFocusSchemeID == selectedScheme.id,
                     onAutoFocusTitleConsumed: { consumeTitleFocus(for: selectedScheme.id) }
                 )
-                .toolbar {
-                    ToolbarItem(placement: .topBarTrailing) {
-                        Button { addItemTarget = .scheme(selectedScheme.id) } label: {
-                            Image(systemName: "plus")
-                        }
-                        .disabled(selectedScheme.isReadOnly)
-                    }
-                }
             } else {
                 EmptyState(title: "Pick a scheme", detail: "Choose a scheme from the sidebar.", theme: theme)
             }

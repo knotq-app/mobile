@@ -178,6 +178,7 @@ struct IntegratedSchemeEditorPane: View {
         .background(theme.bgApp.ignoresSafeArea())
         .navigationTitle("")
         .navigationBarTitleDisplayMode(.inline)
+        .toolbarBackground(.hidden, for: .navigationBar)
         .toolbar {
             if usesNativeNavigation && showsEditorNavigation {
                 ToolbarItem(placement: .topBarTrailing) {

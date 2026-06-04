@@ -298,14 +298,6 @@ struct HomeNavigationPane: View {
                             onAutoFocusTitleConsumed: { consumeTitleFocus(for: scheme.id) }
                         )
                         .toolbar(.visible, for: .navigationBar)
-                        .toolbar {
-                            ToolbarItem(placement: .topBarTrailing) {
-                                Button { onAddItem(scheme.id) } label: {
-                                    Image(systemName: "plus")
-                                }
-                                .disabled(scheme.isReadOnly)
-                            }
-                        }
                         .background {
                             NavigationStackInteractivePopEnabler(enabled: true)
                         }
