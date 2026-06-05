@@ -32,12 +32,6 @@ struct SyncSignInSheet: View {
     let theme: KnotQTheme
     let onAuthenticated: (() -> Void)?
 
-    @State private var apiBase = "http://127.0.0.1:8787"
-    @State private var email = ""
-    @State private var password = ""
-    @State private var code = ""
-    @State private var mode: SyncAuthMode
-
     init(
         theme: KnotQTheme,
         initialMode: SyncAuthMode = .signIn,
@@ -45,7 +39,7 @@ struct SyncSignInSheet: View {
     ) {
         self.theme = theme
         self.onAuthenticated = onAuthenticated
-        _mode = State(initialValue: initialMode)
+        _ = initialMode
     }
 
     var body: some View {
@@ -57,88 +51,34 @@ struct SyncSignInSheet: View {
                         LabeledContent("Backend", value: session.apiBase)
                         Button("Sign out", role: .destructive) {
                             model.signOutSync()
-                            password = ""
                         }
-                    }
-                    .listRowBackground(theme.bgModal)
-                }
-
-                if let challenge = model.syncLoginChallenge {
-                    Section("Two-factor code") {
-                        Text("Enter the code we emailed to \(challenge.email).")
-                            .font(.footnote)
-                            .foregroundStyle(theme.textSoft)
-                        TextField("6-digit code", text: $code)
-                            .textInputAutocapitalization(.never)
-                            .autocorrectionDisabled()
-                            .keyboardType(.numberPad)
-                        Button {
-                            Task {
-                                await model.verifyLoginCode(code)
-                                if model.syncSession != nil {
-                                    onAuthenticated?()
-                                    dismiss()
-                                }
-                            }
-                        } label: {
-                            if model.syncAuthInProgress {
-                                ProgressView()
-                            } else {
-                                Text("Verify")
-                            }
-                        }
-                        .disabled(model.syncAuthInProgress || code.trimmingCharacters(in: .whitespaces).isEmpty)
-                        Button("Use a different account") {
-                            model.cancelLoginChallenge()
-                            code = ""
-                        }
-                        .foregroundStyle(theme.textDim)
                     }
                     .listRowBackground(theme.bgModal)
                 } else {
-                    Section("Sync Account") {
-                        Picker("Mode", selection: $mode) {
-                            ForEach(SyncAuthMode.allCases) { candidate in
-                                Text(candidate.title).tag(candidate)
-                            }
-                        }
-                        .pickerStyle(.segmented)
-
-                        TextField("Sync API", text: $apiBase)
-                            .textInputAutocapitalization(.never)
-                            .autocorrectionDisabled()
-                            .keyboardType(.URL)
-                        TextField("Email", text: $email)
-                            .textInputAutocapitalization(.never)
-                            .autocorrectionDisabled()
-                            .keyboardType(.emailAddress)
-                        SecureField("Password", text: $password)
+                    Section {
                         Button {
-                            Task {
-                                switch mode {
-                                case .signIn:
-                                    await model.signInToSync(apiBase: apiBase, email: email, password: password)
-                                case .createAccount:
-                                    await model.createSyncAccount(apiBase: apiBase, email: email, password: password)
-                                    if model.syncSession != nil {
-                                        onAuthenticated?()
-                                        dismiss()
-                                    }
-                                }
-                            }
+                            authenticate(mode: .signIn)
                         } label: {
-                            if model.syncAuthInProgress {
-                                ProgressView()
-                            } else {
-                                Text(mode == .createAccount ? "Create account" : "Sign in")
+                            HStack {
+                                Label("Sign in", systemImage: "person.crop.circle")
+                                Spacer()
+                                if model.syncAuthInProgress {
+                                    ProgressView()
+                                }
                             }
                         }
                         .disabled(model.syncAuthInProgress)
-                        if mode == .createAccount {
-                            Text("Use at least 12 characters. Sync is optional; local-only workspaces keep working without an account.")
-                                .font(.footnote)
-                                .foregroundStyle(theme.textSoft)
+
+                        Button {
+                            authenticate(mode: .createAccount)
+                        } label: {
+                            Label("Create account", systemImage: "person.crop.circle.badge.plus")
                         }
+                        .disabled(model.syncAuthInProgress)
+                    } header: {
+                        Text("Sync account")
+                    } footer: {
+                        Text("Sign in through your browser — KnotQ never sees or stores your password. Sync is optional; local-only workspaces keep working without an account.")
                     }
                     .listRowBackground(theme.bgModal)
                 }
@@ -151,23 +91,18 @@ struct SyncSignInSheet: View {
                     Button("Close") { dismiss() }
                 }
             }
-            .onAppear {
-                apiBase = model.syncSession?.apiBase ?? apiBase
-                email = model.syncSession?.email ?? email
-            }
-            .onChange(of: mode) { _, _ in
-                model.cancelLoginChallenge()
-                code = ""
-            }
-            // Against a dev backend the emailed code is echoed back; prefill it so
-            // local testing is one tap. Real backends never send it.
-            .onChange(of: model.syncLoginChallenge?.challengeId) { _, _ in
-                if let devCode = model.syncLoginChallenge?.devCode {
-                    code = devCode
-                }
-            }
         }
         .tint(theme.accent)
+    }
+
+    private func authenticate(mode: SyncAuthMode) {
+        Task {
+            await model.beginBrowserSignIn(mode: mode)
+            if model.syncSession != nil {
+                onAuthenticated?()
+                dismiss()
+            }
+        }
     }
 }
 

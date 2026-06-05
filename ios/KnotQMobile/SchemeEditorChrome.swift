@@ -87,6 +87,7 @@ struct IntegratedSchemeEditorPane: View {
     let onAdd: () -> Void
     let usesNativeNavigation: Bool
     let showsEditorNavigation: Bool
+    let transparentOverlayNavigation: Bool
     let editorScrollEnabled: Bool
     let editorInsets: UIEdgeInsets
 
@@ -108,11 +109,19 @@ struct IntegratedSchemeEditorPane: View {
 
     private var editorTextInsets: UIEdgeInsets {
         UIEdgeInsets(
-            top: editorInsets.top + DesktopEditorMetrics.titleBlockHeight,
+            top: editorInsets.top + DesktopEditorMetrics.titleBlockHeight + overlayNavigationInset,
             left: editorInsets.left,
             bottom: editorInsets.bottom,
             right: editorInsets.right
         )
+    }
+
+    private var showsOverlayNavigation: Bool {
+        showsEditorNavigation && transparentOverlayNavigation
+    }
+
+    private var overlayNavigationInset: CGFloat {
+        showsOverlayNavigation ? 54 : 0
     }
 
     let autoFocusOnAppear: Bool
@@ -126,6 +135,7 @@ struct IntegratedSchemeEditorPane: View {
         onAdd: @escaping () -> Void,
         usesNativeNavigation: Bool = false,
         showsEditorNavigation: Bool = true,
+        transparentOverlayNavigation: Bool = false,
         editorScrollEnabled: Bool = true,
         editorInsets: UIEdgeInsets = UIEdgeInsets(top: 6, left: DesktopEditorMetrics.textLeftPad, bottom: 120, right: 24),
         autoFocusOnAppear: Bool = false,
@@ -138,6 +148,7 @@ struct IntegratedSchemeEditorPane: View {
         self.onAdd = onAdd
         self.usesNativeNavigation = usesNativeNavigation
         self.showsEditorNavigation = showsEditorNavigation
+        self.transparentOverlayNavigation = transparentOverlayNavigation
         self.editorScrollEnabled = editorScrollEnabled
         self.editorInsets = editorInsets
         self.autoFocusOnAppear = autoFocusOnAppear
@@ -146,46 +157,54 @@ struct IntegratedSchemeEditorPane: View {
     }
 
     var body: some View {
-        VStack(spacing: 0) {
-            if showsEditorNavigation && !usesNativeNavigation {
-                editorNavigationBar
+        ZStack(alignment: .top) {
+            VStack(spacing: 0) {
+                if showsEditorNavigation && !usesNativeNavigation && !showsOverlayNavigation {
+                    editorNavigationBar(showsDivider: true)
+                }
+
+                ZStack(alignment: .topLeading) {
+                    SchemeTextView(
+                        controller: controller,
+                        theme: theme,
+                        accent: accent,
+                        isScrollEnabled: editorScrollEnabled,
+                        textInsets: editorTextInsets,
+                        schemeTitle: scheme.displayName,
+                        titleEditable: !scheme.isDailyQueue,
+                        titleValidator: titleValidator,
+                        onRenameTitle: { title in
+                            model.renameScheme(id: scheme.id, name: title)
+                        },
+                        onDate: openDateForLine,
+                        onImageUpload: {
+                            controller.prepareImageUploadTarget()
+                            showingImagePicker = true
+                        },
+                        readOnly: scheme.isReadOnly
+                    )
+
+                }
+                .clipped()
             }
 
-            ZStack(alignment: .topLeading) {
-                SchemeTextView(
-                    controller: controller,
-                    theme: theme,
-                    accent: accent,
-                    isScrollEnabled: editorScrollEnabled,
-                    textInsets: editorTextInsets,
-                    schemeTitle: scheme.displayName,
-                    titleEditable: !scheme.isDailyQueue,
-                    titleValidator: titleValidator,
-                    onRenameTitle: { title in
-                        model.renameScheme(id: scheme.id, name: title)
-                    },
-                    onDate: openDateForLine,
-                    onImageUpload: {
-                        controller.prepareImageUploadTarget()
-                        showingImagePicker = true
-                    },
-                    readOnly: scheme.isReadOnly
-                )
-
+            if showsOverlayNavigation {
+                editorNavigationBar(showsDivider: false)
             }
-            .clipped()
         }
         .background(theme.bgApp.ignoresSafeArea())
         .navigationTitle("")
         .navigationBarTitleDisplayMode(.inline)
+        .navigationBarBackButtonHidden(transparentOverlayNavigation)
+        .toolbar(transparentOverlayNavigation ? .hidden : .automatic, for: .navigationBar)
         .toolbarBackground(.hidden, for: .navigationBar)
         .background {
-            if usesNativeNavigation {
+            if usesNativeNavigation && !transparentOverlayNavigation {
                 SchemeEditorTransparentNavigationBar()
             }
         }
         .toolbar {
-            if usesNativeNavigation && showsEditorNavigation {
+            if usesNativeNavigation && showsEditorNavigation && !transparentOverlayNavigation {
                 ToolbarItem(placement: .topBarTrailing) {
                     HStack(spacing: 4) {
                         SchemeColorPickerButton(scheme: scheme, theme: theme, accent: accent)
@@ -243,7 +262,7 @@ struct IntegratedSchemeEditorPane: View {
         }
     }
 
-    private var editorNavigationBar: some View {
+    private func editorNavigationBar(showsDivider: Bool) -> some View {
         HStack(spacing: 8) {
             if let onBack {
                 Button(action: {
@@ -270,13 +289,13 @@ struct IntegratedSchemeEditorPane: View {
         .frame(height: 54)
         .frame(maxWidth: .infinity)
         .contentShape(Rectangle())
-        // Transparent bar that reserves its own strip — the editor starts cleanly
-        // below the hairline divider and nothing ever scrolls under an opaque lip.
         .background(Color.clear)
         .overlay(alignment: .bottom) {
-            Rectangle()
-                .fill(theme.dividerSoft)
-                .frame(height: 1)
+            if showsDivider {
+                Rectangle()
+                    .fill(theme.dividerSoft)
+                    .frame(height: 1)
+            }
         }
     }
 

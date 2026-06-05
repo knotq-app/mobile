@@ -1,4 +1,5 @@
 import AuthenticationServices
+import CryptoKit
 import Foundation
 import StoreKit
 import SwiftUI
@@ -20,9 +21,6 @@ final class AppModel: ObservableObject {
     // True while a destructive account action (cancel subscription / delete
     // account) is in flight, so Settings can disable its buttons.
     @Published var syncAccountActionInProgress = false
-    // Set once a password login is accepted: the sign-in sheet then collects the
-    // emailed 2FA code, which `verifyLoginCode` exchanges for a session.
-    @Published var syncLoginChallenge: SyncLoginChallenge?
     @Published var syncInProgress = false
     @Published var googleAuthInProgress = false
     @Published var googleSyncInProgress = false
@@ -43,7 +41,8 @@ final class AppModel: ObservableObject {
     private let backgroundGoogleSyncKey = "knotq.lastBackgroundGoogleSyncAt"
     private var syncPollTask: Task<Void, Never>?
     private var googleSyncTask: Task<Void, Never>?
-    private var googleOAuthSession: GoogleOAuthSessionCoordinator?
+    private var googleOAuthSession: WebAuthenticationSessionCoordinator?
+    private var browserSignInSession: WebAuthenticationSessionCoordinator?
     private var transactionListener: Task<Void, Never>?
 
     init() {
@@ -390,7 +389,7 @@ final class AppModel: ObservableObject {
                 throw GoogleOAuthConfigError.message("Google returned an invalid authorization URL.")
             }
 
-            let session = GoogleOAuthSessionCoordinator()
+            let session = WebAuthenticationSessionCoordinator()
             googleOAuthSession = session
             let callbackURL = try await session.authenticate(url: authURL, callbackScheme: config.redirectScheme)
             let result = try await Task.detached {
@@ -408,7 +407,7 @@ final class AppModel: ObservableObject {
             }
             errorMessage = nil
         } catch {
-            if Self.isGoogleAuthCancellation(error) {
+            if Self.isWebAuthCancellation(error) {
                 return
             }
             errorMessage = error.localizedDescription
@@ -447,131 +446,134 @@ final class AppModel: ObservableObject {
         }
     }
 
-    func signInToSync(apiBase: String, email: String, password: String) async {
-        let apiBase = normalizedApiBase(apiBase)
-        guard !apiBase.isEmpty, let url = URL(string: "\(apiBase)/v1/auth/login") else {
-            errorMessage = "Enter a sync API URL."
-            return
-        }
-        guard !email.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, !password.isEmpty else {
-            errorMessage = "Enter your email and password."
+    private static let signInPageURL = "https://www.knotq.com/signin.html"
+    private static let signInRedirectScheme = "knotq"
+    private static let signInRedirectURI = "knotq://auth-callback"
+    private static let defaultSyncApiBase = "https://sync.knotq.com"
+
+    /// Start a browser-based sign-in (or account creation): open the hosted sign-in
+    /// page with a custom-scheme redirect + PKCE, then exchange the returned
+    /// one-time code for a session. No password is ever entered in — or stored by —
+    /// the app.
+    func beginBrowserSignIn(mode: SyncAuthMode) async {
+        guard !syncAuthInProgress else { return }
+        let apiBase = normalizedApiBase(syncSession?.apiBase ?? Self.defaultSyncApiBase)
+        let state = Self.randomURLToken(24)
+        // PKCE: the verifier never leaves the device; only its challenge rides the
+        // URL, so an intercepted code is useless without this app.
+        let verifier = Self.pkceVerifier()
+        let challenge = Self.pkceChallenge(verifier)
+        guard let authURL = Self.signInAuthorizeURL(
+            apiBase: apiBase,
+            mode: mode,
+            state: state,
+            codeChallenge: challenge,
+            redirectURI: Self.signInRedirectURI
+        ) else {
+            errorMessage = "Could not start sign-in."
             return
         }
 
         syncAuthInProgress = true
-        defer { syncAuthInProgress = false }
+        defer {
+            syncAuthInProgress = false
+            browserSignInSession = nil
+        }
 
         do {
-            var request = URLRequest(url: url)
-            request.httpMethod = "POST"
-            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-            request.httpBody = try JSONSerialization.data(withJSONObject: [
-                "email": email,
-                "password": password
-            ])
-            let (data, response) = try await URLSession.shared.data(for: request)
-            guard let http = response as? HTTPURLResponse else {
-                throw SyncAuthError.message("Sync backend returned an invalid response.")
-            }
-            guard (200..<300).contains(http.statusCode) else {
-                let code = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
-                throw SyncAuthError.message(Self.syncErrorMessage(code?["code"] as? String))
-            }
-            // A correct password earns a 2FA challenge, not a session: the backend
-            // emailed a code that `verifyLoginCode` will exchange for the session.
-            let challenge = try JSONDecoder().decode(SyncLoginChallengeResponse.self, from: data)
-            syncLoginChallenge = SyncLoginChallenge(
-                apiBase: apiBase,
-                email: email.trimmingCharacters(in: .whitespacesAndNewlines),
-                challengeId: challenge.challengeId,
-                devCode: challenge.devCode
+            let session = WebAuthenticationSessionCoordinator()
+            browserSignInSession = session
+            let callbackURL = try await session.authenticate(
+                url: authURL,
+                callbackScheme: Self.signInRedirectScheme
             )
-            errorMessage = nil
-        } catch {
-            errorMessage = error.localizedDescription
-        }
-    }
-
-    func createSyncAccount(apiBase: String, email: String, password: String) async {
-        let apiBase = normalizedApiBase(apiBase)
-        guard !apiBase.isEmpty, let url = URL(string: "\(apiBase)/v1/auth/signup") else {
-            errorMessage = "Enter a sync API URL."
-            return
-        }
-        let email = email.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !email.isEmpty, !password.isEmpty else {
-            errorMessage = "Enter your email and password."
-            return
-        }
-
-        syncAuthInProgress = true
-        defer { syncAuthInProgress = false }
-
-        do {
-            var request = URLRequest(url: url)
-            request.httpMethod = "POST"
-            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-            request.httpBody = try JSONSerialization.data(withJSONObject: [
-                "email": email,
-                "password": password
-            ])
-            let (data, response) = try await URLSession.shared.data(for: request)
-            guard let http = response as? HTTPURLResponse else {
-                throw SyncAuthError.message("Sync backend returned an invalid response.")
+            let items = URLComponents(url: callbackURL, resolvingAgainstBaseURL: false)?.queryItems ?? []
+            guard items.first(where: { $0.name == "state" })?.value == state else {
+                throw SyncAuthError.message("Sign-in could not be verified. Please try again.")
             }
-            guard (200..<300).contains(http.statusCode) else {
-                let code = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
-                throw SyncAuthError.message(Self.syncErrorMessage(code?["code"] as? String))
+            guard let code = items.first(where: { $0.name == "code" })?.value, !code.isEmpty else {
+                throw SyncAuthError.message("Sign-in did not complete.")
             }
-            let payload = try JSONDecoder().decode(SyncLoginResponse.self, from: data)
+            let payload = try await exchangeAuthorizeCode(apiBase: apiBase, code: code, codeVerifier: verifier)
             installSyncSession(payload, apiBase: apiBase)
-            syncLoginChallenge = nil
             errorMessage = nil
             await syncOnce()
         } catch {
+            if Self.isWebAuthCancellation(error) {
+                return
+            }
             errorMessage = error.localizedDescription
         }
     }
 
-    /// Second login step: exchange the emailed code for a session and finish signing in.
-    func verifyLoginCode(_ code: String) async {
-        guard let challenge = syncLoginChallenge,
-              let url = URL(string: "\(challenge.apiBase)/v1/auth/login/verify") else {
-            return
+    /// Redeem the one-time authorization code (with the PKCE verifier) for a session.
+    private func exchangeAuthorizeCode(
+        apiBase: String,
+        code: String,
+        codeVerifier: String
+    ) async throws -> SyncLoginResponse {
+        guard let url = URL(string: "\(apiBase)/v1/auth/authorize/exchange") else {
+            throw SyncAuthError.message("Enter a sync API URL.")
         }
-        let trimmedCode = code.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmedCode.isEmpty else {
-            errorMessage = "Enter the code we emailed you."
-            return
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try JSONSerialization.data(withJSONObject: [
+            "code": code,
+            "code_verifier": codeVerifier
+        ])
+        let (data, response) = try await URLSession.shared.data(for: request)
+        guard let http = response as? HTTPURLResponse else {
+            throw SyncAuthError.message("Sync backend returned an invalid response.")
         }
+        guard (200..<300).contains(http.statusCode) else {
+            let body = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
+            throw SyncAuthError.message(Self.authorizeErrorMessage(body?["code"] as? String))
+        }
+        return try JSONDecoder().decode(SyncLoginResponse.self, from: data)
+    }
 
-        syncAuthInProgress = true
-        defer { syncAuthInProgress = false }
+    private static func signInAuthorizeURL(
+        apiBase: String,
+        mode: SyncAuthMode,
+        state: String,
+        codeChallenge: String,
+        redirectURI: String
+    ) -> URL? {
+        var components = URLComponents(string: signInPageURL)
+        components?.queryItems = [
+            URLQueryItem(name: "redirect_uri", value: redirectURI),
+            URLQueryItem(name: "state", value: state),
+            URLQueryItem(name: "mode", value: mode == .createAccount ? "create" : "signin"),
+            URLQueryItem(name: "api", value: apiBase),
+            URLQueryItem(name: "code_challenge", value: codeChallenge),
+            URLQueryItem(name: "code_challenge_method", value: "S256")
+        ]
+        return components?.url
+    }
 
-        do {
-            var request = URLRequest(url: url)
-            request.httpMethod = "POST"
-            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-            request.httpBody = try JSONSerialization.data(withJSONObject: [
-                "challenge_id": challenge.challengeId,
-                "code": trimmedCode
-            ])
-            let (data, response) = try await URLSession.shared.data(for: request)
-            guard let http = response as? HTTPURLResponse else {
-                throw SyncAuthError.message("Sync backend returned an invalid response.")
-            }
-            guard (200..<300).contains(http.statusCode) else {
-                let code = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
-                throw SyncAuthError.message(Self.syncErrorMessage(code?["code"] as? String))
-            }
-            let payload = try JSONDecoder().decode(SyncLoginResponse.self, from: data)
-            installSyncSession(payload, apiBase: challenge.apiBase)
-            syncLoginChallenge = nil
-            errorMessage = nil
-            await syncOnce()
-        } catch {
-            errorMessage = error.localizedDescription
-        }
+    private static func pkceVerifier() -> String {
+        base64URLNoPad(randomData(32))
+    }
+
+    private static func pkceChallenge(_ verifier: String) -> String {
+        base64URLNoPad(Data(SHA256.hash(data: Data(verifier.utf8))))
+    }
+
+    private static func randomURLToken(_ byteCount: Int) -> String {
+        base64URLNoPad(randomData(byteCount))
+    }
+
+    private static func randomData(_ count: Int) -> Data {
+        var generator = SystemRandomNumberGenerator()
+        return Data((0..<count).map { _ in UInt8.random(in: UInt8.min...UInt8.max, using: &generator) })
+    }
+
+    private static func base64URLNoPad(_ data: Data) -> String {
+        data.base64EncodedString()
+            .replacingOccurrences(of: "+", with: "-")
+            .replacingOccurrences(of: "/", with: "_")
+            .replacingOccurrences(of: "=", with: "")
     }
 
     private func installSyncSession(_ payload: SyncLoginResponse, apiBase: String) {
@@ -589,11 +591,6 @@ final class AppModel: ObservableObject {
         saveSyncSession(session)
         startSyncPolling()
         BackgroundSyncCoordinator.shared.scheduleIfEligible(backgroundRefreshEligible)
-    }
-
-    /// Abandon a pending 2FA challenge (e.g. to sign in as a different account).
-    func cancelLoginChallenge() {
-        syncLoginChallenge = nil
     }
 
     func signOutSync() {
@@ -1064,26 +1061,14 @@ final class AppModel: ObservableObject {
         }
     }
 
-    private static func syncErrorMessage(_ code: String?) -> String {
+    /// The authorization code is minted by the hosted page and redeemed here, so the
+    /// only failures the app surfaces are a stale/replayed code.
+    private static func authorizeErrorMessage(_ code: String?) -> String {
         switch code {
-        case "account_exists":
-            return "An account already exists for that email."
-        case "invalid_email":
-            return "Enter a valid email address."
-        case "password_too_short":
-            return "Use a password with at least 12 characters."
-        case "unauthorized":
-            return "Email or password is incorrect."
-        case "password_too_long":
-            return "Password is too long."
-        case "invalid_code":
-            return "That code is incorrect."
-        case "code_expired", "invalid_or_expired_code":
-            return "That code has expired. Sign in again to get a new one."
-        case "too_many_attempts":
-            return "Too many incorrect codes. Sign in again to get a new one."
+        case "invalid_authorization_code", "authorization_code_expired", "invalid_code_challenge":
+            return "Sign-in could not be completed. Please try signing in again."
         default:
-            return "Sync account request failed."
+            return "Sign in failed."
         }
     }
 
@@ -1172,7 +1157,7 @@ final class AppModel: ObservableObject {
         return "com.googleusercontent.apps.\(clientID.dropLast(suffix.count))"
     }
 
-    private static func isGoogleAuthCancellation(_ error: Error) -> Bool {
+    private static func isWebAuthCancellation(_ error: Error) -> Bool {
         let nsError = error as NSError
         return nsError.domain == ASWebAuthenticationSessionError.errorDomain
             && nsError.code == ASWebAuthenticationSessionError.Code.canceledLogin.rawValue
@@ -1200,31 +1185,6 @@ final class AppModel: ObservableObject {
 
     static func date(from raw: String) -> Date? {
         MobileDate.parseDateOnly(raw)
-    }
-}
-
-/// A pending two-factor login awaiting its emailed code. `devCode` is only set
-/// against a dev backend (EXPOSE_EMAIL_TOKENS) and prefills the field for local testing.
-struct SyncLoginChallenge: Equatable {
-    let apiBase: String
-    let email: String
-    let challengeId: String
-    let devCode: String?
-}
-
-private struct SyncLoginChallengeResponse: Decodable {
-    let challengeId: String
-    let devCode: String?
-
-    enum CodingKeys: String, CodingKey {
-        case challengeId = "challenge_id"
-        case devCode = "dev_code"
-    }
-
-    init(from decoder: Decoder) throws {
-        let container = try decoder.container(keyedBy: CodingKeys.self)
-        challengeId = try container.decode(String.self, forKey: .challengeId)
-        devCode = try container.decodeIfPresent(String.self, forKey: .devCode)
     }
 }
 
@@ -1288,8 +1248,10 @@ private enum GoogleOAuthConfigError: LocalizedError {
     }
 }
 
+/// Drives an `ASWebAuthenticationSession` for any browser-redirect flow (Google
+/// Calendar import and sync sign-in), intercepting the custom callback scheme.
 @MainActor
-private final class GoogleOAuthSessionCoordinator: NSObject, ASWebAuthenticationPresentationContextProviding {
+private final class WebAuthenticationSessionCoordinator: NSObject, ASWebAuthenticationPresentationContextProviding {
     private var session: ASWebAuthenticationSession?
     private var continuation: CheckedContinuation<URL, Error>?
 
@@ -1309,7 +1271,7 @@ private final class GoogleOAuthSessionCoordinator: NSObject, ASWebAuthentication
                         } else if let callbackURL {
                             pending?.resume(returning: callbackURL)
                         } else {
-                            pending?.resume(throwing: GoogleOAuthConfigError.message("Google OAuth did not return a callback URL."))
+                            pending?.resume(throwing: GoogleOAuthConfigError.message("The browser did not return a callback URL."))
                         }
                     }
                 }
@@ -1319,7 +1281,7 @@ private final class GoogleOAuthSessionCoordinator: NSObject, ASWebAuthentication
                 if !next.start() {
                     self.session = nil
                     self.continuation = nil
-                    continuation.resume(throwing: GoogleOAuthConfigError.message("Could not start Google OAuth."))
+                    continuation.resume(throwing: GoogleOAuthConfigError.message("Could not open the browser."))
                 }
             }
         } onCancel: {

@@ -164,7 +164,8 @@ private struct KnotQUpcomingWidgetView: View {
                 }
             }
         }
-        .padding(.horizontal, 12)
+        .padding(.leading, systemLeadingPadding(dense: dense))
+        .padding(.trailing, systemTrailingPadding(dense: dense))
         .padding(.top, systemTopPadding(dense: dense))
         .padding(.bottom, systemBottomPadding(dense: dense))
     }
@@ -179,16 +180,36 @@ private struct KnotQUpcomingWidgetView: View {
 
     private func systemTopPadding(dense: Bool) -> CGFloat {
         if shouldCenterFullSmallWidget {
-            return 9
+            return 11
         }
-        return dense ? 5 : 6
+        return dense ? 10 : 11
     }
 
     private func systemBottomPadding(dense: Bool) -> CGFloat {
         if shouldCenterFullSmallWidget {
-            return 6
+            return 3
         }
-        return dense ? 8 : 9
+        if family == .systemMedium {
+            return 2
+        }
+        if family == .systemLarge {
+            return 3
+        }
+        return dense ? 4 : 5
+    }
+
+    private func systemLeadingPadding(dense: Bool) -> CGFloat {
+        if shouldCenterFullSmallWidget {
+            return 18
+        }
+        return dense ? 18 : 20
+    }
+
+    private func systemTrailingPadding(dense: Bool) -> CGFloat {
+        if shouldCenterFullSmallWidget {
+            return 14
+        }
+        return dense ? 14 : 16
     }
 
     private var currentDateHeader: some View {

@@ -98,9 +98,6 @@ struct OnboardingOverlay: View {
     let onFocus: (MobilePane?) -> Void
     let onComplete: () -> Void
 
-    @State private var showingSyncSheet = false
-    @State private var syncMode: SyncAuthMode = .createAccount
-
     var body: some View {
         ZStack {
             switch phase {
@@ -112,12 +109,15 @@ struct OnboardingOverlay: View {
         }
         .foregroundStyle(theme.textPrimary)
         .tint(theme.accent)
-        .sheet(isPresented: $showingSyncSheet) {
-            SyncSignInSheet(theme: theme, initialMode: syncMode) {
+    }
+
+    /// Sign-in happens in the browser; advance to the guide once a session lands.
+    private func authenticate(mode: SyncAuthMode) {
+        Task {
+            await model.beginBrowserSignIn(mode: mode)
+            if model.syncSession != nil {
                 beginGuide()
             }
-            .environmentObject(model)
-            .presentationDetents([.medium, .large])
         }
     }
 
@@ -156,20 +156,18 @@ struct OnboardingOverlay: View {
             VStack(spacing: 10) {
                 onboardingAction(
                     title: "Create Sync Account",
-                    detail: "Use the sync beta across devices.",
+                    detail: "Sign up in your browser and sync across devices.",
                     icon: "person.crop.circle.badge.plus"
                 ) {
-                    syncMode = .createAccount
-                    showingSyncSheet = true
+                    authenticate(mode: .createAccount)
                 }
 
                 onboardingAction(
                     title: "Sign In",
-                    detail: "Connect an existing KnotQ account.",
+                    detail: "Connect an existing KnotQ account in your browser.",
                     icon: "person.crop.circle"
                 ) {
-                    syncMode = .signIn
-                    showingSyncSheet = true
+                    authenticate(mode: .signIn)
                 }
 
                 Button {
@@ -181,6 +179,7 @@ struct OnboardingOverlay: View {
                         .frame(height: 46)
                 }
                 .buttonStyle(.bordered)
+                .disabled(model.syncAuthInProgress)
             }
 
             Text("You can add or remove sync later from Settings.")

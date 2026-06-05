@@ -6,25 +6,19 @@ final class MobileNotificationScheduler: NSObject, UNUserNotificationCenterDeleg
 
     private static let categoryID = "knotq-reminder"
     static let actionMarkDone = "knotq.mark_done"
-    static let actionSnooze1Minute = "knotq.snooze.1m"
-    static let actionSnooze5Minutes = "knotq.snooze.5m"
     static let actionSnooze10Minutes = "knotq.snooze.10m"
-    static let actionSnooze15Minutes = "knotq.snooze.15m"
-    static let actionSnooze30Minutes = "knotq.snooze.30m"
     static let actionSnooze1Hour = "knotq.snooze.1h"
     static let actionSnooze2Hours = "knotq.snooze.2h"
-    static let actionSnooze1Day = "knotq.snooze.1d"
-    static let actionSnooze1Week = "knotq.snooze.1w"
+    static let actionSnooze6Hours = "knotq.snooze.6h"
+    static let actionSnooze24Hours = "knotq.snooze.1d"
+    static let actionSnoozeTomorrowMorning = "knotq.snooze.tomorrow_morning"
     private static let snoozeActions: [(id: String, title: String)] = [
-        (actionSnooze1Minute, "Snooze 1m"),
-        (actionSnooze5Minutes, "Snooze 5m"),
         (actionSnooze10Minutes, "Snooze 10m"),
-        (actionSnooze15Minutes, "Snooze 15m"),
-        (actionSnooze30Minutes, "Snooze 30m"),
         (actionSnooze1Hour, "Snooze 1h"),
         (actionSnooze2Hours, "Snooze 2h"),
-        (actionSnooze1Day, "Snooze 1d"),
-        (actionSnooze1Week, "Snooze 1w")
+        (actionSnooze6Hours, "Snooze 6h"),
+        (actionSnooze24Hours, "Snooze 24h"),
+        (actionSnoozeTomorrowMorning, "Tomorrow Morning")
     ]
 
     @MainActor weak var model: AppModel?

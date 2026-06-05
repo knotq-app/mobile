@@ -100,9 +100,11 @@ struct HomeDashboardPane: View {
     let onNewFolder: () -> Void
     let onGoogleCalendar: (String?) -> Void
 
+    @State private var schemePreviewLayout: SchemePreviewLayout?
+
     var body: some View {
         GeometryReader { proxy in
-            let schemePreviewMaxHeight = max(180, proxy.size.height * 0.34)
+            let schemePreviewMaxHeight = schemePreviewLayout?.height ?? Self.schemePreviewHeight(for: proxy.size)
             ZStack(alignment: .bottomTrailing) {
                 ScrollView {
                     VStack(alignment: .leading, spacing: 16) {
@@ -147,9 +149,42 @@ struct HomeDashboardPane: View {
                     .padding(.bottom, 120)
             }
             .background(theme.bgApp)
+            .onAppear {
+                updateSchemePreviewLayout(for: proxy.size)
+            }
+            .onChange(of: proxy.size) { _, size in
+                updateSchemePreviewLayout(for: size)
+            }
         }
         // Fill the bottom safe-area lip so content scrolls to the screen edge.
         .ignoresSafeArea(.container, edges: .bottom)
+    }
+
+    private struct SchemePreviewLayout {
+        let containerSize: CGSize
+        let height: CGFloat
+    }
+
+    private static func schemePreviewHeight(for size: CGSize) -> CGFloat {
+        max(180, size.height * 0.34).rounded()
+    }
+
+    private func updateSchemePreviewLayout(for size: CGSize) {
+        guard size.width > 0, size.height > 0 else { return }
+        if let schemePreviewLayout,
+           abs(schemePreviewLayout.containerSize.width - size.width) <= 48,
+           abs(schemePreviewLayout.containerSize.height - size.height) <= 120 {
+            return
+        }
+
+        var transaction = Transaction()
+        transaction.disablesAnimations = true
+        withTransaction(transaction) {
+            schemePreviewLayout = SchemePreviewLayout(
+                containerSize: size,
+                height: Self.schemePreviewHeight(for: size)
+            )
+        }
     }
 
     private var selectedDateKey: String {
@@ -293,11 +328,12 @@ struct HomeNavigationPane: View {
                             onAdd: { onAddItem(scheme.id) },
                             usesNativeNavigation: true,
                             showsEditorNavigation: true,
+                            transparentOverlayNavigation: true,
                             autoFocusOnAppear: titleFocusSchemeID != scheme.id,
                             autoFocusTitleOnAppear: titleFocusSchemeID == scheme.id,
                             onAutoFocusTitleConsumed: { consumeTitleFocus(for: scheme.id) }
                         )
-                        .toolbar(.visible, for: .navigationBar)
+                        .toolbar(.hidden, for: .navigationBar)
                         .background {
                             NavigationStackInteractivePopEnabler(enabled: true)
                         }

@@ -50,8 +50,10 @@ const ACTION_SNOOZE_15_MINUTES: &str = "knotq.snooze.15m";
 const ACTION_SNOOZE_30_MINUTES: &str = "knotq.snooze.30m";
 const ACTION_SNOOZE_1_HOUR: &str = "knotq.snooze.1h";
 const ACTION_SNOOZE_2_HOURS: &str = "knotq.snooze.2h";
+const ACTION_SNOOZE_6_HOURS: &str = "knotq.snooze.6h";
 const ACTION_SNOOZE_1_DAY: &str = "knotq.snooze.1d";
 const ACTION_SNOOZE_1_WEEK: &str = "knotq.snooze.1w";
+const ACTION_SNOOZE_TOMORROW_MORNING: &str = "knotq.snooze.tomorrow_morning";
 const ACTION_MARK_DONE: &str = "knotq.mark_done";
 const NOTIFICATION_SNOOZE_ACTIONS: &[(&str, i64)] = &[
     (ACTION_SNOOZE_1_MINUTE, 60),
@@ -61,6 +63,7 @@ const NOTIFICATION_SNOOZE_ACTIONS: &[(&str, i64)] = &[
     (ACTION_SNOOZE_30_MINUTES, 30 * 60),
     (ACTION_SNOOZE_1_HOUR, 60 * 60),
     (ACTION_SNOOZE_2_HOURS, 2 * 60 * 60),
+    (ACTION_SNOOZE_6_HOURS, 6 * 60 * 60),
     (ACTION_SNOOZE_1_DAY, 24 * 60 * 60),
     (ACTION_SNOOZE_1_WEEK, 7 * 24 * 60 * 60),
 ];
@@ -947,6 +950,15 @@ impl MobileCoreInner {
                 scheme: scheme_id,
                 item: item_id,
                 occurrence,
+            }
+        } else if action_id == ACTION_SNOOZE_TOMORROW_MORNING {
+            Command::SetOccurrenceNotificationOffset {
+                scheme: scheme_id,
+                item: item_id,
+                occurrence,
+                offset_secs: Some(
+                    (trigger_at - notification_tomorrow_morning_utc()).num_seconds(),
+                ),
             }
         } else if let Some((_, delay_secs)) = NOTIFICATION_SNOOZE_ACTIONS
             .iter()
@@ -2825,6 +2837,20 @@ fn local_midnight_utc(date: NaiveDate) -> Result<DateTime<Utc>> {
     Ok(local.with_timezone(&Utc))
 }
 
+fn notification_tomorrow_morning_utc() -> DateTime<Utc> {
+    let tomorrow = Local::now().date_naive() + Duration::days(1);
+    let Some(naive) = tomorrow.and_hms_opt(9, 0, 0) else {
+        return Utc::now() + Duration::days(1);
+    };
+    let local = Local
+        .from_local_datetime(&naive)
+        .single()
+        .or_else(|| Local.from_local_datetime(&naive).earliest())
+        .or_else(|| Local.from_local_datetime(&naive).latest())
+        .unwrap_or_else(|| Local::now() + Duration::days(1));
+    local.with_timezone(&Utc)
+}
+
 fn mobile_upcoming(
     indexed: &IndexedWorkspace,
     from: DateTime<Utc>,
@@ -3538,6 +3564,115 @@ mod tests {
             .pending_notifications(Some("2026-05-27T12:00:00Z".to_string()), 14)
             .expect("pending notifications after action");
         assert!(!requests.iter().any(|request| request.title == "Send deck"));
+
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn notification_snooze_actions_reschedule_visible_ios_options() {
+        for (action, delay_secs) in [
+            (ACTION_SNOOZE_10_MINUTES, 10 * 60),
+            (ACTION_SNOOZE_1_HOUR, 60 * 60),
+            (ACTION_SNOOZE_2_HOURS, 2 * 60 * 60),
+            (ACTION_SNOOZE_6_HOURS, 6 * 60 * 60),
+            (ACTION_SNOOZE_1_DAY, 24 * 60 * 60),
+        ] {
+            let dir =
+                std::env::temp_dir().join(format!("knotq-mobile-test-{}", uuid::Uuid::new_v4()));
+            let core = MobileCore::new(dir.display().to_string()).expect("open mobile core");
+            let now = Utc::now();
+            let trigger_at = now + Duration::days(3);
+            let date = trigger_at.date_naive().to_string();
+
+            core.add_calendar_item(
+                None,
+                Some(date),
+                format!("Snooze {action}"),
+                "reminder".to_string(),
+                Some(format_datetime(trigger_at)),
+                None,
+            )
+            .expect("add reminder");
+
+            let request = core
+                .pending_notifications(Some(format_datetime(now)), 14)
+                .expect("pending notifications")
+                .into_iter()
+                .find(|request| request.title == format!("Snooze {action}"))
+                .expect("new reminder notification");
+
+            let started = Utc::now();
+            let changed = core
+                .apply_notification_action(
+                    action.to_string(),
+                    request.scheme_id.clone(),
+                    request.item_id.clone(),
+                    request.occurrence_json.clone(),
+                    request.trigger_at.clone(),
+                )
+                .expect("snooze");
+            let finished = Utc::now();
+            assert!(changed);
+
+            let snoozed = core
+                .pending_notifications(Some(format_datetime(finished)), 14)
+                .expect("pending notifications after snooze")
+                .into_iter()
+                .find(|request| request.title == format!("Snooze {action}"))
+                .expect("snoozed reminder notification");
+            let fire_at = parse_datetime(&snoozed.fire_at).expect("snoozed fire_at");
+            let expected_delay = Duration::seconds(delay_secs);
+            assert!(fire_at >= started + expected_delay - Duration::seconds(1));
+            assert!(fire_at <= finished + expected_delay + Duration::seconds(1));
+
+            let _ = std::fs::remove_dir_all(dir);
+        }
+
+        let dir = std::env::temp_dir().join(format!("knotq-mobile-test-{}", uuid::Uuid::new_v4()));
+        let core = MobileCore::new(dir.display().to_string()).expect("open mobile core");
+        let now = Utc::now();
+        let trigger_at = now + Duration::days(3);
+        let date = trigger_at.date_naive().to_string();
+
+        core.add_calendar_item(
+            None,
+            Some(date),
+            "Snooze tomorrow morning".to_string(),
+            "reminder".to_string(),
+            Some(format_datetime(trigger_at)),
+            None,
+        )
+        .expect("add reminder");
+
+        let request = core
+            .pending_notifications(Some(format_datetime(now)), 14)
+            .expect("pending notifications")
+            .into_iter()
+            .find(|request| request.title == "Snooze tomorrow morning")
+            .expect("new reminder notification");
+
+        let expected_started = notification_tomorrow_morning_utc();
+        let changed = core
+            .apply_notification_action(
+                ACTION_SNOOZE_TOMORROW_MORNING.to_string(),
+                request.scheme_id.clone(),
+                request.item_id.clone(),
+                request.occurrence_json.clone(),
+                request.trigger_at.clone(),
+            )
+            .expect("snooze tomorrow morning");
+        let expected_finished = notification_tomorrow_morning_utc();
+        assert!(changed);
+
+        let snoozed = core
+            .pending_notifications(Some(format_datetime(Utc::now())), 14)
+            .expect("pending notifications after snooze")
+            .into_iter()
+            .find(|request| request.title == "Snooze tomorrow morning")
+            .expect("snoozed reminder notification");
+        let fire_at = parse_datetime(&snoozed.fire_at).expect("snoozed fire_at");
+        assert!(fire_at >= expected_started - Duration::seconds(1));
+        assert!(fire_at <= expected_finished + Duration::seconds(1));
 
         let _ = std::fs::remove_dir_all(dir);
     }
