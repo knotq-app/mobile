@@ -52,10 +52,8 @@ struct LocalSyncSession: Codable, Equatable, Sendable {
     // Short-lived access token; `expiresAt` is its expiry.
     var bearerToken: String
     var expiresAt: String
-    // Long-lived, rotated-on-refresh credential and its (sliding) expiry. Optional
-    // so a session persisted before refresh tokens existed still decodes; a missing
-    // refresh token just forces a one-time re-login.
-    var refreshToken: String?
+    // Long-lived, rotated-on-refresh credential and its (sliding) expiry.
+    var refreshToken: String
     var refreshExpiresAt: String?
 
     enum CodingKeys: String, CodingKey {
@@ -76,7 +74,7 @@ struct LocalSyncSession: Codable, Equatable, Sendable {
         supportsSync: Bool = true,
         bearerToken: String,
         expiresAt: String,
-        refreshToken: String? = nil,
+        refreshToken: String,
         refreshExpiresAt: String? = nil
     ) {
         self.apiBase = apiBase
@@ -97,7 +95,7 @@ struct LocalSyncSession: Codable, Equatable, Sendable {
         supportsSync = try container.decodeIfPresent(Bool.self, forKey: .supportsSync) ?? true
         bearerToken = try container.decode(String.self, forKey: .bearerToken)
         expiresAt = try container.decode(String.self, forKey: .expiresAt)
-        refreshToken = try container.decodeIfPresent(String.self, forKey: .refreshToken)
+        refreshToken = try container.decode(String.self, forKey: .refreshToken)
         refreshExpiresAt = try container.decodeIfPresent(String.self, forKey: .refreshExpiresAt)
     }
 }

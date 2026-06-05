@@ -29,8 +29,7 @@ final class AppModel: ObservableObject {
     @Published var syncProducts: [Product] = []
     @Published var purchaseInProgress = false
 
-    // App Store Connect product id(s) for the sync subscription. Replace with your
-    // own auto-renewable subscription product id(s).
+    // App Store Connect product id(s) for the sync subscription.
     static let syncProductIDs: Set<String> = ["com.knotq.sync.monthly"]
     private static let foregroundGoogleSyncIntervalNanos: UInt64 = 120_000_000_000
     private static let backgroundGoogleSyncInterval: TimeInterval = 6 * 60 * 60
@@ -49,13 +48,6 @@ final class AppModel: ObservableObject {
         bridge = try? RustBridge()
         iso.formatOptions = [.withInternetDateTime]
         syncSession = Self.loadSyncSession(key: syncSessionKey)
-        if let session = syncSession {
-            let migrated = Self.migratedSyncSession(session)
-            if migrated != session {
-                syncSession = migrated
-                saveSyncSession(migrated)
-            }
-        }
         if bridge == nil {
             errorMessage = "Rust core failed to initialize"
         }
@@ -449,7 +441,7 @@ final class AppModel: ObservableObject {
     private static let signInPageURL = "https://www.knotq.com/signin.html"
     private static let signInRedirectScheme = "knotq"
     private static let signInRedirectURI = "knotq://auth-callback"
-    private static let defaultSyncApiBase = "https://sync.knotq.com"
+    private static let defaultSyncApiBase = "https://api.knotq.com"
 
     /// Start a browser-based sign-in (or account creation): open the hosted sign-in
     /// page with a custom-scheme redirect + PKCE, then exchange the returned
@@ -630,7 +622,11 @@ final class AppModel: ObservableObject {
             }
             let payload = try JSONDecoder().decode(SyncLoginResponse.self, from: data)
             installSyncSession(payload, apiBase: session.apiBase)
-            errorMessage = "Sync has been turned off for this account. Your local workspace stays on this device, and you can sign in again later to re-enable sync."
+            if syncSession?.supportsSync == true {
+                errorMessage = "Your subscription has been cancelled. Sync remains available until the current billing period ends."
+            } else {
+                errorMessage = "Sync has been turned off for this account. Your local workspace stays on this device, and you can sign in again later to re-enable sync."
+            }
         } catch {
             errorMessage = error.localizedDescription
         }
@@ -754,7 +750,7 @@ final class AppModel: ObservableObject {
     func refreshEntitlement() async {
         guard !syncInProgress,
               let session = syncSession,
-              let refreshToken = session.refreshToken, !refreshToken.isEmpty,
+              !session.refreshToken.isEmpty,
               let url = URL(string: "\(session.apiBase)/v1/auth/refresh") else {
             return
         }
@@ -764,7 +760,7 @@ final class AppModel: ObservableObject {
             var request = URLRequest(url: url)
             request.httpMethod = "POST"
             request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-            request.httpBody = try JSONSerialization.data(withJSONObject: ["refresh_token": refreshToken])
+            request.httpBody = try JSONSerialization.data(withJSONObject: ["refresh_token": session.refreshToken])
             let (data, response) = try await URLSession.shared.data(for: request)
             guard let http = response as? HTTPURLResponse else { return }
             if http.statusCode == 401 {
@@ -777,9 +773,7 @@ final class AppModel: ObservableObject {
             var updated = session
             updated.bearerToken = payload.bearerToken
             updated.expiresAt = payload.expiresAt
-            if let rotated = payload.refreshToken, !rotated.isEmpty {
-                updated.refreshToken = rotated
-            }
+            updated.refreshToken = payload.refreshToken
             updated.refreshExpiresAt = payload.refreshExpiresAt
             updated.supportsSync = payload.supportsSync
             syncSession = updated
@@ -881,10 +875,10 @@ final class AppModel: ObservableObject {
     /// refresh token itself is dead; transient failures keep the current token.
     private func refreshSyncSessionIfNeeded() async -> Bool {
         guard let session = syncSession else { return false }
-        guard let refreshToken = session.refreshToken, !refreshToken.isEmpty else {
-            // Legacy session without a refresh token: proceed; if the access token
-            // has lapsed the sync fails and the user can sign in again.
-            return true
+        guard !session.refreshToken.isEmpty else {
+            signOutSync()
+            errorMessage = "Your sync session expired. Please sign in again."
+            return false
         }
         guard Self.tokenNeedsRefresh(session.expiresAt),
               let url = URL(string: "\(session.apiBase)/v1/auth/refresh")
@@ -895,7 +889,7 @@ final class AppModel: ObservableObject {
             var request = URLRequest(url: url)
             request.httpMethod = "POST"
             request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-            request.httpBody = try JSONSerialization.data(withJSONObject: ["refresh_token": refreshToken])
+            request.httpBody = try JSONSerialization.data(withJSONObject: ["refresh_token": session.refreshToken])
             let (data, response) = try await URLSession.shared.data(for: request)
             guard let http = response as? HTTPURLResponse else { return true }
             if http.statusCode == 401 {
@@ -912,9 +906,7 @@ final class AppModel: ObservableObject {
             var updated = session
             updated.bearerToken = payload.bearerToken
             updated.expiresAt = payload.expiresAt
-            if let rotated = payload.refreshToken, !rotated.isEmpty {
-                updated.refreshToken = rotated
-            }
+            updated.refreshToken = payload.refreshToken
             updated.refreshExpiresAt = payload.refreshExpiresAt
             updated.supportsSync = payload.supportsSync
             syncSession = updated
@@ -1039,26 +1031,8 @@ final class AppModel: ObservableObject {
     }
 
     private func normalizedApiBase(_ raw: String) -> String {
-        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        raw.trimmingCharacters(in: .whitespacesAndNewlines)
             .trimmingCharacters(in: CharacterSet(charactersIn: "/"))
-        return Self.migratedApiBase(trimmed)
-    }
-
-    private static func migratedSyncSession(_ session: LocalSyncSession) -> LocalSyncSession {
-        var migrated = session
-        migrated.apiBase = migratedApiBase(session.apiBase)
-        return migrated
-    }
-
-    private static func migratedApiBase(_ apiBase: String) -> String {
-        let trimmed = apiBase.trimmingCharacters(in: .whitespacesAndNewlines)
-            .trimmingCharacters(in: CharacterSet(charactersIn: "/"))
-        switch trimmed {
-        case "http://127.0.0.1:7878", "http://localhost:7878":
-            return "http://127.0.0.1:8787"
-        default:
-            return trimmed
-        }
     }
 
     /// The authorization code is minted by the hosted page and redeemed here, so the
@@ -1078,8 +1052,12 @@ final class AppModel: ObservableObject {
             return "Your sync session expired. Sign in again, then retry."
         case "delete_confirmation_mismatch":
             return "Could not confirm the account. Please try again."
+        case "billing_api_not_configured":
+            return "Subscription cancellation is not configured yet."
+        case "cancel_in_app_store":
+            return "Manage this App Store subscription from your Apple account subscriptions."
         default:
-            return "The request to the sync backend failed."
+            return "The request to the sync API failed."
         }
     }
 
@@ -1194,7 +1172,7 @@ private struct SyncLoginResponse: Decodable {
     let supportsSync: Bool
     let bearerToken: String
     let expiresAt: String
-    let refreshToken: String?
+    let refreshToken: String
     let refreshExpiresAt: String?
 
     enum CodingKeys: String, CodingKey {
@@ -1214,7 +1192,7 @@ private struct SyncLoginResponse: Decodable {
         supportsSync = try container.decodeIfPresent(Bool.self, forKey: .supportsSync) ?? true
         bearerToken = try container.decode(String.self, forKey: .bearerToken)
         expiresAt = try container.decode(String.self, forKey: .expiresAt)
-        refreshToken = try container.decodeIfPresent(String.self, forKey: .refreshToken)
+        refreshToken = try container.decode(String.self, forKey: .refreshToken)
         refreshExpiresAt = try container.decodeIfPresent(String.self, forKey: .refreshExpiresAt)
     }
 }

@@ -17,9 +17,16 @@ struct SyncSettingsHeader: View {
     let theme: KnotQTheme
 
     var body: some View {
-        Label("Sync", systemImage: "icloud.and.arrow.up")
-            .font(.caption.weight(.bold))
-            .foregroundStyle(theme.accent)
+        HStack(spacing: 6) {
+            Image("BrandLogo")
+                .resizable()
+                .scaledToFit()
+                .frame(width: 15, height: 15)
+                .clipShape(RoundedRectangle(cornerRadius: 3.5, style: .continuous))
+            Text("Sync")
+                .font(.caption.weight(.bold))
+                .foregroundStyle(theme.accent)
+        }
     }
 }
 

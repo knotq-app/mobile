@@ -161,6 +161,7 @@ private struct KnotQUpcomingWidgetView: View {
                         }
                     }
                     .frame(maxWidth: .infinity, alignment: .topLeading)
+                    .padding(.top, wideRowsTopPadding(columns: columns))
                 }
             }
         }
@@ -196,6 +197,10 @@ private struct KnotQUpcomingWidgetView: View {
             return 3
         }
         return dense ? 4 : 5
+    }
+
+    private func wideRowsTopPadding(columns: Int) -> CGFloat {
+        family == .systemMedium && columns > 1 ? 6 : 0
     }
 
     private func systemLeadingPadding(dense: Bool) -> CGFloat {

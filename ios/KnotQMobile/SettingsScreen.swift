@@ -123,12 +123,12 @@ struct SettingsScreen: View {
             isPresented: $showingCancelConfirm,
             titleVisibility: .visible
         ) {
-            Button("Turn Off Sync", role: .destructive) {
+            Button("Cancel Subscription", role: .destructive) {
                 Task { await model.cancelSyncSubscription() }
             }
             Button("Keep Sync", role: .cancel) {}
         } message: {
-            Text("Sync stops on all your devices. Your local workspace stays on this device, and you can sign in again later to re-enable sync.")
+            Text("Your local workspace stays on this device. Paid sync may remain available until the current billing period ends.")
         }
         .confirmationDialog(
             "Delete account?",

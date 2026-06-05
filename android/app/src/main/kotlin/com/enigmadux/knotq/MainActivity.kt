@@ -6,14 +6,9 @@ import android.app.DatePickerDialog
 import android.content.ActivityNotFoundException
 import android.content.Intent
 import android.content.res.Configuration
-import android.graphics.Bitmap
-import android.graphics.BitmapFactory
-import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
-import android.graphics.Path
 import android.graphics.Rect
-import android.graphics.RectF
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
 import android.net.Uri
@@ -23,21 +18,11 @@ import android.os.Handler
 import android.os.Looper
 import android.text.Editable
 import android.text.InputType
-import android.text.Spannable
 import android.text.TextWatcher
-import android.text.style.AbsoluteSizeSpan
-import android.text.style.ForegroundColorSpan
-import android.text.style.LineBackgroundSpan
-import android.text.style.LineHeightSpan
-import android.text.style.LeadingMarginSpan
-import android.text.style.ReplacementSpan
-import android.text.style.StyleSpan
-import android.text.style.StrikethroughSpan
 import android.view.MotionEvent
 import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
-import android.view.inputmethod.BaseInputConnection
 import android.view.inputmethod.EditorInfo
 import android.view.inputmethod.InputMethodManager
 import android.widget.ArrayAdapter
@@ -46,6 +31,7 @@ import android.widget.DatePicker
 import android.widget.EditText
 import android.widget.FrameLayout
 import android.widget.HorizontalScrollView
+import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.Spinner
@@ -68,25 +54,18 @@ import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.roundToInt
 
-private const val EDITOR_TEXT_LEFT_PAD_DP = 35
-private const val EDITOR_MARKER_SLOT_DP = 21
-private const val EDITOR_INDENT_WIDTH_DP = 15
-private const val EDITOR_CHECKBOX_SIZE_DP = 14
-private const val EDITOR_ANNOTATION_HEIGHT_DP = 14
-private const val EDITOR_ANNOTATION_BAR_GAP_DP = 8
-private const val EDITOR_ANNOTATION_TEXT_GAP_DP = 7
-private const val EDITOR_INDENT_GUIDE_X_SHIFT_DP = 2
-private const val EDITOR_IMAGE_TOP_GAP_DP = 8
-private const val EDITOR_IMAGE_STACK_GAP_DP = 7
-private const val EDITOR_IMAGE_MAX_HEIGHT_DP = 300
-private const val EDITOR_IMAGE_FALLBACK_WIDTH_DP = 320
-private const val EDITOR_IMAGE_FALLBACK_HEIGHT_DP = 180
 private const val SYNC_SESSION_PREF = "knotq.localSyncSession"
-private const val DEFAULT_SYNC_API_BASE = "http://10.0.2.2:8787"
+private const val DEFAULT_SYNC_API_BASE = "https://api.knotq.com"
 private const val GOOGLE_CLIENT_ID = "419826075228-gn6gj1l20nltil67odvf00u3i7n8a2ld.apps.googleusercontent.com"
 private const val GOOGLE_REDIRECT_SCHEME = "com.googleusercontent.apps.419826075228-gn6gj1l20nltil67odvf00u3i7n8a2ld"
 private const val GOOGLE_REDIRECT_URI = "$GOOGLE_REDIRECT_SCHEME:/oauth2redirect"
 private const val GOOGLE_SYNC_INTERVAL_MS = 120_000L
+private const val TAB_CALENDAR = 0
+private const val TAB_SCHEMES = 1
+private const val TAB_DAILY = 2
+private const val TAB_SEARCH = 3
+private const val TAB_SETTINGS = 4
+private const val TAB_HOME = 5
 
 private data class SyncSession(
     val apiBase: String,
@@ -96,10 +75,8 @@ private data class SyncSession(
     // Short-lived access token; `expiresAt` is its expiry.
     val bearerToken: String,
     val expiresAt: String,
-    // Long-lived, rotated-on-refresh credential and its (sliding) expiry. Nullable
-    // so a session persisted before refresh tokens existed still loads; a missing
-    // refresh token just forces a one-time re-login.
-    val refreshToken: String? = null,
+    // Long-lived, rotated-on-refresh credential and its (sliding) expiry.
+    val refreshToken: String,
     val refreshExpiresAt: String? = null
 )
 
@@ -126,7 +103,7 @@ class MainActivity : Activity() {
     private lateinit var theme: UiTheme
 
     private var snapshot = JSONObject()
-    private var selectedTab = 0
+    private var selectedTab = TAB_HOME
     private var weekOffset = 0
     private var selectedDate: LocalDate = LocalDate.now()
     private var selectedSchemeId: String? = null
@@ -164,6 +141,7 @@ class MainActivity : Activity() {
             bridge = RustBridge(this)
             syncSession = loadSyncSession()
             loadSnapshot()
+            ensureTodayDailyQueue()
             applyTheme()
             buildShell()
             render()
@@ -250,14 +228,17 @@ class MainActivity : Activity() {
 
     private fun renderTitleBar() {
         titleBar.removeAllViews()
-        titleBar.addView(colorSquare(titleColor(), 18), LinearLayout.LayoutParams(dp(18), dp(18)))
+        titleBar.addView(
+            if (selectedTab == TAB_HOME) brandMark(20) else colorSquare(titleColor(), 18),
+            LinearLayout.LayoutParams(dp(if (selectedTab == TAB_HOME) 20 else 18), dp(if (selectedTab == TAB_HOME) 20 else 18))
+        )
         titleBar.addView(text(titleText(), theme.textPrimary, 14f, true).apply {
             gravity = Gravity.CENTER
             maxLines = 1
         }, LinearLayout.LayoutParams(0, -1, 1f))
 
         titleBar.addView(chip("Search") {
-            selectedTab = 3
+            selectedTab = TAB_SEARCH
             selectedSchemeId = null
             render()
         }, marginRight(dp(6), -2, dp(28)))
@@ -269,12 +250,14 @@ class MainActivity : Activity() {
 
     private fun renderDock() {
         dock.removeAllViews()
-        listOf(0 to "Calendar", 1 to "Schemes", 3 to "Search", 4 to "Settings").forEach { (index, label) ->
-            val tab = text(label, if (selectedTab == index || selectedTab == 2 && index == 1) theme.textPrimary else theme.textMuted, 11f, true).apply {
+        listOf(TAB_HOME to "Home", TAB_CALENDAR to "Calendar", TAB_SETTINGS to "Settings").forEach { (index, label) ->
+            val selected = selectedTab == index ||
+                (index == TAB_HOME && selectedTab in listOf(TAB_SCHEMES, TAB_DAILY, TAB_SEARCH))
+            val tab = text(label, if (selected) theme.textPrimary else theme.textMuted, 11f, true).apply {
                 gravity = Gravity.CENTER
                 setOnClickListener {
                     selectedTab = index
-                    if (index != 1) selectedSchemeId = null
+                    if (index != TAB_SCHEMES) selectedSchemeId = null
                     render()
                 }
             }
@@ -340,16 +323,20 @@ class MainActivity : Activity() {
     }
 
     private fun renderPhoneMain(): View =
-        if (selectedTab == 0 || selectedTab == 1 || selectedTab == 2) renderMain() else scroll(renderMain())
+        when (selectedTab) {
+            TAB_SEARCH, TAB_SETTINGS -> scroll(renderMain())
+            else -> renderMain()
+        }
 
     private fun renderMain(): View {
         return when (selectedTab) {
-            0 -> renderCalendar()
-            1 -> selectedSchemeId?.let(::findScheme)?.let(::renderSchemeEditor) ?: renderListsPage()
-            2 -> renderDaily()
-            3 -> renderSearch()
-            4 -> renderSettings()
-            else -> renderCalendar()
+            TAB_HOME -> renderHome()
+            TAB_CALENDAR -> renderCalendar()
+            TAB_SCHEMES -> selectedSchemeId?.let(::findScheme)?.let(::renderSchemeEditor) ?: renderListsPage()
+            TAB_DAILY -> renderDaily()
+            TAB_SEARCH -> renderSearch()
+            TAB_SETTINGS -> renderSettings()
+            else -> renderHome()
         }
     }
 
@@ -359,13 +346,18 @@ class MainActivity : Activity() {
             setPadding(dp(8), dp(10), dp(8), dp(8))
             background = rounded(theme.bgSidebar, dp(10), theme.borderOverlay)
         }
-        panel.addView(navSpecial("Calendar", theme.textPrimary, selectedTab == 0) {
-            selectedTab = 0
+        panel.addView(navSpecial("Home", theme.accent, selectedTab == TAB_HOME) {
+            selectedTab = TAB_HOME
             selectedSchemeId = null
             render()
         })
-        panel.addView(navSpecial("Daily", if (theme.isDark) rgb(0xb8c9e8) else rgb(0x5a7aad), selectedTab == 2) {
-            selectedTab = 2
+        panel.addView(navSpecial("Calendar", theme.textPrimary, selectedTab == TAB_CALENDAR) {
+            selectedTab = TAB_CALENDAR
+            selectedSchemeId = null
+            render()
+        })
+        panel.addView(navSpecial("Daily", if (theme.isDark) rgb(0xb8c9e8) else rgb(0x5a7aad), selectedTab == TAB_DAILY) {
+            selectedTab = TAB_DAILY
             selectedSchemeId = null
             ensureDaily()
         })
@@ -381,12 +373,131 @@ class MainActivity : Activity() {
             gravity = Gravity.CENTER_VERTICAL
             addView(chip("New") { showNewMenu() }, LinearLayout.LayoutParams(0, dp(30), 1f))
             addView(chip("⚙") {
-                selectedTab = 4
+                selectedTab = TAB_SETTINGS
                 selectedSchemeId = null
                 render()
             }, LinearLayout.LayoutParams(dp(33), dp(30)).apply { setMargins(dp(6), 0, 0, 0) })
         })
         return panel
+    }
+
+    private fun renderHome(): LinearLayout {
+        val root = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setBackgroundColor(theme.bgApp)
+        }
+        val body = page()
+        body.addView(homeHeader(), spaced())
+        body.addView(homeQuickActions(), LinearLayout.LayoutParams(-1, dp(34)).apply {
+            setMargins(0, 0, 0, dp(14))
+        })
+        body.addView(sectionHeader("Today"))
+        body.addView(homeDailySummaryRow(), LinearLayout.LayoutParams(-1, dp(48)).apply {
+            setMargins(0, 0, 0, dp(8))
+        })
+        addOccurrenceSection(body, "Today", "None today", todayOccurrences())
+
+        body.addView(sectionHeader("Schemes"))
+        val tree = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(0, dp(2), 0, dp(2))
+        }
+        snapshot.optJSONObject("root")?.optJSONArray("children")?.forEachObject {
+            addNode(tree, it, 0, spacious = true)
+        }
+        if (tree.childCount == 0) {
+            tree.addView(text("No schemes", theme.textMuted, 13f, false).apply {
+                setPadding(dp(8), dp(6), dp(8), dp(10))
+            })
+        }
+        body.addView(tree, spaced())
+        body.addView(archiveNavigatorSection(compact = false), spaced())
+
+        if (resources.configuration.screenWidthDp < 760) {
+            val combined = JSONArray()
+            calendar().optJSONArray("overdue")?.forEachObject { combined.put(it) }
+            calendar().optJSONArray("upcoming")?.forEachObject { combined.put(it) }
+            addOccurrenceSection(body, "Upcoming", "Nothing scheduled", combined)
+        }
+        root.addView(scroll(body), LinearLayout.LayoutParams(-1, 0, 1f))
+        return root
+    }
+
+    private fun homeHeader(): View =
+        LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            addView(brandMark(36), LinearLayout.LayoutParams(dp(36), dp(36)).apply {
+                setMargins(0, 0, dp(10), 0)
+            })
+            addView(LinearLayout(this@MainActivity).apply {
+                orientation = LinearLayout.VERTICAL
+                addView(text("KnotQ", theme.textPrimary, 22f, true), LinearLayout.LayoutParams(-1, dp(24)))
+                addView(text(MobileDateFormatting.fullDay(selectedDate.toString()), theme.textDim, 12f, false), LinearLayout.LayoutParams(-1, dp(16)))
+            }, LinearLayout.LayoutParams(0, -2, 1f))
+        }
+
+    private fun homeQuickActions(): View =
+        HorizontalScrollView(this).apply {
+            isHorizontalScrollBarEnabled = false
+            addView(LinearLayout(this@MainActivity).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+                addView(chip("Daily Item") { addDailyItemFromHome() }, marginRight(dp(6), -2, dp(30)))
+                addView(chip("Calendar Item") { showCalendarItemDialog() }, marginRight(dp(6), -2, dp(30)))
+                addView(chip("New Scheme") {
+                    showNameDialog("New Scheme", "", { validateSchemeName(it, folderId = rootFolderId()) }) { name ->
+                        mutate(obj("type" to "create_scheme", "name" to name, "position" to 0))
+                    }
+                }, marginRight(dp(6), -2, dp(30)))
+                addView(chip("New Folder") {
+                    showNameDialog("New Folder", "", { validateFolderName(it) }) { name ->
+                        mutate(obj("type" to "create_folder", "name" to name))
+                    }
+                }, marginRight(dp(6), -2, dp(30)))
+                addView(chip("Google Calendar") { startGoogleCalendarImport() }, LinearLayout.LayoutParams(-2, dp(30)))
+            })
+        }
+
+    private fun homeDailySummaryRow(): View {
+        val entry = dailyEntryForHome()
+        val scheme = entry?.optJSONObject("scheme")
+        val itemCount = scheme?.optJSONArray("items")?.length() ?: 0
+        val doneCount = countDoneItems(scheme)
+        val date = entry?.optString("date") ?: selectedDate.toString()
+        val detail = if (itemCount == 0) "No items" else "$doneCount / $itemCount complete"
+        return LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(dp(10), 0, dp(8), 0)
+            background = rounded(theme.rowSelected, dp(7), theme.dividerSoft)
+            addView(colorSquare(dailyAccent(), 10), LinearLayout.LayoutParams(dp(10), dp(10)).apply {
+                setMargins(0, 0, dp(9), 0)
+            })
+            addView(LinearLayout(this@MainActivity).apply {
+                orientation = LinearLayout.VERTICAL
+                addView(text("Daily", theme.textPrimary, 14f, true), LinearLayout.LayoutParams(-1, dp(20)))
+                addView(text("${MobileDateFormatting.shortDay(date)} · $detail", theme.textDim, 12f, false), LinearLayout.LayoutParams(-1, dp(17)))
+            }, LinearLayout.LayoutParams(0, -2, 1f))
+            addView(text("+", theme.textPrimary, 16f, true).apply {
+                gravity = Gravity.CENTER
+                setOnClickListener { addDailyItemFromHome() }
+            }, LinearLayout.LayoutParams(dp(32), dp(34)))
+            setOnClickListener {
+                selectedTab = TAB_DAILY
+                selectedSchemeId = null
+                runCatching { LocalDate.parse(date) }.getOrNull()?.let { selectedDate = it }
+                ensureDaily()
+            }
+        }
+    }
+
+    private fun countDoneItems(scheme: JSONObject?): Int {
+        var done = 0
+        scheme?.optJSONArray("items")?.forEachObject { item ->
+            if (item.optBoolean("done")) done++
+        }
+        return done
     }
 
     private fun renderListsPage(): LinearLayout {
@@ -423,7 +534,7 @@ class MainActivity : Activity() {
             addView(text("Daily", theme.textPrimary, 13f, true).apply { maxLines = 1 }, LinearLayout.LayoutParams(0, -1, 1f))
             addView(text(">", theme.textMuted, 12f, true).apply { gravity = Gravity.CENTER }, LinearLayout.LayoutParams(dp(16), -1))
             setOnClickListener {
-                selectedTab = 2
+                selectedTab = TAB_DAILY
                 selectedSchemeId = null
                 ensureDaily()
             }
@@ -544,6 +655,7 @@ class MainActivity : Activity() {
             addView(text(selectedDateTitle(), theme.textPrimary, 23f, true).apply {
                 gravity = Gravity.CENTER
                 includeFontPadding = false
+                setOnClickListener { showMonthPickerDialog() }
             }, LinearLayout.LayoutParams(0, dp(32), 1f))
             addView(chip("Today") {
                 weekOffset = 0
@@ -712,7 +824,7 @@ class MainActivity : Activity() {
             editorSchemeIds[this] = schemeId
             editorTheme = theme
             accentColor = editorChromeColor()
-            lineAdornments = editorLineAdornments(scheme)
+            lineAdornments = editorLineAdornments(scheme, timeFormat24())
             markerTapHandler = { lineIndex -> toggleEditorLineMarker(this, lineIndex) }
             isEnabled = !readOnly
             gravity = Gravity.TOP or Gravity.START
@@ -924,7 +1036,7 @@ class MainActivity : Activity() {
                 editorSchemeIds[this] = schemeId
                 editorTheme = theme
                 accentColor = editorChromeColor()
-                lineAdornments = editorLineAdornments(scheme)
+                lineAdornments = editorLineAdornments(scheme, timeFormat24())
                 markerTapHandler = { lineIndex -> toggleEditorLineMarker(this, lineIndex) }
                 gravity = Gravity.TOP or Gravity.START
                 setTextColor(theme.textPrimary)
@@ -1111,7 +1223,7 @@ class MainActivity : Activity() {
 
     private fun signInToSync(apiBaseRaw: String, emailRaw: String, password: String) {
         if (syncAuthInProgress) return
-        val apiBase = migrateSyncApiBase(apiBaseRaw)
+        val apiBase = normalizeApiBase(apiBaseRaw)
         val email = emailRaw.trim()
         if (apiBase.isEmpty() || email.isEmpty() || password.isEmpty()) {
             showError("Sign in failed", "Enter your sync API, email, and password")
@@ -1140,7 +1252,7 @@ class MainActivity : Activity() {
 
     private fun createSyncAccount(apiBaseRaw: String, emailRaw: String, password: String) {
         if (syncAuthInProgress) return
-        val apiBase = migrateSyncApiBase(apiBaseRaw)
+        val apiBase = normalizeApiBase(apiBaseRaw)
         val email = emailRaw.trim()
         if (apiBase.isEmpty() || email.isEmpty() || password.isEmpty()) {
             showError("Account creation failed", "Enter your sync API, email, and password")
@@ -1253,9 +1365,9 @@ class MainActivity : Activity() {
     private fun confirmCancelSyncSubscription() {
         AlertDialog.Builder(this)
             .setTitle("Cancel sync subscription?")
-            .setMessage("Sync stops on all your devices. Your local workspace stays on this device, and you can sign in again later to re-enable sync.")
+            .setMessage("Your local workspace stays on this device. Paid sync may remain available until the current billing period ends.")
             .setNegativeButton("Keep sync", null)
-            .setPositiveButton("Turn off sync") { _, _ -> cancelSyncSubscription() }
+            .setPositiveButton("Cancel subscription") { _, _ -> cancelSyncSubscription() }
             .show()
     }
 
@@ -1290,7 +1402,11 @@ class MainActivity : Activity() {
                 syncAccountActionInProgress = false
                 result.onSuccess { updated ->
                     installSyncSession(updated)
-                    showError("Sync turned off", "Your local workspace stays on this device, and you can sign in again later to re-enable sync.")
+                    if (updated.supportsSync) {
+                        showError("Subscription cancelled", "Sync remains available until the current billing period ends.")
+                    } else {
+                        showError("Sync turned off", "Your local workspace stays on this device, and you can sign in again later to re-enable sync.")
+                    }
                 }.onFailure { error ->
                     showError("Could not update account", error.message)
                 }
@@ -1398,7 +1514,7 @@ class MainActivity : Activity() {
     // copy carrying the rotated credentials.
     private fun refreshSyncSessionIfNeeded(session: SyncSession): SyncSession? {
         val refreshToken = session.refreshToken
-        if (refreshToken.isNullOrEmpty()) return session
+        if (refreshToken.isEmpty()) return null
         if (!tokenNeedsRefresh(session.expiresAt)) return session
         try {
             val connection =
@@ -1417,9 +1533,9 @@ class MainActivity : Activity() {
             val raw = connection.inputStream.bufferedReader().use { it.readText() }
             val json = JSONObject(raw)
             return session.copy(
-                bearerToken = json.optString("bearer_token"),
-                expiresAt = json.optString("expires_at"),
-                refreshToken = json.optString("refresh_token").ifEmpty { refreshToken },
+                bearerToken = requiredString(json, "bearer_token"),
+                expiresAt = requiredString(json, "expires_at"),
+                refreshToken = requiredString(json, "refresh_token"),
                 refreshExpiresAt = json.optString("refresh_expires_at").ifEmpty { null },
                 supportsSync = json.optBoolean("supports_sync", true)
             )
@@ -1458,14 +1574,18 @@ class MainActivity : Activity() {
     private fun parseSyncSession(json: JSONObject, apiBase: String): SyncSession =
         SyncSession(
             apiBase = apiBase,
-            userId = json.optString("user_id"),
-            email = json.optString("email"),
+            userId = requiredString(json, "user_id"),
+            email = requiredString(json, "email"),
             supportsSync = json.optBoolean("supports_sync", true),
-            bearerToken = json.optString("bearer_token"),
-            expiresAt = json.optString("expires_at"),
-            refreshToken = json.optString("refresh_token").ifEmpty { null },
+            bearerToken = requiredString(json, "bearer_token"),
+            expiresAt = requiredString(json, "expires_at"),
+            refreshToken = requiredString(json, "refresh_token"),
             refreshExpiresAt = json.optString("refresh_expires_at").ifEmpty { null }
         )
+
+    private fun requiredString(json: JSONObject, key: String): String =
+        json.optString(key).takeIf { it.isNotEmpty() }
+            ?: throw RuntimeException("Sync API response missing $key.")
 
     private fun httpJson(
         urlString: String,
@@ -1504,31 +1624,18 @@ class MainActivity : Activity() {
             ?: return null
         return runCatching {
             val json = JSONObject(raw)
-            val rawApiBase = json.optString("api_base")
-            val session = SyncSession(
-                apiBase = migrateSyncApiBase(rawApiBase),
+            SyncSession(
+                apiBase = normalizeApiBase(json.optString("api_base")),
                 userId = json.optString("user_id"),
                 email = json.optString("email"),
                 supportsSync = json.optBoolean("supports_sync", true),
                 bearerToken = json.optString("bearer_token"),
                 expiresAt = json.optString("expires_at"),
-                refreshToken = json.optString("refresh_token").ifEmpty { null },
+                refreshToken = json.optString("refresh_token").takeIf { it.isNotEmpty() }
+                    ?: throw RuntimeException("stored sync session missing refresh token"),
                 refreshExpiresAt = json.optString("refresh_expires_at").ifEmpty { null }
             )
-            if (session.apiBase != rawApiBase) {
-                saveSyncSession(session)
-            }
-            session
         }.getOrNull()
-    }
-
-    private fun migrateSyncApiBase(apiBase: String): String {
-        return when (val normalized = normalizeApiBase(apiBase)) {
-            "http://10.0.2.2:7878" -> DEFAULT_SYNC_API_BASE
-            "http://127.0.0.1:7878" -> "http://127.0.0.1:8787"
-            "http://localhost:7878" -> "http://localhost:8787"
-            else -> normalized
-        }
     }
 
     private fun saveSyncSession(session: SyncSession?) {
@@ -1545,7 +1652,7 @@ class MainActivity : Activity() {
                     .put("supports_sync", session.supportsSync)
                     .put("bearer_token", session.bearerToken)
                     .put("expires_at", session.expiresAt)
-                    .put("refresh_token", session.refreshToken ?: JSONObject.NULL)
+                    .put("refresh_token", session.refreshToken)
                     .put("refresh_expires_at", session.refreshExpiresAt ?: JSONObject.NULL)
                     .toString()
             )
@@ -1571,7 +1678,9 @@ class MainActivity : Activity() {
     private fun accountActionErrorMessage(code: String): String = when (code) {
         "unauthorized" -> "Your sync session expired. Sign in again, then retry."
         "delete_confirmation_mismatch" -> "Could not confirm the account. Please try again."
-        else -> "The request to the sync backend failed."
+        "billing_api_not_configured" -> "Subscription cancellation is not configured yet."
+        "cancel_in_app_store" -> "Manage this App Store subscription from your account subscriptions."
+        else -> "The request to the sync API failed."
     }
 
     private fun startGoogleCalendarImport(parentId: String? = null) {
@@ -1746,7 +1855,7 @@ class MainActivity : Activity() {
 
         root.addView(settingsSection("Notifications"))
         root.addView(choiceRow("Events: ${notificationLeadTimeLabel(eventOffset, eventDefault = true)}", false) {
-            showNotificationDefaultDialog("Event reminders", eventOffset, eventNotificationOptions()) { next ->
+            showNotificationDefaultDialog("Event reminders", eventOffset, eventDefaultNotificationOptions) { next ->
                 mutate(
                     obj(
                         "type" to "set_notification_defaults",
@@ -1757,7 +1866,7 @@ class MainActivity : Activity() {
             }
         })
         root.addView(choiceRow("Assignments: ${notificationLeadTimeLabel(assignmentOffset, eventDefault = false)}", false) {
-            showNotificationDefaultDialog("Assignment reminders", assignmentOffset, assignmentNotificationOptions()) { next ->
+            showNotificationDefaultDialog("Assignment reminders", assignmentOffset, assignmentDefaultNotificationOptions) { next ->
                 mutate(
                     obj(
                         "type" to "set_notification_defaults",
@@ -1812,62 +1921,16 @@ class MainActivity : Activity() {
     private fun showNotificationDefaultDialog(
         title: String,
         current: Int,
-        options: List<Pair<String, Int>>,
+        options: List<NotificationLeadTimeOption>,
         onSelect: (Int) -> Unit
     ) {
-        val labels = options.map { (label, value) ->
-            if (value == current) "$label ✓" else label
+        val labels = options.map { option ->
+            if (option.offsetSecs == current) "${option.label} ✓" else option.label
         }.toTypedArray()
         AlertDialog.Builder(this)
             .setTitle(title)
-            .setItems(labels) { _, which -> onSelect(options[which].second) }
+            .setItems(labels) { _, which -> onSelect(options[which].offsetSecs) }
             .show()
-    }
-
-    private fun eventNotificationOptions(): List<Pair<String, Int>> = listOf(
-        "At start" to 0,
-        "5 minutes before" to 5 * 60,
-        "10 minutes before" to 10 * 60,
-        "15 minutes before" to 15 * 60,
-        "30 minutes before" to 30 * 60,
-        "1 hour before" to 60 * 60,
-    )
-
-    private fun assignmentNotificationOptions(): List<Pair<String, Int>> = listOf(
-        "At due time" to 0,
-        "1 hour before" to 60 * 60,
-        "2 hours before" to 2 * 60 * 60,
-        "6 hours before" to 6 * 60 * 60,
-        "1 day before" to 24 * 60 * 60,
-        "2 days before" to 2 * 24 * 60 * 60,
-    )
-
-    private fun occurrenceNotificationOptions(current: Int): List<Pair<String, Int>> {
-        val base = listOf(
-            "At time" to 0,
-            "5 minutes before" to 5 * 60,
-            "10 minutes before" to 10 * 60,
-            "30 minutes before" to 30 * 60,
-            "1 hour before" to 60 * 60,
-            "1 day before" to 24 * 60 * 60,
-        )
-        return if (base.any { it.second == current }) base else (base + (notificationLeadTimeLabel(current, true) to current)).sortedBy { it.second }
-    }
-
-    private fun notificationLeadTimeLabel(offsetSecs: Int, eventDefault: Boolean): String {
-        if (offsetSecs == 0) return if (eventDefault) "At start" else "At due time"
-        val all = listOf(
-            "At time" to 0,
-            "5 minutes before" to 5 * 60,
-            "10 minutes before" to 10 * 60,
-            "30 minutes before" to 30 * 60,
-            "1 hour before" to 60 * 60,
-            "1 day before" to 24 * 60 * 60,
-        ) +
-            eventNotificationOptions() +
-            assignmentNotificationOptions()
-        all.firstOrNull { it.second == offsetSecs }?.let { return it.first }
-        return "${offsetSecs / 60} minutes before"
     }
 
     private fun addNode(parent: LinearLayout, node: JSONObject, depth: Int, spacious: Boolean = false) {
@@ -2213,7 +2276,7 @@ class MainActivity : Activity() {
             val refreshed = findScheme(schemeId)
             editor.tag = refreshed?.let(::documentLines) ?: nextLines
             if (editor is SchemeEditText && refreshed != null) {
-                editor.lineAdornments = editorLineAdornments(refreshed)
+                editor.lineAdornments = editorLineAdornments(refreshed, timeFormat24())
             }
             if (rerender) render()
         } catch (error: RuntimeException) {
@@ -2267,7 +2330,7 @@ class MainActivity : Activity() {
                 when (which) {
                     0 -> showCalendarItemDialog()
                     1 -> {
-                        val schemeId = if (selectedTab == 2) dailyScheme()?.optString("id") else selectedSchemeId
+                        val schemeId = if (selectedTab == TAB_DAILY) dailyScheme()?.optString("id") else selectedSchemeId
                         if (schemeId != null) showItemDialog(schemeId, null) else toast("Pick a scheme first")
                     }
                     2 -> showNameDialog("New Scheme", "", { validateSchemeName(it, folderId = rootFolderId()) }) { name ->
@@ -2363,9 +2426,9 @@ class MainActivity : Activity() {
         }
         val defaultOffset = defaultNotificationOffset(initialKind)
         val currentOffset = occurrence?.takeUnless { it.isNull("notification_offset_secs") }?.optInt("notification_offset_secs") ?: defaultOffset
-        val notificationOptions = occurrenceNotificationOptions(currentOffset)
-        val notification = spinner(notificationOptions.map { it.first }.toTypedArray()).apply {
-            setSelection(notificationOptions.indexOfFirst { it.second == currentOffset }.coerceAtLeast(0))
+        val notificationOptions = occurrenceNotificationOptionsIncluding(currentOffset)
+        val notification = spinner(notificationOptions.map { it.label }.toTypedArray()).apply {
+            setSelection(notificationOptions.indexOfFirst { it.offsetSecs == currentOffset }.coerceAtLeast(0))
             isEnabled = !readOnly
         }
         val completed = CheckBox(this).apply {
@@ -2429,7 +2492,7 @@ class MainActivity : Activity() {
                     else -> null
                 }
                 val rrule = if (selectedKind == "task") null else MobileRecurrence.rruleForRepeat(repeat.selectedItem.toString(), localDate)
-                val notificationOffset = if (selectedKind == "task") null else notificationOptions[notification.selectedItemPosition].second
+                val notificationOffset = if (selectedKind == "task") null else notificationOptions[notification.selectedItemPosition].offsetSecs
                 if (occurrence != null) {
                     val commit = { scope: String ->
                         commitEventEdit(
@@ -2859,14 +2922,170 @@ class MainActivity : Activity() {
         }, selectedDate.year, selectedDate.monthValue - 1, selectedDate.dayOfMonth).show()
     }
 
+    private fun showMonthPickerDialog() {
+        var displayMonth = selectedDate.withDayOfMonth(1)
+        val container = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(12), dp(8), dp(12), dp(12))
+            setBackgroundColor(theme.bgApp)
+        }
+        val title = text(monthTitle(displayMonth), theme.textPrimary, 20f, true).apply {
+            gravity = Gravity.CENTER
+        }
+        val grid = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            background = rounded(theme.bgModal, dp(10), theme.borderOverlay)
+            setPadding(dp(8), dp(8), dp(8), dp(8))
+        }
+        lateinit var dialog: AlertDialog
+
+        fun renderMonth() {
+            title.text = monthTitle(displayMonth)
+            grid.removeAllViews()
+            grid.addView(monthWeekdayRow(), LinearLayout.LayoutParams(-1, dp(22)))
+            val days = monthDayOccurrences(displayMonth)
+            val first = displayMonth.withDayOfMonth(1)
+            val gridStart = first.minusDays((first.dayOfWeek.value % 7).toLong())
+            for (rowIndex in 0 until 6) {
+                val row = LinearLayout(this).apply {
+                    orientation = LinearLayout.HORIZONTAL
+                    gravity = Gravity.CENTER
+                }
+                for (columnIndex in 0 until 7) {
+                    val date = gridStart.plusDays((rowIndex * 7 + columnIndex).toLong())
+                    row.addView(monthDayCell(date, displayMonth, days[date.toString()] ?: JSONArray()) {
+                        selectedDate = date
+                        weekOffset = 0
+                        loadSnapshot()
+                        render()
+                        dialog.dismiss()
+                    }, LinearLayout.LayoutParams(0, dp(52), 1f))
+                }
+                grid.addView(row, LinearLayout.LayoutParams(-1, dp(52)))
+            }
+        }
+
+        container.addView(LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            addView(iconChip("<") {
+                displayMonth = displayMonth.minusMonths(1)
+                renderMonth()
+            })
+            addView(title, LinearLayout.LayoutParams(0, dp(38), 1f))
+            addView(iconChip(">") {
+                displayMonth = displayMonth.plusMonths(1)
+                renderMonth()
+            })
+        }, LinearLayout.LayoutParams(-1, dp(42)).apply {
+            setMargins(0, 0, 0, dp(8))
+        })
+        container.addView(grid)
+
+        dialog = AlertDialog.Builder(this)
+            .setView(container)
+            .setNegativeButton("Close", null)
+            .create()
+        renderMonth()
+        dialog.show()
+    }
+
+    private fun monthWeekdayRow(): View =
+        LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            listOf("S", "M", "T", "W", "T", "F", "S").forEach { label ->
+                addView(text(label, theme.textMuted, 11f, true).apply {
+                    gravity = Gravity.CENTER
+                }, LinearLayout.LayoutParams(0, -1, 1f))
+            }
+        }
+
+    private fun monthDayCell(date: LocalDate, displayMonth: LocalDate, occurrences: JSONArray, onSelect: () -> Unit): View {
+        val inMonth = date.monthValue == displayMonth.monthValue && date.year == displayMonth.year
+        val isToday = date == LocalDate.now()
+        val isSelected = date == selectedDate
+        return LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = Gravity.CENTER
+            val day = text(date.dayOfMonth.toString(), monthDayTextColor(inMonth, isToday || isSelected), 14f, isToday || isSelected).apply {
+                gravity = Gravity.CENTER
+                if (isToday || isSelected) {
+                    background = rounded(theme.accent, dp(17))
+                }
+            }
+            addView(day, LinearLayout.LayoutParams(dp(34), dp(34)))
+            addView(monthOccurrenceDots(occurrences), LinearLayout.LayoutParams(-1, dp(8)))
+            setOnClickListener { onSelect() }
+        }
+    }
+
+    private fun monthOccurrenceDots(occurrences: JSONArray): View =
+        LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER
+            val seen = LinkedHashSet<String>()
+            occurrences.forEachObject { occurrence ->
+                if (seen.size >= 4) return@forEachObject
+                val key = occurrence.optString("scheme_name").takeIf { it == "Daily" }
+                    ?: "scheme-${occurrence.optInt("color_index")}"
+                if (seen.add(key)) {
+                    addView(View(this@MainActivity).apply {
+                        background = rounded(schemeColor(occurrence.optInt("color_index")), dp(3))
+                    }, LinearLayout.LayoutParams(dp(5), dp(5)).apply {
+                        setMargins(dp(1), 0, dp(1), 0)
+                    })
+                }
+            }
+        }
+
+    private fun monthDayTextColor(inMonth: Boolean, highlighted: Boolean): Int =
+        when {
+            highlighted -> Color.WHITE
+            inMonth -> theme.textPrimary
+            else -> theme.textMuted
+        }
+
+    private fun monthDayOccurrences(month: LocalDate): Map<String, JSONArray> {
+        return runCatching {
+            val byDate = LinkedHashMap<String, JSONArray>()
+            bridge.requestArray(obj("type" to "month_days", "year" to month.year, "month" to month.monthValue))
+                .forEachObject { day ->
+                    byDate[day.optString("date")] = day.optJSONArray("occurrences") ?: JSONArray()
+                }
+            byDate
+        }.getOrElse { error ->
+            showError("Calendar", error.message)
+            emptyMap()
+        }
+    }
+
     private fun openScheme(id: String) {
-        selectedTab = 1
+        selectedTab = TAB_SCHEMES
         selectedSchemeId = id
         render()
     }
 
+    private fun addDailyItemFromHome() {
+        ensureDaily()
+        dailyScheme()?.let { scheme ->
+            showItemDialog(scheme.optString("id"), null)
+        } ?: toast("Daily not ready")
+    }
+
     private fun ensureDaily() {
         mutate(obj("type" to "ensure_daily_queue", "date" to selectedDate.toString()))
+    }
+
+    private fun ensureTodayDailyQueue() {
+        val today = LocalDate.now().toString()
+        val existing = snapshot.optJSONArray("daily")
+        if (existing != null) {
+            for (index in 0 until existing.length()) {
+                if (existing.optJSONObject(index)?.optString("date") == today) return
+            }
+        }
+        bridge.request(obj("type" to "ensure_daily_queue", "date" to today))
+        loadSnapshot()
     }
 
     private fun mutate(body: JSONObject) {
@@ -2937,6 +3156,21 @@ class MainActivity : Activity() {
         }
         entries.sortBy { it.optString("date") }
         return entries
+    }
+
+    private fun dailyEntryForHome(): JSONObject? {
+        val days = snapshot.optJSONArray("daily") ?: return null
+        val selected = selectedDate.toString()
+        val today = LocalDate.now().toString()
+        var todayEntry: JSONObject? = null
+        for (index in 0 until days.length()) {
+            val entry = days.optJSONObject(index) ?: continue
+            when (entry.optString("date")) {
+                selected -> return entry
+                today -> todayEntry = entry
+            }
+        }
+        return todayEntry
     }
 
     private fun archivedSchemes(): JSONArray = snapshot.optJSONArray("archived_schemes") ?: JSONArray()
@@ -3105,6 +3339,9 @@ class MainActivity : Activity() {
             }
         }
 
+    private fun monthTitle(date: LocalDate): String =
+        "${date.month.getDisplayName(TextStyle.FULL, Locale.getDefault())} ${date.year}"
+
     private fun addOccurrenceSection(root: LinearLayout, title: String, empty: String, occurrences: JSONArray?) {
         root.addView(sectionLabel(title))
         if (occurrences == null || occurrences.length() == 0) {
@@ -3118,20 +3355,29 @@ class MainActivity : Activity() {
     }
 
     private fun titleText(): String {
-        return if (selectedTab == 1 && selectedSchemeId != null) {
+        return if (selectedTab == TAB_SCHEMES && selectedSchemeId != null) {
             findScheme(selectedSchemeId!!)?.optString("display_name") ?: "Scheme"
         } else {
-            listOf("Calendar", "Schemes", "Daily", "Search", "Settings").getOrElse(selectedTab) { "KnotQ" }
+            when (selectedTab) {
+                TAB_HOME -> "Home"
+                TAB_CALENDAR -> "Calendar"
+                TAB_SCHEMES -> "Schemes"
+                TAB_DAILY -> "Daily"
+                TAB_SEARCH -> "Search"
+                TAB_SETTINGS -> "Settings"
+                else -> "KnotQ"
+            }
         }
     }
 
     private fun titleColor(): Int {
-        if (selectedTab == 1 && selectedSchemeId != null) {
+        if (selectedTab == TAB_SCHEMES && selectedSchemeId != null) {
             return findScheme(selectedSchemeId!!)?.optInt("color_index")?.let(::schemeColor) ?: theme.textDim
         }
         return when (selectedTab) {
-            0 -> theme.textPrimary
-            2 -> if (theme.isDark) rgb(0xb8c9e8) else rgb(0x5a7aad)
+            TAB_HOME -> theme.accent
+            TAB_CALENDAR -> theme.textPrimary
+            TAB_DAILY -> if (theme.isDark) rgb(0xb8c9e8) else rgb(0x5a7aad)
             else -> theme.textDim
         }
     }
@@ -3240,6 +3486,15 @@ class MainActivity : Activity() {
 
     private fun colorSquare(color: Int, size: Int): View = View(this).apply {
         background = rounded(color, dp(3))
+        layoutParams = LinearLayout.LayoutParams(dp(size), dp(size))
+    }
+
+    private fun brandMark(size: Int): ImageView = ImageView(this).apply {
+        setImageResource(applicationInfo.icon)
+        scaleType = ImageView.ScaleType.CENTER_CROP
+        background = rounded(theme.rowSelected, dp(6), theme.borderOverlay)
+        clipToOutline = Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP
+        setPadding(dp(2), dp(2), dp(2), dp(2))
         layoutParams = LinearLayout.LayoutParams(dp(size), dp(size))
     }
 
@@ -3393,978 +3648,4 @@ class MainActivity : Activity() {
         })
     }
 
-    private fun documentLines(scheme: JSONObject): List<SchemeEditorLine> {
-        val items = scheme.optJSONArray("items") ?: return emptyList()
-        val out = ArrayList<SchemeEditorLine>(items.length())
-        for (index in 0 until items.length()) {
-            val item = items.optJSONObject(index) ?: continue
-            out.add(
-                SchemeEditorLine(
-                    id = item.optString("id").takeIf { it.isNotEmpty() },
-                    text = item.optString("text"),
-                    marker = item.optString("marker", "blank"),
-                    indent = item.optInt("indent", 0).coerceIn(0, 8),
-                    done = item.optBoolean("done", false)
-                )
-            )
-        }
-        return out
-    }
-
-    private fun editorLineAdornments(scheme: JSONObject): List<EditorLineAdornment> {
-        val items = scheme.optJSONArray("items") ?: return emptyList()
-        val out = ArrayList<EditorLineAdornment>(items.length())
-        for (index in 0 until items.length()) {
-            val item = items.optJSONObject(index) ?: continue
-            val start = item.optString("start").takeIf { it.isNotEmpty() && it != "null" }
-            val end = item.optString("end").takeIf { it.isNotEmpty() && it != "null" }
-            val annotation = MobileDateFormatting.annotationLabel(start, end, timeFormat24())
-            val media = ArrayList<EditorLineMedia>()
-            item.optJSONArray("media")?.forEachObject { rawMedia ->
-                media.add(
-                    EditorLineMedia(
-                        kind = rawMedia.optString("kind"),
-                        path = rawMedia.optionalString("path"),
-                        width = rawMedia.takeUnless { it.isNull("width") }?.optInt("width"),
-                        height = rawMedia.takeUnless { it.isNull("height") }?.optInt("height")
-                    )
-                )
-            }
-            out.add(
-                EditorLineAdornment(
-                    marker = item.optString("marker", "blank"),
-                    done = item.optBoolean("done", false),
-                    annotation = annotation,
-                    media = media
-                )
-            )
-        }
-        return out
-    }
-
-    private fun parseEditorDocument(text: String, preserveBlankDocument: Boolean): List<SchemeEditorLine> {
-        val body = if (text.endsWith("\n")) text.dropLast(1) else text
-        if (body.isEmpty()) {
-            return if (preserveBlankDocument) listOf(parseEditorLine("")) else emptyList()
-        }
-        return body.split("\n", ignoreCase = false, limit = 0).map(::parseEditorLine)
-    }
-
-    private fun parseEditorLine(raw: String): SchemeEditorLine {
-        val parsed = parseChromeLine(raw)
-        val text = raw.drop(chromePrefixLength(raw).coerceAtMost(raw.length))
-        return SchemeEditorLine(id = null, text = text, marker = parsed.marker, indent = parsed.indent, done = parsed.done)
-    }
-
-    private fun renderDocument(lines: List<SchemeEditorLine>): String {
-        var number = 1
-        val body = lines.joinToString("\n") { line ->
-            val out = renderEditorLine(line, number)
-            if (line.marker == "numbered") number++ else number = 1
-            out
-        }
-        return "$body\n"
-    }
-
-    private fun renderEditorLine(line: SchemeEditorLine, ordinal: Int): String {
-        val indent = "    ".repeat(line.indent.coerceIn(0, 8))
-        val prefix = when (line.marker) {
-            "checkbox" -> if (line.done) "[x] " else "[ ] "
-            "bullet" -> "- "
-            "numbered" -> "$ordinal. "
-            else -> ""
-        }
-        return "$indent$prefix${line.text}"
-    }
-
-    private fun reconcileEditorLines(old: List<SchemeEditorLine>, parsed: List<SchemeEditorLine>): List<SchemeEditorLine> {
-        var prefix = 0
-        while (prefix < old.size && prefix < parsed.size && old[prefix].rawKey == parsed[prefix].rawKey) {
-            prefix++
-        }
-
-        var suffix = 0
-        while (suffix + prefix < old.size && suffix + prefix < parsed.size) {
-            val oldIndex = old.size - suffix - 1
-            val newIndex = parsed.size - suffix - 1
-            if (old[oldIndex].rawKey != parsed[newIndex].rawKey) break
-            suffix++
-        }
-
-        val result = ArrayList<SchemeEditorLine>()
-        result.addAll(old.take(prefix))
-
-        val oldMiddle = old.subList(prefix, old.size - suffix)
-        val newMiddle = parsed.subList(prefix, parsed.size - suffix)
-        val matched = min(oldMiddle.size, newMiddle.size)
-        for (index in 0 until matched) {
-            result.add(newMiddle[index].copy(id = oldMiddle[index].id))
-        }
-        if (newMiddle.size > matched) {
-            result.addAll(newMiddle.drop(matched))
-        }
-        if (suffix > 0) {
-            result.addAll(old.takeLast(suffix))
-        }
-        return result
-    }
-}
-
-private class MaxWidthLinearLayout(context: android.content.Context, private val maxWidthPx: Int) : LinearLayout(context) {
-    override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
-        val width = View.MeasureSpec.getSize(widthMeasureSpec)
-        val mode = View.MeasureSpec.getMode(widthMeasureSpec)
-        val constrainedWidth = if (width > 0) min(width, maxWidthPx) else maxWidthPx
-        super.onMeasure(View.MeasureSpec.makeMeasureSpec(constrainedWidth, mode), heightMeasureSpec)
-    }
-}
-
-private class SchemeEditText(context: android.content.Context) : EditText(context) {
-    private val chromePaint = Paint(Paint.ANTI_ALIAS_FLAG)
-    private val imageCache = HashMap<String, Bitmap?>()
-
-    var editorTheme: UiTheme = UiTheme.dark
-        set(value) {
-            field = value
-            editableText?.let { applyPrefixSpans(it, fullDocument = true) }
-            invalidate()
-        }
-    var accentColor: Int = Color.BLUE
-        set(value) {
-            field = value
-            editableText?.let { applyPrefixSpans(it, fullDocument = true) }
-            invalidate()
-        }
-    private var chromeAdornments: List<EditorLineAdornment>? = emptyList()
-    var lineAdornments: List<EditorLineAdornment>
-        get() = chromeAdornments.orEmpty()
-        set(value) {
-            chromeAdornments = value
-            editableText?.let { applyPrefixSpans(it, fullDocument = true) }
-        }
-    var markerTapHandler: ((Int) -> Unit)? = null
-
-    private var styling = false
-    private var pendingEditStart = -1
-    private var pendingEditEnd = -1
-
-    init {
-        addTextChangedListener(object : TextWatcher {
-            override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) = Unit
-            override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {
-                if (styling) return
-                pendingEditStart = start
-                pendingEditEnd = start + count
-            }
-            override fun afterTextChanged(s: Editable?) {
-                if (!styling && s != null && BaseInputConnection.getComposingSpanStart(s) < 0) {
-                    enforceTerminalNewline(s)
-                    handleEnterContinuation(s)
-                    applyPrefixSpans(s, fullDocument = true)
-                }
-                invalidate()
-            }
-        })
-    }
-
-    override fun setText(text: CharSequence?, type: BufferType?) {
-        val value = text?.toString().orEmpty().let { if (it.endsWith("\n")) it else "$it\n" }
-        super.setText(value, type)
-        editableText?.let { applyPrefixSpans(it, fullDocument = true) }
-    }
-
-    override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
-        super.onSizeChanged(w, h, oldw, oldh)
-        if (w != oldw) editableText?.let { applyPrefixSpans(it, fullDocument = true) }
-    }
-
-    override fun onDraw(canvas: Canvas) {
-        super.onDraw(canvas)
-        drawEditorChrome(canvas)
-    }
-
-    override fun onTouchEvent(event: MotionEvent): Boolean {
-        if (event.action == MotionEvent.ACTION_UP) {
-            markerLineAt(event.x, event.y)?.let { line ->
-                markerTapHandler?.invoke(line)
-                return true
-            }
-        }
-        return super.onTouchEvent(event)
-    }
-
-    private fun markerLineAt(x: Float, y: Float): Int? {
-        val layout = layout ?: return null
-        val value = text?.toString().orEmpty()
-        for (visualLine in 0 until layout.lineCount) {
-            val lineStart = layout.getLineStart(visualLine)
-            if (lineStart > 0 && value.getOrNull(lineStart - 1) != '\n') continue
-            val logicalLine = value.substring(0, lineStart).count { it == '\n' }
-            val lineEnd = value.indexOf('\n', lineStart).let { if (it < 0) value.length else it }
-            val parsed = parseChromeLine(value.substring(lineStart, lineEnd))
-            val prefixWidth = prefixVisualWidth(parsed, parsed.marker)
-            val extraHeight = extraHeightFor(lineAdornments.getOrNull(logicalLine), prefixWidth)
-            val rect = markerRect(
-                parsed.indent,
-                totalPaddingTop + layout.getLineTop(visualLine) - scrollY,
-                totalPaddingTop + layout.getLineBottom(visualLine) - scrollY - extraHeight
-            )
-            rect.left = 0f
-            rect.right = (totalPaddingLeft + dp(EDITOR_MARKER_SLOT_DP + 12)).toFloat()
-            rect.inset(-dp(10).toFloat(), -dp(10).toFloat())
-            if (rect.contains(x, y)) return logicalLine
-        }
-        return null
-    }
-
-    private fun applyPrefixSpans(editable: Editable, fullDocument: Boolean) {
-        styling = true
-        val value = editable.toString()
-        val rangeStart: Int
-        val rangeEnd: Int
-        val lineIndexAtStart: Int
-        if (fullDocument || pendingEditStart < 0) {
-            rangeStart = 0
-            rangeEnd = value.length
-            lineIndexAtStart = 0
-        } else {
-            val editStart = pendingEditStart.coerceIn(0, value.length)
-            val editEnd = pendingEditEnd.coerceIn(editStart, value.length)
-            rangeStart = value.lastIndexOf('\n', (editStart - 1).coerceAtLeast(0)).let { if (it < 0) 0 else it + 1 }
-            rangeEnd = value.indexOf('\n', editEnd).let { if (it < 0) value.length else it }
-            lineIndexAtStart = if (rangeStart == 0) 0 else value.substring(0, rangeStart).count { it == '\n' }
-        }
-        pendingEditStart = -1
-        pendingEditEnd = -1
-
-        removeSpansInRange(editable, rangeStart, rangeEnd, HiddenPrefixSpan::class.java)
-        removeSpansInRange(editable, rangeStart, rangeEnd, DoneTextSpan::class.java)
-        removeSpansInRange(editable, rangeStart, rangeEnd, DoneTextColorSpan::class.java)
-        removeSpansInRange(editable, rangeStart, rangeEnd, EditorChromeSpan::class.java)
-        removeSpansInRange(editable, rangeStart, rangeEnd, EditorHangingIndentSpan::class.java)
-        removeSpansInRange(editable, rangeStart, rangeEnd, EditorMarkdownSpan::class.java)
-        removeSpansInRange(editable, rangeStart, rangeEnd, EditorTextSizeSpan::class.java)
-
-        var start = rangeStart
-        var lineIndex = lineIndexAtStart
-        while (start <= rangeEnd) {
-            if (start == value.length && value.endsWith("\n")) break
-            val end = value.indexOf('\n', start).let { if (it < 0 || it > rangeEnd) rangeEnd else it }
-            val raw = value.substring(start, end)
-            val prefix = chromePrefixLength(raw)
-            val parsed = parseChromeLine(raw)
-            val adornment = lineAdornments.getOrNull(lineIndex)
-            val marker = parsed.marker
-            val prefixWidth = prefixVisualWidth(parsed, marker)
-            val bodyStart = (start + prefix).coerceAtMost(end)
-            val body = raw.drop(prefix.coerceAtMost(raw.length))
-            val heading = isMarkdownHeading(body)
-            val spanEnd = when {
-                end > start -> end
-                end < value.length -> end + 1
-                else -> end
-            }
-            if (spanEnd > start) {
-                editable.setSpan(
-                    EditorChromeSpan(
-                        lineTextEnd = end,
-                        heading = heading,
-                        extraHeight = extraHeightFor(adornment, prefixWidth),
-                        density = resources.displayMetrics.density
-                    ),
-                    start,
-                    spanEnd,
-                    Spannable.SPAN_EXCLUSIVE_EXCLUSIVE
-                )
-            }
-            if (prefix > 0) {
-                editable.setSpan(
-                    HiddenPrefixSpan(prefixWidth),
-                    start,
-                    (start + prefix).coerceAtMost(editable.length),
-                    Spannable.SPAN_EXCLUSIVE_EXCLUSIVE
-                )
-            }
-            if (prefixWidth > 0 && spanEnd > start) {
-                editable.setSpan(
-                    EditorHangingIndentSpan(parsed.indent.coerceIn(0, 8) * dp(EDITOR_INDENT_WIDTH_DP)),
-                    start,
-                    spanEnd,
-                    Spannable.SPAN_EXCLUSIVE_EXCLUSIVE
-                )
-            }
-            if (bodyStart < end) {
-                if (heading) {
-                    editable.setSpan(EditorTextSizeSpan(24), bodyStart, end, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE)
-                    editable.setSpan(EditorMarkdownSpan(Typeface.BOLD), bodyStart, end, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE)
-                } else {
-                    applyMarkdownSpans(editable, body, bodyStart, end)
-                }
-            }
-            if (parsed.done && start + prefix < end) {
-                editable.setSpan(DoneTextSpan(), start + prefix, end, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE)
-                editable.setSpan(DoneTextColorSpan(editorTheme.textMuted), start + prefix, end, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE)
-            }
-            lineIndex++
-            if (end >= rangeEnd) break
-            start = end + 1
-        }
-        styling = false
-    }
-
-    private fun handleEnterContinuation(editable: Editable) {
-        val insertStart = pendingEditStart
-        val insertEnd = pendingEditEnd
-        if (insertStart < 0 || insertEnd - insertStart != 1) return
-        if (insertStart >= editable.length) return
-        if (editable[insertStart] != '\n') return
-        val value = editable.toString()
-        val lineStart = value.lastIndexOf('\n', (insertStart - 1).coerceAtLeast(0)).let { if (it < 0) 0 else it + 1 }
-        val lineText = value.substring(lineStart, insertStart)
-        val parsed = parseChromeLine(lineText)
-        val prefixLen = chromePrefixLength(lineText)
-        val body = lineText.drop(prefixLen.coerceAtMost(lineText.length))
-        if (parsed.marker == "blank" && parsed.indent == 0) return
-        val indentStr = "    ".repeat(parsed.indent.coerceIn(0, 8))
-        if (body.isEmpty() && parsed.marker != "blank") {
-            // Escape the list: drop the prefix on the now-empty source line
-            // and the newline that was just inserted.
-            styling = true
-            editable.replace(lineStart, insertStart + 1, "")
-            setSelection(lineStart.coerceAtMost(editable.length))
-            styling = false
-            pendingEditStart = -1
-            pendingEditEnd = -1
-            return
-        }
-        if (body.isEmpty() && parsed.indent > 0) {
-            // Plain indented blank line + Enter: outdent by collapsing the indent.
-            styling = true
-            editable.replace(lineStart, insertStart + 1, "")
-            setSelection(lineStart.coerceAtMost(editable.length))
-            styling = false
-            pendingEditStart = -1
-            pendingEditEnd = -1
-            return
-        }
-        val newPrefix = when (parsed.marker) {
-            "checkbox" -> "$indentStr[ ] "
-            "bullet" -> "$indentStr- "
-            "numbered" -> "$indentStr${nextNumberedOrdinal(value, lineStart, parsed.indent)}. "
-            else -> if (parsed.indent > 0) indentStr else ""
-        }
-        if (newPrefix.isEmpty()) return
-        val insertPos = insertStart + 1
-        styling = true
-        editable.insert(insertPos, newPrefix)
-        setSelection((insertPos + newPrefix.length).coerceAtMost(editable.length))
-        styling = false
-        pendingEditStart = -1
-        pendingEditEnd = -1
-    }
-
-    private fun nextNumberedOrdinal(value: String, lineStart: Int, indent: Int): Int {
-        var ordinal = 1
-        var cursor = lineStart
-        while (cursor > 0) {
-            val prevEnd = cursor - 1 // newline char
-            if (prevEnd < 0 || value[prevEnd] != '\n') break
-            val prevStart = value.lastIndexOf('\n', (prevEnd - 1).coerceAtLeast(0)).let { if (it < 0) 0 else it + 1 }
-            val prevLine = value.substring(prevStart, prevEnd)
-            val prevParsed = parseChromeLine(prevLine)
-            if (prevParsed.marker != "numbered" || prevParsed.indent != indent) break
-            ordinal++
-            cursor = prevStart
-        }
-        return ordinal + 1 // the current line itself is the Nth; next is N+1
-    }
-
-    private fun enforceTerminalNewline(editable: Editable) {
-        if (editable.isNotEmpty() && editable.last() == '\n') return
-        val start = selectionStart.coerceIn(0, editable.length)
-        val end = selectionEnd.coerceIn(0, editable.length)
-        styling = true
-        editable.append("\n")
-        styling = false
-        setSelection(start.coerceAtMost(editable.length), end.coerceAtMost(editable.length))
-    }
-
-    private fun drawEditorChrome(canvas: Canvas) {
-        val layout = layout ?: return
-        val value = text?.toString().orEmpty()
-        val lines = chromeDrawLines(value)
-        var ordinal = 1
-        lines.forEachIndexed { index, line ->
-            if (value.isEmpty()) return@forEachIndexed
-            val firstVisual = layout.getLineForOffset(line.start.coerceIn(0, max(0, value.length - 1)))
-            val lastOffset = if (line.end > line.start) line.end - 1 else line.start
-            val lastVisual = layout.getLineForOffset(lastOffset.coerceIn(0, max(0, value.length - 1)))
-            val firstTop = totalPaddingTop + layout.getLineTop(firstVisual) - scrollY
-            val firstBottomRaw = totalPaddingTop + layout.getLineBottom(firstVisual) - scrollY
-            val rowBottom = totalPaddingTop + layout.getLineBottom(lastVisual) - scrollY
-            val firstBottom = if (firstVisual == lastVisual) firstBottomRaw - line.extraHeight else firstBottomRaw
-            val contentBottom = rowBottom - line.extraHeight
-            val markerRect = markerRect(line.indent, firstTop, firstBottom)
-            val previous = lines.getOrNull(index - 1)
-            val next = lines.getOrNull(index + 1)
-
-            drawGuides(canvas, markerRect, line.indent, previous?.indent ?: 0, next?.indent ?: 0, firstTop, rowBottom)
-            val lineOrdinal = if (line.marker == "numbered") {
-                ordinal++
-            } else {
-                ordinal = 1
-                1
-            }
-            drawMarker(canvas, markerRect, line.marker, line.done, lineOrdinal)
-            line.annotation?.let { annotation ->
-                drawAnnotationBar(
-                    canvas = canvas,
-                    markerRect = markerRect,
-                    top = firstTop,
-                    bottom = rowBottom,
-                    connectsToPrevious = previous?.annotation != null,
-                    connectsToNext = next?.annotation != null
-                )
-                drawAnnotation(canvas, annotation, markerRect, contentBottom)
-            }
-            drawMediaStack(canvas, line.media, line.prefixWidth, contentBottom + if (line.annotation == null) 0 else dp(EDITOR_ANNOTATION_HEIGHT_DP))
-        }
-    }
-
-    private fun chromeDrawLines(value: String): List<ChromeDrawLine> {
-        val out = ArrayList<ChromeDrawLine>()
-        var start = 0
-        var lineIndex = 0
-        while (start <= value.length) {
-            if (start == value.length && value.endsWith("\n")) break
-            val end = value.indexOf('\n', start).let { if (it < 0) value.length else it }
-            val raw = value.substring(start, end)
-            val parsed = parseChromeLine(raw)
-            val marker = parsed.marker
-            val prefixWidth = prefixVisualWidth(parsed, marker)
-            val body = raw.drop(chromePrefixLength(raw).coerceAtMost(raw.length))
-            val adornment = lineAdornments.getOrNull(lineIndex)
-            out.add(
-                ChromeDrawLine(
-                    start = start,
-                    end = end,
-                    indent = parsed.indent,
-                    marker = marker,
-                    done = parsed.done,
-                    annotation = adornment?.annotation,
-                    media = adornment?.media.orEmpty(),
-                    prefixWidth = prefixWidth,
-                    heading = isMarkdownHeading(body),
-                    extraHeight = extraHeightFor(adornment, prefixWidth)
-                )
-            )
-            lineIndex++
-            if (end >= value.length) break
-            start = end + 1
-        }
-        return out
-    }
-
-    private fun drawGuides(canvas: Canvas, markerRect: RectF, indent: Int, previousIndent: Int, nextIndent: Int, top: Int, bottom: Int) {
-        if (indent <= 0) return
-        chromePaint.style = Paint.Style.FILL
-        chromePaint.color = editorTheme.dividerSoft
-        val guideBottom = bottom.toFloat()
-        for (level in 1..indent.coerceIn(0, 8)) {
-            val hasPrevious = previousIndent.coerceIn(0, 8) >= level
-            val hasNext = nextIndent.coerceIn(0, 8) >= level
-            val topMargin = if (hasPrevious) 0f else dp(3f)
-            val bottomMargin = if (hasNext) 0f else dp(3f)
-            val x = annotationGuideX(markerRect) - (indent - level) * dp(EDITOR_INDENT_WIDTH_DP.toFloat())
-            canvas.drawRect(x, top + topMargin, x + 1f, max(top + topMargin + 1f, guideBottom - bottomMargin), chromePaint)
-        }
-    }
-
-    private fun drawMarker(canvas: Canvas, rect: RectF, marker: String, done: Boolean, ordinal: Int) {
-        when (marker) {
-            "checkbox" -> {
-                chromePaint.style = Paint.Style.FILL
-                chromePaint.color = if (done) accentColor else editorTheme.buttonBg
-                canvas.drawRoundRect(rect, dp(3f), dp(3f), chromePaint)
-                chromePaint.style = Paint.Style.STROKE
-                chromePaint.strokeWidth = dp(1f)
-                chromePaint.color = accentColor
-                canvas.drawRoundRect(rect, dp(3f), dp(3f), chromePaint)
-                if (done) {
-                    chromePaint.style = Paint.Style.STROKE
-                    chromePaint.strokeWidth = dp(2f)
-                    chromePaint.strokeCap = Paint.Cap.ROUND
-                    chromePaint.strokeJoin = Paint.Join.ROUND
-                    chromePaint.color = editorTheme.bgApp
-                    val check = Path()
-                    check.moveTo(rect.left + dp(3.2f), rect.top + dp(7.2f))
-                    check.lineTo(rect.left + dp(5.8f), rect.top + dp(9.7f))
-                    check.lineTo(rect.right - dp(3f), rect.top + dp(4.3f))
-                    canvas.drawPath(check, chromePaint)
-                }
-            }
-            "bullet" -> {
-                chromePaint.style = Paint.Style.FILL
-                chromePaint.color = accentColor
-                canvas.drawCircle(rect.centerX(), rect.centerY(), dp(2.2f), chromePaint)
-            }
-            "numbered" -> {
-                chromePaint.style = Paint.Style.FILL
-                chromePaint.typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
-                chromePaint.textSize = dp(12f)
-                chromePaint.color = accentColor
-                chromePaint.textAlign = Paint.Align.RIGHT
-                canvas.drawText("$ordinal.", rect.left - dp(5f), rect.bottom - dp(2f), chromePaint)
-                chromePaint.textAlign = Paint.Align.LEFT
-                chromePaint.typeface = Typeface.DEFAULT
-            }
-        }
-    }
-
-    private fun drawAnnotationBar(canvas: Canvas, markerRect: RectF, top: Int, bottom: Int, connectsToPrevious: Boolean, connectsToNext: Boolean) {
-        val x = annotationGuideX(markerRect)
-        val y1 = if (connectsToPrevious) top.toFloat() else markerRect.top
-        val y2 = bottom.toFloat() - if (connectsToNext) 0f else dp(3f)
-        chromePaint.style = Paint.Style.FILL
-        chromePaint.color = accentColor
-        canvas.drawRect(x, y1, x + 1f, max(y1 + 1f, y2), chromePaint)
-    }
-
-    private fun drawAnnotation(canvas: Canvas, value: String, markerRect: RectF, contentBottom: Int) {
-        chromePaint.style = Paint.Style.FILL
-        chromePaint.typeface = Typeface.MONOSPACE
-        chromePaint.textSize = dp(10.5f)
-        chromePaint.color = accentColor
-        chromePaint.textAlign = Paint.Align.LEFT
-        canvas.drawText(
-            value,
-            annotationGuideX(markerRect) + dp(EDITOR_ANNOTATION_TEXT_GAP_DP.toFloat()),
-            contentBottom + dp(EDITOR_ANNOTATION_HEIGHT_DP.toFloat()) - dp(3f),
-            chromePaint
-        )
-        chromePaint.typeface = Typeface.DEFAULT
-    }
-
-    private fun drawMediaStack(canvas: Canvas, media: List<EditorLineMedia>, prefixWidth: Int, yStart: Int) {
-        if (media.isEmpty()) return
-        val maxWidth = editorImageMaxWidth(prefixWidth)
-        var y = yStart + dp(EDITOR_IMAGE_TOP_GAP_DP)
-        var drewImage = false
-        media.filter { it.kind == "image" }.forEach { item ->
-            val size = mediaDisplaySize(item, maxWidth)
-            if (size.first <= 0f || size.second <= 0f) return@forEach
-            if (drewImage) y += dp(EDITOR_IMAGE_STACK_GAP_DP)
-            val rect = RectF(totalPaddingLeft + prefixWidth.toFloat(), y.toFloat(), totalPaddingLeft + prefixWidth + size.first, y + size.second)
-            drawImageMedia(canvas, item, rect)
-            y += size.second.roundToInt()
-            drewImage = true
-        }
-    }
-
-    private fun drawImageMedia(canvas: Canvas, media: EditorLineMedia, rect: RectF) {
-        chromePaint.style = Paint.Style.FILL
-        chromePaint.color = editorTheme.buttonBg
-        canvas.drawRoundRect(rect, dp(5f), dp(5f), chromePaint)
-        chromePaint.style = Paint.Style.STROKE
-        chromePaint.strokeWidth = dp(1f)
-        chromePaint.color = editorTheme.divider
-        canvas.drawRoundRect(rect, dp(5f), dp(5f), chromePaint)
-        val bitmap = media.path?.let(::bitmapForPath)
-        if (bitmap != null && bitmap.width > 2 && bitmap.height > 2) {
-            canvas.save()
-            canvas.clipRect(rect)
-            canvas.drawBitmap(
-                bitmap,
-                null,
-                Rect(rect.left.roundToInt(), rect.top.roundToInt(), rect.right.roundToInt(), rect.bottom.roundToInt()),
-                chromePaint
-            )
-            canvas.restore()
-        } else {
-            drawImageFallback(canvas, rect)
-        }
-    }
-
-    private fun drawImageFallback(canvas: Canvas, rect: RectF) {
-        val inner = RectF(rect.left + 1f, rect.top + 1f, rect.right - 1f, rect.bottom - 1f)
-        chromePaint.style = Paint.Style.FILL
-        chromePaint.color = editorTheme.bgModal
-        canvas.drawRect(inner, chromePaint)
-        chromePaint.color = adjustColor(editorTheme.accent, 0.16f)
-        canvas.drawCircle(inner.right - inner.width() * 0.23f, inner.top + inner.height() * 0.20f, inner.width() * 0.08f, chromePaint)
-        chromePaint.color = editorTheme.divider
-        canvas.drawRoundRect(RectF(inner.left + inner.width() * 0.07f, inner.top + inner.height() * 0.16f, inner.left + inner.width() * 0.47f, inner.top + inner.height() * 0.23f), dp(4f), dp(4f), chromePaint)
-        canvas.drawRoundRect(RectF(inner.left + inner.width() * 0.07f, inner.top + inner.height() * 0.32f, inner.left + inner.width() * 0.69f, inner.top + inner.height() * 0.37f), dp(4f), dp(4f), chromePaint)
-        canvas.drawRoundRect(RectF(inner.left + inner.width() * 0.07f, inner.top + inner.height() * 0.45f, inner.left + inner.width() * 0.57f, inner.top + inner.height() * 0.50f), dp(4f), dp(4f), chromePaint)
-        canvas.drawRoundRect(RectF(inner.left + inner.width() * 0.07f, inner.bottom - inner.height() * 0.29f, inner.left + inner.width() * 0.77f, inner.bottom - inner.height() * 0.16f), dp(6f), dp(6f), chromePaint)
-        chromePaint.color = editorTheme.textPrimary
-        chromePaint.typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
-        chromePaint.textSize = max(dp(11f), inner.height() * 0.07f)
-        canvas.drawText("Image", inner.left + inner.width() * 0.10f, inner.bottom - inner.height() * 0.18f, chromePaint)
-        chromePaint.typeface = Typeface.DEFAULT
-    }
-
-    private fun bitmapForPath(path: String): Bitmap? {
-        if (imageCache.containsKey(path)) return imageCache[path]
-        val decoded = BitmapFactory.decodeFile(path)
-        imageCache[path] = decoded
-        return decoded
-    }
-
-    private fun extraHeightFor(adornment: EditorLineAdornment?, prefixWidth: Int): Int {
-        var extra = if (adornment?.annotation == null) 0 else dp(EDITOR_ANNOTATION_HEIGHT_DP)
-        extra += mediaStackHeight(adornment?.media.orEmpty(), editorImageMaxWidth(prefixWidth))
-        return extra
-    }
-
-    private fun mediaStackHeight(media: List<EditorLineMedia>, maxWidth: Int): Int {
-        var height = 0
-        var count = 0
-        media.filter { it.kind == "image" }.forEach { item ->
-            val size = mediaDisplaySize(item, maxWidth)
-            if (size.second <= 0f) return@forEach
-            height += if (count == 0) dp(EDITOR_IMAGE_TOP_GAP_DP) else dp(EDITOR_IMAGE_STACK_GAP_DP)
-            height += size.second.roundToInt()
-            count++
-        }
-        return height
-    }
-
-    private fun mediaDisplaySize(media: EditorLineMedia, maxWidth: Int): Pair<Float, Float> {
-        val rawWidth = dp((media.width ?: EDITOR_IMAGE_FALLBACK_WIDTH_DP).coerceAtLeast(1)).toFloat()
-        val rawHeight = dp((media.height ?: EDITOR_IMAGE_FALLBACK_HEIGHT_DP).coerceAtLeast(1)).toFloat()
-        if (rawWidth <= 0f || rawHeight <= 0f || maxWidth <= 0) return 0f to 0f
-        val scale = min(1f, min(maxWidth / rawWidth, dp(EDITOR_IMAGE_MAX_HEIGHT_DP) / rawHeight))
-        return rawWidth * scale to rawHeight * scale
-    }
-
-    private fun editorImageMaxWidth(prefixWidth: Int): Int =
-        max(dp(120), (width.takeIf { it > 0 } ?: dp(EDITOR_IMAGE_FALLBACK_WIDTH_DP + 80)) - totalPaddingLeft - prefixWidth - totalPaddingRight - dp(8))
-
-    private fun annotationGuideX(markerRect: RectF): Float =
-        markerRect.left - dp((EDITOR_ANNOTATION_BAR_GAP_DP + EDITOR_INDENT_GUIDE_X_SHIFT_DP).toFloat())
-
-    private fun adjustColor(color: Int, alpha: Float): Int = adjustAlpha(color, alpha)
-
-    private fun <T> removeSpansInRange(editable: Editable, start: Int, end: Int, kind: Class<T>) {
-        editable.getSpans(start, end, kind).forEach { span ->
-            val s = editable.getSpanStart(span)
-            val e = editable.getSpanEnd(span)
-            if (s >= start && e <= end + 1) {
-                editable.removeSpan(span)
-            }
-        }
-    }
-
-    private fun markerRect(indent: Int, top: Int, bottom: Int): RectF {
-        val size = dp(EDITOR_CHECKBOX_SIZE_DP).toFloat()
-        val left = totalPaddingLeft + indent.coerceIn(0, 8) * dp(EDITOR_INDENT_WIDTH_DP)
-        val centerY = (top + bottom) / 2f
-        return RectF(left.toFloat(), centerY - size / 2f, left + size, centerY + size / 2f)
-    }
-
-    private fun prefixVisualWidth(parsed: ChromeLine, marker: String): Int {
-        val markerSlot = if (marker == "blank") 0 else dp(EDITOR_MARKER_SLOT_DP)
-        return parsed.indent.coerceIn(0, 8) * dp(EDITOR_INDENT_WIDTH_DP) + markerSlot
-    }
-
-    private fun applyMarkdownSpans(editable: Editable, body: String, bodyStart: Int, bodyEnd: Int) {
-        var index = 0
-        while (index < body.length) {
-            val marker = body[index]
-            if (marker != '*' && marker != '_') {
-                index++
-                continue
-            }
-            val close = body.indexOf(marker, startIndex = index + 1)
-            if (close < 0) {
-                index++
-                continue
-            }
-            if (close > index + 1) {
-                val style = if (marker == '*') Typeface.BOLD else Typeface.ITALIC
-                editable.setSpan(
-                    EditorMarkdownSpan(style),
-                    (bodyStart + index + 1).coerceAtMost(bodyEnd),
-                    (bodyStart + close).coerceAtMost(bodyEnd),
-                    Spannable.SPAN_EXCLUSIVE_EXCLUSIVE
-                )
-            }
-            index = close + 1
-        }
-    }
-
-    private fun dp(value: Int): Int = (value * resources.displayMetrics.density).roundToInt()
-    private fun dp(value: Float): Float = value * resources.displayMetrics.density
-}
-
-private class EditorChromeSpan(
-    private val lineTextEnd: Int,
-    private val heading: Boolean,
-    private val extraHeight: Int,
-    private val density: Float,
-) : LineBackgroundSpan, LineHeightSpan {
-
-    override fun drawBackground(
-        canvas: Canvas,
-        paint: Paint,
-        left: Int,
-        right: Int,
-        top: Int,
-        baseline: Int,
-        bottom: Int,
-        text: CharSequence,
-        start: Int,
-        end: Int,
-        lineNumber: Int
-    ) = Unit
-
-    override fun chooseHeight(
-        text: CharSequence?,
-        start: Int,
-        end: Int,
-        spanstartv: Int,
-        lineHeight: Int,
-        fm: Paint.FontMetricsInt
-    ) {
-        if (heading) {
-            val target = dp(30f).roundToInt()
-            val current = fm.descent - fm.ascent
-            if (current < target) {
-                val extra = target - current
-                fm.descent += extra / 2
-                fm.ascent -= extra - extra / 2
-                fm.bottom = max(fm.bottom, fm.descent)
-                fm.top = min(fm.top, fm.ascent)
-            }
-        }
-        if (extraHeight > 0 && end >= lineTextEnd) {
-            fm.descent += extraHeight
-            fm.bottom += extraHeight
-        }
-    }
-
-    private fun dp(value: Float): Float = value * density
-}
-
-private class HiddenPrefixSpan(private val width: Int) : ReplacementSpan() {
-    override fun getSize(
-        paint: Paint,
-        text: CharSequence?,
-        start: Int,
-        end: Int,
-        fm: Paint.FontMetricsInt?
-    ): Int = width
-
-    override fun draw(
-        canvas: Canvas,
-        text: CharSequence?,
-        start: Int,
-        end: Int,
-        x: Float,
-        top: Int,
-        y: Int,
-        bottom: Int,
-        paint: Paint
-    ) = Unit
-}
-
-private class EditorHangingIndentSpan(private val width: Int) : LeadingMarginSpan.LeadingMarginSpan2 {
-    override fun getLeadingMargin(first: Boolean): Int = if (first) 0 else width
-    override fun getLeadingMarginLineCount(): Int = 1
-
-    override fun drawLeadingMargin(
-        canvas: Canvas,
-        paint: Paint,
-        x: Int,
-        dir: Int,
-        top: Int,
-        baseline: Int,
-        bottom: Int,
-        text: CharSequence,
-        start: Int,
-        end: Int,
-        first: Boolean,
-        layout: android.text.Layout?
-    ) = Unit
-}
-
-private class DoneTextSpan : StrikethroughSpan()
-
-private class DoneTextColorSpan(color: Int) : ForegroundColorSpan(color)
-
-private class EditorMarkdownSpan(style: Int) : StyleSpan(style)
-
-private class EditorTextSizeSpan(sizeSp: Int) : AbsoluteSizeSpan(sizeSp, true)
-
-private data class EditorLineAdornment(
-    val marker: String,
-    val done: Boolean,
-    val annotation: String?,
-    val media: List<EditorLineMedia>,
-)
-
-private data class EditorLineMedia(
-    val kind: String,
-    val path: String?,
-    val width: Int?,
-    val height: Int?,
-)
-
-private data class ChromeDrawLine(
-    val start: Int,
-    val end: Int,
-    val indent: Int,
-    val marker: String,
-    val done: Boolean,
-    val annotation: String?,
-    val media: List<EditorLineMedia>,
-    val prefixWidth: Int,
-    val heading: Boolean,
-    val extraHeight: Int,
-)
-
-private data class ChromeLine(
-    val marker: String,
-    val indent: Int,
-    val done: Boolean,
-)
-
-private fun parseChromeLine(raw: String): ChromeLine {
-    var rest = raw
-    var indent = 0
-    while (rest.startsWith("    ") && indent < 8) {
-        rest = rest.drop(4)
-        indent++
-    }
-    while (rest.startsWith("\t") && indent < 8) {
-        rest = rest.drop(1)
-        indent++
-    }
-
-    return when {
-        rest.startsWith("[x] ", ignoreCase = true) -> ChromeLine("checkbox", indent, true)
-        rest.startsWith("[ ] ") -> ChromeLine("checkbox", indent, false)
-        rest.startsWith("- ") || rest.startsWith("* ") -> ChromeLine("bullet", indent, false)
-        numberedPrefix.find(rest) != null -> ChromeLine("numbered", indent, false)
-        else -> ChromeLine("blank", indent, false)
-    }
-}
-
-private fun chromePrefixLength(raw: String): Int {
-    var rest = raw
-    var length = 0
-    while (rest.startsWith("    ") && length < 32) {
-        rest = rest.drop(4)
-        length += 4
-    }
-    while (rest.startsWith("\t") && length < 8) {
-        rest = rest.drop(1)
-        length += 1
-    }
-    return when {
-        rest.startsWith("[x] ", ignoreCase = true) || rest.startsWith("[ ] ") -> length + 4
-        rest.startsWith("- ") || rest.startsWith("* ") -> length + 2
-        numberedPrefix.find(rest) != null -> length + (numberedPrefix.find(rest)?.value?.length ?: 0)
-        else -> length
-    }
-}
-
-private fun isMarkdownHeading(line: String): Boolean {
-    val trimmed = line.trimStart()
-    if (!trimmed.startsWith("#")) return false
-    val hashes = trimmed.takeWhile { it == '#' }.length
-    return hashes > 0 && (trimmed.length == hashes || trimmed.getOrNull(hashes)?.isWhitespace() == true)
-}
-
-private val numberedPrefix = Regex("^\\d+\\.\\s+")
-
-private fun rgbColor(hex: Int): Int =
-    Color.rgb((hex shr 16) and 0xff, (hex shr 8) and 0xff, hex and 0xff)
-
-private fun rgbaColor(hex: Int, alpha: Int): Int =
-    Color.argb(alpha, (hex shr 16) and 0xff, (hex shr 8) and 0xff, hex and 0xff)
-
-private fun adjustAlpha(color: Int, alpha: Float): Int =
-    Color.argb((255 * alpha).roundToInt(), Color.red(color), Color.green(color), Color.blue(color))
-
-private data class SchemeEditorLine(
-    val id: String?,
-    val text: String,
-    val marker: String,
-    val indent: Int,
-    val done: Boolean,
-) {
-    val rawKey: String = "$marker|$indent|$done|$text"
-}
-
-private data class UiTheme(
-    val isDark: Boolean,
-    val bgApp: Int,
-    val bgSidebar: Int,
-    val bgToolbar: Int,
-    val bgModal: Int,
-    val rowAlt: Int,
-    val rowSelected: Int,
-    val buttonBg: Int,
-    val divider: Int,
-    val dividerSoft: Int,
-    val dividerTiny: Int,
-    val borderOverlay: Int,
-    val textPrimary: Int,
-    val textDim: Int,
-    val textMuted: Int,
-    val textSoft: Int,
-    val textToday: Int,
-    val accent: Int,
-    val danger: Int,
-) {
-    companion object {
-        private fun rgb(hex: Int): Int = rgbColor(hex)
-        private fun rgba(hex: Int, alpha: Int): Int = rgbaColor(hex, alpha)
-
-        val dark = UiTheme(
-            isDark = true,
-            bgApp = rgb(0x242627),
-            bgSidebar = rgb(0x28292b),
-            bgToolbar = rgb(0x363738),
-            bgModal = rgb(0x303133),
-            rowAlt = rgba(0xffffff, 12),
-            rowSelected = rgba(0xffffff, 30),
-            buttonBg = rgba(0xffffff, 18),
-            divider = rgba(0xffffff, 25),
-            dividerSoft = rgba(0xffffff, 18),
-            dividerTiny = rgba(0xffffff, 8),
-            borderOverlay = rgba(0xffffff, 32),
-            textPrimary = rgb(0xdde2e8),
-            textDim = rgb(0xb4bcc4),
-            textMuted = rgba(0xb4bcc4, 120),
-            textSoft = rgba(0xd2dae2, 160),
-            textToday = rgb(0xe66d5d),
-            accent = rgb(0x7aa0ff),
-            danger = rgb(0xff5a53),
-        )
-
-        val light = UiTheme(
-            isDark = false,
-            bgApp = rgb(0xe8e2d8),
-            bgSidebar = rgb(0xe0d8cc),
-            bgToolbar = rgb(0xe3dcd2),
-            bgModal = rgb(0xece6dd),
-            rowAlt = rgba(0x5a4635, 14),
-            rowSelected = rgba(0xe66f1f, 30),
-            buttonBg = rgba(0x5a4635, 22),
-            divider = rgba(0x5a4635, 36),
-            dividerSoft = rgba(0x5a4635, 24),
-            dividerTiny = rgba(0x5a4635, 13),
-            borderOverlay = rgba(0x3d2a18, 48),
-            textPrimary = rgb(0x2c2420),
-            textDim = rgb(0x302520),
-            textMuted = rgba(0x5a4a3c, 150),
-            textSoft = rgba(0x382c22, 190),
-            textToday = rgb(0xd04e1a),
-            accent = rgb(0xc04510),
-            danger = rgb(0xc72f24),
-        )
-    }
 }

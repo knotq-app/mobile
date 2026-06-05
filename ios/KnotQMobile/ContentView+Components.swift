@@ -138,11 +138,12 @@ struct OnboardingOverlay: View {
 
     private var accountCard: some View {
         VStack(spacing: 18) {
-            Image(systemName: "square.stack.3d.up.fill")
-                .font(.system(size: 40, weight: .semibold))
-                .foregroundStyle(theme.accent)
-                .frame(width: 72, height: 72)
-                .background(theme.rowSelected.opacity(0.42), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+            Image("BrandLogo")
+                .resizable()
+                .scaledToFit()
+                .frame(width: 76, height: 76)
+                .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+                .shadow(color: .black.opacity(0.18), radius: 8, y: 4)
 
             VStack(spacing: 6) {
                 Text("KnotQ")
