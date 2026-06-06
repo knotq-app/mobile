@@ -221,10 +221,13 @@ struct NotificationLeadTimeOption: Identifiable, Hashable {
     var id: Int32 { offsetSecs }
 }
 
+let defaultEventNotificationOffsetSecs: Int32 = 10 * 60
+let defaultAssignmentNotificationOffsetSecs: Int32 = 2 * 60 * 60
+
 let eventDefaultNotificationOptions: [NotificationLeadTimeOption] = [
     .init(label: "At start", offsetSecs: 0),
     .init(label: "5 minutes before", offsetSecs: 5 * 60),
-    .init(label: "10 minutes before", offsetSecs: 10 * 60),
+    .init(label: "10 minutes before", offsetSecs: defaultEventNotificationOffsetSecs),
     .init(label: "15 minutes before", offsetSecs: 15 * 60),
     .init(label: "30 minutes before", offsetSecs: 30 * 60),
     .init(label: "1 hour before", offsetSecs: 60 * 60),
@@ -233,7 +236,7 @@ let eventDefaultNotificationOptions: [NotificationLeadTimeOption] = [
 let assignmentDefaultNotificationOptions: [NotificationLeadTimeOption] = [
     .init(label: "At due time", offsetSecs: 0),
     .init(label: "1 hour before", offsetSecs: 60 * 60),
-    .init(label: "2 hours before", offsetSecs: 2 * 60 * 60),
+    .init(label: "2 hours before", offsetSecs: defaultAssignmentNotificationOffsetSecs),
     .init(label: "6 hours before", offsetSecs: 6 * 60 * 60),
     .init(label: "1 day before", offsetSecs: 24 * 60 * 60),
     .init(label: "2 days before", offsetSecs: 2 * 24 * 60 * 60),
@@ -242,7 +245,7 @@ let assignmentDefaultNotificationOptions: [NotificationLeadTimeOption] = [
 let occurrenceNotificationOptions: [NotificationLeadTimeOption] = [
     .init(label: "At time", offsetSecs: 0),
     .init(label: "5 minutes before", offsetSecs: 5 * 60),
-    .init(label: "10 minutes before", offsetSecs: 10 * 60),
+    .init(label: "10 minutes before", offsetSecs: defaultEventNotificationOffsetSecs),
     .init(label: "30 minutes before", offsetSecs: 30 * 60),
     .init(label: "1 hour before", offsetSecs: 60 * 60),
     .init(label: "1 day before", offsetSecs: 24 * 60 * 60),
@@ -251,9 +254,9 @@ let occurrenceNotificationOptions: [NotificationLeadTimeOption] = [
 func defaultNotificationOffset(kind: CalendarKind, settings: MobileSettings?) -> Int32 {
     switch kind {
     case .event:
-        return settings?.eventNotificationOffsetSecs ?? 10 * 60
+        return settings?.eventNotificationOffsetSecs ?? defaultEventNotificationOffsetSecs
     case .assignment:
-        return settings?.assignmentNotificationOffsetSecs ?? 2 * 60 * 60
+        return settings?.assignmentNotificationOffsetSecs ?? defaultAssignmentNotificationOffsetSecs
     case .reminder, .task:
         return 0
     }

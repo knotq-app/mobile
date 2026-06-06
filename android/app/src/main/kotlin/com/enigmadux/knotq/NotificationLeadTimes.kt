@@ -5,10 +5,13 @@ internal data class NotificationLeadTimeOption(
     val offsetSecs: Int,
 )
 
+internal const val DEFAULT_EVENT_NOTIFICATION_OFFSET_SECS = 10 * 60
+internal const val DEFAULT_ASSIGNMENT_NOTIFICATION_OFFSET_SECS = 2 * 60 * 60
+
 internal val eventDefaultNotificationOptions: List<NotificationLeadTimeOption> = listOf(
     NotificationLeadTimeOption("At start", 0),
     NotificationLeadTimeOption("5 minutes before", 5 * 60),
-    NotificationLeadTimeOption("10 minutes before", 10 * 60),
+    NotificationLeadTimeOption("10 minutes before", DEFAULT_EVENT_NOTIFICATION_OFFSET_SECS),
     NotificationLeadTimeOption("15 minutes before", 15 * 60),
     NotificationLeadTimeOption("30 minutes before", 30 * 60),
     NotificationLeadTimeOption("1 hour before", 60 * 60),
@@ -17,7 +20,7 @@ internal val eventDefaultNotificationOptions: List<NotificationLeadTimeOption> =
 internal val assignmentDefaultNotificationOptions: List<NotificationLeadTimeOption> = listOf(
     NotificationLeadTimeOption("At due time", 0),
     NotificationLeadTimeOption("1 hour before", 60 * 60),
-    NotificationLeadTimeOption("2 hours before", 2 * 60 * 60),
+    NotificationLeadTimeOption("2 hours before", DEFAULT_ASSIGNMENT_NOTIFICATION_OFFSET_SECS),
     NotificationLeadTimeOption("6 hours before", 6 * 60 * 60),
     NotificationLeadTimeOption("1 day before", 24 * 60 * 60),
     NotificationLeadTimeOption("2 days before", 2 * 24 * 60 * 60),
@@ -26,7 +29,7 @@ internal val assignmentDefaultNotificationOptions: List<NotificationLeadTimeOpti
 private val occurrenceNotificationOptions: List<NotificationLeadTimeOption> = listOf(
     NotificationLeadTimeOption("At time", 0),
     NotificationLeadTimeOption("5 minutes before", 5 * 60),
-    NotificationLeadTimeOption("10 minutes before", 10 * 60),
+    NotificationLeadTimeOption("10 minutes before", DEFAULT_EVENT_NOTIFICATION_OFFSET_SECS),
     NotificationLeadTimeOption("30 minutes before", 30 * 60),
     NotificationLeadTimeOption("1 hour before", 60 * 60),
     NotificationLeadTimeOption("1 day before", 24 * 60 * 60),

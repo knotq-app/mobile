@@ -63,11 +63,11 @@ struct NotificationDefaultsSettingsSection: View {
 
     private var eventOffsetBinding: Binding<Int32> {
         Binding(
-            get: { model.snapshot?.settings.eventNotificationOffsetSecs ?? 10 * 60 },
+            get: { model.snapshot?.settings.eventNotificationOffsetSecs ?? defaultEventNotificationOffsetSecs },
             set: { offset in
                 model.setNotificationDefaults(
                     eventOffsetSecs: offset,
-                    assignmentOffsetSecs: model.snapshot?.settings.assignmentNotificationOffsetSecs ?? 2 * 60 * 60
+                    assignmentOffsetSecs: model.snapshot?.settings.assignmentNotificationOffsetSecs ?? defaultAssignmentNotificationOffsetSecs
                 )
             }
         )
@@ -75,10 +75,10 @@ struct NotificationDefaultsSettingsSection: View {
 
     private var assignmentOffsetBinding: Binding<Int32> {
         Binding(
-            get: { model.snapshot?.settings.assignmentNotificationOffsetSecs ?? 2 * 60 * 60 },
+            get: { model.snapshot?.settings.assignmentNotificationOffsetSecs ?? defaultAssignmentNotificationOffsetSecs },
             set: { offset in
                 model.setNotificationDefaults(
-                    eventOffsetSecs: model.snapshot?.settings.eventNotificationOffsetSecs ?? 10 * 60,
+                    eventOffsetSecs: model.snapshot?.settings.eventNotificationOffsetSecs ?? defaultEventNotificationOffsetSecs,
                     assignmentOffsetSecs: offset
                 )
             }

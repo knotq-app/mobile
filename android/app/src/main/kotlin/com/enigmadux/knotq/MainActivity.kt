@@ -1840,8 +1840,10 @@ class MainActivity : Activity() {
         val settings = snapshot.optJSONObject("settings")
         val themeMode = settings?.optString("theme_mode", "dark") ?: "dark"
         val timeFormat = settings?.optString("time_format", "twelve_hour") ?: "twelve_hour"
-        val eventOffset = settings?.optInt("event_notification_offset_secs", 10 * 60) ?: 10 * 60
-        val assignmentOffset = settings?.optInt("assignment_notification_offset_secs", 2 * 60 * 60) ?: 2 * 60 * 60
+        val eventOffset = settings?.optInt("event_notification_offset_secs", DEFAULT_EVENT_NOTIFICATION_OFFSET_SECS)
+            ?: DEFAULT_EVENT_NOTIFICATION_OFFSET_SECS
+        val assignmentOffset = settings?.optInt("assignment_notification_offset_secs", DEFAULT_ASSIGNMENT_NOTIFICATION_OFFSET_SECS)
+            ?: DEFAULT_ASSIGNMENT_NOTIFICATION_OFFSET_SECS
         val googleAccountCount = settings?.optInt("google_account_count", 0) ?: 0
 
         root.addView(settingsSection("Appearance"))
@@ -2683,8 +2685,10 @@ class MainActivity : Activity() {
     private fun defaultNotificationOffset(kind: String): Int {
         val settings = snapshot.optJSONObject("settings")
         return when (kind) {
-            "event" -> settings?.optInt("event_notification_offset_secs", 10 * 60) ?: 10 * 60
-            "assignment" -> settings?.optInt("assignment_notification_offset_secs", 2 * 60 * 60) ?: 2 * 60 * 60
+            "event" -> settings?.optInt("event_notification_offset_secs", DEFAULT_EVENT_NOTIFICATION_OFFSET_SECS)
+                ?: DEFAULT_EVENT_NOTIFICATION_OFFSET_SECS
+            "assignment" -> settings?.optInt("assignment_notification_offset_secs", DEFAULT_ASSIGNMENT_NOTIFICATION_OFFSET_SECS)
+                ?: DEFAULT_ASSIGNMENT_NOTIFICATION_OFFSET_SECS
             else -> 0
         }
     }
