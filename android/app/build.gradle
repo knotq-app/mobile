@@ -40,6 +40,8 @@ android {
 dependencies {
     implementation "net.java.dev.jna:jna:5.12.0@aar"
     implementation "androidx.annotation:annotation:1.9.1"
+    // Google Play Billing for the sync subscription.
+    implementation "com.android.billingclient:billing:7.1.1"
 }
 
 tasks.register("buildRustDebug") {

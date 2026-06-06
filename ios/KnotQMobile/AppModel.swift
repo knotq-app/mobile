@@ -710,7 +710,10 @@ final class AppModel: ObservableObject {
                     return
                 }
                 await transaction.finish()
-                await refreshEntitlement()
+                // Verify with the backend for an immediate grant (jwsRepresentation is
+                // the signed transaction the server re-verifies); falls back to the
+                // notification-driven refresh on any failure.
+                await verifyApplePurchase(jws: verification.jwsRepresentation)
             case .userCancelled:
                 break
             case .pending:
@@ -734,6 +737,14 @@ final class AppModel: ObservableObject {
         } catch {
             errorMessage = error.localizedDescription
             return
+        }
+        // Verify any current subscription entitlement with the backend for an
+        // immediate grant; fall back to the notification-driven refresh otherwise.
+        for await entitlement in StoreKit.Transaction.currentEntitlements {
+            if case .verified(let transaction) = entitlement, transaction.productType == .autoRenewable {
+                await verifyApplePurchase(jws: entitlement.jwsRepresentation)
+                return
+            }
         }
         await refreshEntitlement()
     }
@@ -770,20 +781,58 @@ final class AppModel: ObservableObject {
             }
             guard (200..<300).contains(http.statusCode) else { return }
             let payload = try JSONDecoder().decode(SyncLoginResponse.self, from: data)
-            var updated = session
-            updated.bearerToken = payload.bearerToken
-            updated.expiresAt = payload.expiresAt
-            updated.refreshToken = payload.refreshToken
-            updated.refreshExpiresAt = payload.refreshExpiresAt
-            updated.supportsSync = payload.supportsSync
-            syncSession = updated
-            saveSyncSession(updated)
-            BackgroundSyncCoordinator.shared.scheduleIfEligible(backgroundRefreshEligible)
-            if updated.supportsSync {
-                Task { await self.syncOnce() }
-            }
+            installRefreshedSession(payload, from: session)
         } catch {
             // Keep the current session; the user can retry.
+        }
+    }
+
+    /// Verify a just-completed StoreKit purchase with the backend so the sync
+    /// entitlement is granted *immediately* (and the session updated), instead of
+    /// waiting on Apple's asynchronous App Store Server Notification. Shares the
+    /// syncInProgress guard with the refresh path: the verify response rotates the
+    /// session (a fresh refresh token), so it must not race the poll loop.
+    private func verifyApplePurchase(jws: String) async {
+        guard !syncInProgress,
+              let session = syncSession,
+              let url = URL(string: "\(session.apiBase)/v1/billing/apple/verify") else {
+            await refreshEntitlement()
+            return
+        }
+        syncInProgress = true
+        defer { syncInProgress = false }
+        do {
+            var request = URLRequest(url: url)
+            request.httpMethod = "POST"
+            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            request.setValue("Bearer \(session.bearerToken)", forHTTPHeaderField: "Authorization")
+            request.httpBody = try JSONSerialization.data(withJSONObject: ["signed_transaction": jws])
+            let (data, response) = try await URLSession.shared.data(for: request)
+            guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
+                return
+            }
+            let payload = try JSONDecoder().decode(SyncLoginResponse.self, from: data)
+            installRefreshedSession(payload, from: session)
+        } catch {
+            // Fall back to the notification-driven path; the grant still arrives on
+            // the next refresh once Apple's server notification lands.
+        }
+    }
+
+    /// Apply a refreshed/verified session payload: persist it, reschedule background
+    /// sync, and kick a sync if now entitled.
+    private func installRefreshedSession(_ payload: SyncLoginResponse, from session: SyncSession) {
+        var updated = session
+        updated.bearerToken = payload.bearerToken
+        updated.expiresAt = payload.expiresAt
+        updated.refreshToken = payload.refreshToken
+        updated.refreshExpiresAt = payload.refreshExpiresAt
+        updated.supportsSync = payload.supportsSync
+        syncSession = updated
+        saveSyncSession(updated)
+        BackgroundSyncCoordinator.shared.scheduleIfEligible(backgroundRefreshEligible)
+        if updated.supportsSync {
+            Task { await self.syncOnce() }
         }
     }
 

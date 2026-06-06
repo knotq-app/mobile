@@ -38,6 +38,15 @@ import android.widget.Spinner
 import android.widget.TextView
 import android.widget.TimePicker
 import android.widget.Toast
+import com.android.billingclient.api.BillingClient
+import com.android.billingclient.api.BillingClientStateListener
+import com.android.billingclient.api.BillingFlowParams
+import com.android.billingclient.api.BillingResult
+import com.android.billingclient.api.PendingPurchasesParams
+import com.android.billingclient.api.Purchase
+import com.android.billingclient.api.PurchasesUpdatedListener
+import com.android.billingclient.api.QueryProductDetailsParams
+import com.android.billingclient.api.QueryPurchasesParams
 import org.json.JSONArray
 import org.json.JSONObject
 import java.time.Instant
@@ -56,6 +65,8 @@ import kotlin.math.roundToInt
 
 private const val SYNC_SESSION_PREF = "knotq.localSyncSession"
 private const val DEFAULT_SYNC_API_BASE = "https://api.knotq.com"
+// The Google Play subscription product id for hosted sync (Play Console).
+private const val SYNC_SUBSCRIPTION_PRODUCT_ID = "knotq.sync.monthly"
 private const val GOOGLE_CLIENT_ID = "419826075228-gn6gj1l20nltil67odvf00u3i7n8a2ld.apps.googleusercontent.com"
 private const val GOOGLE_REDIRECT_SCHEME = "com.googleusercontent.apps.419826075228-gn6gj1l20nltil67odvf00u3i7n8a2ld"
 private const val GOOGLE_REDIRECT_URI = "$GOOGLE_REDIRECT_SCHEME:/oauth2redirect"
@@ -114,6 +125,8 @@ class MainActivity : Activity() {
     private var syncAuthInProgress = false
     private var syncAccountActionInProgress = false
     private var syncInProgress = false
+    private var billingClient: BillingClient? = null
+    private var purchaseInProgress = false
     private var googleAuthInProgress = false
     private var googleSyncInProgress = false
     private var googleSyncPollingActive = false
@@ -159,6 +172,8 @@ class MainActivity : Activity() {
     override fun onDestroy() {
         syncPollHandler.removeCallbacks(syncPollRunnable)
         googleSyncHandler.removeCallbacks(googleSyncRunnable)
+        billingClient?.endConnection()
+        billingClient = null
         if (::bridge.isInitialized) {
             bridge.close()
         }
@@ -1155,6 +1170,9 @@ class MainActivity : Activity() {
             val actions = mutableListOf("Sync now", "Sign out", "Delete account")
             if (session.supportsSync) {
                 actions.add(1, "Cancel subscription")
+            } else {
+                actions.add(1, "Subscribe with Google Play")
+                actions.add(2, "Restore purchases")
             }
             AlertDialog.Builder(this)
                 .setTitle("Sync account")
@@ -1162,6 +1180,8 @@ class MainActivity : Activity() {
                 .setItems(actions.toTypedArray()) { _, which ->
                     when (actions[which]) {
                         "Sync now" -> syncOnce()
+                        "Subscribe with Google Play" -> startGooglePlaySubscribe()
+                        "Restore purchases" -> restoreGooglePlayPurchases()
                         "Cancel subscription" -> confirmCancelSyncSubscription()
                         "Sign out" -> signOutSync()
                         "Delete account" -> confirmDeleteSyncAccount()
@@ -1409,6 +1429,155 @@ class MainActivity : Activity() {
                     }
                 }.onFailure { error ->
                     showError("Could not update account", error.message)
+                }
+            }
+        }.start()
+    }
+
+    // --- Google Play billing ---
+
+    private val purchasesUpdatedListener = PurchasesUpdatedListener { result, purchases ->
+        when (result.responseCode) {
+            BillingClient.BillingResponseCode.OK -> {
+                val purchase = purchases?.firstOrNull { it.purchaseState == Purchase.PurchaseState.PURCHASED }
+                if (purchase != null) {
+                    verifyGooglePlayPurchase(purchase)
+                } else {
+                    runOnUiThread { purchaseInProgress = false }
+                }
+            }
+            BillingClient.BillingResponseCode.USER_CANCELED ->
+                runOnUiThread { purchaseInProgress = false }
+            else -> runOnUiThread {
+                purchaseInProgress = false
+                showError("Purchase failed", result.debugMessage.ifEmpty { "Could not complete the purchase." })
+            }
+        }
+    }
+
+    private fun ensureBillingClient(onReady: (BillingClient) -> Unit) {
+        val existing = billingClient
+        if (existing != null && existing.isReady) {
+            onReady(existing)
+            return
+        }
+        val client = existing ?: BillingClient.newBuilder(this)
+            .setListener(purchasesUpdatedListener)
+            .enablePendingPurchases(
+                PendingPurchasesParams.newBuilder().enableOneTimeProducts().build()
+            )
+            .build()
+        billingClient = client
+        client.startConnection(object : BillingClientStateListener {
+            override fun onBillingSetupFinished(result: BillingResult) {
+                if (result.responseCode == BillingClient.BillingResponseCode.OK) {
+                    onReady(client)
+                } else {
+                    runOnUiThread {
+                        purchaseInProgress = false
+                        showError("Store unavailable", result.debugMessage.ifEmpty { "Google Play billing is unavailable." })
+                    }
+                }
+            }
+
+            override fun onBillingServiceDisconnected() {
+                // Reconnected lazily on the next billing action.
+            }
+        })
+    }
+
+    private fun startGooglePlaySubscribe() {
+        val session = syncSession ?: return
+        if (purchaseInProgress) return
+        purchaseInProgress = true
+        ensureBillingClient { client ->
+            val product = QueryProductDetailsParams.Product.newBuilder()
+                .setProductId(SYNC_SUBSCRIPTION_PRODUCT_ID)
+                .setProductType(BillingClient.ProductType.SUBS)
+                .build()
+            val params = QueryProductDetailsParams.newBuilder()
+                .setProductList(listOf(product))
+                .build()
+            client.queryProductDetailsAsync(params) { result, productDetailsList ->
+                val details = productDetailsList.firstOrNull()
+                val offerToken = details?.subscriptionOfferDetails?.firstOrNull()?.offerToken
+                if (result.responseCode != BillingClient.BillingResponseCode.OK || details == null || offerToken == null) {
+                    runOnUiThread {
+                        purchaseInProgress = false
+                        showError("Subscription unavailable", "The sync subscription isn't available on this device yet.")
+                    }
+                    return@queryProductDetailsAsync
+                }
+                val productParams = BillingFlowParams.ProductDetailsParams.newBuilder()
+                    .setProductDetails(details)
+                    .setOfferToken(offerToken)
+                    .build()
+                val flowParams = BillingFlowParams.newBuilder()
+                    .setProductDetailsParamsList(listOf(productParams))
+                    // Maps the purchase back to this account server-side (= our user id).
+                    .setObfuscatedAccountId(session.userId)
+                    .build()
+                runOnUiThread { client.launchBillingFlow(this, flowParams) }
+            }
+        }
+    }
+
+    private fun restoreGooglePlayPurchases() {
+        if (syncSession == null || purchaseInProgress) return
+        ensureBillingClient { client ->
+            val params = QueryPurchasesParams.newBuilder()
+                .setProductType(BillingClient.ProductType.SUBS)
+                .build()
+            client.queryPurchasesAsync(params) { result, purchases ->
+                val active = purchases.firstOrNull { it.purchaseState == Purchase.PurchaseState.PURCHASED }
+                if (result.responseCode == BillingClient.BillingResponseCode.OK && active != null) {
+                    purchaseInProgress = true
+                    verifyGooglePlayPurchase(active)
+                } else {
+                    runOnUiThread {
+                        showError("Nothing to restore", "No active Google Play subscription was found for this Google account.")
+                    }
+                }
+            }
+        }
+    }
+
+    // Send a completed Play purchase to the backend, which reads authoritative state
+    // from the Play Developer API, grants the entitlement, and acknowledges the
+    // purchase. The returned (now sync-enabled) session replaces the current one.
+    private fun verifyGooglePlayPurchase(purchase: Purchase) {
+        val session = syncSession
+        if (session == null) {
+            runOnUiThread { purchaseInProgress = false }
+            return
+        }
+        Thread {
+            val result = runCatching {
+                val active = refreshSyncSessionIfNeeded(session)
+                    ?: throw RuntimeException(accountActionErrorMessage("unauthorized"))
+                val productId = purchase.products.firstOrNull() ?: SYNC_SUBSCRIPTION_PRODUCT_ID
+                parseSyncSession(
+                    httpJson(
+                        "${active.apiBase}/v1/billing/google/verify",
+                        "POST",
+                        JSONObject()
+                            .put("purchase_token", purchase.purchaseToken)
+                            .put("product_id", productId),
+                        bearerToken = active.bearerToken,
+                        accountAction = true
+                    ),
+                    active.apiBase
+                )
+            }
+            runOnUiThread {
+                purchaseInProgress = false
+                result.onSuccess { updated ->
+                    installSyncSession(updated)
+                    if (updated.supportsSync) {
+                        showError("Subscribed", "Sync is now enabled on this account.")
+                    }
+                }.onFailure { error ->
+                    showError("Could not verify purchase", error.message)
                 }
             }
         }.start()
