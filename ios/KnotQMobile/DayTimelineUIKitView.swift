@@ -342,6 +342,11 @@ final class DayTimelineUIKitView: UIView, UIGestureRecognizerDelegate, UIScrollV
     private func renderHeader(theme: KnotQTheme) {
         titleLabel.text = monthTitle(for: selectedDate)
         weekStrip.subviews.forEach { $0.removeFromSuperview() }
+        if preferredVisibleDays != nil {
+            renderVisibleColumnHeader(theme: theme)
+            return
+        }
+
         let sunday = weekStart(for: selectedDate)
         let cellWidth = bounds.width / 7
         // Active days use standard iOS blue on the darker lip.
@@ -435,6 +440,73 @@ final class DayTimelineUIKitView: UIView, UIGestureRecognizerDelegate, UIScrollV
             } else {
                 cell.dayLabel.textColor = today ? accent : UIColor(theme.textPrimary)
             }
+            cell.todayDot.isHidden = true
+            cell.todayDot.backgroundColor = accent
+            cell.addTarget(self, action: #selector(handleWeekdayTap(_:)), for: .touchUpInside)
+            weekStrip.addSubview(cell)
+        }
+    }
+
+    private func renderVisibleColumnHeader(theme: KnotQTheme) {
+        let visibleCount = visibleDayCount()
+        let columnWidth = max(1, (bounds.width - Self.gutterWidth) / CGFloat(visibleCount))
+        let accent = UIColor(calendarDayHighlightColor(dark: theme.isDark))
+        let secondaryAccent = UIColor(hex: theme.isDark ? 0x052547 : 0xbacada)
+        let secondaryText = theme.isDark ? UIColor(hex: 0xb9dcff) : UIColor(hex: 0x0059b8)
+        let onAccent = onAccentTextColor(accent)
+        let weekdayTextColor = UIColor(theme.textMuted).withAlphaComponent(theme.isDark ? 0.56 : 0.64)
+        let dividerColor = UIColor(theme.dividerSoft)
+        let pillTop = DayTimelineDayCell.pillTop
+        let pillHeight = DayTimelineDayCell.pillHeight
+
+        let gutter = UIView(frame: CGRect(x: 0, y: 0, width: Self.gutterWidth, height: weekStrip.bounds.height))
+        gutter.isUserInteractionEnabled = false
+        weekStrip.addSubview(gutter)
+
+        for index in 0...visibleCount {
+            let line = UIView(frame: CGRect(
+                x: Self.gutterWidth + CGFloat(index) * columnWidth,
+                y: 0,
+                width: 0.5,
+                height: weekStrip.bounds.height
+            ))
+            line.isUserInteractionEnabled = false
+            line.backgroundColor = dividerColor.withAlphaComponent(theme.isDark ? 0.45 : 0.70)
+            weekStrip.addSubview(line)
+        }
+
+        for index in 0..<visibleCount {
+            let date = dayDate(index)
+            let today = isToday(date)
+            let circleSize = pillHeight
+            let circle = UIView(frame: CGRect(
+                x: Self.gutterWidth + CGFloat(index) * columnWidth + (columnWidth - circleSize) / 2,
+                y: pillTop,
+                width: circleSize,
+                height: circleSize
+            ))
+            circle.isUserInteractionEnabled = false
+            circle.backgroundColor = today ? accent : secondaryAccent
+            circle.layer.cornerRadius = circleSize / 2
+            circle.layer.cornerCurve = .continuous
+            weekStrip.addSubview(circle)
+        }
+
+        for index in 0..<visibleCount {
+            let date = dayDate(index)
+            let cell = DayTimelineDayCell(frame: CGRect(
+                x: Self.gutterWidth + CGFloat(index) * columnWidth,
+                y: 0,
+                width: columnWidth,
+                height: weekStrip.bounds.height
+            ))
+            let today = isToday(date)
+            cell.date = date
+            cell.weekdayLabel.text = weekdayShort(date)
+            cell.dayLabel.text = dayNumber(date)
+            cell.weekdayLabel.textColor = today ? accent : weekdayTextColor
+            cell.dayLabel.font = .systemFont(ofSize: 18, weight: today ? .bold : .medium)
+            cell.dayLabel.textColor = today ? onAccent : secondaryText
             cell.todayDot.isHidden = true
             cell.todayDot.backgroundColor = accent
             cell.addTarget(self, action: #selector(handleWeekdayTap(_:)), for: .touchUpInside)
@@ -1192,6 +1264,12 @@ final class DayTimelineUIKitView: UIView, UIGestureRecognizerDelegate, UIScrollV
     private func weekdayInitial(_ date: Date) -> String {
         let formatter = DateFormatter()
         formatter.dateFormat = "EEEEE"
+        return formatter.string(from: date).uppercased()
+    }
+
+    private func weekdayShort(_ date: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "EEE"
         return formatter.string(from: date).uppercased()
     }
 

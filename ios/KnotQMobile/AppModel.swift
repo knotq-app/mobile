@@ -821,7 +821,7 @@ final class AppModel: ObservableObject {
 
     /// Apply a refreshed/verified session payload: persist it, reschedule background
     /// sync, and kick a sync if now entitled.
-    private func installRefreshedSession(_ payload: SyncLoginResponse, from session: SyncSession) {
+    private func installRefreshedSession(_ payload: SyncLoginResponse, from session: LocalSyncSession) {
         var updated = session
         updated.bearerToken = payload.bearerToken
         updated.expiresAt = payload.expiresAt

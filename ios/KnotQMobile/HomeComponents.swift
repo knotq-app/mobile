@@ -568,7 +568,6 @@ struct HomeSchemesSection: View {
                     }
                 }
                 .frame(height: maxHeight)
-                .onboardingTarget(.schemes)
 
                 Rectangle()
                     .fill(theme.dividerSoft)
@@ -584,7 +583,6 @@ struct HomeSchemesSection: View {
                 )
                 .padding(.horizontal, 4)
                 .padding(.vertical, 3)
-                .onboardingTarget(.daily)
             }
             .background(theme.rowSelected.opacity(theme.isDark ? 0.52 : 0.34), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
             .overlay {

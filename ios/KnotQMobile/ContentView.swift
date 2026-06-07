@@ -90,7 +90,6 @@ struct ContentView: View {
     @State private var onboardingStep = 0
     // iPad NavigationSplitView state.
     @State private var columnVisibility: NavigationSplitViewVisibility = .all
-    @State private var showingUpcoming = true
 
     private var theme: KnotQTheme {
         KnotQTheme.resolve(mode: model.snapshot?.settings.themeMode, systemScheme: systemScheme)
@@ -115,12 +114,32 @@ struct ContentView: View {
     }
 
     /// Drives the app to the pane a tour step describes, so the spotlighted
-    /// control matches the content behind the scrim (mirrors desktop).
+    /// content matches what's behind the scrim (mirrors desktop, which navigates
+    /// to each view rather than pointing at entry points).
     private func focusOnboardingPane(_ target: MobilePane?) {
         guard let target else { return }
         homeNavigationDepth = 0
-        selectedSchemeID = nil
-        pane = target
+        switch target {
+        case .scheme:
+            // Open a real scheme into the editor; fall back to Home when the
+            // workspace has none yet (mirrors desktop's union fallback).
+            if let id = firstRegularSchemeID {
+                selectScheme(id)
+            } else {
+                returnHome()
+            }
+        case .daily:
+            openDaily()
+        default:
+            selectedSchemeID = nil
+            pane = target
+        }
+    }
+
+    /// First user-authored scheme (excludes Daily Queue and read-only imports),
+    /// used to land the onboarding Schemes step on real content.
+    private var firstRegularSchemeID: String? {
+        model.snapshot?.schemes.first { !$0.isDailyQueue && !$0.isReadOnly }?.id
     }
 
     private func finishOnboarding() {
@@ -310,6 +329,15 @@ struct ContentView: View {
             )
             .navigationSplitViewColumnWidth(min: 220, ideal: 264, max: 340)
             .navigationTitle("KnotQ")
+        } content: {
+            DesktopUpcomingRail(
+                calendar: model.snapshot?.calendar,
+                theme: theme,
+                timeFormat: currentTimeFormat,
+                onToggleOccurrence: handleOccurrenceTap,
+                onOpenOccurrence: { eventEditor = .edit($0) }
+            )
+            .navigationSplitViewColumnWidth(min: 236, ideal: 258, max: 320)
         } detail: {
             NavigationStack {
                 iPadDetail()
@@ -366,10 +394,8 @@ struct ContentView: View {
             .toolbar {
                 ToolbarItemGroup(placement: .topBarTrailing) {
                     searchToolbarButton
-                    upcomingToggleButton
                 }
             }
-            .inspector(isPresented: $showingUpcoming) { upcomingInspector }
         case .calendar:
             DayTimelinePane(
                 calendar: model.snapshot?.calendar,
@@ -398,10 +424,9 @@ struct ContentView: View {
                         Image(systemName: "calendar.badge.plus")
                     }
                     searchToolbarButton
-                    upcomingToggleButton
                 }
             }
-            .inspector(isPresented: $showingUpcoming) { upcomingInspector }
+            .onboardingTarget(.calendar)
         case .scheme:
             if let selectedScheme {
                 IntegratedSchemeEditorPane(
@@ -414,6 +439,7 @@ struct ContentView: View {
                     autoFocusTitleOnAppear: titleFocusSchemeID == selectedScheme.id,
                     onAutoFocusTitleConsumed: { consumeTitleFocus(for: selectedScheme.id) }
                 )
+                .onboardingTarget(.scheme)
             } else {
                 EmptyState(title: "Pick a scheme", detail: "Choose a scheme from the sidebar.", theme: theme)
             }
@@ -434,29 +460,13 @@ struct ContentView: View {
                     Button { addItemTarget = .todayDaily } label: { Image(systemName: "plus") }
                 }
             }
+            .onboardingTarget(.daily)
         case .settings:
             SettingsForm(theme: theme)
                 .navigationTitle("Settings")
                 .navigationBarTitleDisplayMode(.inline)
         case .search:
             IPadSearchDetail(theme: theme, onOpenScheme: selectScheme)
-        }
-    }
-
-    private var upcomingInspector: some View {
-        DesktopUpcomingRail(
-            calendar: model.snapshot?.calendar,
-            theme: theme,
-            timeFormat: currentTimeFormat,
-            onToggleOccurrence: handleOccurrenceTap,
-            onOpenOccurrence: { eventEditor = .edit($0) }
-        )
-        .inspectorColumnWidth(min: 240, ideal: 282, max: 360)
-    }
-
-    private var upcomingToggleButton: some View {
-        Button { showingUpcoming.toggle() } label: {
-            Image(systemName: "sidebar.right")
         }
     }
 
@@ -525,6 +535,7 @@ struct ContentView: View {
             // Extend the timeline to the screen's bottom edge so it scrolls
             // all the way down with no leftover safe-area lip.
             .ignoresSafeArea(.container, edges: .bottom)
+            .onboardingTarget(.calendar)
         case .scheme:
             if let selectedScheme {
                 DesktopSchemePane(
@@ -535,6 +546,7 @@ struct ContentView: View {
                     autoFocusTitle: titleFocusSchemeID == selectedScheme.id,
                     onTitleFocusConsumed: { consumeTitleFocus(for: selectedScheme.id) }
                 )
+                .onboardingTarget(.scheme)
             } else {
                 EmptyState(title: "Pick a scheme", detail: "Choose a scheme from Home.", theme: theme)
             }
@@ -549,6 +561,7 @@ struct ContentView: View {
                 onBack: returnHome,
                 onAdd: { addItemTarget = .todayDaily }
             )
+            .onboardingTarget(.daily)
         case .search:
             DesktopSearchPane(theme: theme, keyboardVisible: keyboardVisible, onOpenScheme: selectScheme)
         case .settings:

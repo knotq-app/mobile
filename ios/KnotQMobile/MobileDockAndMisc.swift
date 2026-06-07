@@ -1,3 +1,4 @@
+import StoreKit
 import SwiftUI
 
 struct SettingsThemeOption: View {
@@ -13,27 +14,294 @@ struct SettingsThemeOption: View {
     }
 }
 
-struct SyncSettingsHeader: View {
+private struct SyncPanelState {
+    let badge: String
+    let detail: String
+    let badgeBackground: Color
+    let badgeForeground: Color
+}
+
+struct SyncSettingsCard: View {
+    @EnvironmentObject private var model: AppModel
     let theme: KnotQTheme
+    @Binding var showingSyncSignIn: Bool
+    @Binding var showingCancelConfirm: Bool
+    @Binding var showingDeleteConfirm: Bool
+
+    private var state: SyncPanelState {
+        if model.syncSession?.supportsSync == true {
+            return SyncPanelState(
+                badge: "Enabled",
+                detail: "Workspace sync is active for this account.",
+                badgeBackground: theme.isDark ? Color(hex: 0x30d158).opacity(0.15) : Color(hex: 0x1f8f4d).opacity(0.09),
+                badgeForeground: theme.isDark ? Color(hex: 0x9af0b6) : Color(hex: 0x176b38)
+            )
+        }
+        if model.syncSession != nil {
+            return SyncPanelState(
+                badge: "Upgrade",
+                detail: "Subscribe to keep this workspace available across devices.",
+                badgeBackground: theme.isDark ? Color(hex: 0xf59e0b).opacity(0.16) : Color(hex: 0xd97706).opacity(0.10),
+                badgeForeground: theme.isDark ? Color(hex: 0xf8d38d) : Color(hex: 0x9a4b00)
+            )
+        }
+        return SyncPanelState(
+            badge: "Available",
+            detail: "Sign in to keep this workspace available across devices.",
+            badgeBackground: theme.isDark ? Color(hex: 0x3b82f6).opacity(0.16) : Color(hex: 0x2f67cf).opacity(0.09),
+            badgeForeground: theme.isDark ? Color(hex: 0x9bc2ff) : Color(hex: 0x235ebe)
+        )
+    }
+
+    private var detail: String {
+        model.syncSession?.email ?? state.detail
+    }
 
     var body: some View {
-        HStack(spacing: 6) {
-            Image("BrandLogo")
-                .resizable()
-                .scaledToFit()
-                .frame(width: 15, height: 15)
-                .clipShape(RoundedRectangle(cornerRadius: 3.5, style: .continuous))
-            Text("Sync")
-                .font(.caption.weight(.bold))
-                .foregroundStyle(theme.accent)
+        VStack(alignment: .leading, spacing: 11) {
+            header
+            bodyContent
         }
+        .padding(12)
+        .background(syncPanelBackground, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .stroke(syncPanelBorder, lineWidth: 1)
+        }
+        .shadow(color: Color.black.opacity(theme.isDark ? 0.30 : 0.09), radius: theme.isDark ? 10 : 7, x: 0, y: theme.isDark ? 5 : 3)
+        .task { await loadProductsIfNeeded() }
+        .onChange(of: model.syncSession?.supportsSync) { _, supportsSync in
+            guard supportsSync == false else { return }
+            Task { await model.loadSyncProducts() }
+        }
+    }
+
+    private var header: some View {
+        HStack(alignment: .top, spacing: 10) {
+            HStack(alignment: .top, spacing: 9) {
+                Image("BrandLogo")
+                    .resizable()
+                    .scaledToFill()
+                    .frame(width: 34, height: 34)
+                    .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
+
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("KnotQ Sync")
+                        .font(.system(size: 15, weight: .semibold))
+                        .foregroundStyle(theme.textPrimary)
+                    Text(detail)
+                        .font(.system(size: 11))
+                        .lineSpacing(1)
+                        .foregroundStyle(theme.textSoft)
+                        .lineLimit(2)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+
+            Text(state.badge)
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundStyle(state.badgeForeground)
+                .padding(.horizontal, 7)
+                .padding(.vertical, 3)
+                .background(state.badgeBackground, in: Capsule())
+                .fixedSize(horizontal: true, vertical: false)
+        }
+    }
+
+    @ViewBuilder
+    private var bodyContent: some View {
+        if let session = model.syncSession {
+            if session.supportsSync {
+                enabledActions
+            } else {
+                upgradeActions
+            }
+            signOutRow
+        } else {
+            Button("Sign in") {
+                showingSyncSignIn = true
+            }
+            .buttonStyle(SyncCardButtonStyle(theme: theme, prominence: .primary))
+            .frame(maxWidth: .infinity)
+        }
+    }
+
+    private var enabledActions: some View {
+        ViewThatFits(in: .horizontal) {
+            HStack(spacing: 8) {
+                checkStatusButton
+                cancelSubscriptionButton
+                deleteAccountButton
+            }
+            VStack(alignment: .leading, spacing: 8) {
+                checkStatusButton
+                HStack(spacing: 8) {
+                    cancelSubscriptionButton
+                    deleteAccountButton
+                }
+            }
+        }
+    }
+
+    private var upgradeActions: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Sync is turned off for this account. Subscribe to enable it.")
+                .font(.system(size: 11))
+                .lineSpacing(1)
+                .foregroundStyle(theme.textSoft)
+
+            if model.syncProducts.isEmpty {
+                Text("Subscription products are still loading.")
+                    .font(.system(size: 11))
+                    .foregroundStyle(theme.textMuted)
+            } else {
+                ForEach(model.syncProducts, id: \.id) { product in
+                    Button {
+                        Task { await model.purchaseSync(product) }
+                    } label: {
+                        HStack(spacing: 8) {
+                            Text(model.syncProducts.count == 1 ? "Subscribe to enable sync" : product.displayName)
+                                .lineLimit(1)
+                            Spacer(minLength: 8)
+                            Text(product.displayPrice)
+                                .foregroundStyle(Color.white.opacity(0.78))
+                        }
+                    }
+                    .buttonStyle(SyncCardButtonStyle(theme: theme, prominence: .primary))
+                    .disabled(model.purchaseInProgress)
+                }
+            }
+
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: 8) {
+                    restorePurchasesButton
+                    checkStatusButton
+                    deleteAccountButton
+                }
+                VStack(alignment: .leading, spacing: 8) {
+                    restorePurchasesButton
+                    HStack(spacing: 8) {
+                        checkStatusButton
+                        deleteAccountButton
+                    }
+                }
+            }
+        }
+    }
+
+    private var checkStatusButton: some View {
+        Button {
+            Task { await model.refreshEntitlement() }
+        } label: {
+            if model.syncInProgress {
+                HStack(spacing: 6) {
+                    ProgressView()
+                        .controlSize(.small)
+                    Text("Checking...")
+                }
+            } else {
+                Text(model.syncSession?.supportsSync == true ? "Check status" : "I've subscribed")
+            }
+        }
+        .buttonStyle(SyncCardButtonStyle(theme: theme))
+        .disabled(model.syncInProgress || model.syncAccountActionInProgress)
+    }
+
+    private var cancelSubscriptionButton: some View {
+        Button("Cancel subscription") {
+            showingCancelConfirm = true
+        }
+        .buttonStyle(SyncCardButtonStyle(theme: theme))
+        .disabled(model.syncAccountActionInProgress)
+    }
+
+    private var deleteAccountButton: some View {
+        Button("Delete account") {
+            showingDeleteConfirm = true
+        }
+        .buttonStyle(SyncCardButtonStyle(theme: theme, prominence: .destructive))
+        .disabled(model.syncAccountActionInProgress)
+    }
+
+    private var restorePurchasesButton: some View {
+        Button {
+            Task { await model.restorePurchases() }
+        } label: {
+            Text(model.purchaseInProgress ? "Restoring..." : "Restore purchases")
+        }
+        .buttonStyle(SyncCardButtonStyle(theme: theme))
+        .disabled(model.purchaseInProgress)
+    }
+
+    private var signOutRow: some View {
+        HStack {
+            Spacer()
+            Button("Sign out") {
+                model.signOutSync()
+            }
+            .buttonStyle(SyncCardButtonStyle(theme: theme))
+        }
+    }
+
+    private var syncPanelBackground: Color {
+        theme.isDark ? Color(hex: 0x3b82f6).opacity(0.086) : Color(hex: 0xeaf2ff)
+    }
+
+    private var syncPanelBorder: Color {
+        theme.isDark ? Color(hex: 0x7aa0ff).opacity(0.27) : Color(hex: 0x2f67cf).opacity(0.22)
+    }
+
+    private func loadProductsIfNeeded() async {
+        guard let session = model.syncSession, !session.supportsSync else { return }
+        await model.loadSyncProducts()
     }
 }
 
-func syncSettingsRowBackground(theme: KnotQTheme) -> Color {
-    theme.isDark
-        ? Color(hex: 0x121b2f)
-        : Color(hex: 0xf2d8ca)
+private enum SyncCardButtonProminence {
+    case primary
+    case secondary
+    case destructive
+}
+
+private struct SyncCardButtonStyle: ButtonStyle {
+    @Environment(\.isEnabled) private var isEnabled
+    let theme: KnotQTheme
+    var prominence: SyncCardButtonProminence = .secondary
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .font(.system(size: 12, weight: prominence == .primary ? .semibold : .regular))
+            .foregroundStyle(foreground)
+            .lineLimit(1)
+            .minimumScaleFactor(0.85)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 6)
+            .frame(minHeight: 30)
+            .frame(maxWidth: prominence == .primary ? .infinity : nil)
+            .background(background(pressed: configuration.isPressed), in: RoundedRectangle(cornerRadius: 5, style: .continuous))
+            .opacity(isEnabled ? 1 : 0.52)
+    }
+
+    private var foreground: Color {
+        switch prominence {
+        case .primary:
+            Color.white
+        case .secondary:
+            theme.textPrimary
+        case .destructive:
+            theme.danger
+        }
+    }
+
+    private func background(pressed: Bool) -> Color {
+        switch prominence {
+        case .primary:
+            pressed ? Color(hex: 0x1d4ed8) : Color(hex: 0x2563eb)
+        case .secondary, .destructive:
+            pressed ? theme.rowSelected : theme.buttonBg
+        }
+    }
 }
 
 struct NotificationDefaultsSettingsSection: View {
@@ -108,40 +376,22 @@ struct SettingsForm: View {
     @EnvironmentObject private var model: AppModel
     let theme: KnotQTheme
     @State private var showingSyncSignIn = false
+    @State private var showingCancelConfirm = false
+    @State private var showingDeleteConfirm = false
 
     var body: some View {
         Form {
             Section {
-                if let session = model.syncSession {
-                    LabeledContent("Account", value: session.email)
-                    LabeledContent("Backend", value: session.apiBase)
-                    LabeledContent("Status") {
-                        if model.syncInProgress {
-                            ProgressView()
-                        } else {
-                            Text(session.supportsSync ? "Enabled" : "Not allowed")
-                                .foregroundStyle(session.supportsSync ? theme.textDim : theme.danger)
-                        }
-                    }
-                    Button("Manage Sync Account", systemImage: "person.crop.circle") {
-                        showingSyncSignIn = true
-                    }
-                    Button("Sign Out", systemImage: "rectangle.portrait.and.arrow.right", role: .destructive) {
-                        model.signOutSync()
-                    }
-                } else {
-                    LabeledContent("Status") {
-                        Text("Not signed in")
-                            .foregroundStyle(theme.textDim)
-                    }
-                    Button("Sign in to Sync", systemImage: "person.crop.circle") {
-                        showingSyncSignIn = true
-                    }
-                }
-            } header: {
-                SyncSettingsHeader(theme: theme)
+                SyncSettingsCard(
+                    theme: theme,
+                    showingSyncSignIn: $showingSyncSignIn,
+                    showingCancelConfirm: $showingCancelConfirm,
+                    showingDeleteConfirm: $showingDeleteConfirm
+                )
             }
-            .listRowBackground(syncSettingsRowBackground(theme: theme))
+            .listRowInsets(EdgeInsets(top: 12, leading: 16, bottom: 6, trailing: 16))
+            .listRowBackground(Color.clear)
+            .listRowSeparator(.hidden)
 
             Section {
                 Picker("Theme", selection: themeBinding) {
@@ -180,6 +430,30 @@ struct SettingsForm: View {
             SyncSignInSheet(theme: theme)
                 .environmentObject(model)
                 .presentationDetents([.medium])
+        }
+        .confirmationDialog(
+            "Cancel sync subscription?",
+            isPresented: $showingCancelConfirm,
+            titleVisibility: .visible
+        ) {
+            Button("Cancel Subscription", role: .destructive) {
+                Task { await model.cancelSyncSubscription() }
+            }
+            Button("Keep Sync", role: .cancel) {}
+        } message: {
+            Text("Your local workspace stays on this device. Paid sync may remain available until the current billing period ends.")
+        }
+        .confirmationDialog(
+            "Delete account?",
+            isPresented: $showingDeleteConfirm,
+            titleVisibility: .visible
+        ) {
+            Button("Delete Account", role: .destructive) {
+                Task { await model.deleteSyncAccount() }
+            }
+            Button("Keep Account", role: .cancel) {}
+        } message: {
+            Text("Your account and synced data are scheduled for deletion. You have 14 days to undo this by signing back in before everything is permanently erased.")
         }
     }
 
@@ -237,18 +511,9 @@ struct MobileDock: View {
         .buttonStyle(.plain)
         .accessibilityLabel(pane.title)
 
-        if let target = Self.onboardingTarget(for: pane) {
-            button.onboardingTarget(target)
-        } else {
-            button
-        }
-    }
-
-    private static func onboardingTarget(for pane: MobilePane) -> OnboardingTarget? {
-        switch pane {
-        case .calendar: return .calendar
-        default: return nil
-        }
+        // The onboarding tour navigates into each pane and rings its content, so
+        // the dock buttons are no longer spotlight targets themselves.
+        button
     }
 }
 

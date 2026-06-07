@@ -8,9 +8,13 @@ import SwiftUI
 /// with `.onboardingTarget(_:)`; the overlay resolves their on-screen frames
 /// through an anchor preference, mirroring the desktop spotlight walkthrough
 /// instead of showing static walls of text.
+///
+/// Each case rings the *content of the navigated pane* — the tour switches to the
+/// real Calendar / Scheme / Daily view (like desktop) and the spotlight hugs what's
+/// now on screen, rather than pointing at Home-screen entry points.
 enum OnboardingTarget: Hashable {
     case calendar
-    case schemes
+    case scheme
     case daily
     case upcoming
 }
@@ -49,8 +53,9 @@ private struct OnboardingStep {
     let focusPane: MobilePane?
 }
 
-// Mirrors the desktop spotlight walkthrough — same concepts, same order — adapted
-// to where each one lives on mobile (all reachable from Home).
+// Mirrors the desktop spotlight walkthrough — same concepts, same order. Each step
+// navigates into the real pane (like desktop) so the spotlight rings live content;
+// Upcoming lives on Home on mobile, so it stays there.
 private let onboardingSteps: [OnboardingStep] = [
     OnboardingStep(
         title: "Welcome to KnotQ",
@@ -60,21 +65,21 @@ private let onboardingSteps: [OnboardingStep] = [
     ),
     OnboardingStep(
         title: "Calendar",
-        body: "Your calendar holds events, assignments, and reminders. Open it to add or reschedule things at a specific time.",
+        body: "Your calendar holds events, assignments, and reminders. Tap to add a reminder, long-press for an assignment, or drag to block out an event.",
         target: .calendar,
-        focusPane: .home
+        focusPane: .calendar
     ),
     OnboardingStep(
         title: "Schemes",
         body: "Schemes are editable outlines for projects, notes, and plans. Add start and end times to any line to turn it into a calendar item.",
-        target: .schemes,
-        focusPane: .home
+        target: .scheme,
+        focusPane: .scheme
     ),
     OnboardingStep(
         title: "Daily",
         body: "Daily is a special, default scheme. Write an optimistic task list each day and check off the ones you complete.",
         target: .daily,
-        focusPane: .home
+        focusPane: .daily
     ),
     OnboardingStep(
         title: "Upcoming",

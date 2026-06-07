@@ -15,65 +15,16 @@ struct SettingsScreen: View {
     var body: some View {
         Form {
             Section {
-                if let session = model.syncSession {
-                    LabeledContent("Account", value: session.email)
-                    LabeledContent("Backend", value: session.apiBase)
-                    Button("Manage Sync Account", systemImage: "person.crop.circle") {
-                        showingSyncSignIn = true
-                    }
-                    if session.supportsSync {
-                        Button("Cancel Subscription", systemImage: "xmark.circle", role: .destructive) {
-                            showingCancelConfirm = true
-                        }
-                        .disabled(model.syncAccountActionInProgress)
-                    } else {
-                        LabeledContent("Subscription") {
-                            Text("Sync turned off")
-                                .foregroundStyle(.secondary)
-                        }
-                        if model.syncProducts.isEmpty {
-                            Text("Subscribe to sync your workspace across devices.")
-                                .font(.footnote)
-                                .foregroundStyle(theme.textMuted)
-                        }
-                        ForEach(model.syncProducts, id: \.id) { product in
-                            Button {
-                                Task { await model.purchaseSync(product) }
-                            } label: {
-                                HStack {
-                                    Label(product.displayName, systemImage: "icloud.and.arrow.up")
-                                    Spacer()
-                                    Text(product.displayPrice)
-                                        .foregroundStyle(.secondary)
-                                }
-                            }
-                            .disabled(model.purchaseInProgress)
-                        }
-                        Button("Restore Purchases", systemImage: "arrow.clockwise") {
-                            Task { await model.restorePurchases() }
-                        }
-                        .disabled(model.purchaseInProgress)
-                    }
-                    Button("Sign Out", systemImage: "rectangle.portrait.and.arrow.right", role: .destructive) {
-                        model.signOutSync()
-                    }
-                    Button("Delete Account", systemImage: "trash", role: .destructive) {
-                        showingDeleteConfirm = true
-                    }
-                    .disabled(model.syncAccountActionInProgress)
-                } else {
-                    LabeledContent("Status") {
-                        Text("Not signed in")
-                            .foregroundStyle(.secondary)
-                    }
-                    Button("Sign in to Sync", systemImage: "person.crop.circle") {
-                        showingSyncSignIn = true
-                    }
-                }
-            } header: {
-                SyncSettingsHeader(theme: theme)
+                SyncSettingsCard(
+                    theme: theme,
+                    showingSyncSignIn: $showingSyncSignIn,
+                    showingCancelConfirm: $showingCancelConfirm,
+                    showingDeleteConfirm: $showingDeleteConfirm
+                )
             }
-            .listRowBackground(syncSettingsRowBackground(theme: theme))
+            .listRowInsets(EdgeInsets(top: 12, leading: 16, bottom: 6, trailing: 16))
+            .listRowBackground(Color.clear)
+            .listRowSeparator(.hidden)
 
             Section("Appearance") {
                 Picker("Theme", selection: Binding(

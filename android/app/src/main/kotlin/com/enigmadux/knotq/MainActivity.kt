@@ -4,11 +4,16 @@ import android.app.Activity
 import android.app.AlertDialog
 import android.app.DatePickerDialog
 import android.content.ActivityNotFoundException
+import android.content.Context
 import android.content.Intent
 import android.content.res.Configuration
+import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
+import android.graphics.PorterDuff
+import android.graphics.PorterDuffXfermode
 import android.graphics.Rect
+import android.graphics.RectF
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
 import android.net.Uri
@@ -18,7 +23,11 @@ import android.os.Handler
 import android.os.Looper
 import android.text.Editable
 import android.text.InputType
+import android.text.TextPaint
+import android.text.TextUtils
 import android.text.TextWatcher
+import android.util.TypedValue
+import android.view.GestureDetector
 import android.view.MotionEvent
 import android.view.Gravity
 import android.view.View
@@ -78,6 +87,56 @@ private const val TAB_SEARCH = 3
 private const val TAB_SETTINGS = 4
 private const val TAB_HOME = 5
 
+// First-run onboarding (mirrors the desktop/iOS spotlight tour). The flow has an
+// account-choice phase followed by a guided tour that navigates into each pane and
+// rings its content, rather than pointing at chrome.
+private const val ONBOARDING_PREF = "knotq.onboardingCompleted.v1"
+private const val ONBOARDING_ACCOUNT = 0
+private const val ONBOARDING_GUIDE = 1
+
+// A guided-tour step: navigates to `tab` (opening the first scheme for SCHEMES,
+// ensuring today's queue for DAILY) and, when `ringsContent`, spotlights the main
+// content area behind the scrim. Welcome is a centered intro with no cutout.
+private data class OnboardingStepDef(
+    val title: String,
+    val body: String,
+    val tab: Int,
+    val ringsContent: Boolean
+)
+
+private val ONBOARDING_STEPS = listOf(
+    OnboardingStepDef(
+        "Welcome to KnotQ",
+        "KnotQ is a single app for calendar events, reminders, assignments, and general notes. It aims to be simple yet functional.",
+        TAB_HOME,
+        ringsContent = false
+    ),
+    OnboardingStepDef(
+        "Calendar",
+        "Your calendar holds events, assignments, and reminders. Tap to add a reminder, long-press for an assignment, or drag to block out an event.",
+        TAB_CALENDAR,
+        ringsContent = true
+    ),
+    OnboardingStepDef(
+        "Schemes",
+        "Schemes are editable outlines for projects, notes, and plans. Add start and end times to any line to turn it into a calendar item.",
+        TAB_SCHEMES,
+        ringsContent = true
+    ),
+    OnboardingStepDef(
+        "Daily",
+        "Daily is a special, default scheme. Write an optimistic task list each day and check off the ones you complete.",
+        TAB_DAILY,
+        ringsContent = true
+    ),
+    OnboardingStepDef(
+        "Upcoming",
+        "Upcoming gathers nearby events, assignments, and reminders. You can mark tasks complete right from here.",
+        TAB_HOME,
+        ringsContent = true
+    )
+)
+
 private data class SyncSession(
     val apiBase: String,
     val userId: String,
@@ -107,11 +166,19 @@ private data class FolderDestination(val id: String, val name: String, val depth
 
 class MainActivity : Activity() {
     private lateinit var bridge: RustBridge
+    private lateinit var rootFrame: FrameLayout
     private lateinit var shell: LinearLayout
     private lateinit var titleBar: LinearLayout
     private lateinit var content: FrameLayout
     private lateinit var dock: LinearLayout
     private lateinit var theme: UiTheme
+
+    // First-run onboarding overlay state. The overlay lives in `rootFrame` as a
+    // sibling of `shell`, so it survives `render()` (which only rebuilds shell).
+    private var onboardingActive = false
+    private var onboardingPhase = ONBOARDING_ACCOUNT
+    private var onboardingStep = 0
+    private var onboardingOverlay: View? = null
 
     private var snapshot = JSONObject()
     private var selectedTab = TAB_HOME
@@ -119,6 +186,10 @@ class MainActivity : Activity() {
     private var selectedDate: LocalDate = LocalDate.now()
     private var selectedSchemeId: String? = null
     private var keyboardActive = false
+    // Preserve the calendar timeline scroll position across incidental re-renders
+    // (e.g. toggling an item done); reset to the now/morning anchor on day change.
+    private var calendarScrollY = 0
+    private var calendarScrollDate: String? = null
     private val editorSchemeIds = WeakHashMap<EditText, String>()
     private var syncSession: SyncSession? = null
     private var syncLoginChallenge: SyncLoginChallenge? = null
@@ -158,6 +229,7 @@ class MainActivity : Activity() {
             applyTheme()
             buildShell()
             render()
+            maybeStartOnboarding()
             MobileNotificationScheduler.requestPermission(this)
             rescheduleNotifications()
             startSyncPolling()
@@ -214,13 +286,16 @@ class MainActivity : Activity() {
         dock = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER
-            setBackgroundColor(theme.bgSidebar)
+            setPadding(dp(6), dp(5), dp(6), dp(5))
         }
 
         shell.addView(titleBar, LinearLayout.LayoutParams(-1, dp(38)))
         shell.addView(content, LinearLayout.LayoutParams(-1, 0, 1f))
-        shell.addView(dock, LinearLayout.LayoutParams(-1, dp(58)))
-        setContentView(shell)
+        // Host the shell inside a root frame so the onboarding overlay can sit on
+        // top of (and survive) `render()`, which only rebuilds the shell's children.
+        rootFrame = FrameLayout(this)
+        rootFrame.addView(shell, FrameLayout.LayoutParams(-1, -1))
+        setContentView(rootFrame)
         installKeyboardVisibilityWatcher()
     }
 
@@ -230,15 +305,27 @@ class MainActivity : Activity() {
         shell.setBackgroundColor(theme.bgApp)
         titleBar.setBackgroundColor(theme.bgToolbar)
         content.setBackgroundColor(theme.bgApp)
-        dock.setBackgroundColor(theme.bgSidebar)
 
         renderTitleBar()
-        renderDock()
+        currentFocus?.clearFocus()
+        content.clearFocus()
         content.removeAllViews()
-        val wide = resources.configuration.screenWidthDp >= 760
+        val wide = isWideLayout()
         updateChromeVisibility()
         val view = if (wide) renderWideShell() else renderPhoneMain()
-        content.addView(view)
+        content.addView(view, FrameLayout.LayoutParams(-1, -1))
+        renderDock()
+        if (shouldShowPhoneQuickActions()) {
+            content.addView(homeFloatingActions(), FrameLayout.LayoutParams(-2, dp(58), Gravity.BOTTOM or Gravity.RIGHT).apply {
+                setMargins(0, 0, dp(22), dp(83))
+            })
+        }
+        if (shouldShowPhoneDock()) {
+            content.addView(dock, FrameLayout.LayoutParams(-2, dp(58), Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL).apply {
+                setMargins(0, 0, 0, dp(6))
+            })
+        }
+        updateChromeVisibility()
     }
 
     private fun renderTitleBar() {
@@ -265,18 +352,27 @@ class MainActivity : Activity() {
 
     private fun renderDock() {
         dock.removeAllViews()
-        listOf(TAB_HOME to "Home", TAB_CALENDAR to "Calendar", TAB_SETTINGS to "Settings").forEach { (index, label) ->
-            val selected = selectedTab == index ||
-                (index == TAB_HOME && selectedTab in listOf(TAB_SCHEMES, TAB_DAILY, TAB_SEARCH))
-            val tab = text(label, if (selected) theme.textPrimary else theme.textMuted, 11f, true).apply {
-                gravity = Gravity.CENTER
-                setOnClickListener {
-                    selectedTab = index
-                    if (index != TAB_SCHEMES) selectedSchemeId = null
-                    render()
-                }
+        dock.background = rounded(theme.bgToolbar, dp(30), theme.borderOverlay, max(1, (0.5f * resources.displayMetrics.density).roundToInt()))
+        dock.elevation = dp(if (theme.isDark) 8 else 2).toFloat()
+        listOf(
+            TAB_HOME to "⌂",
+            TAB_CALENDAR to "◷",
+            TAB_SETTINGS to "⚙"
+        ).forEach { (index, label) ->
+            val selected = when (index) {
+                TAB_HOME -> selectedTab == TAB_HOME || selectedTab in listOf(TAB_SCHEMES, TAB_DAILY, TAB_SEARCH)
+                else -> selectedTab == index
             }
-            dock.addView(tab, LinearLayout.LayoutParams(0, -1, 1f))
+            dock.addView(dockButton(label, selected) {
+                selectedTab = index
+                selectedSchemeId = null
+                if (index == TAB_CALENDAR && selectedDate != LocalDate.now()) {
+                    selectedDate = LocalDate.now()
+                    weekOffset = 0
+                    loadSnapshot()
+                }
+                render()
+            }, LinearLayout.LayoutParams(dp(46), dp(48)))
         }
     }
 
@@ -319,9 +415,307 @@ class MainActivity : Activity() {
 
     private fun updateChromeVisibility() {
         if (!::titleBar.isInitialized || !::dock.isInitialized) return
-        val wide = resources.configuration.screenWidthDp >= 760
-        titleBar.visibility = if (!wide && keyboardActive) View.GONE else View.VISIBLE
-        dock.visibility = if (wide || keyboardActive) View.GONE else View.VISIBLE
+        titleBar.visibility = if (isWideLayout()) View.VISIBLE else View.GONE
+        dock.visibility = if (shouldShowPhoneDock()) View.VISIBLE else View.GONE
+    }
+
+    private fun isWideLayout(): Boolean =
+        resources.configuration.screenWidthDp >= 760
+
+    private fun shouldShowPhoneDock(): Boolean =
+        !isWideLayout() && !keyboardActive && selectedTab in listOf(TAB_HOME, TAB_CALENDAR, TAB_SETTINGS)
+
+    private fun shouldShowPhoneQuickActions(): Boolean =
+        !isWideLayout() && !keyboardActive && selectedTab == TAB_HOME
+
+    // ── First-run onboarding ────────────────────────────────────────────────
+
+    private fun maybeStartOnboarding() {
+        if (onboardingActive) return
+        if (getSharedPreferences("knotq", MODE_PRIVATE).getBoolean(ONBOARDING_PREF, false)) return
+        if (snapshot.optJSONObject("root") == null) return
+        onboardingActive = true
+        onboardingStep = 0
+        if (syncSession != null) {
+            // Already signed in: skip the account step, go straight to the tour.
+            onboardingPhase = ONBOARDING_GUIDE
+            applyOnboardingStep(0)
+        } else {
+            onboardingPhase = ONBOARDING_ACCOUNT
+            showOnboardingOverlay()
+        }
+    }
+
+    private fun startOnboardingGuide() {
+        onboardingPhase = ONBOARDING_GUIDE
+        applyOnboardingStep(0)
+    }
+
+    /// Navigates to the step's pane (mirrors desktop) and then redraws the overlay
+    /// once the new content has been laid out so the cutout hugs it.
+    private fun applyOnboardingStep(step: Int) {
+        onboardingStep = step.coerceIn(0, ONBOARDING_STEPS.size - 1)
+        when (ONBOARDING_STEPS[onboardingStep].tab) {
+            TAB_SCHEMES -> {
+                val id = firstRegularSchemeId()
+                if (id != null) {
+                    selectedTab = TAB_SCHEMES
+                    selectedSchemeId = id
+                } else {
+                    // No schemes yet: fall back to Home (mirrors desktop).
+                    selectedTab = TAB_HOME
+                    selectedSchemeId = null
+                }
+            }
+            TAB_DAILY -> {
+                ensureTodayDailyQueue()
+                selectedTab = TAB_DAILY
+                selectedSchemeId = null
+            }
+            else -> {
+                selectedTab = ONBOARDING_STEPS[onboardingStep].tab
+                selectedSchemeId = null
+            }
+        }
+        render()
+        rootFrame.post { showOnboardingOverlay() }
+    }
+
+    private fun onboardingAdvance() {
+        if (onboardingStep >= ONBOARDING_STEPS.size - 1) {
+            finishOnboarding()
+        } else {
+            applyOnboardingStep(onboardingStep + 1)
+        }
+    }
+
+    private fun onboardingBack() {
+        if (onboardingStep <= 0) {
+            if (syncSession == null) {
+                onboardingPhase = ONBOARDING_ACCOUNT
+                showOnboardingOverlay()
+            }
+            return
+        }
+        applyOnboardingStep(onboardingStep - 1)
+    }
+
+    private fun finishOnboarding() {
+        onboardingActive = false
+        getSharedPreferences("knotq", MODE_PRIVATE).edit().putBoolean(ONBOARDING_PREF, true).apply()
+        removeOnboardingOverlay()
+        selectedTab = TAB_HOME
+        selectedSchemeId = null
+        render()
+    }
+
+    private fun showOnboardingOverlay() {
+        if (!onboardingActive || !::rootFrame.isInitialized) return
+        removeOnboardingOverlay()
+        val overlay = if (onboardingPhase == ONBOARDING_ACCOUNT) buildAccountOverlay() else buildGuideOverlay()
+        rootFrame.addView(overlay, FrameLayout.LayoutParams(-1, -1))
+        onboardingOverlay = overlay
+    }
+
+    private fun removeOnboardingOverlay() {
+        onboardingOverlay?.let { if (::rootFrame.isInitialized) rootFrame.removeView(it) }
+        onboardingOverlay = null
+    }
+
+    private fun buildAccountOverlay(): View {
+        val overlay = FrameLayout(this).apply {
+            isClickable = true
+            setOnClickListener { } // swallow taps to the app behind the scrim
+            setBackgroundColor(Color.argb(158, 0, 0, 0))
+        }
+        val card = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = Gravity.CENTER_HORIZONTAL
+            setPadding(dp(20), dp(22), dp(20), dp(18))
+            background = rounded(theme.bgModal, dp(16), theme.borderOverlay)
+        }
+        card.addView(brandMark(60), LinearLayout.LayoutParams(dp(60), dp(60)).apply { bottomMargin = dp(14) })
+        card.addView(text("KnotQ", theme.textPrimary, 24f, true).apply { gravity = Gravity.CENTER })
+        card.addView(
+            text("Local-first planning with optional sync.", theme.textSoft, 13f, false).apply {
+                gravity = Gravity.CENTER
+            },
+            LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(4); bottomMargin = dp(18) }
+        )
+        card.addView(
+            onboardingButton("Sign in or create account", true) { showSyncAccountDialog() },
+            LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = dp(10) }
+        )
+        card.addView(
+            onboardingButton("Continue without account", false) { startOnboardingGuide() },
+            LinearLayout.LayoutParams(-1, -2)
+        )
+        card.addView(
+            text("You can add or remove sync later from Settings.", theme.textMuted, 11f, false).apply {
+                gravity = Gravity.CENTER
+            },
+            LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(14) }
+        )
+        val width = min(dp(380), resources.displayMetrics.widthPixels - dp(40))
+        overlay.addView(card, FrameLayout.LayoutParams(width, FrameLayout.LayoutParams.WRAP_CONTENT, Gravity.CENTER))
+        return overlay
+    }
+
+    private fun buildGuideOverlay(): View {
+        val def = ONBOARDING_STEPS[onboardingStep]
+        val cutout = if (def.ringsContent) {
+            val r = contentRectInRoot()
+            if (r.width() > 0 && r.height() > 0) {
+                // Inset to keep the ring on-screen and clear of the floating dock.
+                Rect(r.left + dp(6), r.top + dp(6), r.right - dp(6), max(r.top + dp(48), r.bottom - dp(76)))
+            } else {
+                null
+            }
+        } else {
+            null
+        }
+
+        val overlay = FrameLayout(this).apply {
+            isClickable = true
+            setOnClickListener { } // tour is driven by Back / Skip / Next
+        }
+        overlay.addView(buildSpotlightScrim(cutout), FrameLayout.LayoutParams(-1, -1))
+
+        val cardWidth = min(dp(360), resources.displayMetrics.widthPixels - dp(32))
+        val lp = FrameLayout.LayoutParams(cardWidth, FrameLayout.LayoutParams.WRAP_CONTENT)
+        if (cutout == null) {
+            lp.gravity = Gravity.CENTER
+        } else {
+            lp.gravity = Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL
+            lp.bottomMargin = dp(84)
+        }
+        overlay.addView(buildGuideCard(), lp)
+        return overlay
+    }
+
+    private fun buildSpotlightScrim(cutout: Rect?): View {
+        val dimColor = Color.argb(158, 0, 0, 0)
+        val ringColor = theme.accent
+        val radius = dp(14).toFloat()
+        return object : View(this) {
+            private val dimPaint = Paint().apply { color = dimColor }
+            private val clearPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                xfermode = PorterDuffXfermode(PorterDuff.Mode.CLEAR)
+            }
+            private val ringPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                style = Paint.Style.STROKE
+                strokeWidth = dp(2).toFloat()
+                color = ringColor
+            }
+
+            init {
+                setLayerType(LAYER_TYPE_SOFTWARE, null)
+            }
+
+            override fun onDraw(canvas: Canvas) {
+                canvas.drawRect(0f, 0f, width.toFloat(), height.toFloat(), dimPaint)
+                cutout?.let { r ->
+                    val rect = RectF(r.left.toFloat(), r.top.toFloat(), r.right.toFloat(), r.bottom.toFloat())
+                    canvas.drawRoundRect(rect, radius, radius, clearPaint)
+                    canvas.drawRoundRect(rect, radius, radius, ringPaint)
+                }
+            }
+        }
+    }
+
+    private fun buildGuideCard(): View {
+        val def = ONBOARDING_STEPS[onboardingStep]
+        val isLast = onboardingStep >= ONBOARDING_STEPS.size - 1
+        val card = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(16), dp(16), dp(16), dp(14))
+            background = rounded(theme.bgModal, dp(14), theme.borderOverlay)
+            elevation = dp(12).toFloat()
+        }
+
+        val dots = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+        }
+        ONBOARDING_STEPS.indices.forEach { i ->
+            val active = i == onboardingStep
+            dots.addView(View(this).apply {
+                background = rounded(if (active) theme.accent else adjustAlpha(theme.borderOverlay, 0.6f), dp(3))
+            }, LinearLayout.LayoutParams(dp(if (active) 18 else 6), dp(6)).apply { rightMargin = dp(5) })
+        }
+        card.addView(dots, LinearLayout.LayoutParams(-2, -2).apply { bottomMargin = dp(12) })
+
+        card.addView(text(def.title, theme.textPrimary, 18f, true))
+        card.addView(
+            text(def.body, theme.textSoft, 13f, false).apply {
+                gravity = Gravity.START
+                setLineSpacing(dp(3).toFloat(), 1f)
+            },
+            LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(7); bottomMargin = dp(14) }
+        )
+
+        val buttons = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+        }
+        if (onboardingStep > 0) {
+            buttons.addView(
+                onboardingButton("Back", false) { onboardingBack() },
+                LinearLayout.LayoutParams(-2, -2).apply { rightMargin = dp(8) }
+            )
+        }
+        buttons.addView(text("Skip", theme.textMuted, 13f, true).apply {
+            setPadding(dp(4), dp(10), dp(12), dp(10))
+            setOnClickListener { finishOnboarding() }
+        }, LinearLayout.LayoutParams(-2, -2))
+        buttons.addView(View(this), LinearLayout.LayoutParams(0, 1, 1f)) // spacer
+        buttons.addView(
+            onboardingButton(if (isLast) "Done" else "Next", true) { onboardingAdvance() },
+            LinearLayout.LayoutParams(-2, -2)
+        )
+        card.addView(buttons, LinearLayout.LayoutParams(-1, -2))
+        return card
+    }
+
+    private fun onboardingButton(label: String, prominent: Boolean, listener: () -> Unit): TextView =
+        text(label, if (prominent) Color.WHITE else theme.textPrimary, 14f, true).apply {
+            gravity = Gravity.CENTER
+            setPadding(dp(16), dp(11), dp(16), dp(11))
+            background = if (prominent) {
+                rounded(theme.accent, dp(8))
+            } else {
+                rounded(theme.buttonBg, dp(8), theme.borderOverlay)
+            }
+            setOnClickListener { listener() }
+        }
+
+    private fun contentRectInRoot(): Rect {
+        val rootLoc = IntArray(2)
+        rootFrame.getLocationInWindow(rootLoc)
+        val cLoc = IntArray(2)
+        content.getLocationInWindow(cLoc)
+        val left = cLoc[0] - rootLoc[0]
+        val top = cLoc[1] - rootLoc[1]
+        return Rect(left, top, left + content.width, top + content.height)
+    }
+
+    private fun firstRegularSchemeId(): String? =
+        snapshot.optJSONObject("root")?.let { firstRegularSchemeId(it) }
+
+    private fun firstRegularSchemeId(node: JSONObject): String? {
+        val children = node.optJSONArray("children") ?: return null
+        for (index in 0 until children.length()) {
+            val child = children.optJSONObject(index) ?: continue
+            when (child.optString("kind")) {
+                "folder" -> firstRegularSchemeId(child)?.let { return it }
+                "scheme" -> {
+                    if (!child.optBoolean("is_daily_queue", false) && !child.optBoolean("is_read_only", false)) {
+                        child.optString("id").takeIf { it.isNotEmpty() }?.let { return it }
+                    }
+                }
+            }
+        }
+        return null
     }
 
     private fun renderWideShell(): View {
@@ -397,6 +791,8 @@ class MainActivity : Activity() {
     }
 
     private fun renderHome(): LinearLayout {
+        if (!isWideLayout()) return renderPhoneHome()
+
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setBackgroundColor(theme.bgApp)
@@ -436,6 +832,113 @@ class MainActivity : Activity() {
         }
         root.addView(scroll(body), LinearLayout.LayoutParams(-1, 0, 1f))
         return root
+    }
+
+    private fun renderPhoneHome(): LinearLayout {
+        val root = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setBackgroundColor(theme.bgApp)
+        }
+        val body = page()
+        body.addView(homeSearchEntry(), LinearLayout.LayoutParams(-1, dp(42)).apply {
+            setMargins(0, dp(2), 0, dp(15))
+        })
+        body.addView(phoneSchemesSection(), spaced())
+        val combined = JSONArray()
+        calendar().optJSONArray("overdue")?.forEachObject { combined.put(it) }
+        calendar().optJSONArray("upcoming")?.forEachObject { combined.put(it) }
+        addOccurrenceSection(body, "Upcoming", "Nothing scheduled", combined)
+        root.addView(scroll(body), LinearLayout.LayoutParams(-1, 0, 1f))
+        return root
+    }
+
+    private fun homeSearchEntry(): View =
+        LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(dp(12), 0, dp(12), 0)
+            background = rounded(theme.bgModal, dp(8), theme.borderOverlay)
+            addView(text("Search KnotQ", theme.textMuted, 14f, false), LinearLayout.LayoutParams(0, -1, 1f))
+            addView(text("⌕", theme.textMuted, 17f, true).apply {
+                gravity = Gravity.CENTER
+            }, LinearLayout.LayoutParams(dp(28), -1))
+            setOnClickListener {
+                selectedTab = TAB_SEARCH
+                selectedSchemeId = null
+                render()
+            }
+        }
+
+    private fun phoneSchemesSection(): View {
+        val root = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+        }
+        root.addView(LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            addView(text("Schemes", theme.textPrimary, 20f, true), LinearLayout.LayoutParams(0, dp(34), 1f))
+            addView(iconSquare("+") { showNewMenu() }, LinearLayout.LayoutParams(dp(30), dp(30)))
+        }, LinearLayout.LayoutParams(-1, dp(37)).apply {
+            setMargins(dp(2), 0, dp(2), dp(3))
+        })
+
+        val panel = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            background = rounded(if (theme.isDark) theme.bgToolbar else theme.bgModal, dp(8), theme.borderOverlay)
+            setPadding(dp(4), dp(4), dp(4), dp(3))
+        }
+        val tree = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(0, dp(2), 0, dp(2))
+        }
+        snapshot.optJSONObject("root")?.optJSONArray("children")?.forEachObject {
+            addNode(tree, it, 0, spacious = true)
+        }
+        if (tree.childCount == 0) {
+            tree.addView(text("No schemes yet", theme.textMuted, 14f, false).apply {
+                setPadding(dp(10), dp(8), dp(10), dp(8))
+            }, LinearLayout.LayoutParams(-1, dp(36)))
+        }
+        panel.addView(tree, LinearLayout.LayoutParams(-1, -2))
+        panel.addView(View(this).apply { setBackgroundColor(theme.dividerSoft) }, LinearLayout.LayoutParams(-1, max(1, (0.5f * resources.displayMetrics.density).roundToInt())).apply {
+            setMargins(dp(4), dp(3), dp(4), dp(3))
+        })
+        panel.addView(homeDailySchemeRow(), LinearLayout.LayoutParams(-1, dp(42)))
+        root.addView(panel)
+        return root
+    }
+
+    private fun homeDailySchemeRow(): View {
+        val entry = dailyEntryForHome()
+        val scheme = entry?.optJSONObject("scheme")
+        val itemCount = scheme?.optJSONArray("items")?.length() ?: 0
+        val doneCount = countDoneItems(scheme)
+        val date = entry?.optString("date") ?: selectedDate.toString()
+        val detail = when {
+            itemCount == 0 -> MobileDateFormatting.shortDay(date)
+            else -> "${MobileDateFormatting.shortDay(date)} · $doneCount/$itemCount"
+        }
+        return LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(dp(8), 0, dp(8), 0)
+            addView(colorSquare(dailyAccent(), 10), LinearLayout.LayoutParams(dp(10), dp(10)).apply {
+                setMargins(0, 0, dp(9), 0)
+            })
+            addView(text("Daily", theme.textPrimary, 14f, true), LinearLayout.LayoutParams(-2, -1))
+            addView(text(detail, theme.textSoft, 12f, true).apply {
+                setPadding(dp(9), 0, 0, 0)
+            }, LinearLayout.LayoutParams(0, -1, 1f))
+            addView(text("›", theme.textMuted, 17f, true).apply {
+                gravity = Gravity.CENTER
+            }, LinearLayout.LayoutParams(dp(24), -1))
+            setOnClickListener {
+                selectedTab = TAB_DAILY
+                selectedSchemeId = null
+                runCatching { LocalDate.parse(date) }.getOrNull()?.let { selectedDate = it }
+                ensureDaily()
+            }
+        }
     }
 
     private fun homeHeader(): View =
@@ -619,31 +1122,74 @@ class MainActivity : Activity() {
             setBackgroundColor(theme.bgApp)
         }
         root.addView(calendarToolbar())
-        val body = page()
+
+        // Show a run of day columns from the fetched week, anchored on the selected
+        // day. Indexing into the fetched days (rather than absolute dates) keeps the
+        // columns aligned with the data even while browsing other weeks.
+        val columns = calendarVisibleDayCount()
+        val dayObjects = calendarDayObjects()
+        val startIndex = calendarVisibleStartIndex(dayObjects)
+        val visibleDays = if (dayObjects.isEmpty()) emptyList()
+        else dayObjects.subList(startIndex, min(dayObjects.size, startIndex + columns)).toList()
+
+        val timeline = CalendarTimelineView(this).apply {
+            configure(visibleDays, columns)
+        }
+
+        val column = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         val overdue = calendar().optJSONArray("overdue")
         if (overdue != null && overdue.length() > 0) {
-            addOccurrenceSection(body, "Overdue", "None", overdue)
-        }
-        val days = calendar().optJSONArray("days")
-        if (resources.configuration.screenWidthDp >= 760) {
-            val row = LinearLayout(this).apply {
-                orientation = LinearLayout.HORIZONTAL
-                setPadding(dp(12), dp(12), dp(12), dp(12))
+            val overdueBox = LinearLayout(this).apply {
+                orientation = LinearLayout.VERTICAL
+                setPadding(dp(12), dp(8), dp(12), dp(4))
             }
-            days?.forEachObject { day -> row.addView(dayColumn(day), marginRight(dp(8), dp(132), -2)) }
-            root.addView(HorizontalScrollView(this).apply {
-                setBackgroundColor(theme.bgApp)
-                addView(row)
-            }, LinearLayout.LayoutParams(-1, 0, 1f))
+            addOccurrenceSection(overdueBox, "Overdue", "None", overdue)
+            column.addView(overdueBox, LinearLayout.LayoutParams(-1, -2))
+        }
+        column.addView(timeline, LinearLayout.LayoutParams(-1, -2))
+
+        val scrollView = ScrollView(this).apply {
+            setBackgroundColor(theme.bgApp)
+            isVerticalScrollBarEnabled = false
+            addView(column)
+        }
+        scrollView.viewTreeObserver.addOnScrollChangedListener { calendarScrollY = scrollView.scrollY }
+        // Anchor the scroll near "now" on today (else early morning); keep the
+        // user's position when the same day re-renders for another reason.
+        val dateKey = selectedDate.toString()
+        val target = if (calendarScrollDate != dateKey) {
+            val hour = if (selectedDate == LocalDate.now()) max(0, LocalTime.now().hour - 1) else 7
+            dp(8) + dp(44) * hour
         } else {
-            if (days != null) {
-                for (index in 0 until min(phoneCalendarDayCount(), days.length())) {
-                    days.optJSONObject(index)?.let { body.addView(dayList(it), spaced()) }
-                }
-            }
-            root.addView(scroll(body), LinearLayout.LayoutParams(-1, 0, 1f))
+            calendarScrollY
         }
+        calendarScrollDate = dateKey
+        scrollView.post { scrollView.scrollTo(0, target) }
+        root.addView(scrollView, LinearLayout.LayoutParams(-1, 0, 1f))
         return root
+    }
+
+    private fun calendarVisibleDayCount(): Int = when {
+        resources.configuration.screenWidthDp >= 760 -> 5
+        resources.configuration.screenWidthDp >= 600 -> 3
+        else -> 2
+    }
+
+    private fun calendarDayObjects(): List<JSONObject> {
+        val out = ArrayList<JSONObject>()
+        calendar().optJSONArray("days")?.let { arr ->
+            for (i in 0 until arr.length()) arr.optJSONObject(i)?.let(out::add)
+        }
+        return out
+    }
+
+    /// First column index into the fetched week: the selected day, clamped so the
+    /// visible run always stays within the available days. Both the timeline and
+    /// the week strip use this so their highlights stay in sync.
+    private fun calendarVisibleStartIndex(days: List<JSONObject>): Int {
+        val count = calendarVisibleDayCount()
+        val selectedIndex = days.indexOfFirst { it.optString("date") == selectedDate.toString() }.coerceAtLeast(0)
+        return selectedIndex.coerceIn(0, max(0, days.size - count))
     }
 
     private fun calendarToolbar(): View {
@@ -702,23 +1248,29 @@ class MainActivity : Activity() {
             if (stripDates.isEmpty()) {
                 for (offset in 0 until 8) stripDates.add(weekStart(selectedDate).plusDays(offset.toLong()))
             }
+            // Highlight the same run of days the timeline shows (anchored on the
+            // selected day, clamped to the fetched week) — mirrors the iOS pill.
+            val count = calendarVisibleDayCount()
+            val selectedIndex = stripDates.indexOf(selectedDate).coerceAtLeast(0)
+            val startIndex = selectedIndex.coerceIn(0, max(0, stripDates.size - count))
+            val lastIndex = startIndex + count - 1
             stripDates.forEachIndexed { offset, date ->
                 val today = date == LocalDate.now()
-                val visible = offset < phoneCalendarDayCount()
+                val visible = offset in startIndex..lastIndex
                 addView(LinearLayout(this@MainActivity).apply {
                     orientation = LinearLayout.VERTICAL
                     gravity = Gravity.CENTER
                     if (visible) {
                         background = roundedHorizontalSegment(
                             calendarRangeFill(),
-                            leadingRounded = date == selectedDate,
-                            trailingRounded = offset == phoneCalendarDayCount() - 1
+                            leadingRounded = offset == startIndex,
+                            trailingRounded = offset == lastIndex
                         )
                     }
                     addView(text(date.dayOfWeek.getDisplayName(TextStyle.NARROW, Locale.getDefault()).uppercase(Locale.getDefault()), if (today || visible) theme.textPrimary else theme.textMuted, 10f, true).apply {
                         gravity = Gravity.CENTER
                     }, LinearLayout.LayoutParams(-1, dp(16)))
-                    addView(text(date.dayOfMonth.toString(), if (today) theme.accent else theme.textPrimary, 17f, false).apply {
+                    addView(text(date.dayOfMonth.toString(), if (today) theme.accent else if (visible) theme.textPrimary else theme.textMuted, 17f, false).apply {
                         gravity = Gravity.CENTER
                     }, LinearLayout.LayoutParams(dp(34), dp(34)))
                     setOnClickListener {
@@ -728,80 +1280,279 @@ class MainActivity : Activity() {
                         render()
                     }
                 }, LinearLayout.LayoutParams(0, -1, 1f).apply {
-                    setMargins(if (visible && date != selectedDate) 0 else dp(1), dp(3), if (visible && offset == 0) 0 else dp(1), dp(3))
+                    setMargins(if (visible && offset != startIndex) 0 else dp(1), dp(3), if (visible && offset != lastIndex) 0 else dp(1), dp(3))
                 })
             }
         }
 
-    private fun phoneCalendarDayCount(): Int =
-        if (resources.configuration.screenWidthDp >= 600) 3 else 2
+    /// An hour-grid day timeline mirroring the iOS calendar: a left time gutter
+    /// plus N day columns (2 on phone), with events drawn at their actual times
+    /// and overlapping events split into side-by-side sub-columns. Tap an event to
+    /// edit it; long-press to jump to its scheme.
+    private inner class CalendarTimelineView(context: Context) : View(context) {
+        // One JSONObject per visible day column (date + occurrences); `columns` is
+        // the slot count used for column widths even if fewer days are available.
+        private var dayObjects: List<JSONObject> = emptyList()
+        private var columns: Int = 2
 
-    private fun dayColumn(day: JSONObject): View {
-        val column = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(dp(8), dp(8), dp(8), dp(8))
-            background = rounded(if (theme.isDark) adjust(theme.bgModal, 0.42f) else theme.bgModal, dp(6), theme.dividerSoft)
-        }
-        column.addView(text(MobileDateFormatting.fullDay(day.optString("date")), if (day.optString("date") == LocalDate.now().toString()) theme.textToday else theme.textDim, 12f, true), spaced())
-        val occurrences = day.optJSONArray("occurrences")
-        if (occurrences == null || occurrences.length() == 0) {
-            column.addView(text("None", theme.textMuted, 12f, false).apply {
-                gravity = Gravity.CENTER
-                background = rounded(theme.rowAlt, dp(4))
-                setPadding(dp(8), dp(12), dp(8), dp(12))
-            })
-        } else {
-            occurrences.forEachObject { occurrence -> column.addView(eventBlock(occurrence), spaced()) }
-        }
-        return column
-    }
+        private val hourPx = dp(44)
+        private val gutterPx = dp(48)
+        private val topOffset = dp(8)
+        private val bottomPad = dp(88)
+        private val hoursInDay = 24
 
-    private fun dayList(day: JSONObject): View {
-        return LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            addView(text(MobileDateFormatting.fullDay(day.optString("date")), if (day.optString("date") == LocalDate.now().toString()) theme.textToday else theme.textDim, 12f, true))
-            val occurrences = day.optJSONArray("occurrences")
-            if (occurrences == null || occurrences.length() == 0) {
-                addView(text("No calendar items", theme.textMuted, 13f, false).apply { setPadding(0, dp(6), 0, dp(6)) })
+        private val gridPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            style = Paint.Style.STROKE
+            strokeWidth = max(1f, 0.6f * resources.displayMetrics.density)
+        }
+        private val fillPaint = Paint(Paint.ANTI_ALIAS_FLAG)
+        private val borderPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE }
+        private val pillLinePaint = Paint(Paint.ANTI_ALIAS_FLAG)
+        private val nowPaint = Paint(Paint.ANTI_ALIAS_FLAG)
+        private val gutterPaint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
+            textAlign = Paint.Align.RIGHT
+            textSize = sp(10f)
+        }
+        private val timePaint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
+            textAlign = Paint.Align.CENTER
+            textSize = sp(9f)
+            typeface = Typeface.MONOSPACE
+        }
+        private val titlePaint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
+            textAlign = Paint.Align.CENTER
+            textSize = sp(11f)
+            typeface = Typeface.DEFAULT_BOLD
+        }
+
+        private inner class Laid(
+            val occ: JSONObject,
+            val rect: RectF,
+            val isReminder: Boolean,
+            val isAssignment: Boolean,
+            val hideTime: Boolean
+        )
+
+        private var laid: List<Laid> = emptyList()
+
+        private val gestureDetector = GestureDetector(context, object : GestureDetector.SimpleOnGestureListener() {
+            override fun onDown(e: MotionEvent): Boolean = true
+            override fun onSingleTapUp(e: MotionEvent): Boolean {
+                val occ = hitTest(e.x, e.y) ?: return false
+                showEventEditorDialog(occ)
+                return true
+            }
+
+            override fun onLongPress(e: MotionEvent) {
+                hitTest(e.x, e.y)?.let { openScheme(it.optString("scheme_id")) }
+            }
+        })
+
+        init {
+            isClickable = true
+        }
+
+        fun configure(days: List<JSONObject>, columns: Int) {
+            this.dayObjects = days
+            this.columns = max(1, columns)
+            requestLayout()
+            if (width > 0) relayout()
+            invalidate()
+        }
+
+        private fun sp(value: Float): Float =
+            TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_SP, value, resources.displayMetrics)
+
+        override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
+            val w = MeasureSpec.getSize(widthMeasureSpec)
+            setMeasuredDimension(w, topOffset + hoursInDay * hourPx + bottomPad)
+        }
+
+        override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
+            super.onSizeChanged(w, h, oldw, oldh)
+            relayout()
+        }
+
+        private fun minuteOfDay(occ: JSONObject, key: String): Float? {
+            val instant = MobileDateFormatting.parseInstant(occ.optionalString(key)) ?: return null
+            val local = instant.atZone(ZoneId.systemDefault()).toLocalTime()
+            return (local.hour * 60 + local.minute).toFloat()
+        }
+
+        private fun isShortEvent(occ: JSONObject): Boolean {
+            if (occ.optString("kind") != "event") return false
+            val s = MobileDateFormatting.parseInstant(occ.optionalString("start")) ?: return false
+            val e = MobileDateFormatting.parseInstant(occ.optionalString("end")) ?: return false
+            return e.epochSecond - s.epochSecond <= 30 * 60
+        }
+
+        // Greedy interval colouring identical to the iOS layout: place each event in
+        // the first sub-column whose previous event has ended, else open a new one.
+        private fun relayout() {
+            val colWidth = max(1, (width - gutterPx) / columns)
+            val out = ArrayList<Laid>()
+            for (dayIndex in dayObjects.indices) {
+                val occsArray = dayObjects[dayIndex].optJSONArray("occurrences") ?: continue
+
+                data class Slot(val occ: JSONObject, val startMin: Float, val endMin: Float)
+                val slots = ArrayList<Slot>()
+                occsArray.forEachObject { occ ->
+                    val kind = occ.optString("kind")
+                    if (kind == "procedure") return@forEachObject
+                    val rawStart = minuteOfDay(occ, "start") ?: minuteOfDay(occ, "end") ?: return@forEachObject
+                    val startMin = rawStart.coerceIn(0f, 1440f)
+                    val minDur = if (kind == "event") 30f else 45f
+                    val rawEnd = minuteOfDay(occ, "end")?.coerceIn(0f, 1440f) ?: (startMin + minDur)
+                    slots.add(Slot(occ, startMin, max(startMin + minDur, rawEnd)))
+                }
+                slots.sortBy { it.startMin }
+
+                val columnEnd = ArrayList<Float>()
+                val slotCol = IntArray(slots.size)
+                slots.forEachIndexed { i, slot ->
+                    var placed = false
+                    for (c in columnEnd.indices) {
+                        if (slot.startMin >= columnEnd[c]) {
+                            columnEnd[c] = slot.endMin
+                            slotCol[i] = c
+                            placed = true
+                            break
+                        }
+                    }
+                    if (!placed) {
+                        slotCol[i] = columnEnd.size
+                        columnEnd.add(slot.endMin)
+                    }
+                }
+
+                val subCount = max(1, columnEnd.size)
+                val subWidth = colWidth.toFloat() / subCount
+                val columnX = gutterPx + dayIndex * colWidth
+                slots.forEachIndexed { i, slot ->
+                    val kind = slot.occ.optString("kind")
+                    val y = topOffset + slot.startMin / 60f * hourPx
+                    val minHeight = if (kind == "event") dp(20).toFloat() else dp(34).toFloat()
+                    val height = max(minHeight, (slot.endMin - slot.startMin) / 60f * hourPx - 2f)
+                    val x = columnX + slotCol[i] * subWidth + 1f
+                    val rect = RectF(x, y, x + max(dp(8).toFloat(), subWidth - 2f), y + height)
+                    out.add(Laid(slot.occ, rect, kind == "reminder", kind == "assignment", isShortEvent(slot.occ)))
+                }
+            }
+            laid = out
+        }
+
+        override fun onDraw(canvas: Canvas) {
+            if (width <= 0) return
+            if (laid.isEmpty() && dayObjects.isNotEmpty()) relayout()
+            drawGrid(canvas)
+            laid.forEach { drawEvent(canvas, it) }
+            drawNowLine(canvas)
+        }
+
+        private fun drawGrid(canvas: Canvas) {
+            val colWidth = max(1, (width - gutterPx) / columns)
+            gridPaint.color = theme.divider
+            gutterPaint.color = theme.textMuted
+            val gridBottom = (topOffset + hoursInDay * hourPx).toFloat()
+            for (hour in 0..hoursInDay) {
+                val y = (topOffset + hour * hourPx).toFloat()
+                canvas.drawLine(gutterPx.toFloat(), y, width.toFloat(), y, gridPaint)
+                if (hour < hoursInDay) {
+                    val baseline = y - (gutterPaint.ascent() + gutterPaint.descent()) / 2f
+                    canvas.drawText(hourLabel(hour), (gutterPx - dp(6)).toFloat(), baseline, gutterPaint)
+                }
+            }
+            for (i in 0..columns) {
+                val x = (gutterPx + i * colWidth).toFloat()
+                canvas.drawLine(x, topOffset.toFloat(), x, gridBottom, gridPaint)
+            }
+        }
+
+        private fun hourLabel(hour: Int): String {
+            if (timeFormat24()) return hour.toString().padStart(2, '0')
+            val h12 = if (hour % 12 == 0) 12 else hour % 12
+            return "$h12${if (hour < 12) "AM" else "PM"}"
+        }
+
+        private fun drawEvent(canvas: Canvas, e: Laid) {
+            val occ = e.occ
+            val isPill = e.isReminder || e.isAssignment
+            val done = occ.optBoolean("done")
+            val fillAlpha = if (done) 115 else 255
+            val radius = if (isPill) 0f else dp(3).toFloat()
+
+            fillPaint.color = eventBg()
+            fillPaint.alpha = fillAlpha
+            canvas.drawRoundRect(e.rect, radius, radius, fillPaint)
+
+            if (isPill) {
+                pillLinePaint.color = eventBorder()
+                pillLinePaint.alpha = fillAlpha
+                val sw = calendarPillStrokeWidth().toFloat()
+                if (e.isReminder) {
+                    canvas.drawRect(e.rect.left, e.rect.top, e.rect.right, e.rect.top + sw, pillLinePaint)
+                } else {
+                    canvas.drawRect(e.rect.left, e.rect.bottom - sw, e.rect.right, e.rect.bottom, pillLinePaint)
+                }
             } else {
-                occurrences.forEachObject { occurrence -> addView(eventBlock(occurrence), spaced()) }
+                borderPaint.color = eventBorder()
+                borderPaint.alpha = fillAlpha
+                borderPaint.strokeWidth = calendarEventBorderWidth().toFloat()
+                val inset = borderPaint.strokeWidth / 2f
+                canvas.drawRoundRect(
+                    e.rect.left + inset, e.rect.top + inset, e.rect.right - inset, e.rect.bottom - inset,
+                    radius, radius, borderPaint
+                )
             }
-        }
-    }
 
-    private fun eventBlock(occurrence: JSONObject): View {
-        val isReminder = occurrence.optString("kind") == "reminder"
-        val isAssignment = occurrence.optString("kind") == "assignment"
-        val isPill = isReminder || isAssignment
-        val content = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            gravity = Gravity.CENTER_HORIZONTAL
-            setPadding(dp(if (isPill) 8 else 6), if (isReminder) dp(6) else dp(3), dp(if (isPill) 8 else 6), dp(4))
-            val time = MobileDateFormatting.compactOccurrenceLabel(occurrence, timeFormat24())
-            if (time.isNotEmpty() && !MobileDateFormatting.isCompactEvent(occurrence)) {
-                addView(text(time, calendarTimeColor(occurrence), 9f, false).apply {
-                    gravity = Gravity.CENTER
-                    typeface = Typeface.MONOSPACE
-                    maxLines = 1
-                }, LinearLayout.LayoutParams(-1, dp(12)))
+            val saved = canvas.save()
+            canvas.clipRect(e.rect)
+            val padX = dp(4).toFloat()
+            val availW = max(0f, e.rect.width() - padX * 2)
+            val cx = e.rect.centerX()
+            val title = occ.optString("title").ifEmpty { occ.optString("kind").replaceFirstChar(Char::titlecase) }
+            val timeLabel = MobileDateFormatting.compactOccurrenceLabel(occ, timeFormat24())
+            val showTime = !e.hideTime && timeLabel.isNotEmpty() && !MobileDateFormatting.isCompactEvent(occ)
+            titlePaint.color = calendarItemTextColor(occ)
+            titlePaint.alpha = if (done) 200 else 255
+            if (showTime) {
+                timePaint.color = calendarTimeColor(occ)
+                timePaint.alpha = if (done) 150 else 255
+                val timeTop = e.rect.top + dp(if (e.isReminder) 5 else 3)
+                val time = TextUtils.ellipsize(timeLabel, timePaint, availW, TextUtils.TruncateAt.END)
+                canvas.drawText(time, 0, time.length, cx, timeTop - timePaint.ascent(), timePaint)
+                val titleTop = timeTop + dp(12)
+                val name = TextUtils.ellipsize(title, titlePaint, availW, TextUtils.TruncateAt.END)
+                canvas.drawText(name, 0, name.length, cx, titleTop - titlePaint.ascent(), titlePaint)
+            } else {
+                val name = TextUtils.ellipsize(title, titlePaint, availW, TextUtils.TruncateAt.END)
+                val baseline = e.rect.centerY() - (titlePaint.ascent() + titlePaint.descent()) / 2f
+                canvas.drawText(name, 0, name.length, cx, baseline, titlePaint)
             }
-            addView(text(occurrence.optString("title").ifEmpty { occurrence.optString("kind").replaceFirstChar(Char::titlecase) }, calendarItemTextColor(occurrence), 11f, true).apply {
-                gravity = Gravity.CENTER
-                maxLines = 1
-            }, LinearLayout.LayoutParams(-1, dp(16)))
+            canvas.restoreToCount(saved)
         }
-        return FrameLayout(this).apply {
-            background = if (isPill) rounded(eventBg(), 0) else rounded(eventBg(), dp(3), eventBorder(), strokeWidth = calendarEventBorderWidth())
-            alpha = if (occurrence.optBoolean("done")) 0.45f else 1f
-            addView(content, FrameLayout.LayoutParams(-1, -2))
-            if (isReminder || isAssignment) {
-                addView(View(this@MainActivity).apply { setBackgroundColor(eventBorder()) }, FrameLayout.LayoutParams(-1, calendarPillStrokeWidth(), if (isReminder) Gravity.TOP else Gravity.BOTTOM))
-            }
-            setOnClickListener { showEventEditorDialog(occurrence) }
-            setOnLongClickListener {
-                openScheme(occurrence.optString("scheme_id"))
-                true
-            }
+
+        private fun drawNowLine(canvas: Canvas) {
+            val todayKey = LocalDate.now().toString()
+            val dayIndex = dayObjects.indexOfFirst { it.optString("date") == todayKey }
+            if (dayIndex < 0) return
+            val colWidth = max(1, (width - gutterPx) / columns)
+            val now = LocalTime.now()
+            val y = topOffset + (now.hour * 60 + now.minute) / 60f * hourPx
+            val x0 = (gutterPx + dayIndex * colWidth).toFloat()
+            nowPaint.color = if (theme.isDark) rgb(0xff5a53) else rgb(0xd20f39)
+            nowPaint.style = Paint.Style.FILL
+            canvas.drawCircle(x0 + dp(2), y, dp(3).toFloat(), nowPaint)
+            nowPaint.style = Paint.Style.STROKE
+            nowPaint.strokeWidth = max(1f, 1.5f * resources.displayMetrics.density)
+            canvas.drawLine(x0, y, x0 + colWidth, y, nowPaint)
+        }
+
+        private fun hitTest(x: Float, y: Float): JSONObject? =
+            laid.lastOrNull { it.rect.contains(x, y) }?.occ
+
+        override fun onTouchEvent(event: MotionEvent): Boolean {
+            gestureDetector.onTouchEvent(event)
+            return true
         }
     }
 
@@ -1372,6 +2123,10 @@ class MainActivity : Activity() {
         saveSyncSession(session)
         startSyncPolling()
         render()
+        // Signing in during the onboarding account step advances to the tour.
+        if (onboardingActive && onboardingPhase == ONBOARDING_ACCOUNT) {
+            startOnboardingGuide()
+        }
     }
 
     private fun signOutSync() {
@@ -2005,7 +2760,7 @@ class MainActivity : Activity() {
     private fun renderSettings(): LinearLayout {
         val root = page()
         root.addView(sectionHeader("Settings"))
-        root.addView(text("KnotQ Mobile", theme.textSoft, 11f, false), spaced())
+        root.addView(syncSettingsCard(), spaced())
         val settings = snapshot.optJSONObject("settings")
         val themeMode = settings?.optString("theme_mode", "dark") ?: "dark"
         val timeFormat = settings?.optString("time_format", "twelve_hour") ?: "twelve_hour"
@@ -2075,18 +2830,70 @@ class MainActivity : Activity() {
         root.addView(choiceRow("Archived schemes ${schemes.length()}", false) {
             showArchiveSettingsDialog()
         })
-
-        root.addView(settingsSection("Sync"))
-        val session = syncSession
-        val syncLabel = when {
-            session == null -> "Sign in to Sync"
-            session.supportsSync -> "Signed in: ${session.email}"
-            else -> "Signed in: ${session.email} (sync off)"
-        }
-        root.addView(choiceRow(syncLabel, session != null) {
-            showSyncAccountDialog()
-        })
         return root
+    }
+
+    private fun syncSettingsCard(): View {
+        val session = syncSession
+        val badge = when {
+            session?.supportsSync == true -> "Enabled"
+            session != null -> "Upgrade"
+            else -> "Available"
+        }
+        val badgeFg = when {
+            session?.supportsSync == true -> if (theme.isDark) rgb(0x9af0b6) else rgb(0x176b38)
+            session != null -> if (theme.isDark) rgb(0xf8d38d) else rgb(0x9a4b00)
+            else -> if (theme.isDark) rgb(0x9bc2ff) else rgb(0x235ebe)
+        }
+        val badgeBg = when {
+            session?.supportsSync == true -> adjustAlpha(if (theme.isDark) rgb(0x30d158) else rgb(0x1f8f4d), if (theme.isDark) 0.15f else 0.09f)
+            session != null -> adjustAlpha(if (theme.isDark) rgb(0xf59e0b) else rgb(0xd97706), if (theme.isDark) 0.16f else 0.10f)
+            else -> adjustAlpha(if (theme.isDark) rgb(0x3b82f6) else rgb(0x2f67cf), if (theme.isDark) 0.16f else 0.09f)
+        }
+        val detail = session?.email ?: "Sign in to keep this workspace available across devices."
+        return LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(12), dp(12), dp(12), dp(12))
+            background = rounded(
+                if (theme.isDark) adjustAlpha(rgb(0x3b82f6), 0.086f) else rgb(0xeaf2ff),
+                dp(8),
+                if (theme.isDark) adjustAlpha(rgb(0x7aa0ff), 0.27f) else adjustAlpha(rgb(0x2f67cf), 0.22f)
+            )
+            elevation = dp(if (theme.isDark) 5 else 2).toFloat()
+            addView(LinearLayout(this@MainActivity).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.TOP
+                addView(brandMark(34), LinearLayout.LayoutParams(dp(34), dp(34)).apply {
+                    setMargins(0, 0, dp(9), 0)
+                })
+                addView(LinearLayout(this@MainActivity).apply {
+                    orientation = LinearLayout.VERTICAL
+                    addView(text("KnotQ Sync", theme.textPrimary, 15f, true), LinearLayout.LayoutParams(-1, dp(18)))
+                    addView(text(detail, theme.textSoft, 11f, false).apply {
+                        maxLines = 2
+                    }, LinearLayout.LayoutParams(-1, dp(30)))
+                }, LinearLayout.LayoutParams(0, -2, 1f))
+                addView(text(badge, badgeFg, 11f, true).apply {
+                    gravity = Gravity.CENTER
+                    setPadding(dp(7), 0, dp(7), 0)
+                    background = rounded(badgeBg, dp(11))
+                }, LinearLayout.LayoutParams(-2, dp(22)))
+            })
+            addView(LinearLayout(this@MainActivity).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+                if (session == null) {
+                    addView(syncCardButton("Sign in", primary = true) { showSyncAccountDialog() }, LinearLayout.LayoutParams(0, dp(32), 1f))
+                } else {
+                    addView(syncCardButton(if (syncInProgress) "Checking..." else if (session.supportsSync) "Check status" else "I've subscribed", primary = !session.supportsSync) {
+                        if (session.supportsSync) syncOnce() else restoreGooglePlayPurchases()
+                    }, LinearLayout.LayoutParams(0, dp(32), 1f).apply { setMargins(0, 0, dp(8), 0) })
+                    addView(syncCardButton("Sign out") { signOutSync() }, LinearLayout.LayoutParams(-2, dp(32)))
+                }
+            }, LinearLayout.LayoutParams(-1, dp(32)).apply {
+                setMargins(0, dp(8), 0, 0)
+            })
+        }
     }
 
     private fun showNotificationDefaultDialog(
@@ -3557,9 +4364,17 @@ class MainActivity : Activity() {
 
     private fun page(compact: Boolean = false): LinearLayout = LinearLayout(this).apply {
         orientation = LinearLayout.VERTICAL
-        setPadding(if (compact) 0 else dp(14), if (compact) 0 else dp(14), if (compact) 0 else dp(14), if (compact) 0 else dp(20))
+        setPadding(
+            if (compact) 0 else dp(14),
+            if (compact) 0 else dp(14),
+            if (compact) 0 else dp(14),
+            if (compact) 0 else phonePageBottomPadding()
+        )
         setBackgroundColor(theme.bgApp)
     }
+
+    private fun phonePageBottomPadding(): Int =
+        if (!isWideLayout() && selectedTab in listOf(TAB_HOME, TAB_CALENDAR, TAB_SETTINGS)) dp(166) else dp(20)
 
     private fun scroll(view: View): ScrollView = ScrollView(this).apply {
         isFillViewport = true
@@ -3636,6 +4451,68 @@ class MainActivity : Activity() {
     }.also {
         it.layoutParams = LinearLayout.LayoutParams(dp(32), dp(28))
     }
+
+    private fun iconSquare(value: String, listener: () -> Unit): TextView = text(value, theme.textPrimary, 15f, true).apply {
+        gravity = Gravity.CENTER
+        background = rounded(theme.buttonBg, dp(7), theme.borderOverlay)
+        setOnClickListener { listener() }
+    }
+
+    private fun dockButton(value: String, selected: Boolean, listener: () -> Unit): TextView =
+        text(value, if (selected) theme.textPrimary else theme.textMuted, 20f, true).apply {
+            gravity = Gravity.CENTER
+            contentDescription = when (value) {
+                "⌂" -> "Home"
+                "◷" -> "Calendar"
+                else -> "Settings"
+            }
+            background = if (selected) rounded(theme.rowSelected, dp(20)) else rounded(Color.TRANSPARENT, dp(20))
+            setOnClickListener { listener() }
+        }
+
+    private fun homeFloatingActions(): View =
+        LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER
+            addView(floatingAction("✓", "Daily") {
+                selectedTab = TAB_DAILY
+                selectedSchemeId = null
+                ensureDaily()
+            }, LinearLayout.LayoutParams(dp(56), dp(56)).apply {
+                setMargins(0, 0, dp(10), 0)
+            })
+            addView(floatingAction("✎", "New Scheme") {
+                showNameDialog("New Scheme", "", { validateSchemeName(it, folderId = rootFolderId()) }) { name ->
+                    mutate(obj("type" to "create_scheme", "name" to name, "position" to 0))
+                    snapshot.optJSONArray("schemes")?.let { schemes ->
+                        for (index in schemes.length() - 1 downTo 0) {
+                            val scheme = schemes.optJSONObject(index) ?: continue
+                            if (scheme.optString("display_name") == name || scheme.optString("name") == name) {
+                                openScheme(scheme.optString("id"))
+                                return@showNameDialog
+                            }
+                        }
+                    }
+                }
+            }, LinearLayout.LayoutParams(dp(56), dp(56)))
+        }
+
+    private fun floatingAction(value: String, description: String, listener: () -> Unit): TextView =
+        text(value, theme.textPrimary, 22f, true).apply {
+            gravity = Gravity.CENTER
+            contentDescription = description
+            background = rounded(theme.bgToolbar, dp(28), theme.borderOverlay)
+            elevation = dp(if (theme.isDark) 10 else 4).toFloat()
+            setOnClickListener { listener() }
+        }
+
+    private fun syncCardButton(value: String, primary: Boolean = false, listener: () -> Unit): TextView =
+        text(value, if (primary) Color.WHITE else theme.textPrimary, 12f, primary).apply {
+            gravity = Gravity.CENTER
+            setPadding(dp(10), 0, dp(10), 0)
+            background = rounded(if (primary) rgb(0x2563eb) else theme.buttonBg, dp(5))
+            setOnClickListener { listener() }
+        }
 
     private fun smallAction(value: String, listener: () -> Unit): TextView = text(value, theme.textDim, 11f, true).apply {
         setPadding(0, dp(5), dp(12), dp(2))

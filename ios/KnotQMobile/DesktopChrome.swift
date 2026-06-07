@@ -330,17 +330,8 @@ struct IPadSidebar: View {
         }
         .buttonStyle(.plain)
 
-        if let target = Self.onboardingTarget(for: item) {
-            button.onboardingTarget(target)
-        } else {
-            button
-        }
-    }
-
-    private static func onboardingTarget(for item: SidebarItem) -> OnboardingTarget? {
-        switch item {
-        case .calendar: return .calendar
-        default: return nil
-        }
+        // The onboarding tour navigates into each destination and rings its
+        // content, so the sidebar rows are no longer spotlight targets themselves.
+        button
     }
 }
