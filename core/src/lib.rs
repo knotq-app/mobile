@@ -273,7 +273,6 @@ impl MobileCore {
     pub fn complete_google_calendar_import(
         &self,
         client_id: String,
-        client_secret: Option<String>,
         redirect_uri: String,
         state: String,
         code_verifier: String,
@@ -282,7 +281,6 @@ impl MobileCore {
     ) -> Result<MobileGoogleSyncResult, MobileError> {
         let config = GoogleOAuthConfig {
             client_id: non_empty(client_id, "Google client id")?,
-            client_secret: non_empty_opt(client_secret),
         };
         let mut inner = self.lock()?;
         let parent = parent_id
@@ -302,14 +300,8 @@ impl MobileCore {
             .map_err(Into::into)
     }
 
-    pub fn sync_google_calendars(
-        &self,
-        client_id: Option<String>,
-        client_secret: Option<String>,
-    ) -> Result<MobileGoogleSyncResult, MobileError> {
-        self.lock()?
-            .sync_google_calendars(non_empty_opt(client_id), non_empty_opt(client_secret))
-            .map_err(Into::into)
+    pub fn sync_google_calendars(&self) -> Result<MobileGoogleSyncResult, MobileError> {
+        self.lock()?.sync_google_calendars().map_err(Into::into)
     }
 
     pub fn add_item(
@@ -956,9 +948,7 @@ impl MobileCoreInner {
                 scheme: scheme_id,
                 item: item_id,
                 occurrence,
-                offset_secs: Some(
-                    (trigger_at - notification_tomorrow_morning_utc()).num_seconds(),
-                ),
+                offset_secs: Some((trigger_at - notification_tomorrow_morning_utc()).num_seconds()),
             }
         } else if let Some((_, delay_secs)) = NOTIFICATION_SNOOZE_ACTIONS
             .iter()
@@ -1292,11 +1282,7 @@ impl MobileCoreInner {
         self.finish_google_calendar_sync(result, true, parent)
     }
 
-    fn sync_google_calendars(
-        &mut self,
-        client_id: Option<String>,
-        client_secret: Option<String>,
-    ) -> Result<MobileGoogleSyncResult> {
+    fn sync_google_calendars(&mut self) -> Result<MobileGoogleSyncResult> {
         if self.settings.google_accounts.is_empty() {
             return Ok(MobileGoogleSyncResult {
                 imported_count: 0,
@@ -1305,22 +1291,9 @@ impl MobileCoreInner {
                 message: "No Google Calendar account is connected.".to_string(),
             });
         }
-        let client_id = client_id
-            .or_else(|| {
-                self.settings
-                    .google_accounts
-                    .first()
-                    .map(|account| account.client_id.clone())
-            })
-            .ok_or_else(|| anyhow!("No Google OAuth client id is available"))?;
-        let config = GoogleOAuthConfig {
-            client_id,
-            client_secret,
-        };
         let accounts = self.settings.google_accounts.clone();
         let sources = google_calendar::google_calendar_sources(&self.workspace);
-        let result =
-            google_calendar::run_google_calendar_background_sync(config, accounts, sources)?;
+        let result = google_calendar::run_google_calendar_background_sync(accounts, sources)?;
         self.finish_google_calendar_sync(result, false, self.workspace.root)
     }
 
@@ -2973,12 +2946,6 @@ fn non_empty(value: String, label: &str) -> Result<String> {
     } else {
         Ok(value)
     }
-}
-
-fn non_empty_opt(value: Option<String>) -> Option<String> {
-    value
-        .map(|value| value.trim().to_string())
-        .filter(|value| !value.is_empty())
 }
 
 fn opt_position(position: Option<i32>) -> Result<Option<usize>> {

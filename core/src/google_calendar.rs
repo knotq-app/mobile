@@ -30,7 +30,6 @@ const GOOGLE_OAUTH_SCOPES: &[&str] = &[
 #[derive(Clone)]
 pub(crate) struct GoogleOAuthConfig {
     pub(crate) client_id: String,
-    pub(crate) client_secret: Option<String>,
 }
 
 #[derive(Clone)]
@@ -182,7 +181,6 @@ pub(crate) fn run_google_calendar_import_from_callback(
         callback_url,
     )?;
     run_google_calendar_sync(
-        config,
         vec![account],
         existing_sources,
         GoogleCalendarImportMode::MissingOnly,
@@ -190,7 +188,6 @@ pub(crate) fn run_google_calendar_import_from_callback(
 }
 
 pub(crate) fn run_google_calendar_background_sync(
-    config: GoogleOAuthConfig,
     existing_accounts: Vec<GoogleOAuthAccount>,
     existing_sources: Vec<ExistingGoogleCalendarSource>,
 ) -> Result<GoogleCalendarImportResult> {
@@ -202,7 +199,6 @@ pub(crate) fn run_google_calendar_background_sync(
         });
     }
     run_google_calendar_sync(
-        config,
         existing_accounts,
         existing_sources,
         GoogleCalendarImportMode::ExistingOnly,
@@ -402,7 +398,6 @@ fn run_google_oauth_callback(
 }
 
 fn run_google_calendar_sync(
-    config: GoogleOAuthConfig,
     accounts: Vec<GoogleOAuthAccount>,
     existing_sources: Vec<ExistingGoogleCalendarSource>,
     mode: GoogleCalendarImportMode,
@@ -412,7 +407,7 @@ fn run_google_calendar_sync(
     let mut failures = Vec::new();
 
     for mut account in accounts {
-        if let Err(err) = refresh_google_access_token_if_needed(&config, &mut account) {
+        if let Err(err) = refresh_google_access_token_if_needed(&mut account) {
             failures.push(format!(
                 "{}: {err:#}",
                 account.email.as_deref().unwrap_or(&account.account_id)
@@ -613,16 +608,13 @@ fn exchange_auth_code(
     code: &str,
     code_verifier: &str,
 ) -> Result<GoogleTokenResponse> {
-    let mut form = vec![
+    let form = vec![
         ("client_id", config.client_id.as_str()),
         ("code", code),
         ("code_verifier", code_verifier),
         ("grant_type", "authorization_code"),
         ("redirect_uri", redirect_uri),
     ];
-    if let Some(secret) = &config.client_secret {
-        form.push(("client_secret", secret.as_str()));
-    }
 
     ureq::post(GOOGLE_TOKEN_URL)
         .timeout(StdDuration::from_secs(30))
@@ -632,10 +624,7 @@ fn exchange_auth_code(
         .context("parse Google OAuth token response")
 }
 
-fn refresh_google_access_token_if_needed(
-    config: &GoogleOAuthConfig,
-    account: &mut GoogleOAuthAccount,
-) -> Result<()> {
+fn refresh_google_access_token_if_needed(account: &mut GoogleOAuthAccount) -> Result<()> {
     let still_valid = account
         .expires_at
         .is_some_and(|expires_at| expires_at > Utc::now() + Duration::seconds(60));
@@ -643,14 +632,11 @@ fn refresh_google_access_token_if_needed(
         return Ok(());
     }
 
-    let mut form = vec![
+    let form = vec![
         ("client_id", account.client_id.as_str()),
         ("grant_type", "refresh_token"),
         ("refresh_token", account.refresh_token.as_str()),
     ];
-    if let Some(secret) = &config.client_secret {
-        form.push(("client_secret", secret.as_str()));
-    }
 
     let token = ureq::post(GOOGLE_TOKEN_URL)
         .timeout(StdDuration::from_secs(30))

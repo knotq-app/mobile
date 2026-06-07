@@ -388,7 +388,6 @@ final class AppModel: ObservableObject {
                 try bridge.completeGoogleCalendarImport(
                     request: request,
                     callbackURL: callbackURL.absoluteString,
-                    clientSecret: config.clientSecret,
                     parentID: parentID
                 )
             }.value
@@ -414,10 +413,8 @@ final class AppModel: ObservableObject {
         defer { googleSyncInProgress = false }
 
         do {
-            let clientID = Self.configuredGoogleClientID()
-            let clientSecret = Self.configuredGoogleClientSecret()
             let result = try await Task.detached {
-                try bridge.syncGoogleCalendars(clientID: clientID, clientSecret: clientSecret)
+                try bridge.syncGoogleCalendars()
             }.value
             googleCalendarStatus = result.message
             refresh()
@@ -1122,7 +1119,6 @@ final class AppModel: ObservableObject {
         let redirectURI = configuredGoogleRedirectURI() ?? "\(redirectScheme):/oauth2redirect"
         return GoogleOAuthMobileConfig(
             clientID: clientID,
-            clientSecret: configuredGoogleClientSecret(),
             redirectScheme: redirectScheme,
             redirectURI: redirectURI
         )
@@ -1131,10 +1127,6 @@ final class AppModel: ObservableObject {
     private static func configuredGoogleClientID() -> String? {
         googleConfigString(infoKey: "KnotQGoogleClientID", envKeys: ["KNOTQ_GOOGLE_CLIENT_ID", "GOOGLE_CLIENT_ID"])
             ?? bundledGoogleServiceValue("CLIENT_ID")
-    }
-
-    private static func configuredGoogleClientSecret() -> String? {
-        googleConfigString(infoKey: "KnotQGoogleClientSecret", envKeys: ["KNOTQ_GOOGLE_CLIENT_SECRET", "GOOGLE_CLIENT_SECRET"])
     }
 
     private static func configuredGoogleRedirectScheme() -> String? {
@@ -1259,7 +1251,6 @@ private enum SyncAuthError: LocalizedError {
 
 private struct GoogleOAuthMobileConfig {
     let clientID: String
-    let clientSecret: String?
     let redirectScheme: String
     let redirectURI: String
 }

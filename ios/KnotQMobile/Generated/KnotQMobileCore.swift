@@ -528,7 +528,7 @@ public protocol MobileCoreProtocol: AnyObject, Sendable {
     
     func commitEventEdit(schemeId: String, itemId: String, occurrenceJson: String, occurrenceIndex: Int32, title: String, occurrenceStart: String?, occurrenceEnd: String?, start: String?, end: String?, rrule: String?, notificationOffsetSecs: Int32?, notificationDirty: Bool, done: Bool, scope: String) throws 
     
-    func completeGoogleCalendarImport(clientId: String, clientSecret: String?, redirectUri: String, state: String, codeVerifier: String, callbackUrl: String, parentId: String?) throws  -> MobileGoogleSyncResult
+    func completeGoogleCalendarImport(clientId: String, redirectUri: String, state: String, codeVerifier: String, callbackUrl: String, parentId: String?) throws  -> MobileGoogleSyncResult
     
     func createFolder(parentId: String?, name: String, position: Int32?) throws 
     
@@ -594,7 +594,7 @@ public protocol MobileCoreProtocol: AnyObject, Sendable {
     
     func snapshot(today: String?, weekOffset: Int32) throws  -> MobileSnapshot
     
-    func syncGoogleCalendars(clientId: String?, clientSecret: String?) throws  -> MobileGoogleSyncResult
+    func syncGoogleCalendars() throws  -> MobileGoogleSyncResult
     
     func syncOnce(apiBase: String, bearerToken: String) throws  -> Bool
     
@@ -738,12 +738,11 @@ open func commitEventEdit(schemeId: String, itemId: String, occurrenceJson: Stri
 }
 }
     
-open func completeGoogleCalendarImport(clientId: String, clientSecret: String?, redirectUri: String, state: String, codeVerifier: String, callbackUrl: String, parentId: String?)throws  -> MobileGoogleSyncResult  {
+open func completeGoogleCalendarImport(clientId: String, redirectUri: String, state: String, codeVerifier: String, callbackUrl: String, parentId: String?)throws  -> MobileGoogleSyncResult  {
     return try  FfiConverterTypeMobileGoogleSyncResult_lift(try rustCallWithError(FfiConverterTypeMobileError_lift) {
     uniffi_knotq_mobile_core_fn_method_mobilecore_complete_google_calendar_import(
             self.uniffiCloneHandle(),
         FfiConverterString.lower(clientId),
-        FfiConverterOptionString.lower(clientSecret),
         FfiConverterString.lower(redirectUri),
         FfiConverterString.lower(state),
         FfiConverterString.lower(codeVerifier),
@@ -1048,12 +1047,10 @@ open func snapshot(today: String?, weekOffset: Int32)throws  -> MobileSnapshot  
 })
 }
     
-open func syncGoogleCalendars(clientId: String?, clientSecret: String?)throws  -> MobileGoogleSyncResult  {
+open func syncGoogleCalendars()throws  -> MobileGoogleSyncResult  {
     return try  FfiConverterTypeMobileGoogleSyncResult_lift(try rustCallWithError(FfiConverterTypeMobileError_lift) {
     uniffi_knotq_mobile_core_fn_method_mobilecore_sync_google_calendars(
-            self.uniffiCloneHandle(),
-        FfiConverterOptionString.lower(clientId),
-        FfiConverterOptionString.lower(clientSecret),$0
+            self.uniffiCloneHandle(),$0
     )
 })
 }
@@ -2676,7 +2673,7 @@ private let initializationResult: InitializationResult = {
     if (uniffi_knotq_mobile_core_checksum_method_mobilecore_commit_event_edit() != 44971) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_knotq_mobile_core_checksum_method_mobilecore_complete_google_calendar_import() != 63128) {
+    if (uniffi_knotq_mobile_core_checksum_method_mobilecore_complete_google_calendar_import() != 5997) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_knotq_mobile_core_checksum_method_mobilecore_create_folder() != 49482) {
@@ -2775,7 +2772,7 @@ private let initializationResult: InitializationResult = {
     if (uniffi_knotq_mobile_core_checksum_method_mobilecore_snapshot() != 52252) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_knotq_mobile_core_checksum_method_mobilecore_sync_google_calendars() != 18522) {
+    if (uniffi_knotq_mobile_core_checksum_method_mobilecore_sync_google_calendars() != 29004) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_knotq_mobile_core_checksum_method_mobilecore_sync_once() != 14938) {

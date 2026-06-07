@@ -762,7 +762,7 @@ external fun uniffi_knotq_mobile_core_fn_method_mobilecore_apply_notification_ac
 ): Byte
 external fun uniffi_knotq_mobile_core_fn_method_mobilecore_commit_event_edit(`ptr`: Long,`schemeId`: RustBuffer.ByValue,`itemId`: RustBuffer.ByValue,`occurrenceJson`: RustBuffer.ByValue,`occurrenceIndex`: Int,`title`: RustBuffer.ByValue,`occurrenceStart`: RustBuffer.ByValue,`occurrenceEnd`: RustBuffer.ByValue,`start`: RustBuffer.ByValue,`end`: RustBuffer.ByValue,`rrule`: RustBuffer.ByValue,`notificationOffsetSecs`: RustBuffer.ByValue,`notificationDirty`: Byte,`done`: Byte,`scope`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
 ): Unit
-external fun uniffi_knotq_mobile_core_fn_method_mobilecore_complete_google_calendar_import(`ptr`: Long,`clientId`: RustBuffer.ByValue,`clientSecret`: RustBuffer.ByValue,`redirectUri`: RustBuffer.ByValue,`state`: RustBuffer.ByValue,`codeVerifier`: RustBuffer.ByValue,`callbackUrl`: RustBuffer.ByValue,`parentId`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+external fun uniffi_knotq_mobile_core_fn_method_mobilecore_complete_google_calendar_import(`ptr`: Long,`clientId`: RustBuffer.ByValue,`redirectUri`: RustBuffer.ByValue,`state`: RustBuffer.ByValue,`codeVerifier`: RustBuffer.ByValue,`callbackUrl`: RustBuffer.ByValue,`parentId`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus,
 ): RustBuffer.ByValue
 external fun uniffi_knotq_mobile_core_fn_method_mobilecore_create_folder(`ptr`: Long,`parentId`: RustBuffer.ByValue,`name`: RustBuffer.ByValue,`position`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
 ): Unit
@@ -828,7 +828,7 @@ external fun uniffi_knotq_mobile_core_fn_method_mobilecore_set_time_format(`ptr`
 ): Unit
 external fun uniffi_knotq_mobile_core_fn_method_mobilecore_snapshot(`ptr`: Long,`today`: RustBuffer.ByValue,`weekOffset`: Int,uniffi_out_err: UniffiRustCallStatus, 
 ): RustBuffer.ByValue
-external fun uniffi_knotq_mobile_core_fn_method_mobilecore_sync_google_calendars(`ptr`: Long,`clientId`: RustBuffer.ByValue,`clientSecret`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+external fun uniffi_knotq_mobile_core_fn_method_mobilecore_sync_google_calendars(`ptr`: Long,uniffi_out_err: UniffiRustCallStatus,
 ): RustBuffer.ByValue
 external fun uniffi_knotq_mobile_core_fn_method_mobilecore_sync_once(`ptr`: Long,`apiBase`: RustBuffer.ByValue,`bearerToken`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
 ): Byte
@@ -974,7 +974,7 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
     if (lib.uniffi_knotq_mobile_core_checksum_method_mobilecore_commit_event_edit() != 44971.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
-    if (lib.uniffi_knotq_mobile_core_checksum_method_mobilecore_complete_google_calendar_import() != 63128.toShort()) {
+    if (lib.uniffi_knotq_mobile_core_checksum_method_mobilecore_complete_google_calendar_import() != 5997.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_knotq_mobile_core_checksum_method_mobilecore_create_folder() != 49482.toShort()) {
@@ -1073,7 +1073,7 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
     if (lib.uniffi_knotq_mobile_core_checksum_method_mobilecore_snapshot() != 52252.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
-    if (lib.uniffi_knotq_mobile_core_checksum_method_mobilecore_sync_google_calendars() != 18522.toShort()) {
+    if (lib.uniffi_knotq_mobile_core_checksum_method_mobilecore_sync_google_calendars() != 29004.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_knotq_mobile_core_checksum_method_mobilecore_sync_once() != 14938.toShort()) {
@@ -1485,7 +1485,7 @@ public interface MobileCoreInterface {
     
     fun `commitEventEdit`(`schemeId`: kotlin.String, `itemId`: kotlin.String, `occurrenceJson`: kotlin.String, `occurrenceIndex`: kotlin.Int, `title`: kotlin.String, `occurrenceStart`: kotlin.String?, `occurrenceEnd`: kotlin.String?, `start`: kotlin.String?, `end`: kotlin.String?, `rrule`: kotlin.String?, `notificationOffsetSecs`: kotlin.Int?, `notificationDirty`: kotlin.Boolean, `done`: kotlin.Boolean, `scope`: kotlin.String)
     
-    fun `completeGoogleCalendarImport`(`clientId`: kotlin.String, `clientSecret`: kotlin.String?, `redirectUri`: kotlin.String, `state`: kotlin.String, `codeVerifier`: kotlin.String, `callbackUrl`: kotlin.String, `parentId`: kotlin.String?): MobileGoogleSyncResult
+    fun `completeGoogleCalendarImport`(`clientId`: kotlin.String, `redirectUri`: kotlin.String, `state`: kotlin.String, `codeVerifier`: kotlin.String, `callbackUrl`: kotlin.String, `parentId`: kotlin.String?): MobileGoogleSyncResult
     
     fun `createFolder`(`parentId`: kotlin.String?, `name`: kotlin.String, `position`: kotlin.Int?)
     
@@ -1551,7 +1551,7 @@ public interface MobileCoreInterface {
     
     fun `snapshot`(`today`: kotlin.String?, `weekOffset`: kotlin.Int): MobileSnapshot
     
-    fun `syncGoogleCalendars`(`clientId`: kotlin.String?, `clientSecret`: kotlin.String?): MobileGoogleSyncResult
+    fun `syncGoogleCalendars`(): MobileGoogleSyncResult
     
     fun `syncOnce`(`apiBase`: kotlin.String, `bearerToken`: kotlin.String): kotlin.Boolean
     
@@ -1737,13 +1737,13 @@ open class MobileCore: Disposable, AutoCloseable, MobileCoreInterface
     
 
     
-    @Throws(MobileException::class)override fun `completeGoogleCalendarImport`(`clientId`: kotlin.String, `clientSecret`: kotlin.String?, `redirectUri`: kotlin.String, `state`: kotlin.String, `codeVerifier`: kotlin.String, `callbackUrl`: kotlin.String, `parentId`: kotlin.String?): MobileGoogleSyncResult {
+    @Throws(MobileException::class)override fun `completeGoogleCalendarImport`(`clientId`: kotlin.String, `redirectUri`: kotlin.String, `state`: kotlin.String, `codeVerifier`: kotlin.String, `callbackUrl`: kotlin.String, `parentId`: kotlin.String?): MobileGoogleSyncResult {
             return FfiConverterTypeMobileGoogleSyncResult.lift(
     callWithHandle {
     uniffiRustCallWithError(MobileException) { _status ->
     UniffiLib.uniffi_knotq_mobile_core_fn_method_mobilecore_complete_google_calendar_import(
         it,
-        FfiConverterString.lower(`clientId`),FfiConverterOptionalString.lower(`clientSecret`),FfiConverterString.lower(`redirectUri`),FfiConverterString.lower(`state`),FfiConverterString.lower(`codeVerifier`),FfiConverterString.lower(`callbackUrl`),FfiConverterOptionalString.lower(`parentId`),_status)
+        FfiConverterString.lower(`clientId`),FfiConverterString.lower(`redirectUri`),FfiConverterString.lower(`state`),FfiConverterString.lower(`codeVerifier`),FfiConverterString.lower(`callbackUrl`),FfiConverterOptionalString.lower(`parentId`),_status)
 }
     }
     )
@@ -2172,13 +2172,13 @@ open class MobileCore: Disposable, AutoCloseable, MobileCoreInterface
     
 
     
-    @Throws(MobileException::class)override fun `syncGoogleCalendars`(`clientId`: kotlin.String?, `clientSecret`: kotlin.String?): MobileGoogleSyncResult {
+    @Throws(MobileException::class)override fun `syncGoogleCalendars`(): MobileGoogleSyncResult {
             return FfiConverterTypeMobileGoogleSyncResult.lift(
     callWithHandle {
     uniffiRustCallWithError(MobileException) { _status ->
     UniffiLib.uniffi_knotq_mobile_core_fn_method_mobilecore_sync_google_calendars(
         it,
-        FfiConverterOptionalString.lower(`clientId`),FfiConverterOptionalString.lower(`clientSecret`),_status)
+        _status)
 }
     }
     )
@@ -3655,4 +3655,3 @@ public object FfiConverterSequenceTypeMobileSearchHit: FfiConverterRustBuffer<Li
         }
     }
 }
-

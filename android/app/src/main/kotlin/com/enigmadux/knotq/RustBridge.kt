@@ -41,17 +41,13 @@ internal class RustBridge(context: Context) : AutoCloseable {
             ).toJson()
             "complete_google_calendar_import" -> return core.completeGoogleCalendarImport(
                 body.getString("client_id"),
-                body.stringOrNull("client_secret"),
                 body.getString("redirect_uri"),
                 body.getString("state"),
                 body.getString("code_verifier"),
                 body.getString("callback_url"),
                 body.stringOrNull("parent_id")
             ).toJson()
-            "sync_google_calendars" -> return core.syncGoogleCalendars(
-                body.stringOrNull("client_id"),
-                body.stringOrNull("client_secret")
-            ).toJson()
+            "sync_google_calendars" -> return core.syncGoogleCalendars().toJson()
             "create_folder" -> core.createFolder(body.stringOrNull("parent_id"), body.getString("name"), body.intOrNull("position"))
             "rename_folder" -> core.renameFolder(body.getString("folder_id"), body.getString("name"))
             "delete_folder" -> core.deleteFolder(body.getString("folder_id"))

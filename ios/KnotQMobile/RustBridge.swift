@@ -189,12 +189,10 @@ final class RustBridge: @unchecked Sendable {
     func completeGoogleCalendarImport(
         request: MobileGoogleAuthRequest,
         callbackURL: String,
-        clientSecret: String?,
         parentID: String?
     ) throws -> MobileGoogleSyncResult {
         try core.completeGoogleCalendarImport(
             clientId: request.clientId,
-            clientSecret: clientSecret,
             redirectUri: request.redirectUri,
             state: request.state,
             codeVerifier: request.codeVerifier,
@@ -203,8 +201,8 @@ final class RustBridge: @unchecked Sendable {
         )
     }
 
-    func syncGoogleCalendars(clientID: String?, clientSecret: String?) throws -> MobileGoogleSyncResult {
-        try core.syncGoogleCalendars(clientId: clientID, clientSecret: clientSecret)
+    func syncGoogleCalendars() throws -> MobileGoogleSyncResult {
+        try core.syncGoogleCalendars()
     }
 
     func setThemeMode(_ mode: String) throws {

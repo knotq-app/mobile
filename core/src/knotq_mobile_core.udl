@@ -211,10 +211,10 @@ interface MobileCore {
   MobileGoogleAuthRequest google_auth_request(string client_id, string redirect_uri);
 
   [Throws=MobileError]
-  MobileGoogleSyncResult complete_google_calendar_import(string client_id, string? client_secret, string redirect_uri, string state, string code_verifier, string callback_url, string? parent_id);
+  MobileGoogleSyncResult complete_google_calendar_import(string client_id, string redirect_uri, string state, string code_verifier, string callback_url, string? parent_id);
 
   [Throws=MobileError]
-  MobileGoogleSyncResult sync_google_calendars(string? client_id, string? client_secret);
+  MobileGoogleSyncResult sync_google_calendars();
 
   [Throws=MobileError]
   void add_item(string scheme_id, string text, string? marker, i32? position, i32? indent);

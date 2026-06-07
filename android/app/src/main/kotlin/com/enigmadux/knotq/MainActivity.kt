@@ -2660,7 +2660,6 @@ class MainActivity : Activity() {
                     obj(
                         "type" to "complete_google_calendar_import",
                         "client_id" to request.getString("client_id"),
-                        "client_secret" to googleClientSecret(),
                         "redirect_uri" to request.getString("redirect_uri"),
                         "state" to request.getString("state"),
                         "code_verifier" to request.getString("code_verifier"),
@@ -2693,9 +2692,7 @@ class MainActivity : Activity() {
             val result = runCatching {
                 bridge.request(
                     obj(
-                        "type" to "sync_google_calendars",
-                        "client_id" to GOOGLE_CLIENT_ID,
-                        "client_secret" to googleClientSecret()
+                        "type" to "sync_google_calendars"
                     )
                 )
             }
@@ -2754,8 +2751,6 @@ class MainActivity : Activity() {
             .remove("knotq.googleAuthParentId")
             .apply()
     }
-
-    private fun googleClientSecret(): String? = null
 
     private fun renderSettings(): LinearLayout {
         val root = page()

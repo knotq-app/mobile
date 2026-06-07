@@ -28,8 +28,6 @@
 	<true/>
 	<key>KnotQGoogleClientID</key>
 	<string>419826075228-gn6gj1l20nltil67odvf00u3i7n8a2ld.apps.googleusercontent.com</string>
-	<key>KnotQGoogleClientSecret</key>
-	<string>$(KNOTQ_GOOGLE_CLIENT_SECRET)</string>
 	<key>KnotQGoogleRedirectScheme</key>
 	<string>com.googleusercontent.apps.419826075228-gn6gj1l20nltil67odvf00u3i7n8a2ld</string>
 	<key>KnotQGoogleRedirectURI</key>

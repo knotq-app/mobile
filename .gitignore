@@ -3,6 +3,7 @@ target/
 
 android/.idea/
 android/.bin/
+android/.kotlin/
 android/.gradle/
 android/local.properties
 android/app/build/
