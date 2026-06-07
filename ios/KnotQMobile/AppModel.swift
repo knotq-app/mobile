@@ -438,7 +438,7 @@ final class AppModel: ObservableObject {
     private static let signInPageURL = "https://www.knotq.com/signin.html"
     private static let signInRedirectScheme = "knotq"
     private static let signInRedirectURI = "knotq://auth-callback"
-    private static let defaultSyncApiBase = "https://api.knotq.com"
+    private static let defaultSyncApiBase = "https://knotq-sync.manu-s-bhat.workers.dev"
 
     /// Start a browser-based sign-in (or account creation): open the hosted sign-in
     /// page with a custom-scheme redirect + PKCE, then exchange the returned

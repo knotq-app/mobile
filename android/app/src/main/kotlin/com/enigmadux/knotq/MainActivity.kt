@@ -73,7 +73,7 @@ import kotlin.math.min
 import kotlin.math.roundToInt
 
 private const val SYNC_SESSION_PREF = "knotq.localSyncSession"
-private const val DEFAULT_SYNC_API_BASE = "https://api.knotq.com"
+private const val DEFAULT_SYNC_API_BASE = "https://knotq-sync.manu-s-bhat.workers.dev"
 // The Google Play subscription product id for hosted sync (Play Console).
 private const val SYNC_SUBSCRIPTION_PRODUCT_ID = "knotq.sync.monthly"
 private const val GOOGLE_CLIENT_ID = "419826075228-gn6gj1l20nltil67odvf00u3i7n8a2ld.apps.googleusercontent.com"
