@@ -1,4 +1,4 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
@@ -14,26 +14,27 @@ use knotq_date_util::{upcoming_range, UPCOMING_LIMIT};
 use knotq_index::query::{SearchHitStatus, SearchOptions, SearchTarget};
 use knotq_index::IndexedWorkspace;
 use knotq_model::{
-    daily_queue_scheme_id, daily_queue_sync_metadata, AppSettings, DocumentId, FolderId,
-    ImageAssetFormat, Item, ItemId, ItemKind, ItemMarker, ItemMedia, NodeRef, NotificationDefaults,
-    OccurrenceId, OperationId, Recurrence, ReplicaId, Scheme, SchemeId, SyncDocumentKind,
-    ThemeMode, TimeFormat, Workspace, WorkspaceId, DAILY_QUEUE_COLOR_INDEX,
+    daily_queue_scheme_id, daily_queue_sync_metadata, AppSettings, FolderId, ImageAssetFormat,
+    Item, ItemId, ItemKind, ItemMarker, ItemMedia, NodeRef, NotificationDefaults, OccurrenceId,
+    OperationId, Recurrence, Scheme, SchemeId, ThemeMode, TimeFormat, Workspace,
+    DAILY_QUEUE_COLOR_INDEX,
 };
 use knotq_notifications::{
     compute_due_notifications_with_lead_times, NotificationLeadTimes, ScheduledNotification,
     DEFAULT_DURABLE_NOTIFICATION_LIMIT,
 };
-use knotq_state::{daily_queue_initial_start, daily_queue_scheme_name, make_default_workspace};
+use knotq_state::{daily_queue_scheme_name, make_default_workspace};
 use knotq_storage_json::{
     load_app_settings, load_daily_queue_scheme, load_daily_queue_schemes_for_calendar_range,
     load_local_sync_state, load_workspace_with_options, save_app_settings, save_local_sync_state,
     save_workspace, WorkspaceLoadOptions,
 };
 use knotq_sync::{
-    DevicePlatform, LocalSyncState, NotificationPermissionState, NotificationScheduleSnapshot,
-    PendingCrdtEdit, PullUpdatesResponse, PushChannel, PushEnvironment, PushUpdatesRequest,
-    PushUpdatesResponse, RegisterDeviceRequest, RegisterDeviceResponse, StoredCrdtSnapshot,
-    StoredCrdtUpdate, UpsertDocumentRequest, WorkspaceCrdtChangeSet, WorkspaceCrdtDocuments,
+    batch_pull_and_apply, batch_push_pending, queue_workspace_bootstrap_updates,
+    AccountStatusResponse, BatchPullRequest, BatchPullResponse, BatchPushRequest,
+    BatchPushResponse, DevicePlatform, NotificationPermissionState, NotificationScheduleSnapshot,
+    PendingCrdtEdit, PushChannel, PushEnvironment, RegisterDeviceRequest, RegisterDeviceResponse,
+    SyncTransport, WorkspaceCrdtChangeSet, WorkspaceCrdtDocuments,
 };
 use sha2::{Digest, Sha256};
 
@@ -41,7 +42,6 @@ mod google_calendar;
 use google_calendar::{GoogleCalendarImportResult, GoogleOAuthConfig};
 
 const DAILY_QUEUE_MARKER_COLOR: u32 = 0x42a5f5;
-const SYNC_BATCH_LIMIT: usize = 50;
 const NOTIFICATION_HORIZON_DAYS: i64 = 14;
 const ACTION_SNOOZE_1_MINUTE: &str = "knotq.snooze.1m";
 const ACTION_SNOOZE_5_MINUTES: &str = "knotq.snooze.5m";
@@ -67,7 +67,6 @@ const NOTIFICATION_SNOOZE_ACTIONS: &[(&str, i64)] = &[
     (ACTION_SNOOZE_1_DAY, 24 * 60 * 60),
     (ACTION_SNOOZE_1_WEEK, 7 * 24 * 60 * 60),
 ];
-const SYNC_COMPACTED_SNAPSHOT_NOTICE: &str = "This device was far enough behind that the sync server had already compacted older CRDT changes. KnotQ applied the latest compacted snapshot and then continued syncing from there.";
 const EDITOR_IMAGE_FIXTURE_TEXT: &str = "Image layout test";
 const EDITOR_IMAGE_FIXTURE_PNG: &[u8] = &[
     137, 80, 78, 71, 13, 10, 26, 10, 0, 0, 0, 13, 73, 72, 68, 82, 0, 0, 0, 1, 0, 0, 0, 1, 8, 4, 0,
@@ -770,9 +769,7 @@ impl MobileCoreInner {
         let image_assets_dir = workspace_dir.join("assets/images");
         let settings_path = app_dir.join("settings.json");
         let mut should_reset_workspace_dir = false;
-        let today = Local::now().date_naive();
-        let load_options =
-            WorkspaceLoadOptions::daily_queue_range(daily_queue_initial_start(today), today);
+        let load_options = WorkspaceLoadOptions::all();
         let mut workspace = match load_workspace_with_options(&workspace_path, load_options) {
             Ok(Some(workspace)) => workspace,
             Ok(None) => make_default_workspace(),
@@ -1109,7 +1106,7 @@ impl MobileCoreInner {
             notification_permission: NotificationPermissionState::default(),
             local_scheduler_supported: Some(true),
         };
-        match client.register_device(self.workspace.id, &request) {
+        match client.register_device(&request) {
             Ok(_) => self.registered_push_token = Some(token),
             // Best effort: leave the marker unset so the next sync retries.
             Err(_) => {}
@@ -1121,9 +1118,21 @@ impl MobileCoreInner {
             api_base: normalize_sync_api_base(api_base)?,
             bearer_token: bearer_token.to_string(),
         };
+        let server_workspace_id = if self.workspace.sync.id.0 == self.workspace.id.0 {
+            self.workspace.id
+        } else {
+            client.account_status()?.workspace_id
+        };
+        let local_workspace_changed = self
+            .workspace
+            .canonicalize_personal_sync_identity(server_workspace_id);
         self.workspace.ensure_sync_metadata();
 
         let mut sync_state = load_local_sync_state(&self.workspace_path).unwrap_or_default();
+        // One-time recovery: clear stale pull cursors so this sync re-pulls and
+        // re-merges every document, repairing any workspace left diverged by the
+        // earlier push-failure desync.
+        sync_state.heal_for_recovery_version();
         sync_state.workspace_id = Some(self.workspace.id);
         sync_state.replica_id = Some(self.settings.replica_id);
         sync_state.server_url = Some(client.api_base.clone());
@@ -1133,85 +1142,74 @@ impl MobileCoreInner {
         // wake it via silent push. Best effort — never block sync on it.
         self.register_push_device(&client);
 
-        let mut remote_latest = HashMap::new();
-        let mut remote_updates_applied = 0usize;
-        let mut pushed_any = false;
-        let mut forced_snapshot_applied = false;
-
-        mobile_upsert_documents(
+        // One batched pull syncs the whole workspace: the server returns the current
+        // merged state of every document past our cursor (and any document created
+        // on another device). Applying merged state is idempotent in Yjs.
+        let workspace = self.workspace.clone();
+        let pull = batch_pull_and_apply(
             &client,
-            self.workspace.id,
-            mobile_sync_documents(&self.workspace),
-        )?;
-
-        let workspace_doc = MobileSyncDocumentRef {
-            document: self.workspace.sync.id,
-            kind: SyncDocumentKind::PersonalWorkspace,
-        };
-        let workspace_pull = mobile_pull_document(
-            &client,
-            &sync_state,
-            self.workspace.id,
-            workspace_doc,
+            &mut self.crdt,
+            &mut sync_state,
+            workspace,
             self.settings.replica_id,
         )?;
-        remote_latest.insert(workspace_doc.document, workspace_pull.latest_sequence);
-        forced_snapshot_applied |= workspace_pull.forced_snapshot;
-        let workspace_updates = workspace_pull.updates;
-        if !workspace_updates.is_empty() {
-            let outcome = self
-                .crdt
-                .apply_remote_updates(&self.workspace, &workspace_updates);
+        let remote_updates_applied = pull.remote_updates_applied;
+        self.workspace = pull.workspace;
+        let mut repaired_workspace_changed = self
+            .workspace
+            .canonicalize_personal_sync_identity(server_workspace_id);
+        repaired_workspace_changed |= self.workspace.normalize_one_level_folders();
+        repaired_workspace_changed |= self.workspace.normalize_item_markers();
+        if repaired_workspace_changed {
+            let outcome = self.crdt.sync_changes(
+                &self.workspace,
+                &WorkspaceCrdtChangeSet::default().workspace(),
+            );
+            for error in &outcome.errors {
+                eprintln!("mobile CRDT repair update failed: {error}");
+            }
             if !outcome.is_ok() {
-                return Err(anyhow!("workspace CRDT apply failed: {:?}", outcome.errors));
+                return Err(anyhow!("CRDT repair update failed: {:?}", outcome.errors));
             }
-            remote_updates_applied += outcome.applied;
-            self.workspace = outcome.workspace;
-        }
-        sync_state.mark_pulled(
-            workspace_doc.document,
-            workspace_doc.kind,
-            workspace_pull.latest_sequence,
-        );
-
-        mobile_upsert_documents(
-            &client,
-            self.workspace.id,
-            mobile_sync_documents(&self.workspace),
-        )?;
-
-        let mut scheme_updates = Vec::new();
-        for doc in mobile_scheme_documents(&self.workspace) {
-            let pull = mobile_pull_document(
-                &client,
-                &sync_state,
-                self.workspace.id,
-                doc,
-                self.settings.replica_id,
-            )?;
-            remote_latest.insert(doc.document, pull.latest_sequence);
-            forced_snapshot_applied |= pull.forced_snapshot;
-            if !pull.updates.is_empty() {
-                scheme_updates.extend(pull.updates);
+            if !outcome.updates.is_empty() {
+                let operation_id = OperationId::new();
+                let local_sequence = self.next_sequence;
+                self.next_sequence += 1;
+                for update in outcome.updates {
+                    sync_state.push_pending(PendingCrdtEdit {
+                        operation_id,
+                        workspace_id: self.workspace.id,
+                        replica_id: self.settings.replica_id,
+                        local_sequence,
+                        created_at: Utc::now(),
+                        document: update.document,
+                        kind: update.kind,
+                        update_v1: update.update_v1,
+                    });
+                }
             }
-            sync_state.mark_pulled(doc.document, doc.kind, pull.latest_sequence);
-        }
-        if !scheme_updates.is_empty() {
-            let outcome = self
-                .crdt
-                .apply_remote_updates(&self.workspace, &scheme_updates);
-            if !outcome.is_ok() {
-                return Err(anyhow!("scheme CRDT apply failed: {:?}", outcome.errors));
-            }
-            remote_updates_applied += outcome.applied;
-            self.workspace = outcome.workspace;
         }
 
-        mobile_queue_bootstrap_updates(
+        // Persist the merged workspace BEFORE pushing. The durable pull cursors are
+        // saved after the push regardless of its outcome, so the workspace must be
+        // on disk first — otherwise a push failure would advance the cursor while
+        // discarding the just-pulled remote schemes and archive (recently_deleted)
+        // state, and the next sync (cursor already advanced) would never re-pull
+        // them. That desync silently drops other devices' schemes and re-activates
+        // archived ones.
+        if remote_updates_applied > 0 || local_workspace_changed || repaired_workspace_changed {
+            self.crdt = WorkspaceCrdtDocuments::try_new(&self.workspace)?;
+            self.save_workspace()?;
+        }
+
+        // The server's per-document seq (our advanced pull cursor) tells the
+        // bootstrap which documents the server already has a base for; the rest get
+        // a full snapshot queued before their deltas.
+        queue_workspace_bootstrap_updates(
             &mut sync_state,
             &self.workspace,
             self.settings.replica_id,
-            &remote_latest,
+            &pull.remote_latest,
         );
         let notification_schedule = mobile_notification_schedule_snapshot(
             &self.workspace,
@@ -1219,25 +1217,22 @@ impl MobileCoreInner {
             Utc::now(),
             0,
         )?;
-        pushed_any |= mobile_push_pending_documents(
+        // Persist pull cursors, dropped orphans, and per-document push acks even
+        // if the push below fails partway, so a transient push error never forces
+        // the next sync to re-download every document from sequence zero. The merged
+        // workspace above is already durable, so the cursor never runs ahead of it.
+        let mut pushed = Vec::new();
+        let push_result = batch_push_pending(
             &client,
             &mut sync_state,
-            self.workspace.id,
+            self.settings.replica_id,
             &notification_schedule,
-        )?;
-
+            &mut pushed,
+        );
         save_local_sync_state(&self.workspace_path, &sync_state)?;
-        if remote_updates_applied > 0 {
-            self.workspace.normalize_one_level_folders();
-            self.workspace.normalize_item_markers();
-            self.crdt = WorkspaceCrdtDocuments::try_new(&self.workspace)?;
-            self.save_workspace()?;
-        }
-        if forced_snapshot_applied {
-            self.sync_notice = Some(SYNC_COMPACTED_SNAPSHOT_NOTICE.to_string());
-        }
+        push_result?;
 
-        Ok(remote_updates_applied > 0 || pushed_any || forced_snapshot_applied)
+        Ok(remote_updates_applied > 0 || repaired_workspace_changed || !pushed.is_empty())
     }
 
     fn ensure_daily_queue(&mut self, date: NaiveDate) -> Result<SchemeId> {
@@ -1960,12 +1955,6 @@ fn parse_image_format(raw: &str) -> Option<ImageAssetFormat> {
     }
 }
 
-#[derive(Clone, Copy)]
-struct MobileSyncDocumentRef {
-    document: DocumentId,
-    kind: SyncDocumentKind,
-}
-
 struct MobileSyncHttpClient {
     api_base: String,
     bearer_token: String,
@@ -1975,193 +1964,6 @@ struct GoogleCalendarApplyResult {
     content_changed: bool,
     created_count: i32,
     changes: WorkspaceCrdtChangeSet,
-}
-
-fn mobile_sync_documents(workspace: &Workspace) -> Vec<MobileSyncDocumentRef> {
-    let mut docs = vec![MobileSyncDocumentRef {
-        document: workspace.sync.id,
-        kind: SyncDocumentKind::PersonalWorkspace,
-    }];
-    docs.extend(mobile_scheme_documents(workspace));
-    docs
-}
-
-fn mobile_scheme_documents(workspace: &Workspace) -> Vec<MobileSyncDocumentRef> {
-    workspace
-        .scheme_sync
-        .values()
-        .filter(|meta| meta.kind == SyncDocumentKind::Scheme)
-        .map(|meta| MobileSyncDocumentRef {
-            document: meta.id,
-            kind: SyncDocumentKind::Scheme,
-        })
-        .collect()
-}
-
-fn mobile_upsert_documents(
-    client: &MobileSyncHttpClient,
-    workspace_id: WorkspaceId,
-    docs: Vec<MobileSyncDocumentRef>,
-) -> Result<()> {
-    let mut seen = HashSet::new();
-    for doc in docs {
-        if seen.insert(doc.document) {
-            client.upsert_document(workspace_id, doc)?;
-        }
-    }
-    Ok(())
-}
-
-struct MobileAccumulatedPull {
-    updates: Vec<StoredCrdtUpdate>,
-    latest_sequence: u64,
-    forced_snapshot: bool,
-}
-
-/// Pull a document one bounded page at a time, following the server's `has_more`
-/// flag until caught up. Without this loop a far-behind replica would receive
-/// only the first server page yet advance its cursor to `latest_sequence`,
-/// silently skipping every update beyond that page.
-fn mobile_pull_document(
-    client: &MobileSyncHttpClient,
-    sync_state: &LocalSyncState,
-    workspace_id: WorkspaceId,
-    doc: MobileSyncDocumentRef,
-    replica_id: ReplicaId,
-) -> Result<MobileAccumulatedPull> {
-    let mut after = sync_state
-        .document_cursors
-        .get(&doc.document)
-        .map(|cursor| cursor.last_pulled_sequence)
-        .unwrap_or(0);
-    let mut updates = Vec::new();
-    let mut latest_sequence;
-    let mut forced_snapshot = false;
-    loop {
-        let response = client.pull_updates(workspace_id, doc.document, after, replica_id)?;
-        latest_sequence = response.latest_sequence;
-        forced_snapshot |= response.forced_snapshot;
-        let page = mobile_pull_response_updates(&response);
-        let page_max = page.iter().map(|update| update.sequence).max();
-        updates.extend(page);
-        match page_max {
-            Some(max) if response.has_more && max > after => after = max,
-            _ => break,
-        }
-    }
-    Ok(MobileAccumulatedPull {
-        updates,
-        latest_sequence,
-        forced_snapshot,
-    })
-}
-
-fn mobile_pull_response_updates(response: &PullUpdatesResponse) -> Vec<StoredCrdtUpdate> {
-    let mut updates = Vec::new();
-    if let Some(snapshot) = &response.snapshot {
-        updates.push(mobile_snapshot_as_update(snapshot));
-    }
-    updates.extend(response.updates.iter().cloned());
-    updates
-}
-
-fn mobile_snapshot_as_update(snapshot: &StoredCrdtSnapshot) -> StoredCrdtUpdate {
-    StoredCrdtUpdate {
-        workspace_id: snapshot.workspace_id,
-        document: snapshot.document,
-        kind: snapshot.kind,
-        replica_id: ReplicaId::new(),
-        sequence: snapshot.sequence,
-        received_at: snapshot.compacted_at,
-        update_v1: snapshot.update_v1.clone(),
-    }
-}
-
-fn mobile_queue_bootstrap_updates(
-    sync_state: &mut LocalSyncState,
-    workspace: &Workspace,
-    replica_id: ReplicaId,
-    remote_latest: &HashMap<DocumentId, u64>,
-) {
-    let mut next_sequence = sync_state
-        .pending
-        .iter()
-        .map(|edit| edit.local_sequence)
-        .max()
-        .unwrap_or(0)
-        + 1;
-    for update in WorkspaceCrdtDocuments::snapshot_updates(workspace).updates {
-        if remote_latest.get(&update.document).copied().unwrap_or(0) != 0 {
-            continue;
-        }
-        if sync_state
-            .pending
-            .iter()
-            .any(|pending| pending.document == update.document)
-        {
-            continue;
-        }
-        if sync_state
-            .document_cursors
-            .get(&update.document)
-            .is_some_and(|cursor| cursor.last_pushed_sequence > 0)
-        {
-            continue;
-        }
-        sync_state.push_pending(PendingCrdtEdit {
-            operation_id: OperationId::new(),
-            workspace_id: workspace.id,
-            replica_id,
-            local_sequence: next_sequence,
-            created_at: Utc::now(),
-            document: update.document,
-            kind: update.kind,
-            update_v1: update.update_v1,
-        });
-        next_sequence += 1;
-    }
-}
-
-fn mobile_push_pending_documents(
-    client: &MobileSyncHttpClient,
-    sync_state: &mut LocalSyncState,
-    workspace_id: WorkspaceId,
-    notification_schedule: &NotificationScheduleSnapshot,
-) -> Result<bool> {
-    let mut pushed_any = false;
-    loop {
-        let Some(document) = sync_state.pending.front().map(|edit| edit.document) else {
-            return Ok(pushed_any);
-        };
-        let pending = sync_state.pending_for_document(document, SYNC_BATCH_LIMIT);
-        if pending.is_empty() {
-            return Ok(pushed_any);
-        }
-        let kind = pending[0].kind;
-        client.upsert_document(workspace_id, MobileSyncDocumentRef { document, kind })?;
-        let mut request = sync_state
-            .next_push_request(document, SYNC_BATCH_LIMIT)
-            .ok_or_else(|| anyhow!("missing push request for pending document"))?;
-        let through_local_sequence = pending
-            .iter()
-            .map(|edit| edit.local_sequence)
-            .max()
-            .unwrap_or(0);
-        let mut notification_schedule = notification_schedule.clone();
-        notification_schedule.sequence = through_local_sequence;
-        request.notification_schedule = Some(notification_schedule);
-        let response = client.push_updates(workspace_id, document, &request)?;
-        if response.accepted != request.updates.len() {
-            return Err(anyhow!(
-                "sync backend accepted {}/{} updates for {}",
-                response.accepted,
-                request.updates.len(),
-                document
-            ));
-        }
-        sync_state.mark_pushed(document, through_local_sequence);
-        pushed_any = true;
-    }
 }
 
 fn mobile_notification_schedule_snapshot(
@@ -2213,51 +2015,13 @@ fn mobile_notification_schedule_snapshot(
 }
 
 impl MobileSyncHttpClient {
-    fn register_device(
-        &self,
-        workspace_id: WorkspaceId,
-        request: &RegisterDeviceRequest,
-    ) -> Result<RegisterDeviceResponse> {
-        let url = format!("{}/v1/workspaces/{}/devices", self.api_base, workspace_id);
-        self.post_json(&url, request)
-    }
-
-    fn upsert_document(&self, workspace_id: WorkspaceId, doc: MobileSyncDocumentRef) -> Result<()> {
-        let url = format!(
-            "{}/v1/workspaces/{}/documents/{}",
-            self.api_base, workspace_id, doc.document
-        );
-        self.put_json::<_, knotq_sync::DocumentResponse>(
-            &url,
-            &UpsertDocumentRequest { kind: doc.kind },
-        )
-        .map(|_| ())
-    }
-
-    fn pull_updates(
-        &self,
-        workspace_id: WorkspaceId,
-        document: DocumentId,
-        after: u64,
-        replica_id: ReplicaId,
-    ) -> Result<PullUpdatesResponse> {
-        let url = format!(
-            "{}/v1/workspaces/{}/documents/{}/updates?after={}&exclude_replica={}",
-            self.api_base, workspace_id, document, after, replica_id
-        );
+    fn account_status(&self) -> Result<AccountStatusResponse> {
+        let url = format!("{}/v1/auth/account/status", self.api_base);
         self.get_json(&url)
     }
 
-    fn push_updates(
-        &self,
-        workspace_id: WorkspaceId,
-        document: DocumentId,
-        request: &PushUpdatesRequest,
-    ) -> Result<PushUpdatesResponse> {
-        let url = format!(
-            "{}/v1/workspaces/{}/documents/{}/updates",
-            self.api_base, workspace_id, document
-        );
+    fn register_device(&self, request: &RegisterDeviceRequest) -> Result<RegisterDeviceResponse> {
+        let url = format!("{}/v1/sync/devices", self.api_base);
         self.post_json(&url, request)
     }
 
@@ -2281,22 +2045,22 @@ impl MobileSyncHttpClient {
             .with_context(|| format!("parse sync response from {url}"))
     }
 
-    fn put_json<T, R>(&self, url: &str, body: &T) -> Result<R>
-    where
-        T: serde::Serialize,
-        R: serde::de::DeserializeOwned,
-    {
-        self.authorized(ureq::put(url))
-            .send_json(serde_json::to_value(body)?)
-            .map_err(mobile_sync_http_error)?
-            .into_json()
-            .with_context(|| format!("parse sync response from {url}"))
-    }
-
     fn authorized(&self, request: ureq::Request) -> ureq::Request {
         request
             .timeout(std::time::Duration::from_secs(30))
             .set("authorization", &format!("Bearer {}", self.bearer_token))
+    }
+}
+
+impl SyncTransport for MobileSyncHttpClient {
+    fn pull(&self, request: &BatchPullRequest) -> Result<BatchPullResponse> {
+        let url = format!("{}/v1/sync/pull", self.api_base);
+        self.post_json(&url, request)
+    }
+
+    fn push(&self, request: &BatchPushRequest) -> Result<BatchPushResponse> {
+        let url = format!("{}/v1/sync/push", self.api_base);
+        self.post_json(&url, request)
     }
 }
 
@@ -2965,7 +2729,108 @@ uniffi::include_scaffolding!("knotq_mobile_core");
 #[cfg(test)]
 mod tests {
     use super::*;
-    use knotq_model::{CalendarProvider, ImportedCalendarSource, SchemeSource};
+    use knotq_model::{
+        CalendarProvider, ImportedCalendarSource, ReplicaId, SchemeSource, SyncDocumentKind,
+    };
+    use knotq_sync::LocalSyncState;
+
+    #[test]
+    fn bootstrap_snapshot_supersedes_pending_delta_for_new_remote_document() {
+        let mut workspace = Workspace::new();
+        let scheme = Scheme::new("Unsynced", 0);
+        let scheme_id = scheme.id;
+        workspace.schemes.insert(scheme_id, scheme);
+        workspace.ensure_sync_metadata();
+        let document = workspace.scheme_sync.get(&scheme_id).unwrap().id;
+        let replica_id = ReplicaId::new();
+        let stale_delta = vec![1, 2, 3];
+        let mut sync_state = LocalSyncState {
+            workspace_id: Some(workspace.id),
+            replica_id: Some(replica_id),
+            ..LocalSyncState::default()
+        };
+        sync_state.document_cursors.insert(
+            document,
+            knotq_sync::DocumentSyncCursor {
+                document,
+                kind: SyncDocumentKind::Scheme,
+                last_pulled_sequence: 0,
+                last_pushed_sequence: 12,
+            },
+        );
+        sync_state.push_pending(PendingCrdtEdit {
+            operation_id: OperationId::new(),
+            workspace_id: workspace.id,
+            replica_id,
+            local_sequence: 1,
+            created_at: Utc::now(),
+            document,
+            kind: SyncDocumentKind::Scheme,
+            update_v1: stale_delta.clone(),
+        });
+
+        queue_workspace_bootstrap_updates(
+            &mut sync_state,
+            &workspace,
+            replica_id,
+            &std::collections::HashMap::new(),
+        );
+
+        let pending = sync_state
+            .pending
+            .iter()
+            .filter(|edit| edit.document == document)
+            .collect::<Vec<_>>();
+        assert_eq!(pending.len(), 1);
+        assert_ne!(pending[0].update_v1, stale_delta);
+        knotq_sync::validate_crdt_update_sequence(
+            SyncDocumentKind::Scheme,
+            [pending[0].update_v1.as_slice()],
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn bootstrap_drops_orphaned_pending_delta_without_remote_base() {
+        // A delta queued for a scheme that has since been deleted (so it is no
+        // longer in the workspace) and that the server has no base snapshot for can
+        // never be accepted — pushing it trips `crdt_schema_invalid` and wedges the
+        // whole push loop. Bootstrap must drop it so sync can make progress.
+        let mut workspace = Workspace::new();
+        workspace.ensure_sync_metadata();
+        let replica_id = ReplicaId::new();
+        let orphan_document = knotq_model::DocumentId::new();
+        let mut sync_state = LocalSyncState {
+            workspace_id: Some(workspace.id),
+            replica_id: Some(replica_id),
+            ..LocalSyncState::default()
+        };
+        sync_state.push_pending(PendingCrdtEdit {
+            operation_id: OperationId::new(),
+            workspace_id: workspace.id,
+            replica_id,
+            local_sequence: 1,
+            created_at: Utc::now(),
+            document: orphan_document,
+            kind: SyncDocumentKind::Scheme,
+            update_v1: vec![9, 9, 9],
+        });
+
+        queue_workspace_bootstrap_updates(
+            &mut sync_state,
+            &workspace,
+            replica_id,
+            &std::collections::HashMap::new(),
+        );
+
+        assert!(
+            !sync_state
+                .pending
+                .iter()
+                .any(|edit| edit.document == orphan_document),
+            "orphaned pending delta should be dropped"
+        );
+    }
 
     #[test]
     fn mobile_core_flow_creates_edits_and_searches() {
