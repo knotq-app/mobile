@@ -3132,12 +3132,11 @@ class MainActivity : Activity() {
             orientation = LinearLayout.VERTICAL
             setBackgroundColor(theme.bgApp)
         }
-        // iOS DailyEditorNavigationBar: a back-only bar over the feed.
+        // iOS daily chrome: a floating back chip, no bar or divider.
         root.addView(LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
             setPadding(dp(12), 0, dp(12), 0)
-            background = underline(theme.bgApp)
             addView(iconChipImage(R.drawable.ic_knotq_chevron_left_24, "Back", iconSize = 20) {
                 currentFocus?.clearFocus()
                 selectedTab = TAB_HOME
@@ -3257,7 +3256,9 @@ class MainActivity : Activity() {
             background = rounded(if (selected) selectedFill else Color.TRANSPARENT, dp(7))
             setPadding(0, dp(3), 0, dp(5))
             if (!empty) {
-                addView(text(MobileDateFormatting.fullDay(date), theme.textPrimary, 26f, true).apply {
+                // Same short label iOS shows ("Thu, Jun 11") — the daily
+                // scheme's display name.
+                addView(text(scheme.optString("display_name").ifEmpty { MobileDateFormatting.fullDay(date) }, theme.textPrimary, 26f, true).apply {
                     includeFontPadding = false
                     gravity = Gravity.CENTER_VERTICAL
                     setPadding(dp(14), 0, dp(14), 0)

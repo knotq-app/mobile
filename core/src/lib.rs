@@ -879,11 +879,29 @@ impl MobileCoreInner {
         workspace.normalize_item_markers();
         let settings = load_app_settings(&settings_path).unwrap_or_default();
         if should_reset_workspace_dir && workspace_dir.exists() {
-            fs::remove_dir_all(&workspace_dir)
-                .with_context(|| format!("reset {}", workspace_dir.display()))?;
+            // Preserve the unreadable workspace for recovery instead of
+            // deleting it. If even the rename fails, keep going — the save
+            // below overwrites workspace.json in place.
+            let timestamp = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|elapsed| elapsed.as_secs())
+                .unwrap_or(0);
+            let backup_dir = app_dir.join(format!("workspace-corrupt-{timestamp}"));
+            if let Err(error) = fs::rename(&workspace_dir, &backup_dir) {
+                eprintln!(
+                    "knotq: could not set aside unreadable workspace ({error:#}); continuing in place"
+                );
+            }
         }
-        save_workspace(&workspace_path, &workspace)?;
-        save_app_settings(&settings_path, &settings)?;
+        // Best-effort: a transient write failure (e.g. disk pressure) must not
+        // prevent startup. The loaded workspace lives in memory and every
+        // subsequent edit retries the save.
+        if let Err(error) = save_workspace(&workspace_path, &workspace) {
+            eprintln!("knotq: deferring workspace save at startup: {error:#}");
+        }
+        if let Err(error) = save_app_settings(&settings_path, &settings) {
+            eprintln!("knotq: deferring settings save at startup: {error:#}");
+        }
         let next_sequence = load_local_sync_state(&workspace_path)
             .unwrap_or_default()
             .pending

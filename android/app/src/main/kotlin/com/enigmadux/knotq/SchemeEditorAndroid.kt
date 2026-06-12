@@ -552,7 +552,8 @@ internal class SchemeEditText(context: android.content.Context) : EditText(conte
             val topMargin = if (hasPrevious) 0f else dp(3f)
             val bottomMargin = if (hasNext) 0f else dp(3f)
             val x = annotationGuideX(markerRect) - (indent - level) * dp(EDITOR_INDENT_WIDTH_DP.toFloat())
-            canvas.drawRect(x, top + topMargin, x + 1f, max(top + topMargin + 1f, guideBottom - bottomMargin), chromePaint)
+            // 1dp wide like iOS's 1pt guides (1px was nearly invisible).
+            canvas.drawRect(x, top + topMargin, x + dp(1f), max(top + topMargin + 1f, guideBottom - bottomMargin), chromePaint)
         }
     }
 
@@ -606,7 +607,7 @@ internal class SchemeEditText(context: android.content.Context) : EditText(conte
         val y2 = bottom.toFloat() - if (connectsToNext) 0f else dp(3f)
         chromePaint.style = Paint.Style.FILL
         chromePaint.color = accentColor
-        canvas.drawRect(x, y1, x + 1f, max(y1 + 1f, y2), chromePaint)
+        canvas.drawRect(x, y1, x + dp(1f), max(y1 + 1f, y2), chromePaint)
     }
 
     private fun drawAnnotation(canvas: Canvas, value: String, markerRect: RectF, contentBottom: Int) {
