@@ -26,6 +26,14 @@
                 <category android:name="android.intent.category.BROWSABLE" />
                 <data android:scheme="com.googleusercontent.apps.419826075228-gn6gj1l20nltil67odvf00u3i7n8a2ld" />
             </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data
+                    android:scheme="knotq"
+                    android:host="auth-callback" />
+            </intent-filter>
         </activity>
         <receiver
             android:name=".NotificationReceiver"

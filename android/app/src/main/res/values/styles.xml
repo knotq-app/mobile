@@ -8,4 +8,43 @@
         <item name="android:colorAccent">#42A5F5</item>
         <item name="android:windowNoTitle">true</item>
     </style>
+
+    <!-- Compact wheel (spinner) widget styles so time/date pickers feel like the
+         iOS inline wheels rather than the multi-tap clock/calendar dialogs. -->
+    <style name="KnotQSpinnerTimePicker" parent="@android:style/Widget.Material.TimePicker">
+        <item name="android:timePickerMode">spinner</item>
+    </style>
+    <style name="KnotQSpinnerDatePicker" parent="@android:style/Widget.Material.DatePicker">
+        <item name="android:datePickerMode">spinner</item>
+    </style>
+
+    <!-- Dialog themes for TimePickerDialog (wheel mode), tinted per app theme. -->
+    <style name="KnotQTimeDialogDark" parent="@android:style/Theme.Material.Dialog.Alert">
+        <item name="android:timePickerStyle">@style/KnotQSpinnerTimePicker</item>
+        <item name="android:colorAccent">#7AA0FF</item>
+    </style>
+    <style name="KnotQTimeDialogLight" parent="@android:style/Theme.Material.Light.Dialog.Alert">
+        <item name="android:timePickerStyle">@style/KnotQSpinnerTimePicker</item>
+        <item name="android:colorAccent">#C04510</item>
+    </style>
+
+    <!-- Dialog themes for DatePickerDialog (graphical calendar, like iOS), tinted. -->
+    <style name="KnotQDateDialogDark" parent="@android:style/Theme.Material.Dialog.Alert">
+        <item name="android:colorAccent">#7AA0FF</item>
+    </style>
+    <style name="KnotQDateDialogLight" parent="@android:style/Theme.Material.Light.Dialog.Alert">
+        <item name="android:colorAccent">#C04510</item>
+    </style>
+
+    <!-- ContextThemeWrapper themes for inline (embedded) wheel pickers. -->
+    <style name="KnotQInlinePickerDark" parent="@android:style/Theme.Material">
+        <item name="android:datePickerStyle">@style/KnotQSpinnerDatePicker</item>
+        <item name="android:timePickerStyle">@style/KnotQSpinnerTimePicker</item>
+        <item name="android:colorAccent">#7AA0FF</item>
+    </style>
+    <style name="KnotQInlinePickerLight" parent="@android:style/Theme.Material.Light">
+        <item name="android:datePickerStyle">@style/KnotQSpinnerDatePicker</item>
+        <item name="android:timePickerStyle">@style/KnotQSpinnerTimePicker</item>
+        <item name="android:colorAccent">#C04510</item>
+    </style>
 </resources>

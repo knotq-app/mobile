@@ -9,6 +9,7 @@ dictionary MobileSnapshot {
   MobileNode root;
   sequence<MobileScheme> schemes;
   sequence<MobileScheme> archived_schemes;
+  sequence<MobileNode> archived_nodes;
   sequence<MobileDailyEntry> daily;
   MobileCalendar calendar;
   MobileSettings settings;
@@ -109,12 +110,19 @@ dictionary MobileOccurrence {
   string? repeat_rule;
 };
 
+dictionary MobileGoogleAccount {
+  string id;
+  string title;
+  string detail;
+};
+
 dictionary MobileSettings {
   string theme_mode;
   string time_format;
   i32 event_notification_offset_secs;
   i32 assignment_notification_offset_secs;
   i32 google_account_count;
+  sequence<MobileGoogleAccount> google_accounts;
 };
 
 dictionary MobileGoogleAuthRequest {
@@ -166,6 +174,9 @@ interface MobileCore {
   MobileSnapshot snapshot(string? today, i32 week_offset);
 
   [Throws=MobileError]
+  MobileSnapshot snapshot_with_daily_history(string? today, i32 week_offset, i32 daily_history_days);
+
+  [Throws=MobileError]
   sequence<MobileCalendarDay> month_days(i32 year, u32 month);
 
   [Throws=MobileError]
@@ -199,6 +210,12 @@ interface MobileCore {
   void permanently_delete_scheme(string scheme_id);
 
   [Throws=MobileError]
+  void restore_folder(string folder_id);
+
+  [Throws=MobileError]
+  void permanently_delete_folder(string folder_id);
+
+  [Throws=MobileError]
   void empty_archive();
 
   [Throws=MobileError]
@@ -215,6 +232,9 @@ interface MobileCore {
 
   [Throws=MobileError]
   MobileGoogleSyncResult sync_google_calendars();
+
+  [Throws=MobileError]
+  void unlink_google_account(string account_id);
 
   [Throws=MobileError]
   void add_item(string scheme_id, string text, string? marker, i32? position, i32? indent);
@@ -245,6 +265,12 @@ interface MobileCore {
 
   [Throws=MobileError]
   void commit_event_edit(string scheme_id, string item_id, string occurrence_json, i32 occurrence_index, string title, string? occurrence_start, string? occurrence_end, string? start, string? end, string? rrule, i32? notification_offset_secs, boolean notification_dirty, boolean done, string scope);
+
+  // Same operation with one JSON argument. Android's JNA bridge corrupts the
+  // trailing scalar args of the 14-argument form (libffi struct-by-value spill
+  // bug), so the Kotlin side calls this variant instead.
+  [Throws=MobileError]
+  void commit_event_edit_payload(string payload);
 
   [Throws=MobileError]
   void toggle_item(string scheme_id, string item_id);

@@ -42,6 +42,9 @@ dependencies {
     implementation "androidx.annotation:annotation:1.9.1"
     // Google Play Billing for the sync subscription.
     implementation "com.android.billingclient:billing:7.1.1"
+    // Periodic background sync while the app is backgrounded (the Android
+    // counterpart of the iOS BGAppRefresh task).
+    implementation "androidx.work:work-runtime:2.9.1"
 }
 
 tasks.register("buildRustDebug") {

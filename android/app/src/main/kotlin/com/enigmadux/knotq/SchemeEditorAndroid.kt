@@ -77,14 +77,28 @@ internal class SchemeEditText(context: android.content.Context) : EditText(conte
             editableText?.let { applyPrefixSpans(it, fullDocument = true) }
         }
     var markerTapHandler: ((Int) -> Unit)? = null
+    var selectionChangedHandler: (() -> Unit)? = null
+
+    override fun onSelectionChanged(selStart: Int, selEnd: Int) {
+        super.onSelectionChanged(selStart, selEnd)
+        selectionChangedHandler?.invoke()
+    }
 
     private var styling = false
     private var pendingEditStart = -1
     private var pendingEditEnd = -1
+    private var deletionBrokePrefix = false
 
     init {
         addTextChangedListener(object : TextWatcher {
-            override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) = Unit
+            override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {
+                if (styling || s == null) return
+                // Flag deletions that bite into a line's *valid* marker token,
+                // judged against the pre-edit text so ordinary body text that
+                // merely looks marker-ish ("*bold*", "-5") is never touched.
+                deletionBrokePrefix = count > after &&
+                    deletionDamagesPrefix(s.toString(), start, count)
+            }
             override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {
                 if (styling) return
                 pendingEditStart = start
@@ -93,12 +107,79 @@ internal class SchemeEditText(context: android.content.Context) : EditText(conte
             override fun afterTextChanged(s: Editable?) {
                 if (!styling && s != null && BaseInputConnection.getComposingSpanStart(s) < 0) {
                     enforceTerminalNewline(s)
+                    if (deletionBrokePrefix) {
+                        deletionBrokePrefix = false
+                        repairBrokenPrefix(s)
+                    }
                     handleEnterContinuation(s)
                     applyPrefixSpans(s, fullDocument = true)
                 }
                 invalidate()
             }
         })
+    }
+
+    private fun deletionDamagesPrefix(value: String, start: Int, count: Int): Boolean {
+        val anchor = start.coerceIn(0, value.length)
+        val lineStart = if (anchor == 0) 0 else value.lastIndexOf('\n', anchor - 1).let { if (it < 0) 0 else it + 1 }
+        if (lineStart > anchor) return false
+        val lineEnd = value.indexOf('\n', lineStart).let { if (it < 0) value.length else it }
+        if (lineStart >= lineEnd) return false
+        val line = value.substring(lineStart, lineEnd)
+        val prefixLength = chromePrefixLength(line)
+        if (prefixLength <= 0) return false
+        val indentLength = lineIndentLength(line)
+        if (indentLength >= prefixLength) return false
+        val tokenStart = lineStart + indentLength
+        val tokenEnd = lineStart + prefixLength
+        return start < tokenEnd && start + count > tokenStart
+    }
+
+    /// iOS clear-marker backspace, adapted to literal prefixes: a deletion that
+    /// bit into a marker token strips whatever is left of the token in one
+    /// step (keeping the indent), instead of leaving partial glyph text like
+    /// "[ ]" or "1." behind as visible body text.
+    private fun repairBrokenPrefix(editable: Editable) {
+        val editStart = pendingEditStart
+        if (editStart < 0) return
+        val value = editable.toString()
+        val anchor = editStart.coerceIn(0, value.length)
+        val lineStart = if (anchor == 0) 0 else value.lastIndexOf('\n', anchor - 1).let { if (it < 0) 0 else it + 1 }
+        if (lineStart > anchor) return
+        val lineEnd = value.indexOf('\n', lineStart).let { if (it < 0) value.length else it }
+        if (lineStart >= lineEnd) return
+        val line = value.substring(lineStart, lineEnd)
+        if (chromePrefixLength(line) > 0) return
+        val indentLength = lineIndentLength(line)
+        val rest = line.drop(indentLength)
+        val remnantLength = brokenPrefixRemnantLength(rest) ?: return
+        styling = true
+        editable.replace(lineStart + indentLength, lineStart + indentLength + remnantLength, "")
+        setSelection((lineStart + indentLength).coerceAtMost(editable.length))
+        styling = false
+        pendingEditStart = -1
+        pendingEditEnd = -1
+    }
+
+    private fun lineIndentLength(line: String): Int {
+        var rest = line
+        var length = 0
+        while (rest.startsWith("    ")) {
+            rest = rest.drop(4)
+            length += 4
+        }
+        while (rest.startsWith("\t")) {
+            rest = rest.drop(1)
+            length += 1
+        }
+        return length
+    }
+
+    private fun brokenPrefixRemnantLength(rest: String): Int? {
+        brokenCheckboxPrefix.find(rest)?.takeIf { it.value.isNotEmpty() }?.let { return it.value.length }
+        brokenNumberedPrefix.find(rest)?.let { return it.value.length }
+        if (rest.startsWith("-") || rest.startsWith("*")) return 1
+        return null
     }
 
     override fun setText(text: CharSequence?, type: BufferType?) {
@@ -128,6 +209,9 @@ internal class SchemeEditText(context: android.content.Context) : EditText(conte
     }
 
     private fun markerLineAt(x: Float, y: Float): Int? {
+        // iOS `checkboxLineRange`: only checkbox markers respond to taps (a
+        // padded hit area around the box itself); bullet/numbered glyphs and
+        // the left gutter just place the caret.
         val layout = layout ?: return null
         val value = text?.toString().orEmpty()
         for (visualLine in 0 until layout.lineCount) {
@@ -136,6 +220,7 @@ internal class SchemeEditText(context: android.content.Context) : EditText(conte
             val logicalLine = value.substring(0, lineStart).count { it == '\n' }
             val lineEnd = value.indexOf('\n', lineStart).let { if (it < 0) value.length else it }
             val parsed = parseChromeLine(value.substring(lineStart, lineEnd))
+            if (parsed.marker != "checkbox") continue
             val prefixWidth = prefixVisualWidth(parsed, parsed.marker)
             val extraHeight = extraHeightFor(lineAdornments.getOrNull(logicalLine), prefixWidth)
             val rect = markerRect(
@@ -143,9 +228,7 @@ internal class SchemeEditText(context: android.content.Context) : EditText(conte
                 totalPaddingTop + layout.getLineTop(visualLine) - scrollY,
                 totalPaddingTop + layout.getLineBottom(visualLine) - scrollY - extraHeight
             )
-            rect.left = 0f
-            rect.right = (totalPaddingLeft + dp(EDITOR_MARKER_SLOT_DP + 12)).toFloat()
-            rect.inset(-dp(10).toFloat(), -dp(10).toFloat())
+            rect.inset(-dp(8).toFloat(), -dp(8).toFloat())
             if (rect.contains(x, y)) return logicalLine
         }
         return null
@@ -220,8 +303,10 @@ internal class SchemeEditText(context: android.content.Context) : EditText(conte
                 )
             }
             if (prefixWidth > 0 && spanEnd > start) {
+                // Wrapped lines hang at the text start (indent + marker slot),
+                // matching iOS — not just the indent column.
                 editable.setSpan(
-                    EditorHangingIndentSpan(parsed.indent.coerceIn(0, 8) * dp(EDITOR_INDENT_WIDTH_DP)),
+                    EditorHangingIndentSpan(prefixWidth),
                     start,
                     spanEnd,
                     Spannable.SPAN_EXCLUSIVE_EXCLUSIVE
@@ -252,35 +337,18 @@ internal class SchemeEditText(context: android.content.Context) : EditText(conte
         if (insertStart < 0 || insertEnd - insertStart != 1) return
         if (insertStart >= editable.length) return
         if (editable[insertStart] != '\n') return
+        // A "\n" at position 0 has no source line (e.g. setText of an empty
+        // document appending its terminal newline) — nothing to continue.
+        if (insertStart == 0) return
         val value = editable.toString()
-        val lineStart = value.lastIndexOf('\n', (insertStart - 1).coerceAtLeast(0)).let { if (it < 0) 0 else it + 1 }
+        val lineStart = value.lastIndexOf('\n', insertStart - 1).let { if (it < 0) 0 else it + 1 }
+        if (lineStart > insertStart) return
         val lineText = value.substring(lineStart, insertStart)
         val parsed = parseChromeLine(lineText)
-        val prefixLen = chromePrefixLength(lineText)
-        val body = lineText.drop(prefixLen.coerceAtMost(lineText.length))
         if (parsed.marker == "blank" && parsed.indent == 0) return
         val indentStr = "    ".repeat(parsed.indent.coerceIn(0, 8))
-        if (body.isEmpty() && parsed.marker != "blank") {
-            // Escape the list: drop the prefix on the now-empty source line
-            // and the newline that was just inserted.
-            styling = true
-            editable.replace(lineStart, insertStart + 1, "")
-            setSelection(lineStart.coerceAtMost(editable.length))
-            styling = false
-            pendingEditStart = -1
-            pendingEditEnd = -1
-            return
-        }
-        if (body.isEmpty() && parsed.indent > 0) {
-            // Plain indented blank line + Enter: outdent by collapsing the indent.
-            styling = true
-            editable.replace(lineStart, insertStart + 1, "")
-            setSelection(lineStart.coerceAtMost(editable.length))
-            styling = false
-            pendingEditStart = -1
-            pendingEditEnd = -1
-            return
-        }
+        // iOS parity: return always continues the marker onto the fresh line,
+        // even from an empty marker line (no escape-the-list behavior).
         val newPrefix = when (parsed.marker) {
             "checkbox" -> "$indentStr[ ] "
             "bullet" -> "$indentStr- "
@@ -298,16 +366,23 @@ internal class SchemeEditText(context: android.content.Context) : EditText(conte
     }
 
     private fun nextNumberedOrdinal(value: String, lineStart: Int, indent: Int): Int {
+        // iOS ordinal rule: nested-deeper lines are transparent; a shallower
+        // line or a non-numbered line at the same indent ends the run.
         var ordinal = 1
         var cursor = lineStart
         while (cursor > 0) {
             val prevEnd = cursor - 1 // newline char
             if (prevEnd < 0 || value[prevEnd] != '\n') break
-            val prevStart = value.lastIndexOf('\n', (prevEnd - 1).coerceAtLeast(0)).let { if (it < 0) 0 else it + 1 }
+            val prevStart = if (prevEnd == 0) 0 else value.lastIndexOf('\n', prevEnd - 1).let { if (it < 0) 0 else it + 1 }
             val prevLine = value.substring(prevStart, prevEnd)
             val prevParsed = parseChromeLine(prevLine)
-            if (prevParsed.marker != "numbered" || prevParsed.indent != indent) break
-            ordinal++
+            when {
+                prevParsed.indent > indent -> Unit // transparent
+                prevParsed.indent < indent -> return ordinal + 1
+                prevParsed.marker != "numbered" -> return ordinal + 1
+                else -> ordinal++
+            }
+            if (prevStart == 0) break
             cursor = prevStart
         }
         return ordinal + 1 // the current line itself is the Nth; next is N+1
@@ -323,11 +398,30 @@ internal class SchemeEditText(context: android.content.Context) : EditText(conte
         setSelection(start.coerceAtMost(editable.length), end.coerceAtMost(editable.length))
     }
 
+    /// iOS `numberedOrdinal`: count consecutive prior numbered siblings at the
+    /// same indent; deeper lines are transparent, shallower or non-numbered
+    /// same-indent lines end the run.
+    private fun numberedOrdinalAt(lines: List<ChromeDrawLine>, index: Int): Int {
+        val indent = lines[index].indent
+        var ordinal = 1
+        var cursor = index - 1
+        while (cursor >= 0) {
+            val prev = lines[cursor]
+            when {
+                prev.indent > indent -> Unit
+                prev.indent < indent -> return ordinal
+                prev.marker != "numbered" -> return ordinal
+                else -> ordinal++
+            }
+            cursor--
+        }
+        return ordinal
+    }
+
     private fun drawEditorChrome(canvas: Canvas) {
         val layout = layout ?: return
         val value = text?.toString().orEmpty()
         val lines = chromeDrawLines(value)
-        var ordinal = 1
         lines.forEachIndexed { index, line ->
             if (value.isEmpty()) return@forEachIndexed
             val firstVisual = layout.getLineForOffset(line.start.coerceIn(0, max(0, value.length - 1)))
@@ -343,12 +437,7 @@ internal class SchemeEditText(context: android.content.Context) : EditText(conte
             val next = lines.getOrNull(index + 1)
 
             drawGuides(canvas, markerRect, line.indent, previous?.indent ?: 0, next?.indent ?: 0, firstTop, rowBottom)
-            val lineOrdinal = if (line.marker == "numbered") {
-                ordinal++
-            } else {
-                ordinal = 1
-                1
-            }
+            val lineOrdinal = if (line.marker == "numbered") numberedOrdinalAt(lines, index) else 1
             drawMarker(canvas, markerRect, line.marker, line.done, lineOrdinal)
             line.annotation?.let { annotation ->
                 drawAnnotationBar(
@@ -443,12 +532,15 @@ internal class SchemeEditText(context: android.content.Context) : EditText(conte
                 canvas.drawCircle(rect.centerX(), rect.centerY(), dp(2.2f), chromePaint)
             }
             "numbered" -> {
+                // iOS: ordinal right-aligned inside the marker slot, vertically
+                // centered — same indentation column as the other markers.
                 chromePaint.style = Paint.Style.FILL
-                chromePaint.typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+                chromePaint.typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
                 chromePaint.textSize = dp(12f)
                 chromePaint.color = accentColor
                 chromePaint.textAlign = Paint.Align.RIGHT
-                canvas.drawText("$ordinal.", rect.left - dp(5f), rect.bottom - dp(2f), chromePaint)
+                val baseline = rect.centerY() - (chromePaint.ascent() + chromePaint.descent()) / 2f
+                canvas.drawText("$ordinal.", rect.right, baseline, chromePaint)
                 chromePaint.textAlign = Paint.Align.LEFT
                 chromePaint.typeface = Typeface.DEFAULT
             }
@@ -812,6 +904,9 @@ private fun isMarkdownHeading(line: String): Boolean {
 }
 
 private val numberedPrefix = Regex("^\\d+\\.\\s+")
+// Marker tokens that lost their trailing space (or more) to a deletion.
+private val brokenCheckboxPrefix = Regex("^\\[[xX ]?\\]?")
+private val brokenNumberedPrefix = Regex("^\\d+\\.")
 
 internal fun rgbColor(hex: Int): Int =
     Color.rgb((hex shr 16) and 0xff, (hex shr 8) and 0xff, hex and 0xff)
@@ -896,13 +991,30 @@ internal fun parseEditorLine(raw: String): SchemeEditorLine {
 }
 
 internal fun renderDocument(lines: List<SchemeEditorLine>): String {
-    var number = 1
-    val body = lines.joinToString("\n") { line ->
-        val out = renderEditorLine(line, number)
-        if (line.marker == "numbered") number++ else number = 1
-        out
-    }
+    val body = lines.mapIndexed { index, line ->
+        renderEditorLine(line, documentNumberedOrdinal(lines, index))
+    }.joinToString("\n")
     return "$body\n"
+}
+
+/// iOS ordinal rule: count consecutive prior numbered siblings at the same
+/// indent; deeper lines are transparent, anything else ends the run.
+private fun documentNumberedOrdinal(lines: List<SchemeEditorLine>, index: Int): Int {
+    if (lines[index].marker != "numbered") return 1
+    val indent = lines[index].indent
+    var ordinal = 1
+    var cursor = index - 1
+    while (cursor >= 0) {
+        val prev = lines[cursor]
+        when {
+            prev.indent > indent -> Unit
+            prev.indent < indent -> return ordinal
+            prev.marker != "numbered" -> return ordinal
+            else -> ordinal++
+        }
+        cursor--
+    }
+    return ordinal
 }
 
 internal fun renderEditorLine(line: SchemeEditorLine, ordinal: Int): String {
@@ -1009,8 +1121,8 @@ internal data class UiTheme(
             dividerTiny = rgba(0x5a4635, 13),
             borderOverlay = rgba(0x3d2a18, 48),
             textPrimary = rgb(0x2c2420),
-            textDim = rgb(0x302520),
-            textMuted = rgba(0x5a4a3c, 150),
+            textDim = rgba(0x302520, 224),
+            textMuted = rgba(0x5a4a3c, 192),
             textSoft = rgba(0x382c22, 190),
             textToday = rgb(0xd04e1a),
             accent = rgb(0xc04510),

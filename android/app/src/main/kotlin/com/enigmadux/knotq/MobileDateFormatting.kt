@@ -55,7 +55,13 @@ internal object MobileDateFormatting {
         return DateTimeFormatter.ofPattern(pattern).format(instant.atZone(ZoneId.systemDefault()))
     }
 
-    fun occurrenceLabel(occurrence: JSONObject, twentyFourHour: Boolean, fallbackToKind: Boolean = true): String {
+    fun occurrenceLabel(
+        occurrence: JSONObject,
+        twentyFourHour: Boolean,
+        fallbackToKind: Boolean = true,
+        showDay: Boolean = false
+    ): String {
+        if (showDay) return occurrenceLabelWithDay(occurrence, twentyFourHour)
         val kind = occurrence.optString("kind")
         val start = time(occurrence.optionalString("start"), twentyFourHour)
         val end = time(occurrence.optionalString("end"), twentyFourHour)
@@ -68,6 +74,51 @@ internal object MobileDateFormatting {
             fallbackToKind -> kind.replaceFirstChar(Char::titlecase)
             else -> ""
         }
+    }
+
+    /// "Tomorrow", a near-week weekday ("Thu"), or "Jun 18" for dates past a
+    /// week out; empty for today. Mirrors iOS `upcomingDatePrefix`.
+    fun upcomingDatePrefix(instant: Instant): String {
+        val today = LocalDate.now()
+        val target = instant.atZone(ZoneId.systemDefault()).toLocalDate()
+        if (target == today) return ""
+        if (target == today.plusDays(1)) return "Tomorrow"
+        if (target.isAfter(today) && target.isBefore(today.plusDays(7))) {
+            return target.dayOfWeek.getDisplayName(TextStyle.SHORT, Locale.US)
+        }
+        return "${target.month.getDisplayName(TextStyle.SHORT, Locale.US)} ${target.dayOfMonth}"
+    }
+
+    private fun occurrenceLabelWithDay(occurrence: JSONObject, twentyFourHour: Boolean): String {
+        val kind = occurrence.optString("kind")
+        val startInstant = parseInstant(occurrence.optionalString("start"))
+        val endInstant = parseInstant(occurrence.optionalString("end"))
+        val start = time(occurrence.optionalString("start"), twentyFourHour)
+        val end = time(occurrence.optionalString("end"), twentyFourHour)
+        if (kind == "reminder" && startInstant != null && start.isNotEmpty()) {
+            val day = upcomingDatePrefix(startInstant)
+            return if (day.isEmpty()) "At $start" else "At $day $start"
+        }
+        if (kind == "assignment" && endInstant != null && end.isNotEmpty()) {
+            val day = upcomingDatePrefix(endInstant)
+            return if (day.isEmpty()) "Due $end" else "Due $day $end"
+        }
+        if (startInstant != null && endInstant != null && start.isNotEmpty() && end.isNotEmpty()) {
+            val from = upcomingDatePrefix(startInstant)
+            val to = upcomingDatePrefix(endInstant)
+            val fromText = if (from.isEmpty()) start else "$from $start"
+            val toText = if (from == to) end else if (to.isEmpty()) end else "$to $end"
+            return "$fromText → $toText"
+        }
+        if (startInstant != null && start.isNotEmpty()) {
+            val day = upcomingDatePrefix(startInstant)
+            return if (day.isEmpty()) start else "$day $start"
+        }
+        if (endInstant != null && end.isNotEmpty()) {
+            val day = upcomingDatePrefix(endInstant)
+            return if (day.isEmpty()) "Due $end" else "Due $day $end"
+        }
+        return kind.replaceFirstChar(Char::titlecase)
     }
 
     fun compactOccurrenceLabel(occurrence: JSONObject, twentyFourHour: Boolean): String {

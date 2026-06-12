@@ -648,6 +648,8 @@ internal object IntegrityCheckingUniffiLib {
     ): Short
     external fun uniffi_knotq_mobile_core_checksum_method_mobilecore_commit_event_edit(
     ): Short
+    external fun uniffi_knotq_mobile_core_checksum_method_mobilecore_commit_event_edit_payload(
+    ): Short
     external fun uniffi_knotq_mobile_core_checksum_method_mobilecore_complete_google_calendar_import(
     ): Short
     external fun uniffi_knotq_mobile_core_checksum_method_mobilecore_create_folder(
@@ -674,6 +676,8 @@ internal object IntegrityCheckingUniffiLib {
     ): Short
     external fun uniffi_knotq_mobile_core_checksum_method_mobilecore_pending_notifications(
     ): Short
+    external fun uniffi_knotq_mobile_core_checksum_method_mobilecore_permanently_delete_folder(
+    ): Short
     external fun uniffi_knotq_mobile_core_checksum_method_mobilecore_permanently_delete_scheme(
     ): Short
     external fun uniffi_knotq_mobile_core_checksum_method_mobilecore_rename_folder(
@@ -685,6 +689,8 @@ internal object IntegrityCheckingUniffiLib {
     external fun uniffi_knotq_mobile_core_checksum_method_mobilecore_replace_scheme_items(
     ): Short
     external fun uniffi_knotq_mobile_core_checksum_method_mobilecore_reset_workspace(
+    ): Short
+    external fun uniffi_knotq_mobile_core_checksum_method_mobilecore_restore_folder(
     ): Short
     external fun uniffi_knotq_mobile_core_checksum_method_mobilecore_restore_scheme(
     ): Short
@@ -714,6 +720,8 @@ internal object IntegrityCheckingUniffiLib {
     ): Short
     external fun uniffi_knotq_mobile_core_checksum_method_mobilecore_snapshot(
     ): Short
+    external fun uniffi_knotq_mobile_core_checksum_method_mobilecore_snapshot_with_daily_history(
+    ): Short
     external fun uniffi_knotq_mobile_core_checksum_method_mobilecore_sync_google_calendars(
     ): Short
     external fun uniffi_knotq_mobile_core_checksum_method_mobilecore_sync_once(
@@ -723,6 +731,8 @@ internal object IntegrityCheckingUniffiLib {
     external fun uniffi_knotq_mobile_core_checksum_method_mobilecore_toggle_item(
     ): Short
     external fun uniffi_knotq_mobile_core_checksum_method_mobilecore_toggle_occurrence(
+    ): Short
+    external fun uniffi_knotq_mobile_core_checksum_method_mobilecore_unlink_google_account(
     ): Short
     external fun uniffi_knotq_mobile_core_checksum_method_mobilecore_update_item_text(
     ): Short
@@ -762,7 +772,9 @@ external fun uniffi_knotq_mobile_core_fn_method_mobilecore_apply_notification_ac
 ): Byte
 external fun uniffi_knotq_mobile_core_fn_method_mobilecore_commit_event_edit(`ptr`: Long,`schemeId`: RustBuffer.ByValue,`itemId`: RustBuffer.ByValue,`occurrenceJson`: RustBuffer.ByValue,`occurrenceIndex`: Int,`title`: RustBuffer.ByValue,`occurrenceStart`: RustBuffer.ByValue,`occurrenceEnd`: RustBuffer.ByValue,`start`: RustBuffer.ByValue,`end`: RustBuffer.ByValue,`rrule`: RustBuffer.ByValue,`notificationOffsetSecs`: RustBuffer.ByValue,`notificationDirty`: Byte,`done`: Byte,`scope`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
 ): Unit
-external fun uniffi_knotq_mobile_core_fn_method_mobilecore_complete_google_calendar_import(`ptr`: Long,`clientId`: RustBuffer.ByValue,`redirectUri`: RustBuffer.ByValue,`state`: RustBuffer.ByValue,`codeVerifier`: RustBuffer.ByValue,`callbackUrl`: RustBuffer.ByValue,`parentId`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus,
+external fun uniffi_knotq_mobile_core_fn_method_mobilecore_commit_event_edit_payload(`ptr`: Long,`payload`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+): Unit
+external fun uniffi_knotq_mobile_core_fn_method_mobilecore_complete_google_calendar_import(`ptr`: Long,`clientId`: RustBuffer.ByValue,`redirectUri`: RustBuffer.ByValue,`state`: RustBuffer.ByValue,`codeVerifier`: RustBuffer.ByValue,`callbackUrl`: RustBuffer.ByValue,`parentId`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
 ): RustBuffer.ByValue
 external fun uniffi_knotq_mobile_core_fn_method_mobilecore_create_folder(`ptr`: Long,`parentId`: RustBuffer.ByValue,`name`: RustBuffer.ByValue,`position`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
 ): Unit
@@ -788,6 +800,8 @@ external fun uniffi_knotq_mobile_core_fn_method_mobilecore_move_node(`ptr`: Long
 ): Unit
 external fun uniffi_knotq_mobile_core_fn_method_mobilecore_pending_notifications(`ptr`: Long,`now`: RustBuffer.ByValue,`horizonDays`: Int,uniffi_out_err: UniffiRustCallStatus, 
 ): RustBuffer.ByValue
+external fun uniffi_knotq_mobile_core_fn_method_mobilecore_permanently_delete_folder(`ptr`: Long,`folderId`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+): Unit
 external fun uniffi_knotq_mobile_core_fn_method_mobilecore_permanently_delete_scheme(`ptr`: Long,`schemeId`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
 ): Unit
 external fun uniffi_knotq_mobile_core_fn_method_mobilecore_rename_folder(`ptr`: Long,`folderId`: RustBuffer.ByValue,`name`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
@@ -799,6 +813,8 @@ external fun uniffi_knotq_mobile_core_fn_method_mobilecore_reorder_item(`ptr`: L
 external fun uniffi_knotq_mobile_core_fn_method_mobilecore_replace_scheme_items(`ptr`: Long,`schemeId`: RustBuffer.ByValue,`items`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
 ): Unit
 external fun uniffi_knotq_mobile_core_fn_method_mobilecore_reset_workspace(`ptr`: Long,uniffi_out_err: UniffiRustCallStatus, 
+): Unit
+external fun uniffi_knotq_mobile_core_fn_method_mobilecore_restore_folder(`ptr`: Long,`folderId`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
 ): Unit
 external fun uniffi_knotq_mobile_core_fn_method_mobilecore_restore_scheme(`ptr`: Long,`schemeId`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
 ): Unit
@@ -828,7 +844,9 @@ external fun uniffi_knotq_mobile_core_fn_method_mobilecore_set_time_format(`ptr`
 ): Unit
 external fun uniffi_knotq_mobile_core_fn_method_mobilecore_snapshot(`ptr`: Long,`today`: RustBuffer.ByValue,`weekOffset`: Int,uniffi_out_err: UniffiRustCallStatus, 
 ): RustBuffer.ByValue
-external fun uniffi_knotq_mobile_core_fn_method_mobilecore_sync_google_calendars(`ptr`: Long,uniffi_out_err: UniffiRustCallStatus,
+external fun uniffi_knotq_mobile_core_fn_method_mobilecore_snapshot_with_daily_history(`ptr`: Long,`today`: RustBuffer.ByValue,`weekOffset`: Int,`dailyHistoryDays`: Int,uniffi_out_err: UniffiRustCallStatus, 
+): RustBuffer.ByValue
+external fun uniffi_knotq_mobile_core_fn_method_mobilecore_sync_google_calendars(`ptr`: Long,uniffi_out_err: UniffiRustCallStatus, 
 ): RustBuffer.ByValue
 external fun uniffi_knotq_mobile_core_fn_method_mobilecore_sync_once(`ptr`: Long,`apiBase`: RustBuffer.ByValue,`bearerToken`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
 ): Byte
@@ -837,6 +855,8 @@ external fun uniffi_knotq_mobile_core_fn_method_mobilecore_take_sync_notice(`ptr
 external fun uniffi_knotq_mobile_core_fn_method_mobilecore_toggle_item(`ptr`: Long,`schemeId`: RustBuffer.ByValue,`itemId`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
 ): Unit
 external fun uniffi_knotq_mobile_core_fn_method_mobilecore_toggle_occurrence(`ptr`: Long,`schemeId`: RustBuffer.ByValue,`itemId`: RustBuffer.ByValue,`occurrenceJson`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+): Unit
+external fun uniffi_knotq_mobile_core_fn_method_mobilecore_unlink_google_account(`ptr`: Long,`accountId`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
 ): Unit
 external fun uniffi_knotq_mobile_core_fn_method_mobilecore_update_item_text(`ptr`: Long,`schemeId`: RustBuffer.ByValue,`itemId`: RustBuffer.ByValue,`text`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
 ): Unit
@@ -974,6 +994,9 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
     if (lib.uniffi_knotq_mobile_core_checksum_method_mobilecore_commit_event_edit() != 44971.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
+    if (lib.uniffi_knotq_mobile_core_checksum_method_mobilecore_commit_event_edit_payload() != 16549.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
     if (lib.uniffi_knotq_mobile_core_checksum_method_mobilecore_complete_google_calendar_import() != 5997.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
@@ -1013,6 +1036,9 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
     if (lib.uniffi_knotq_mobile_core_checksum_method_mobilecore_pending_notifications() != 49328.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
+    if (lib.uniffi_knotq_mobile_core_checksum_method_mobilecore_permanently_delete_folder() != 50313.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
     if (lib.uniffi_knotq_mobile_core_checksum_method_mobilecore_permanently_delete_scheme() != 55645.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
@@ -1029,6 +1055,9 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_knotq_mobile_core_checksum_method_mobilecore_reset_workspace() != 7354.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_knotq_mobile_core_checksum_method_mobilecore_restore_folder() != 50150.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_knotq_mobile_core_checksum_method_mobilecore_restore_scheme() != 61831.toShort()) {
@@ -1073,6 +1102,9 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
     if (lib.uniffi_knotq_mobile_core_checksum_method_mobilecore_snapshot() != 52252.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
+    if (lib.uniffi_knotq_mobile_core_checksum_method_mobilecore_snapshot_with_daily_history() != 46876.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
     if (lib.uniffi_knotq_mobile_core_checksum_method_mobilecore_sync_google_calendars() != 29004.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
@@ -1086,6 +1118,9 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_knotq_mobile_core_checksum_method_mobilecore_toggle_occurrence() != 33368.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_knotq_mobile_core_checksum_method_mobilecore_unlink_google_account() != 39212.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_knotq_mobile_core_checksum_method_mobilecore_update_item_text() != 59124.toShort()) {
@@ -1485,6 +1520,8 @@ public interface MobileCoreInterface {
     
     fun `commitEventEdit`(`schemeId`: kotlin.String, `itemId`: kotlin.String, `occurrenceJson`: kotlin.String, `occurrenceIndex`: kotlin.Int, `title`: kotlin.String, `occurrenceStart`: kotlin.String?, `occurrenceEnd`: kotlin.String?, `start`: kotlin.String?, `end`: kotlin.String?, `rrule`: kotlin.String?, `notificationOffsetSecs`: kotlin.Int?, `notificationDirty`: kotlin.Boolean, `done`: kotlin.Boolean, `scope`: kotlin.String)
     
+    fun `commitEventEditPayload`(`payload`: kotlin.String)
+    
     fun `completeGoogleCalendarImport`(`clientId`: kotlin.String, `redirectUri`: kotlin.String, `state`: kotlin.String, `codeVerifier`: kotlin.String, `callbackUrl`: kotlin.String, `parentId`: kotlin.String?): MobileGoogleSyncResult
     
     fun `createFolder`(`parentId`: kotlin.String?, `name`: kotlin.String, `position`: kotlin.Int?)
@@ -1511,6 +1548,8 @@ public interface MobileCoreInterface {
     
     fun `pendingNotifications`(`now`: kotlin.String?, `horizonDays`: kotlin.Int): List<MobileNotificationRequest>
     
+    fun `permanentlyDeleteFolder`(`folderId`: kotlin.String)
+    
     fun `permanentlyDeleteScheme`(`schemeId`: kotlin.String)
     
     fun `renameFolder`(`folderId`: kotlin.String, `name`: kotlin.String)
@@ -1522,6 +1561,8 @@ public interface MobileCoreInterface {
     fun `replaceSchemeItems`(`schemeId`: kotlin.String, `items`: List<MobileItemEdit>)
     
     fun `resetWorkspace`()
+    
+    fun `restoreFolder`(`folderId`: kotlin.String)
     
     fun `restoreScheme`(`schemeId`: kotlin.String)
     
@@ -1551,6 +1592,8 @@ public interface MobileCoreInterface {
     
     fun `snapshot`(`today`: kotlin.String?, `weekOffset`: kotlin.Int): MobileSnapshot
     
+    fun `snapshotWithDailyHistory`(`today`: kotlin.String?, `weekOffset`: kotlin.Int, `dailyHistoryDays`: kotlin.Int): MobileSnapshot
+    
     fun `syncGoogleCalendars`(): MobileGoogleSyncResult
     
     fun `syncOnce`(`apiBase`: kotlin.String, `bearerToken`: kotlin.String): kotlin.Boolean
@@ -1560,6 +1603,8 @@ public interface MobileCoreInterface {
     fun `toggleItem`(`schemeId`: kotlin.String, `itemId`: kotlin.String)
     
     fun `toggleOccurrence`(`schemeId`: kotlin.String, `itemId`: kotlin.String, `occurrenceJson`: kotlin.String)
+    
+    fun `unlinkGoogleAccount`(`accountId`: kotlin.String)
     
     fun `updateItemText`(`schemeId`: kotlin.String, `itemId`: kotlin.String, `text`: kotlin.String)
     
@@ -1731,6 +1776,19 @@ open class MobileCore: Disposable, AutoCloseable, MobileCoreInterface
     UniffiLib.uniffi_knotq_mobile_core_fn_method_mobilecore_commit_event_edit(
         it,
         FfiConverterString.lower(`schemeId`),FfiConverterString.lower(`itemId`),FfiConverterString.lower(`occurrenceJson`),FfiConverterInt.lower(`occurrenceIndex`),FfiConverterString.lower(`title`),FfiConverterOptionalString.lower(`occurrenceStart`),FfiConverterOptionalString.lower(`occurrenceEnd`),FfiConverterOptionalString.lower(`start`),FfiConverterOptionalString.lower(`end`),FfiConverterOptionalString.lower(`rrule`),FfiConverterOptionalInt.lower(`notificationOffsetSecs`),FfiConverterBoolean.lower(`notificationDirty`),FfiConverterBoolean.lower(`done`),FfiConverterString.lower(`scope`),_status)
+}
+    }
+    
+    
+
+    
+    @Throws(MobileException::class)override fun `commitEventEditPayload`(`payload`: kotlin.String)
+        = 
+    callWithHandle {
+    uniffiRustCallWithError(MobileException) { _status ->
+    UniffiLib.uniffi_knotq_mobile_core_fn_method_mobilecore_commit_event_edit_payload(
+        it,
+        FfiConverterString.lower(`payload`),_status)
 }
     }
     
@@ -1910,6 +1968,19 @@ open class MobileCore: Disposable, AutoCloseable, MobileCoreInterface
     
 
     
+    @Throws(MobileException::class)override fun `permanentlyDeleteFolder`(`folderId`: kotlin.String)
+        = 
+    callWithHandle {
+    uniffiRustCallWithError(MobileException) { _status ->
+    UniffiLib.uniffi_knotq_mobile_core_fn_method_mobilecore_permanently_delete_folder(
+        it,
+        FfiConverterString.lower(`folderId`),_status)
+}
+    }
+    
+    
+
+    
     @Throws(MobileException::class)override fun `permanentlyDeleteScheme`(`schemeId`: kotlin.String)
         = 
     callWithHandle {
@@ -1982,6 +2053,19 @@ open class MobileCore: Disposable, AutoCloseable, MobileCoreInterface
     UniffiLib.uniffi_knotq_mobile_core_fn_method_mobilecore_reset_workspace(
         it,
         _status)
+}
+    }
+    
+    
+
+    
+    @Throws(MobileException::class)override fun `restoreFolder`(`folderId`: kotlin.String)
+        = 
+    callWithHandle {
+    uniffiRustCallWithError(MobileException) { _status ->
+    UniffiLib.uniffi_knotq_mobile_core_fn_method_mobilecore_restore_folder(
+        it,
+        FfiConverterString.lower(`folderId`),_status)
 }
     }
     
@@ -2172,6 +2256,20 @@ open class MobileCore: Disposable, AutoCloseable, MobileCoreInterface
     
 
     
+    @Throws(MobileException::class)override fun `snapshotWithDailyHistory`(`today`: kotlin.String?, `weekOffset`: kotlin.Int, `dailyHistoryDays`: kotlin.Int): MobileSnapshot {
+            return FfiConverterTypeMobileSnapshot.lift(
+    callWithHandle {
+    uniffiRustCallWithError(MobileException) { _status ->
+    UniffiLib.uniffi_knotq_mobile_core_fn_method_mobilecore_snapshot_with_daily_history(
+        it,
+        FfiConverterOptionalString.lower(`today`),FfiConverterInt.lower(`weekOffset`),FfiConverterInt.lower(`dailyHistoryDays`),_status)
+}
+    }
+    )
+    }
+    
+
+    
     @Throws(MobileException::class)override fun `syncGoogleCalendars`(): MobileGoogleSyncResult {
             return FfiConverterTypeMobileGoogleSyncResult.lift(
     callWithHandle {
@@ -2234,6 +2332,19 @@ open class MobileCore: Disposable, AutoCloseable, MobileCoreInterface
     UniffiLib.uniffi_knotq_mobile_core_fn_method_mobilecore_toggle_occurrence(
         it,
         FfiConverterString.lower(`schemeId`),FfiConverterString.lower(`itemId`),FfiConverterString.lower(`occurrenceJson`),_status)
+}
+    }
+    
+    
+
+    
+    @Throws(MobileException::class)override fun `unlinkGoogleAccount`(`accountId`: kotlin.String)
+        = 
+    callWithHandle {
+    uniffiRustCallWithError(MobileException) { _status ->
+    UniffiLib.uniffi_knotq_mobile_core_fn_method_mobilecore_unlink_google_account(
+        it,
+        FfiConverterString.lower(`accountId`),_status)
 }
     }
     
@@ -2416,6 +2527,49 @@ public object FfiConverterTypeMobileDailyEntry: FfiConverterRustBuffer<MobileDai
     override fun write(value: MobileDailyEntry, buf: ByteBuffer) {
             FfiConverterString.write(value.`date`, buf)
             FfiConverterTypeMobileScheme.write(value.`scheme`, buf)
+    }
+}
+
+
+
+data class MobileGoogleAccount (
+    var `id`: kotlin.String
+    , 
+    var `title`: kotlin.String
+    , 
+    var `detail`: kotlin.String
+    
+){
+    
+
+    
+
+    
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeMobileGoogleAccount: FfiConverterRustBuffer<MobileGoogleAccount> {
+    override fun read(buf: ByteBuffer): MobileGoogleAccount {
+        return MobileGoogleAccount(
+            FfiConverterString.read(buf),
+            FfiConverterString.read(buf),
+            FfiConverterString.read(buf),
+        )
+    }
+
+    override fun allocationSize(value: MobileGoogleAccount) = (
+            FfiConverterString.allocationSize(value.`id`) +
+            FfiConverterString.allocationSize(value.`title`) +
+            FfiConverterString.allocationSize(value.`detail`)
+    )
+
+    override fun write(value: MobileGoogleAccount, buf: ByteBuffer) {
+            FfiConverterString.write(value.`id`, buf)
+            FfiConverterString.write(value.`title`, buf)
+            FfiConverterString.write(value.`detail`, buf)
     }
 }
 
@@ -3146,6 +3300,8 @@ data class MobileSettings (
     var `assignmentNotificationOffsetSecs`: kotlin.Int
     , 
     var `googleAccountCount`: kotlin.Int
+    , 
+    var `googleAccounts`: List<MobileGoogleAccount>
     
 ){
     
@@ -3167,6 +3323,7 @@ public object FfiConverterTypeMobileSettings: FfiConverterRustBuffer<MobileSetti
             FfiConverterInt.read(buf),
             FfiConverterInt.read(buf),
             FfiConverterInt.read(buf),
+            FfiConverterSequenceTypeMobileGoogleAccount.read(buf),
         )
     }
 
@@ -3175,7 +3332,8 @@ public object FfiConverterTypeMobileSettings: FfiConverterRustBuffer<MobileSetti
             FfiConverterString.allocationSize(value.`timeFormat`) +
             FfiConverterInt.allocationSize(value.`eventNotificationOffsetSecs`) +
             FfiConverterInt.allocationSize(value.`assignmentNotificationOffsetSecs`) +
-            FfiConverterInt.allocationSize(value.`googleAccountCount`)
+            FfiConverterInt.allocationSize(value.`googleAccountCount`) +
+            FfiConverterSequenceTypeMobileGoogleAccount.allocationSize(value.`googleAccounts`)
     )
 
     override fun write(value: MobileSettings, buf: ByteBuffer) {
@@ -3184,6 +3342,7 @@ public object FfiConverterTypeMobileSettings: FfiConverterRustBuffer<MobileSetti
             FfiConverterInt.write(value.`eventNotificationOffsetSecs`, buf)
             FfiConverterInt.write(value.`assignmentNotificationOffsetSecs`, buf)
             FfiConverterInt.write(value.`googleAccountCount`, buf)
+            FfiConverterSequenceTypeMobileGoogleAccount.write(value.`googleAccounts`, buf)
     }
 }
 
@@ -3195,6 +3354,8 @@ data class MobileSnapshot (
     var `schemes`: List<MobileScheme>
     , 
     var `archivedSchemes`: List<MobileScheme>
+    , 
+    var `archivedNodes`: List<MobileNode>
     , 
     var `daily`: List<MobileDailyEntry>
     , 
@@ -3222,6 +3383,7 @@ public object FfiConverterTypeMobileSnapshot: FfiConverterRustBuffer<MobileSnaps
             FfiConverterTypeMobileNode.read(buf),
             FfiConverterSequenceTypeMobileScheme.read(buf),
             FfiConverterSequenceTypeMobileScheme.read(buf),
+            FfiConverterSequenceTypeMobileNode.read(buf),
             FfiConverterSequenceTypeMobileDailyEntry.read(buf),
             FfiConverterTypeMobileCalendar.read(buf),
             FfiConverterTypeMobileSettings.read(buf),
@@ -3233,6 +3395,7 @@ public object FfiConverterTypeMobileSnapshot: FfiConverterRustBuffer<MobileSnaps
             FfiConverterTypeMobileNode.allocationSize(value.`root`) +
             FfiConverterSequenceTypeMobileScheme.allocationSize(value.`schemes`) +
             FfiConverterSequenceTypeMobileScheme.allocationSize(value.`archivedSchemes`) +
+            FfiConverterSequenceTypeMobileNode.allocationSize(value.`archivedNodes`) +
             FfiConverterSequenceTypeMobileDailyEntry.allocationSize(value.`daily`) +
             FfiConverterTypeMobileCalendar.allocationSize(value.`calendar`) +
             FfiConverterTypeMobileSettings.allocationSize(value.`settings`) +
@@ -3243,6 +3406,7 @@ public object FfiConverterTypeMobileSnapshot: FfiConverterRustBuffer<MobileSnaps
             FfiConverterTypeMobileNode.write(value.`root`, buf)
             FfiConverterSequenceTypeMobileScheme.write(value.`schemes`, buf)
             FfiConverterSequenceTypeMobileScheme.write(value.`archivedSchemes`, buf)
+            FfiConverterSequenceTypeMobileNode.write(value.`archivedNodes`, buf)
             FfiConverterSequenceTypeMobileDailyEntry.write(value.`daily`, buf)
             FfiConverterTypeMobileCalendar.write(value.`calendar`, buf)
             FfiConverterTypeMobileSettings.write(value.`settings`, buf)
@@ -3428,6 +3592,34 @@ public object FfiConverterSequenceTypeMobileDailyEntry: FfiConverterRustBuffer<L
         buf.putInt(value.size)
         value.iterator().forEach {
             FfiConverterTypeMobileDailyEntry.write(it, buf)
+        }
+    }
+}
+
+
+
+
+/**
+ * @suppress
+ */
+public object FfiConverterSequenceTypeMobileGoogleAccount: FfiConverterRustBuffer<List<MobileGoogleAccount>> {
+    override fun read(buf: ByteBuffer): List<MobileGoogleAccount> {
+        val len = buf.getInt()
+        return List<MobileGoogleAccount>(len) {
+            FfiConverterTypeMobileGoogleAccount.read(buf)
+        }
+    }
+
+    override fun allocationSize(value: List<MobileGoogleAccount>): ULong {
+        val sizeForLength = 4UL
+        val sizeForItems = value.map { FfiConverterTypeMobileGoogleAccount.allocationSize(it) }.sum()
+        return sizeForLength + sizeForItems
+    }
+
+    override fun write(value: List<MobileGoogleAccount>, buf: ByteBuffer) {
+        buf.putInt(value.size)
+        value.iterator().forEach {
+            FfiConverterTypeMobileGoogleAccount.write(it, buf)
         }
     }
 }
@@ -3655,3 +3847,4 @@ public object FfiConverterSequenceTypeMobileSearchHit: FfiConverterRustBuffer<Li
         }
     }
 }
+

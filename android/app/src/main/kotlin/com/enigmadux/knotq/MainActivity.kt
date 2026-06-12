@@ -3,10 +3,16 @@ package com.enigmadux.knotq
 import android.app.Activity
 import android.app.AlertDialog
 import android.app.DatePickerDialog
+import android.app.TimePickerDialog
+import android.animation.Animator
+import android.animation.AnimatorListenerAdapter
+import android.animation.ValueAnimator
 import android.content.ActivityNotFoundException
 import android.content.Context
 import android.content.Intent
 import android.content.res.Configuration
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
@@ -15,6 +21,7 @@ import android.graphics.PorterDuffXfermode
 import android.graphics.Rect
 import android.graphics.RectF
 import android.graphics.Typeface
+import android.graphics.drawable.ColorDrawable
 import android.graphics.drawable.GradientDrawable
 import android.net.Uri
 import android.os.Build
@@ -26,15 +33,26 @@ import android.text.InputType
 import android.text.TextPaint
 import android.text.TextUtils
 import android.text.TextWatcher
+import android.util.Base64
 import android.util.TypedValue
+import android.view.ContextThemeWrapper
 import android.view.GestureDetector
 import android.view.MotionEvent
 import android.view.Gravity
+import android.view.VelocityTracker
 import android.view.View
+import android.view.ViewConfiguration
+import android.view.animation.DecelerateInterpolator
 import android.view.ViewGroup
 import android.view.inputmethod.EditorInfo
 import android.view.inputmethod.InputMethodManager
+import androidx.work.Constraints
+import androidx.work.ExistingPeriodicWorkPolicy
+import androidx.work.NetworkType
+import androidx.work.PeriodicWorkRequest
+import androidx.work.WorkManager
 import android.widget.ArrayAdapter
+import android.widget.AdapterView
 import android.widget.CheckBox
 import android.widget.DatePicker
 import android.widget.EditText
@@ -61,19 +79,34 @@ import org.json.JSONObject
 import java.time.Instant
 import java.time.LocalDate
 import java.time.LocalTime
+import java.time.LocalDateTime
 import java.time.ZoneId
 import java.time.format.TextStyle
+import java.io.File
 import java.util.Locale
+import java.util.UUID
 import java.util.WeakHashMap
 import java.net.HttpURLConnection
 import java.net.URL
+import java.security.MessageDigest
+import java.security.SecureRandom
+import java.util.concurrent.TimeUnit
 import kotlin.math.abs
 import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.roundToInt
 
-private const val SYNC_SESSION_PREF = "knotq.localSyncSession"
+internal const val SYNC_SESSION_PREF = "knotq.localSyncSession"
+private const val BACKGROUND_SYNC_WORK = "knotq-background-sync"
 private const val DEFAULT_SYNC_API_BASE = "https://api.knotq.com"
+private const val SYNC_SIGN_IN_PAGE_URL = "https://www.knotq.com/signin.html"
+private const val SYNC_ACCOUNT_PAGE_URL = "https://www.knotq.com/account.html#signin"
+private const val SYNC_SIGN_IN_REDIRECT_SCHEME = "knotq"
+private const val SYNC_SIGN_IN_REDIRECT_HOST = "auth-callback"
+private const val SYNC_SIGN_IN_REDIRECT_URI = "$SYNC_SIGN_IN_REDIRECT_SCHEME://$SYNC_SIGN_IN_REDIRECT_HOST"
+private const val SYNC_AUTH_API_BASE_PREF = "knotq.syncBrowserAuth.apiBase"
+private const val SYNC_AUTH_STATE_PREF = "knotq.syncBrowserAuth.state"
+private const val SYNC_AUTH_VERIFIER_PREF = "knotq.syncBrowserAuth.verifier"
 // The Google Play subscription product id for hosted sync (Play Console).
 private const val SYNC_SUBSCRIPTION_PRODUCT_ID = "knotq.sync.monthly"
 private const val GOOGLE_CLIENT_ID = "419826075228-gn6gj1l20nltil67odvf00u3i7n8a2ld.apps.googleusercontent.com"
@@ -86,6 +119,57 @@ private const val TAB_DAILY = 2
 private const val TAB_SEARCH = 3
 private const val TAB_SETTINGS = 4
 private const val TAB_HOME = 5
+
+private const val ICON_DOCK_SIZE_SP = 20f
+private const val ICON_CHIP_SIZE_SP = 13f
+private const val ICON_CHIP_WIDTH_DP = 32
+private const val ICON_CHIP_HEIGHT_DP = 28
+private const val ICON_SQUARE_SIZE_SP = 15f
+private const val ICON_TOOL_SIZE_SP = 13f
+private const val ICON_FORMAT_SIZE_SP = 12f
+private const val ICON_FORMAT_WIDTH_DP = 29
+private const val ICON_FORMAT_HEIGHT_DP = 27
+private const val ICON_FLOATING_SIZE_SP = 22f
+private const val ICON_FLOATING_WIDTH_DP = 56
+private const val ICON_FLOATING_VECTOR_SIZE_DP = 25
+private const val ICON_ROW_SIZE_SP = 16f
+private const val ICON_SEARCH_SIZE_SP = 17f
+private const val ICON_SEARCH_VECTOR_SIZE_DP = 19
+private const val ICON_DOCK_BUTTON_WIDTH_DP = 46
+private const val ICON_DOCK_BUTTON_HEIGHT_DP = 48
+private const val ICON_DOCK_VECTOR_SIZE_DP = 23
+
+private const val CALENDAR_INTERACTION_NONE = 0
+private const val CALENDAR_INTERACTION_DRAG = 1
+private const val CALENDAR_INTERACTION_CREATE = 2
+
+private const val REQUEST_ATTACH_IMAGE = 7311
+
+private const val GLYPH_HOME = "⌂"
+private const val GLYPH_CALENDAR = "◷"
+private const val GLYPH_SETTINGS = "⚙"
+private const val GLYPH_SEARCH = "⌕"
+private const val GLYPH_ADD = "＋"
+private const val GLYPH_EDIT = "✎"
+private const val GLYPH_TICK = "✓"
+private const val GLYPH_MORE = "⋯"
+private const val GLYPH_BULLET = "•"
+private const val GLYPH_NUMBERED = "1."
+private const val GLYPH_TEXT = "▢"
+private const val GLYPH_FOLDER = "🗀"
+private const val GLYPH_OUTDENT = "⇤"
+private const val GLYPH_INDENT = "⇥"
+private const val GLYPH_LEFT = "‹"
+private const val GLYPH_RIGHT = "›"
+private const val GLYPH_CHEVRON_LEFT = "‹"
+private const val GLYPH_CHEVRON_RIGHT = "›"
+private const val GLYPH_DOWN = "▾"
+private const val GLYPH_COMMIT = "⏎"
+private const val GLYPH_THEME_LIGHT = "☀"
+private const val GLYPH_THEME_DARK = "◐"
+private const val GLYPH_CLOCK = "◷"
+private const val GLYPH_BELL = "🔔"
+private const val GLYPH_CLOUD = "☁"
 
 // First-run onboarding (mirrors the desktop/iOS spotlight tour). The flow has an
 // account-choice phase followed by a guided tour that navigates into each pane and
@@ -162,7 +246,23 @@ private data class SyncLoginStart(
     val session: SyncSession?
 )
 
+private data class PendingSyncBrowserAuth(
+    val apiBase: String,
+    val state: String,
+    val codeVerifier: String
+)
+
 private data class FolderDestination(val id: String, val name: String, val depth: Int)
+private data class NavRowMeta(
+    val node: JSONObject,
+    val id: String,
+    val kind: String,
+    val parentId: String,
+    val siblingIndex: Int,
+    val depth: Int,
+    val childCount: Int
+)
+private data class DialogField(val view: View, val label: TextView, val value: TextView)
 
 class MainActivity : Activity() {
     private lateinit var bridge: RustBridge
@@ -185,17 +285,39 @@ class MainActivity : Activity() {
     private var weekOffset = 0
     private var selectedDate: LocalDate = LocalDate.now()
     private var selectedSchemeId: String? = null
+    // Tab the scheme editor was entered from, so its back button returns there.
+    private var schemeReturnTab = TAB_HOME
     private var keyboardActive = false
     // Preserve the calendar timeline scroll position across incidental re-renders
     // (e.g. toggling an item done); reset to the now/morning anchor on day change.
     private var calendarScrollY = 0
     private var calendarScrollDate: String? = null
+    // Folders the user collapsed in the scheme navigator (new folders default
+    // to expanded, like iOS).
+    private val collapsedFolderIds = HashSet<String>()
+    // Daily feed paging + scroll anchoring, mirroring the iOS bottom-pinned
+    // feed: history grows by a month each time the user scrolls to the top.
+    private var dailyHistoryDays = 3
+    private var dailyHistoryLoadTriggerDate: String? = null
+    private var dailyScrollY = 0
+    private var dailyScrollDate: String? = null
+    private var pendingDailyAnchorDate: String? = null
     private val editorSchemeIds = WeakHashMap<EditText, String>()
+    // Re-tints the format bar's marker buttons for the caret's line; rebuilt
+    // with each rendered format bar and invoked from editor selection changes.
+    private var formatBarMarkerRefresh: (() -> Unit)? = null
+    // Keep the format bar's horizontal scroll position across re-renders.
+    private var formatBarScrollX = 0
+    // Scheme + line awaiting an image pick from the system photo chooser.
+    private var pendingImageAttach: Pair<String, Int>? = null
     private var syncSession: SyncSession? = null
     private var syncLoginChallenge: SyncLoginChallenge? = null
     private var syncAuthInProgress = false
     private var syncAccountActionInProgress = false
     private var syncInProgress = false
+    private var syncFailureNotified = false
+    private var safeAreaTop = 0
+    private var safeAreaBottom = 0
     private var billingClient: BillingClient? = null
     private var purchaseInProgress = false
     private var googleAuthInProgress = false
@@ -211,12 +333,23 @@ class MainActivity : Activity() {
             syncPollHandler.postDelayed(this, 30_000)
         }
     }
+    // Coalesces the sync triggered right after each local edit (iOS pushes on
+    // every mutate; the short delay batches rapid editing bursts).
+    private val syncEditRunnable = Runnable { syncOnce() }
     private val googleSyncHandler = Handler(Looper.getMainLooper())
     private val googleSyncRunnable = object : Runnable {
         override fun run() {
             syncGoogleCalendars(silent = true)
             googleSyncHandler.postDelayed(this, GOOGLE_SYNC_INTERVAL_MS)
         }
+    }
+
+    companion object {
+        // The background sync worker runs in this process: it reuses the live
+        // bridge when the activity exists (two open cores would clobber each
+        // other's in-memory workspace) and skips work while in the foreground.
+        @Volatile internal var sharedBridge: RustBridge? = null
+        @Volatile internal var isInForeground = false
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -232,20 +365,44 @@ class MainActivity : Activity() {
             maybeStartOnboarding()
             MobileNotificationScheduler.requestPermission(this)
             rescheduleNotifications()
-            startSyncPolling()
-            configureGoogleSyncPolling()
-            handleGoogleCallback(intent?.data)
+            sharedBridge = bridge
+            handleIncomingAuthIntent(intent?.data)
         } catch (error: Throwable) {
             theme = UiTheme.dark
             showFatal(error.message)
         }
     }
 
+    override fun onStart() {
+        super.onStart()
+        isInForeground = true
+        if (!::bridge.isInitialized) return
+        // Pick up credentials the background worker may have rotated (or a
+        // session it invalidated) while the app was backgrounded.
+        syncSession = loadSyncSession()
+        startSyncPolling()
+        configureGoogleSyncPolling()
+    }
+
+    override fun onStop() {
+        isInForeground = false
+        syncPollHandler.removeCallbacks(syncPollRunnable)
+        syncPollHandler.removeCallbacks(syncEditRunnable)
+        googleSyncHandler.removeCallbacks(googleSyncRunnable)
+        googleSyncPollingActive = false
+        // Mirror iOS applicationDidEnterBackground: keep workspace data fresh
+        // via periodic background refresh while signed in to sync.
+        if (::bridge.isInitialized) scheduleBackgroundSyncWork()
+        super.onStop()
+    }
+
     override fun onDestroy() {
         syncPollHandler.removeCallbacks(syncPollRunnable)
+        syncPollHandler.removeCallbacks(syncEditRunnable)
         googleSyncHandler.removeCallbacks(googleSyncRunnable)
         billingClient?.endConnection()
         billingClient = null
+        sharedBridge = null
         if (::bridge.isInitialized) {
             bridge.close()
         }
@@ -255,7 +412,16 @@ class MainActivity : Activity() {
     override fun onNewIntent(intent: Intent?) {
         super.onNewIntent(intent)
         setIntent(intent)
-        handleGoogleCallback(intent?.data)
+        handleIncomingAuthIntent(intent?.data)
+    }
+
+    @Suppress("DEPRECATION", "OVERRIDE_DEPRECATION")
+    override fun onBackPressed() {
+        if (selectedTab == TAB_SEARCH) {
+            exitSearch()
+            return
+        }
+        super.onBackPressed()
     }
 
     override fun onRequestPermissionsResult(
@@ -293,16 +459,21 @@ class MainActivity : Activity() {
         shell.addView(content, LinearLayout.LayoutParams(-1, 0, 1f))
         // Host the shell inside a root frame so the onboarding overlay can sit on
         // top of (and survive) `render()`, which only rebuilds the shell's children.
-        rootFrame = FrameLayout(this)
+        rootFrame = FrameLayout(this).apply {
+            setBackgroundColor(theme.bgApp)
+        }
         rootFrame.addView(shell, FrameLayout.LayoutParams(-1, -1))
         setContentView(rootFrame)
+        installSafeAreaInsets()
         installKeyboardVisibilityWatcher()
     }
 
     private fun render() {
         if (!::content.isInitialized) return
         applyTheme()
+        rootFrame.setBackgroundColor(theme.bgApp)
         shell.setBackgroundColor(theme.bgApp)
+        applySafeAreaPadding()
         titleBar.setBackgroundColor(theme.bgToolbar)
         content.setBackgroundColor(theme.bgApp)
 
@@ -339,15 +510,15 @@ class MainActivity : Activity() {
             maxLines = 1
         }, LinearLayout.LayoutParams(0, -1, 1f))
 
-        titleBar.addView(chip("Search") {
+        titleBar.addView(iconActionChip(GLYPH_SEARCH, "Search") {
             selectedTab = TAB_SEARCH
             selectedSchemeId = null
             render()
         }, marginRight(dp(6), -2, dp(28)))
-        titleBar.addView(chip(syncSession?.email ?: "Sign in") {
+        titleBar.addView(iconActionChip(GLYPH_CLOUD, syncSession?.email ?: "Sign in") {
             showSyncAccountDialog()
         }, marginRight(dp(6), dp(104), dp(28)))
-        titleBar.addView(chip("+") { showNewMenu() }, LinearLayout.LayoutParams(dp(32), dp(28)))
+        titleBar.addView(chip(GLYPH_ADD) { showNewMenu() }, LinearLayout.LayoutParams(dp(32), dp(28)))
     }
 
     private fun renderDock() {
@@ -355,15 +526,15 @@ class MainActivity : Activity() {
         dock.background = rounded(theme.bgToolbar, dp(30), theme.borderOverlay, max(1, (0.5f * resources.displayMetrics.density).roundToInt()))
         dock.elevation = dp(if (theme.isDark) 8 else 2).toFloat()
         listOf(
-            TAB_HOME to "⌂",
-            TAB_CALENDAR to "◷",
-            TAB_SETTINGS to "⚙"
-        ).forEach { (index, label) ->
+            Triple(TAB_HOME, R.drawable.ic_knotq_home_24, "Home"),
+            Triple(TAB_CALENDAR, R.drawable.ic_knotq_calendar_24, "Calendar"),
+            Triple(TAB_SETTINGS, R.drawable.ic_knotq_gear_24, "Settings")
+        ).forEach { (index, iconRes, label) ->
             val selected = when (index) {
                 TAB_HOME -> selectedTab == TAB_HOME || selectedTab in listOf(TAB_SCHEMES, TAB_DAILY, TAB_SEARCH)
                 else -> selectedTab == index
             }
-            dock.addView(dockButton(label, selected) {
+            dock.addView(dockButton(iconRes, label, selected) {
                 selectedTab = index
                 selectedSchemeId = null
                 if (index == TAB_CALENDAR && selectedDate != LocalDate.now()) {
@@ -372,8 +543,39 @@ class MainActivity : Activity() {
                     loadSnapshot()
                 }
                 render()
-            }, LinearLayout.LayoutParams(dp(46), dp(48)))
+            }, LinearLayout.LayoutParams(dp(ICON_DOCK_BUTTON_WIDTH_DP), dp(ICON_DOCK_BUTTON_HEIGHT_DP)))
         }
+    }
+
+    @Suppress("DEPRECATION")
+    private fun installSafeAreaInsets() {
+        rootFrame.setOnApplyWindowInsetsListener { _, insets ->
+            val cutoutTop = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                insets.displayCutout?.safeInsetTop ?: 0
+            } else {
+                0
+            }
+            val cutoutBottom = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                insets.displayCutout?.safeInsetBottom ?: 0
+            } else {
+                0
+            }
+            val nextTop = max(insets.systemWindowInsetTop, cutoutTop)
+            val nextBottom = max(insets.systemWindowInsetBottom, cutoutBottom)
+            if (safeAreaTop != nextTop || safeAreaBottom != nextBottom) {
+                safeAreaTop = nextTop
+                safeAreaBottom = nextBottom
+                applySafeAreaPadding()
+            }
+            insets
+        }
+        rootFrame.requestApplyInsets()
+        applySafeAreaPadding()
+    }
+
+    private fun applySafeAreaPadding() {
+        if (!::shell.isInitialized) return
+        shell.setPadding(0, safeAreaTop, 0, safeAreaBottom)
     }
 
     private fun hidePhoneDockForEditing() {
@@ -395,6 +597,13 @@ class MainActivity : Activity() {
         imm?.hideSoftInputFromWindow((focus ?: shell).windowToken, 0)
         keyboardActive = false
         updateChromeVisibility()
+    }
+
+    private fun exitSearch() {
+        dismissKeyboard()
+        selectedTab = TAB_HOME
+        selectedSchemeId = null
+        render()
     }
 
     private fun installKeyboardVisibilityWatcher() {
@@ -780,8 +989,8 @@ class MainActivity : Activity() {
         panel.addView(LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            addView(chip("New") { showNewMenu() }, LinearLayout.LayoutParams(0, dp(30), 1f))
-            addView(chip("⚙") {
+            addView(iconActionChip(GLYPH_ADD, "New") { showNewMenu() }, LinearLayout.LayoutParams(0, dp(30), 1f))
+            addView(chip(GLYPH_SETTINGS) {
                 selectedTab = TAB_SETTINGS
                 selectedSchemeId = null
                 render()
@@ -826,8 +1035,8 @@ class MainActivity : Activity() {
 
         if (resources.configuration.screenWidthDp < 760) {
             val combined = JSONArray()
-            calendar().optJSONArray("overdue")?.forEachObject { combined.put(it) }
-            calendar().optJSONArray("upcoming")?.forEachObject { combined.put(it) }
+            calendar().optJSONArray("overdue")?.forEachObject { if (combined.length() < 14) combined.put(it) }
+            calendar().optJSONArray("upcoming")?.forEachObject { if (combined.length() < 14) combined.put(it) }
             addOccurrenceSection(body, "Upcoming", "Nothing scheduled", combined)
         }
         root.addView(scroll(body), LinearLayout.LayoutParams(-1, 0, 1f))
@@ -844,9 +1053,10 @@ class MainActivity : Activity() {
             setMargins(0, dp(2), 0, dp(15))
         })
         body.addView(phoneSchemesSection(), spaced())
+        // Overdue first so it isn't missed, then upcoming, capped like iOS.
         val combined = JSONArray()
-        calendar().optJSONArray("overdue")?.forEachObject { combined.put(it) }
-        calendar().optJSONArray("upcoming")?.forEachObject { combined.put(it) }
+        calendar().optJSONArray("overdue")?.forEachObject { if (combined.length() < 14) combined.put(it) }
+        calendar().optJSONArray("upcoming")?.forEachObject { if (combined.length() < 14) combined.put(it) }
         addOccurrenceSection(body, "Upcoming", "Nothing scheduled", combined)
         root.addView(scroll(body), LinearLayout.LayoutParams(-1, 0, 1f))
         return root
@@ -859,9 +1069,7 @@ class MainActivity : Activity() {
             setPadding(dp(12), 0, dp(12), 0)
             background = rounded(theme.bgModal, dp(8), theme.borderOverlay)
             addView(text("Search KnotQ", theme.textMuted, 14f, false), LinearLayout.LayoutParams(0, -1, 1f))
-            addView(text("⌕", theme.textMuted, 17f, true).apply {
-                gravity = Gravity.CENTER
-            }, LinearLayout.LayoutParams(dp(28), -1))
+            addView(iconImage(R.drawable.ic_knotq_search_24, theme.textMuted, "Search"), LinearLayout.LayoutParams(dp(28), dp(ICON_SEARCH_VECTOR_SIZE_DP)))
             setOnClickListener {
                 selectedTab = TAB_SEARCH
                 selectedSchemeId = null
@@ -877,7 +1085,7 @@ class MainActivity : Activity() {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
             addView(text("Schemes", theme.textPrimary, 20f, true), LinearLayout.LayoutParams(0, dp(34), 1f))
-            addView(iconSquare("+") { showNewMenu() }, LinearLayout.LayoutParams(dp(30), dp(30)))
+            addView(iconSquareImage(R.drawable.ic_knotq_plus_24, "New", iconSize = 17) { showNewMenu() }, LinearLayout.LayoutParams(dp(30), dp(30)))
         }, LinearLayout.LayoutParams(-1, dp(37)).apply {
             setMargins(dp(2), 0, dp(2), dp(3))
         })
@@ -887,25 +1095,377 @@ class MainActivity : Activity() {
             background = rounded(if (theme.isDark) theme.bgToolbar else theme.bgModal, dp(8), theme.borderOverlay)
             setPadding(dp(4), dp(4), dp(4), dp(3))
         }
-        val tree = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(0, dp(2), 0, dp(2))
-        }
-        snapshot.optJSONObject("root")?.optJSONArray("children")?.forEachObject {
-            addNode(tree, it, 0, spacious = true)
-        }
-        if (tree.childCount == 0) {
-            tree.addView(text("No schemes yet", theme.textMuted, 14f, false).apply {
-                setPadding(dp(10), dp(8), dp(10), dp(8))
-            }, LinearLayout.LayoutParams(-1, dp(36)))
-        }
-        panel.addView(tree, LinearLayout.LayoutParams(-1, -2))
+        panel.addView(NavigatorPanel(this), LinearLayout.LayoutParams(-1, -2))
         panel.addView(View(this).apply { setBackgroundColor(theme.dividerSoft) }, LinearLayout.LayoutParams(-1, max(1, (0.5f * resources.displayMetrics.density).roundToInt())).apply {
             setMargins(dp(4), dp(3), dp(4), dp(3))
         })
         panel.addView(homeDailySchemeRow(), LinearLayout.LayoutParams(-1, dp(42)))
         root.addView(panel)
         return root
+    }
+
+    /// Scheme tree with iOS-style direct manipulation: tap folders to
+    /// expand/collapse, long-press (0.3s) lifts a row, drag shows a drop line
+    /// between rows (or highlights a folder to drop inside), release commits
+    /// the move. Releasing a lifted row without dragging opens its actions.
+    private inner class NavigatorPanel(context: Context) : FrameLayout(context) {
+        private val list = LinearLayout(context).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(0, dp(2), 0, dp(2))
+        }
+        private val rowHeight = dp(30)
+        private val dropLine = View(context).apply {
+            visibility = GONE
+            background = rounded(theme.accent, dp(2))
+        }
+        private val folderHighlight = View(context).apply {
+            visibility = GONE
+            background = rounded(
+                adjustAlpha(theme.accent, 0.14f),
+                dp(5),
+                theme.accent,
+                max(1, (1.5f * resources.displayMetrics.density).roundToInt())
+            )
+        }
+        private val rowMetas = ArrayList<Pair<View, NavRowMeta>>()
+        private val touchSlop = ViewConfiguration.get(context).scaledTouchSlop
+        private var downX = 0f
+        private var downY = 0f
+        private var pressedRow: View? = null
+        private var pressedMeta: NavRowMeta? = null
+        private var dragging = false
+        private var draggedSinceLift = false
+        private var pendingPlacement: Pair<String, Int>? = null
+        private var liftRunnable: Runnable? = null
+
+        init {
+            addView(list, LayoutParams(-1, -2))
+            addView(folderHighlight, LayoutParams(0, 0))
+            addView(dropLine, LayoutParams(0, dp(3)))
+            buildRows()
+        }
+
+        private fun buildRows() {
+            list.removeAllViews()
+            rowMetas.clear()
+            val root = snapshot.optJSONObject("root")
+            val rootId = root?.optString("id").orEmpty()
+            fun append(nodes: JSONArray?, parentId: String, depth: Int) {
+                nodes?.forEachIndexedObject { index, node ->
+                    val kind = node.optString("kind")
+                    val id = node.optString("id")
+                    val meta = NavRowMeta(
+                        node = node,
+                        id = id,
+                        kind = kind,
+                        parentId = parentId,
+                        siblingIndex = index,
+                        depth = depth,
+                        childCount = node.optJSONArray("children")?.length() ?: 0
+                    )
+                    val row = navigatorRow(meta)
+                    rowMetas.add(row to meta)
+                    list.addView(row, LinearLayout.LayoutParams(-1, rowHeight))
+                    if (kind == "folder" && !collapsedFolderIds.contains(id)) {
+                        append(node.optJSONArray("children"), id, depth + 1)
+                    }
+                }
+            }
+            append(root?.optJSONArray("children"), rootId, 0)
+            if (rowMetas.isEmpty()) {
+                list.addView(text("No schemes yet", theme.textMuted, 14f, false).apply {
+                    setPadding(dp(10), dp(8), dp(10), dp(8))
+                }, LinearLayout.LayoutParams(-1, dp(36)))
+            }
+        }
+
+        private fun navigatorRow(meta: NavRowMeta): View {
+            val isFolder = meta.kind == "folder"
+            val expanded = isFolder && !collapsedFolderIds.contains(meta.id)
+            return LinearLayout(this@MainActivity).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+                setPadding(dp(8 + meta.depth * 10), 0, dp(7), 0)
+                // Shared fixed leading slot so folder icons and scheme color
+                // squares sit on the same center axis.
+                addView(FrameLayout(this@MainActivity).apply {
+                    if (isFolder) {
+                        addView(
+                            iconImage(R.drawable.ic_knotq_folder_24, theme.textMuted),
+                            FrameLayout.LayoutParams(dp(14), dp(14), Gravity.CENTER)
+                        )
+                    } else {
+                        addView(View(this@MainActivity).apply {
+                            background = rounded(schemeColor(meta.node.optInt("color_index")), dp(3))
+                        }, FrameLayout.LayoutParams(dp(10), dp(10), Gravity.CENTER))
+                    }
+                }, LinearLayout.LayoutParams(dp(18), dp(18)))
+                addView(
+                    text(meta.node.optString("name"), if (isFolder) theme.textPrimary else theme.textDim, 13f, isFolder).apply {
+                        maxLines = 1
+                        ellipsize = TextUtils.TruncateAt.END
+                    },
+                    LinearLayout.LayoutParams(0, -1, 1f).apply { setMargins(dp(7), 0, dp(4), 0) }
+                )
+                if (isFolder) {
+                    addView(
+                        inlineIcon(R.drawable.ic_knotq_chevron_right_24, theme.textMuted, widthDp = 18, iconSize = 13).apply {
+                            rotation = if (expanded) 90f else 0f
+                        },
+                        LinearLayout.LayoutParams(dp(18), dp(18))
+                    )
+                }
+                setOnClickListener {
+                    if (isFolder) {
+                        if (!collapsedFolderIds.add(meta.id)) {
+                            collapsedFolderIds.remove(meta.id)
+                        }
+                        render()
+                    } else {
+                        openScheme(meta.id)
+                    }
+                }
+            }
+        }
+
+        private fun rowAt(y: Float): Pair<View, NavRowMeta>? {
+            val yInList = y - list.top
+            return rowMetas.firstOrNull { (view, _) -> yInList >= view.top && yInList < view.bottom }
+        }
+
+        override fun onInterceptTouchEvent(ev: MotionEvent): Boolean {
+            when (ev.actionMasked) {
+                MotionEvent.ACTION_DOWN -> {
+                    downX = ev.x
+                    downY = ev.y
+                    dragging = false
+                    val hit = rowAt(ev.y)
+                    pressedRow = hit?.first
+                    pressedMeta = hit?.second
+                    if (hit != null) {
+                        val lift = Runnable {
+                            liftRunnable = null
+                            beginLift()
+                        }
+                        liftRunnable = lift
+                        postDelayed(lift, 300L)
+                    }
+                }
+                MotionEvent.ACTION_MOVE -> {
+                    if (dragging) {
+                        // The move that triggers interception is consumed by
+                        // the handoff; handle it here so sparse event streams
+                        // still track the finger.
+                        handleDragMove(ev)
+                    } else if (abs(ev.x - downX) > touchSlop || abs(ev.y - downY) > touchSlop) {
+                        cancelLift()
+                    }
+                }
+                MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> cancelLift()
+            }
+            return dragging
+        }
+
+        private fun cancelLift() {
+            liftRunnable?.let { removeCallbacks(it) }
+            liftRunnable = null
+        }
+
+        private fun beginLift() {
+            val row = pressedRow ?: return
+            dragging = true
+            draggedSinceLift = false
+            pendingPlacement = null
+            parent?.requestDisallowInterceptTouchEvent(true)
+            row.elevation = dp(8).toFloat()
+            row.animate().scaleX(0.97f).scaleY(0.97f).alpha(0.85f).setDuration(120).start()
+            performHapticFeedback(android.view.HapticFeedbackConstants.LONG_PRESS)
+            updateDropTarget(downY)
+        }
+
+        private fun handleDragMove(event: MotionEvent) {
+            val row = pressedRow ?: return
+            row.translationY = event.y - downY
+            if (abs(event.y - downY) > touchSlop) draggedSinceLift = true
+            updateDropTarget(event.y)
+            autoScrollIfNeeded(event)
+        }
+
+        override fun onTouchEvent(event: MotionEvent): Boolean {
+            if (!dragging) {
+                // Touches that started on empty space (or after a cancelled
+                // lift) are not ours.
+                return false
+            }
+            when (event.actionMasked) {
+                MotionEvent.ACTION_MOVE -> handleDragMove(event)
+                MotionEvent.ACTION_UP -> {
+                    // The release point decides the drop even when no
+                    // intermediate move event was delivered.
+                    if (abs(event.y - downY) > touchSlop) {
+                        draggedSinceLift = true
+                        updateDropTarget(event.y)
+                    }
+                    finishDrag(commit = true)
+                }
+                MotionEvent.ACTION_CANCEL -> finishDrag(commit = false)
+            }
+            return true
+        }
+
+        private fun finishDrag(commit: Boolean) {
+            val row = pressedRow
+            val meta = pressedMeta
+            val placement = pendingPlacement
+            dragging = false
+            pendingPlacement = null
+            hideIndicators()
+            row?.animate()?.cancel()
+            row?.scaleX = 1f
+            row?.scaleY = 1f
+            row?.alpha = 1f
+            row?.translationY = 0f
+            row?.elevation = 0f
+            parent?.requestDisallowInterceptTouchEvent(false)
+            if (meta == null) return
+            if (commit && placement != null) {
+                // Reveal a drop into a collapsed folder, like iOS.
+                collapsedFolderIds.remove(placement.first)
+                mutate(obj(
+                    "type" to "move_node",
+                    "kind" to meta.kind,
+                    "id" to meta.id,
+                    "folder_id" to placement.first,
+                    "position" to placement.second
+                ))
+            } else if (commit && !draggedSinceLift) {
+                // Lifted but never dragged: treat as the row's context menu.
+                if (meta.kind == "folder") showFolderActions(meta.node) else showSchemeActions(meta.node)
+            }
+        }
+
+        private fun updateDropTarget(y: Float) {
+            val meta = pressedMeta ?: return
+            val raw = rawDrop(y)
+            pendingPlacement = raw?.let { adjustPlacement(meta, it.folderId, it.position) }
+            if (pendingPlacement == null) {
+                hideIndicators()
+            } else {
+                showIndicator(raw!!)
+            }
+        }
+
+        private inner class RawNavDrop(
+            val folderId: String,
+            val position: Int,
+            val lineY: Float,
+            val lineDepth: Int,
+            val intoRow: View?
+        )
+
+        private fun rawDrop(y: Float): RawNavDrop? {
+            if (rowMetas.isEmpty()) return null
+            val rootId = rootFolderId() ?: return null
+            val rootCount = snapshot.optJSONObject("root")?.optJSONArray("children")?.length() ?: 0
+            val firstView = rowMetas.first().first
+            val lastView = rowMetas.last().first
+            val yInList = y - list.top
+            if (yInList < firstView.top) {
+                return RawNavDrop(rootId, 0, (firstView.top + list.top).toFloat(), 0, null)
+            }
+            if (yInList >= lastView.bottom) {
+                return RawNavDrop(rootId, rootCount, (lastView.bottom + list.top).toFloat(), 0, null)
+            }
+            val (view, meta) = rowAt(y) ?: return null
+            val fraction = if (view.height > 0) (yInList - view.top) / view.height.toFloat() else 0.5f
+            val isFolder = meta.kind == "folder"
+            if (isFolder && meta.id != pressedMeta?.id && fraction > 0.32f && fraction < 0.68f) {
+                return RawNavDrop(meta.id, meta.childCount, -1f, 0, view)
+            }
+            val after = fraction >= 0.5f
+            if (after && isFolder && !collapsedFolderIds.contains(meta.id)) {
+                // The visible gap below an expanded folder header is its first
+                // child slot.
+                return RawNavDrop(meta.id, 0, (view.bottom + list.top).toFloat(), meta.depth + 1, null)
+            }
+            val position = meta.siblingIndex + if (after) 1 else 0
+            val lineY = ((if (after) view.bottom else view.top) + list.top).toFloat()
+            return RawNavDrop(meta.parentId, position, lineY, meta.depth, null)
+        }
+
+        /// Resolves a raw sibling slot against the post-removal child list and
+        /// rejects no-ops and folder-into-own-subtree moves (iOS parity).
+        private fun adjustPlacement(dragged: NavRowMeta, folderId: String, position: Int): Pair<String, Int>? {
+            if (dragged.kind == "folder") {
+                if (folderId == dragged.id || jsonNodeContains(dragged.node, folderId)) return null
+            }
+            val root = snapshot.optJSONObject("root") ?: return null
+            val targetParent = if (folderId == root.optString("id")) root else nodeById(folderId, root)
+            val targetChildren = targetParent?.optJSONArray("children")?.length() ?: return null
+            val sameParent = dragged.parentId == folderId
+            var adjusted = position
+            if (sameParent && dragged.siblingIndex < position) adjusted = max(0, adjusted - 1)
+            val targetCount = targetChildren - if (sameParent) 1 else 0
+            adjusted = adjusted.coerceIn(0, max(0, targetCount))
+            if (sameParent && adjusted == dragged.siblingIndex) return null
+            return folderId to adjusted
+        }
+
+        private fun jsonNodeContains(node: JSONObject, id: String): Boolean {
+            val children = node.optJSONArray("children") ?: return false
+            for (index in 0 until children.length()) {
+                val child = children.optJSONObject(index) ?: continue
+                if (child.optString("id") == id || jsonNodeContains(child, id)) return true
+            }
+            return false
+        }
+
+        private fun showIndicator(raw: RawNavDrop) {
+            if (raw.intoRow != null) {
+                dropLine.visibility = GONE
+                folderHighlight.visibility = VISIBLE
+                folderHighlight.layoutParams = LayoutParams(width - dp(6), rowHeight - dp(4)).apply {
+                    leftMargin = dp(3)
+                    topMargin = raw.intoRow.top + list.top + dp(2)
+                }
+                folderHighlight.bringToFront()
+            } else {
+                folderHighlight.visibility = GONE
+                val indent = dp(8 + raw.lineDepth * 10)
+                dropLine.visibility = VISIBLE
+                dropLine.layoutParams = LayoutParams(max(dp(40), width - indent - dp(7)), dp(3)).apply {
+                    leftMargin = indent
+                    topMargin = (raw.lineY - dp(1)).roundToInt().coerceAtLeast(0)
+                }
+                dropLine.bringToFront()
+            }
+            pressedRow?.bringToFront()
+        }
+
+        private fun hideIndicators() {
+            dropLine.visibility = GONE
+            folderHighlight.visibility = GONE
+        }
+
+        /// Nudges the enclosing page scroll when a drag nears its edges.
+        private fun autoScrollIfNeeded(event: MotionEvent) {
+            var ancestor = parent
+            while (ancestor != null && ancestor !is ScrollView) {
+                ancestor = ancestor.parent
+            }
+            val scroll = ancestor as? ScrollView ?: return
+            val location = IntArray(2)
+            getLocationInWindow(location)
+            val scrollLocation = IntArray(2)
+            scroll.getLocationInWindow(scrollLocation)
+            val yInScroll = location[1] + event.y - scrollLocation[1]
+            val edge = dp(56)
+            if (yInScroll < edge) {
+                scroll.scrollBy(0, -dp(12))
+            } else if (yInScroll > scroll.height - edge) {
+                scroll.scrollBy(0, dp(12))
+            }
+        }
     }
 
     private fun homeDailySchemeRow(): View {
@@ -929,9 +1489,7 @@ class MainActivity : Activity() {
             addView(text(detail, theme.textSoft, 12f, true).apply {
                 setPadding(dp(9), 0, 0, 0)
             }, LinearLayout.LayoutParams(0, -1, 1f))
-            addView(text("›", theme.textMuted, 17f, true).apply {
-                gravity = Gravity.CENTER
-            }, LinearLayout.LayoutParams(dp(24), -1))
+            addView(inlineIcon(R.drawable.ic_knotq_chevron_right_24, theme.textMuted, widthDp = 24, iconSize = 16))
             setOnClickListener {
                 selectedTab = TAB_DAILY
                 selectedSchemeId = null
@@ -961,19 +1519,19 @@ class MainActivity : Activity() {
             addView(LinearLayout(this@MainActivity).apply {
                 orientation = LinearLayout.HORIZONTAL
                 gravity = Gravity.CENTER_VERTICAL
-                addView(chip("Daily Item") { addDailyItemFromHome() }, marginRight(dp(6), -2, dp(30)))
-                addView(chip("Calendar Item") { showCalendarItemDialog() }, marginRight(dp(6), -2, dp(30)))
-                addView(chip("New Scheme") {
+                addView(iconActionChip(GLYPH_TICK, "Daily Item") { addDailyItemFromHome() }, marginRight(dp(6), -2, dp(30)))
+                addView(iconActionChip(GLYPH_CALENDAR, "Calendar") { showCalendarItemDialog() }, marginRight(dp(6), -2, dp(30)))
+                addView(iconActionChip(GLYPH_EDIT, "New Scheme") {
                     showNameDialog("New Scheme", "", { validateSchemeName(it, folderId = rootFolderId()) }) { name ->
                         mutate(obj("type" to "create_scheme", "name" to name, "position" to 0))
                     }
                 }, marginRight(dp(6), -2, dp(30)))
-                addView(chip("New Folder") {
+                addView(iconActionChip(GLYPH_FOLDER, "New Folder") {
                     showNameDialog("New Folder", "", { validateFolderName(it) }) { name ->
                         mutate(obj("type" to "create_folder", "name" to name))
                     }
-                }, marginRight(dp(6), -2, dp(30)))
-                addView(chip("Google Calendar") { startGoogleCalendarImport() }, LinearLayout.LayoutParams(-2, dp(30)))
+                }, LinearLayout.LayoutParams(-2, dp(30)))
+                addView(iconActionChip(GLYPH_CLOUD, "Google") { startGoogleCalendarImport() }, LinearLayout.LayoutParams(-2, dp(30)))
             })
         }
 
@@ -997,7 +1555,7 @@ class MainActivity : Activity() {
                 addView(text("Daily", theme.textPrimary, 14f, true), LinearLayout.LayoutParams(-1, dp(20)))
                 addView(text("${MobileDateFormatting.shortDay(date)} · $detail", theme.textDim, 12f, false), LinearLayout.LayoutParams(-1, dp(17)))
             }, LinearLayout.LayoutParams(0, -2, 1f))
-            addView(text("+", theme.textPrimary, 16f, true).apply {
+            addView(text(GLYPH_ADD, theme.textPrimary, ICON_ROW_SIZE_SP, true).apply {
                 gravity = Gravity.CENTER
                 setOnClickListener { addDailyItemFromHome() }
             }, LinearLayout.LayoutParams(dp(32), dp(34)))
@@ -1050,7 +1608,7 @@ class MainActivity : Activity() {
                 setMargins(0, 0, dp(7), 0)
             })
             addView(text("Daily", theme.textPrimary, 13f, true).apply { maxLines = 1 }, LinearLayout.LayoutParams(0, -1, 1f))
-            addView(text(">", theme.textMuted, 12f, true).apply { gravity = Gravity.CENTER }, LinearLayout.LayoutParams(dp(16), -1))
+            addView(text(GLYPH_RIGHT, theme.textMuted, ICON_TOOL_SIZE_SP, true).apply { gravity = Gravity.CENTER }, LinearLayout.LayoutParams(dp(16), -1))
             setOnClickListener {
                 selectedTab = TAB_DAILY
                 selectedSchemeId = null
@@ -1097,9 +1655,9 @@ class MainActivity : Activity() {
                 setMargins(dp(if (compact) 7 else 10), 0, 0, 0)
             })
             if (!compact) {
-                addView(chip("Restore") {
+                addView(iconChip(GLYPH_TICK, {
                     mutate(obj("type" to "restore_scheme", "scheme_id" to scheme.optString("id")))
-                }, LinearLayout.LayoutParams(dp(78), dp(28)))
+                }), LinearLayout.LayoutParams(dp(28), dp(28)))
             }
             setOnClickListener { showArchivedSchemeActions(scheme) }
             setOnLongClickListener {
@@ -1129,23 +1687,17 @@ class MainActivity : Activity() {
         val columns = calendarVisibleDayCount()
         val dayObjects = calendarDayObjects()
         val startIndex = calendarVisibleStartIndex(dayObjects)
-        val visibleDays = if (dayObjects.isEmpty()) emptyList()
-        else dayObjects.subList(startIndex, min(dayObjects.size, startIndex + columns)).toList()
+        val renderStartIndex = max(0, startIndex - 1)
+        val renderEndIndex = min(dayObjects.size, startIndex + columns + 1)
+        val renderDays = if (dayObjects.isEmpty()) emptyList()
+        else dayObjects.subList(renderStartIndex, renderEndIndex).toList()
+        val leadingColumns = startIndex - renderStartIndex
 
         val timeline = CalendarTimelineView(this).apply {
-            configure(visibleDays, columns)
+            configure(renderDays, columns, leadingColumns)
         }
 
         val column = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
-        val overdue = calendar().optJSONArray("overdue")
-        if (overdue != null && overdue.length() > 0) {
-            val overdueBox = LinearLayout(this).apply {
-                orientation = LinearLayout.VERTICAL
-                setPadding(dp(12), dp(8), dp(12), dp(4))
-            }
-            addOccurrenceSection(overdueBox, "Overdue", "None", overdue)
-            column.addView(overdueBox, LinearLayout.LayoutParams(-1, -2))
-        }
         column.addView(timeline, LinearLayout.LayoutParams(-1, -2))
 
         val scrollView = ScrollView(this).apply {
@@ -1153,18 +1705,33 @@ class MainActivity : Activity() {
             isVerticalScrollBarEnabled = false
             addView(column)
         }
-        scrollView.viewTreeObserver.addOnScrollChangedListener { calendarScrollY = scrollView.scrollY }
-        // Anchor the scroll near "now" on today (else early morning); keep the
-        // user's position when the same day re-renders for another reason.
+        scrollView.viewTreeObserver.addOnScrollChangedListener {
+            calendarScrollY = scrollView.scrollY
+            timeline.onViewportChanged(scrollView.scrollY, scrollView.height)
+        }
+        // Anchor the scroll near "now" when today is one of the visible columns
+        // (else early morning); keep the user's position when the same day
+        // re-renders for another reason.
         val dateKey = selectedDate.toString()
         val target = if (calendarScrollDate != dateKey) {
-            val hour = if (selectedDate == LocalDate.now()) max(0, LocalTime.now().hour - 1) else 7
+            val visibleHasToday = (0 until columns).any { selectedDate.plusDays(it.toLong()) == LocalDate.now() }
+            val hour = if (visibleHasToday) max(0, LocalTime.now().hour - 1) else 7
             dp(8) + dp(44) * hour
         } else {
             calendarScrollY
         }
         calendarScrollDate = dateKey
-        scrollView.post { scrollView.scrollTo(0, target) }
+        // Apply the anchor during the first layout pass (before the first
+        // draw) — a post{} lands a frame late and flashes the unscrolled
+        // timeline first.
+        var appliedCalendarAnchor = false
+        scrollView.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ ->
+            if (!appliedCalendarAnchor && scrollView.height > 0) {
+                appliedCalendarAnchor = true
+                scrollView.scrollTo(0, target)
+                timeline.onViewportChanged(scrollView.scrollY, scrollView.height)
+            }
+        }
         root.addView(scrollView, LinearLayout.LayoutParams(-1, 0, 1f))
         return root
     }
@@ -1196,94 +1763,165 @@ class MainActivity : Activity() {
         return LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             background = underline(theme.bgApp)
-            addView(calendarTitleView(), LinearLayout.LayoutParams(-1, dp(44)))
-            addView(calendarWeekStrip(), LinearLayout.LayoutParams(-1, dp(56)))
+            addView(calendarTitleView(), LinearLayout.LayoutParams(-1, dp(42)))
+            addView(calendarWeekStrip(), LinearLayout.LayoutParams(-1, dp(66)))
         }.also {
-            it.layoutParams = LinearLayout.LayoutParams(-1, dp(100))
+            it.layoutParams = LinearLayout.LayoutParams(-1, dp(108))
         }
     }
 
-    private fun calendarTitleView(): View =
-        LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER
-            setPadding(dp(12), dp(8), dp(12), dp(4))
-            addView(iconChip("<") {
-                weekOffset -= 1
-                loadSnapshot()
-                render()
-            })
-            addView(text(selectedDateTitle(), theme.textPrimary, 23f, true).apply {
-                gravity = Gravity.CENTER
-                includeFontPadding = false
-                setOnClickListener { showMonthPickerDialog() }
-            }, LinearLayout.LayoutParams(0, dp(32), 1f))
-            addView(chip("Today") {
-                weekOffset = 0
-                selectedDate = LocalDate.now()
-                loadSnapshot()
-                render()
-            }, LinearLayout.LayoutParams(dp(64), dp(28)).apply { setMargins(dp(5), 0, dp(5), 0) })
-            addView(iconChip(">") {
-                weekOffset += 1
-                loadSnapshot()
-                render()
+    private fun calendarQuickAddRow(): View =
+        HorizontalScrollView(this).apply {
+            isHorizontalScrollBarEnabled = false
+            addView(LinearLayout(this@MainActivity).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+                setPadding(dp(8), dp(4), dp(8), 0)
+                addView(iconActionChip(GLYPH_CALENDAR, "Event") {
+                    quickCreateCalendarItem("event")
+                }, marginRight(dp(6), -2, dp(24)))
+                addView(iconActionChip(GLYPH_BELL, "Reminder") {
+                    quickCreateCalendarItem("reminder")
+                }, marginRight(dp(6), -2, dp(24)))
+                addView(iconActionChip(GLYPH_TICK, "Assignment") {
+                    quickCreateCalendarItem("assignment")
+                }, LinearLayout.LayoutParams(-2, dp(24)))
             })
         }
 
+    private fun quickCreateCalendarItem(kind: String) {
+        val initialKind = when (kind) {
+            "event", "reminder", "assignment" -> kind
+            else -> "task"
+        }
+        val now = LocalDateTime.now()
+        showEventEditorDialog(
+            occurrence = null,
+            initialDate = selectedDate,
+            initialMinute = (now.hour * 60 + now.minute).toFloat(),
+            preferredKind = initialKind,
+            openForNew = true
+        )
+    }
+
+    private fun calendarTitleView(): View =
+        FrameLayout(this).apply {
+            addView(LinearLayout(this@MainActivity).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER
+                setPadding(dp(14), 0, dp(12), 0)
+                background = rounded(adjustAlpha(theme.textPrimary, if (theme.isDark) 0.07f else 0.055f), dp(18), theme.borderOverlay)
+                addView(text(monthTitle(selectedDate), theme.textPrimary, 18f, true).apply {
+                    gravity = Gravity.CENTER
+                    includeFontPadding = false
+                    maxLines = 1
+                    ellipsize = TextUtils.TruncateAt.END
+                }, LinearLayout.LayoutParams(-2, dp(34)))
+                addView(inlineIcon(R.drawable.ic_knotq_chevron_down_24, theme.textMuted, widthDp = 18, iconSize = 15), LinearLayout.LayoutParams(dp(18), dp(34)).apply {
+                    setMargins(dp(3), 0, 0, 0)
+                })
+                setOnClickListener { showMonthPickerDialog() }
+            }, FrameLayout.LayoutParams(-2, dp(34), Gravity.CENTER))
+        }
+
     private fun calendarWeekStrip(): View =
-        LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-            setPadding(dp(10), 0, dp(10), dp(4))
-            val days = calendar().optJSONArray("days")
-            val stripDates = mutableListOf<LocalDate>()
-            if (days != null && days.length() > 0) {
-                for (index in 0 until min(8, days.length())) {
-                    runCatching { LocalDate.parse(days.optJSONObject(index)?.optString("date")) }
-                        .getOrNull()
-                        ?.let(stripDates::add)
-                }
-            }
-            if (stripDates.isEmpty()) {
-                for (offset in 0 until 8) stripDates.add(weekStart(selectedDate).plusDays(offset.toLong()))
-            }
-            // Highlight the same run of days the timeline shows (anchored on the
-            // selected day, clamped to the fetched week) — mirrors the iOS pill.
+        FrameLayout(this).apply {
+            val stripDates = (0 until 7).map { weekStart(selectedDate).plusDays(it.toLong()) }
             val count = calendarVisibleDayCount()
-            val selectedIndex = stripDates.indexOf(selectedDate).coerceAtLeast(0)
-            val startIndex = selectedIndex.coerceIn(0, max(0, stripDates.size - count))
-            val lastIndex = startIndex + count - 1
+            val visibleDates = (0 until count).map { selectedDate.plusDays(it.toLong()).toString() }.toSet()
+            addView(CalendarWeekHighlightView(this@MainActivity, stripDates, visibleDates), FrameLayout.LayoutParams(-1, -1))
+            addView(LinearLayout(this@MainActivity).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
             stripDates.forEachIndexed { offset, date ->
                 val today = date == LocalDate.now()
-                val visible = offset in startIndex..lastIndex
+                    val visible = visibleDates.contains(date.toString())
                 addView(LinearLayout(this@MainActivity).apply {
                     orientation = LinearLayout.VERTICAL
                     gravity = Gravity.CENTER
-                    if (visible) {
-                        background = roundedHorizontalSegment(
-                            calendarRangeFill(),
-                            leadingRounded = offset == startIndex,
-                            trailingRounded = offset == lastIndex
-                        )
-                    }
-                    addView(text(date.dayOfWeek.getDisplayName(TextStyle.NARROW, Locale.getDefault()).uppercase(Locale.getDefault()), if (today || visible) theme.textPrimary else theme.textMuted, 10f, true).apply {
+                        addView(text(date.dayOfWeek.getDisplayName(TextStyle.NARROW, Locale.getDefault()).uppercase(Locale.getDefault()), if (today) calendarDayHighlightColor() else adjustAlpha(theme.textMuted, if (theme.isDark) 0.42f else 0.50f), 10f, true).apply {
                         gravity = Gravity.CENTER
-                    }, LinearLayout.LayoutParams(-1, dp(16)))
-                    addView(text(date.dayOfMonth.toString(), if (today) theme.accent else if (visible) theme.textPrimary else theme.textMuted, 17f, false).apply {
+                            includeFontPadding = false
+                        }, LinearLayout.LayoutParams(-1, dp(16)))
+                        addView(text(date.dayOfMonth.toString(), calendarWeekDayTextColor(today, visible), 18f, today).apply {
                         gravity = Gravity.CENTER
-                    }, LinearLayout.LayoutParams(dp(34), dp(34)))
+                            includeFontPadding = false
+                        }, LinearLayout.LayoutParams(-1, dp(37)))
                     setOnClickListener {
                         selectedDate = date
                         weekOffset = 0
+                            calendarScrollDate = date.toString()
                         loadSnapshot()
                         render()
                     }
                 }, LinearLayout.LayoutParams(0, -1, 1f).apply {
-                    setMargins(if (visible && offset != startIndex) 0 else dp(1), dp(3), if (visible && offset != lastIndex) 0 else dp(1), dp(3))
+                        setMargins(0, dp(7), 0, dp(6))
                 })
             }
+            }, FrameLayout.LayoutParams(-1, -1))
         }
+
+    private inner class CalendarWeekHighlightView(
+        context: Context,
+        private val dates: List<LocalDate>,
+        private val visibleDates: Set<String>
+    ) : View(context) {
+        private val paint = Paint(Paint.ANTI_ALIAS_FLAG)
+
+        override fun onDraw(canvas: Canvas) {
+            super.onDraw(canvas)
+            if (dates.isEmpty() || width <= 0) return
+            val cellWidth = width / dates.size.toFloat()
+            // Concentric with the day-number row: 7dp cell top margin + 16dp
+            // weekday row puts the 37dp number row at 23..60.
+            val pillTop = dp(23).toFloat()
+            val pillHeight = dp(37).toFloat()
+            val barHeight = dp(4).toFloat()
+            paint.style = Paint.Style.FILL
+            paint.color = calendarWeekConnectorColor()
+            var runStart: Int? = null
+            dates.forEachIndexed { index, date ->
+                val visible = visibleDates.contains(date.toString())
+                if (visible && runStart == null) {
+                    runStart = index
+                } else if (!visible && runStart != null) {
+                    drawWeekConnector(canvas, runStart ?: index, index - 1, cellWidth, pillTop, pillHeight, barHeight)
+                    runStart = null
+                }
+            }
+            runStart?.let { drawWeekConnector(canvas, it, dates.lastIndex, cellWidth, pillTop, pillHeight, barHeight) }
+
+            dates.forEachIndexed { index, date ->
+                if (!visibleDates.contains(date.toString())) return@forEachIndexed
+                val circleSize = pillHeight
+                val left = index * cellWidth + (cellWidth - circleSize) / 2f
+                val rect = RectF(left, pillTop, left + circleSize, pillTop + circleSize)
+                paint.color = if (date == LocalDate.now()) calendarDayHighlightColor() else calendarWeekSecondaryHighlightColor()
+                canvas.drawOval(rect, paint)
+            }
+        }
+
+        private fun drawWeekConnector(
+            canvas: Canvas,
+            start: Int,
+            end: Int,
+            cellWidth: Float,
+            pillTop: Float,
+            pillHeight: Float,
+            barHeight: Float
+        ) {
+            if (end <= start) return
+            paint.color = calendarWeekConnectorColor()
+            val x = start * cellWidth + cellWidth / 2f
+            val connectorWidth = (end - start) * cellWidth
+            listOf(
+                pillTop + pillHeight * 0.29f,
+                pillTop + pillHeight * 0.71f - barHeight
+            ).forEach { y ->
+                canvas.drawRoundRect(RectF(x, y, x + connectorWidth, y + barHeight), barHeight / 2f, barHeight / 2f, paint)
+            }
+        }
+    }
 
     /// An hour-grid day timeline mirroring the iOS calendar: a left time gutter
     /// plus N day columns (2 on phone), with events drawn at their actual times
@@ -1294,6 +1932,36 @@ class MainActivity : Activity() {
         // the slot count used for column widths even if fewer days are available.
         private var dayObjects: List<JSONObject> = emptyList()
         private var columns: Int = 2
+        private var leadingColumns: Int = 0
+        private var dragLaid: Laid? = null
+        private var dragRect: RectF = RectF()
+        private var dragSourceDay = -1
+        private var dragStartY = 0f
+        private var dragStartMinute = 0f
+        private var dragDuration = 30f
+        private var dragHeight = 0f
+        private var dragOffsetX = 0f
+        private var dragOffsetY = 0f
+        private var dragMoved = false
+        private var dragSnapBaseline = -1f
+        private var draftDay = -1
+        private var draftMinute = -1f
+        private var draftRect: RectF? = null
+        private var touchStartX = 0f
+        private var touchStartY = 0f
+        private var swipingDays = false
+        private var swipeOffsetX = 0f
+        private var swipeAnimator: ValueAnimator? = null
+        private var velocityTracker: VelocityTracker? = null
+        private val touchSlop = ViewConfiguration.get(context).scaledTouchSlop
+        // Viewport (scroll offset + visible height) reported by the enclosing
+        // ScrollView so the sticky off-screen-event pills can track the screen.
+        private var viewportTop = 0
+        private var viewportHeight = 0
+        private val stickyHits = ArrayList<Pair<RectF, JSONObject>>()
+        // Event drags pick up on a faster long-press (0.22s, matching iOS) than
+        // the empty-space create draft (the detector's default long-press).
+        private var pendingDragRunnable: Runnable? = null
 
         private val hourPx = dp(44)
         private val gutterPx = dp(48)
@@ -1323,27 +1991,56 @@ class MainActivity : Activity() {
             textSize = sp(11f)
             typeface = Typeface.DEFAULT_BOLD
         }
+        private val stickyTitlePaint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
+            textAlign = Paint.Align.LEFT
+            textSize = sp(12f)
+            typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
+        }
 
         private inner class Laid(
             val occ: JSONObject,
             val rect: RectF,
             val isReminder: Boolean,
             val isAssignment: Boolean,
-            val hideTime: Boolean
+            val hideTime: Boolean,
+            val dayIndex: Int
         )
 
         private var laid: List<Laid> = emptyList()
+        private var dragMode = CALENDAR_INTERACTION_NONE
+        private var createKind = "assignment"
+        private var dragTargetDay = -1
+        private var dragTargetMinute = 0f
 
         private val gestureDetector = GestureDetector(context, object : GestureDetector.SimpleOnGestureListener() {
             override fun onDown(e: MotionEvent): Boolean = true
             override fun onSingleTapUp(e: MotionEvent): Boolean {
-                val occ = hitTest(e.x, e.y) ?: return false
-                showEventEditorDialog(occ)
+                stickyHits.lastOrNull { it.first.contains(e.x, e.y) }?.let { (_, occ) ->
+                    showEventEditorDialog(occ)
+                    return true
+                }
+                val hit = hitTest(e.x, e.y)
+                if (hit != null) {
+                    showEventEditorDialog(hit)
+                }
+                // Empty space is inert on tap (iOS creates only via long-press).
                 return true
             }
 
             override fun onLongPress(e: MotionEvent) {
-                hitTest(e.x, e.y)?.let { openScheme(it.optString("scheme_id")) }
+                if (dragMode != CALENDAR_INTERACTION_NONE || swipingDays) return
+                val hit = hitTest(e.x, e.y)
+                if (hit != null) {
+                    if (hit.optBoolean("is_read_only", false)) {
+                        showEventEditorDialog(hit)
+                    } else {
+                        laid.lastOrNull { it.occ == hit }?.let { matched ->
+                            beginDrag(matched, e.x, e.y)
+                        }
+                    }
+                } else {
+                    beginCreate(dayIndexForX(e.x), e.y)
+                }
             }
         })
 
@@ -1351,11 +2048,22 @@ class MainActivity : Activity() {
             isClickable = true
         }
 
-        fun configure(days: List<JSONObject>, columns: Int) {
+        fun configure(days: List<JSONObject>, columns: Int, leadingColumns: Int = 0) {
             this.dayObjects = days
             this.columns = max(1, columns)
+            this.leadingColumns = leadingColumns.coerceIn(0, max(0, days.size - 1))
+            this.swipeOffsetX = 0f
+            this.swipingDays = false
+            this.laid = emptyList()
             requestLayout()
             if (width > 0) relayout()
+            invalidate()
+        }
+
+        fun onViewportChanged(scrollY: Int, visibleHeight: Int) {
+            if (viewportTop == scrollY && viewportHeight == visibleHeight) return
+            viewportTop = scrollY
+            viewportHeight = visibleHeight
             invalidate()
         }
 
@@ -1385,8 +2093,273 @@ class MainActivity : Activity() {
             return e.epochSecond - s.epochSecond <= 30 * 60
         }
 
-        // Greedy interval colouring identical to the iOS layout: place each event in
-        // the first sub-column whose previous event has ended, else open a new one.
+        private fun dayDate(dayIndex: Int): LocalDate? {
+            val objectIndex = dayIndex + leadingColumns
+            if (objectIndex !in dayObjects.indices) return null
+            return runCatching { LocalDate.parse(dayObjects[objectIndex].optString("date")) }.getOrNull()
+        }
+
+        private fun dayIndexForX(x: Float): Int {
+            val columnWidth = max(1, (width - gutterPx) / columns)
+            return ((x - gutterPx) / columnWidth).toInt().coerceIn(0, columns - 1)
+        }
+
+        private fun snappedMinute(y: Float, stepMinutes: Int, round: Boolean): Float {
+            val raw = ((y - topOffset) / hourPx) * 60f
+            val maxMinute = (hoursInDay * 60).toFloat()
+            val clamped = raw.coerceIn(0f, maxMinute)
+            if (stepMinutes <= 0) return clamped
+            return if (round) {
+                val step = stepMinutes.toFloat()
+                val steps = (clamped / step).roundToInt()
+                (steps * step).coerceIn(0f, maxMinute)
+            } else {
+                val step = stepMinutes.toFloat()
+                val steps = (clamped / step).toInt()
+                (steps * step).coerceIn(0f, maxMinute)
+            }
+        }
+
+        private fun eventDurationMinutes(occ: JSONObject): Float {
+            val kind = occ.optString("kind")
+            if (kind != "event") return 30f
+            val rawStart = minuteOfDay(occ, "start") ?: 0f
+            val rawEnd = minuteOfDay(occ, "end") ?: (rawStart + 60f)
+            return max(15f, rawEnd - rawStart)
+        }
+
+        private fun dragAnchorMinute(occ: JSONObject): Float {
+            return when (occ.optString("kind")) {
+                "assignment" -> minuteOfDay(occ, "end") ?: 0f
+                else -> minuteOfDay(occ, "start") ?: 0f
+            }
+        }
+
+        private fun activeDateTime(dayIndex: Int, minute: Float): LocalDateTime? {
+            val date = dayDate(dayIndex) ?: return null
+            val clamped = minute.coerceIn(0f, ((hoursInDay * 60) - 1).toFloat())
+            val total = clamped.toInt().coerceIn(0, (hoursInDay * 60) - 1)
+            return date.atTime(total / 60, total % 60)
+        }
+
+        private fun clearCreatePreview() {
+            draftDay = -1
+            draftMinute = -1f
+            createKind = "event"
+            dragMoved = false
+            draftRect = null
+        }
+
+        private fun clearDragPreview() {
+            dragMode = CALENDAR_INTERACTION_NONE
+            dragLaid = null
+            dragSourceDay = -1
+            dragStartMinute = 0f
+            dragDuration = 30f
+            dragHeight = 0f
+            dragOffsetX = 0f
+            dragOffsetY = 0f
+            dragMoved = false
+            dragSnapBaseline = -1f
+            dragRect.setEmpty()
+        }
+
+        private fun beginDrag(laid: Laid, x: Float, y: Float) {
+            val rowWidth = max(1, (width - gutterPx) / columns)
+            if (rowWidth <= 0) return
+            val occ = laid.occ
+            dragMode = CALENDAR_INTERACTION_DRAG
+            dragLaid = laid
+            dragRect.set(laid.rect)
+            dragStartY = y
+            dragStartMinute = dragAnchorMinute(occ)
+            dragDuration = eventDurationMinutes(occ)
+            dragHeight = laid.rect.height()
+            dragOffsetX = x - laid.rect.left
+            dragOffsetY = y - laid.rect.top
+            dragSourceDay = dayIndexForX(laid.rect.centerX())
+            val columnLeft = gutterPx + dragSourceDay * rowWidth
+            dragMoved = false
+            dragSnapBaseline = -1f
+            val sourceOffset = laid.rect.left - columnLeft
+            dragOffsetX = (dragOffsetX - sourceOffset)
+            dragTargetDay = dragSourceDay
+            dragTargetMinute = dragStartMinute
+            parent?.requestDisallowInterceptTouchEvent(true)
+            invalidate()
+        }
+
+        private fun beginCreate(dayIndex: Int, y: Float, initialKind: String = "event") {
+            val rowWidth = max(1, (width - gutterPx) / columns)
+            val minute = snappedMinute(y, 5, false)
+            val startMinute = minute.coerceIn(0f, ((hoursInDay * 60) - 60).toFloat())
+            draftDay = dayIndex
+            draftMinute = startMinute
+            dragStartMinute = startMinute
+            dragTargetDay = dayIndex
+            dragTargetMinute = startMinute
+            dragMode = CALENDAR_INTERACTION_CREATE
+            createKind = initialKind
+            dragStartY = y
+            dragHeight = hourPx.toFloat()
+            dragMoved = false
+            val left = gutterPx + dayIndex * rowWidth
+            val draftLeft = left + 1f
+            val draftRight = left + rowWidth - 1f
+            val draftTop = topOffset + startMinute / 60f * hourPx
+            val draftBottom = topOffset + ((startMinute + 60f) / 60f * hourPx)
+            draftRect = RectF(draftLeft, draftTop, draftRight, draftBottom)
+            parent?.requestDisallowInterceptTouchEvent(true)
+            invalidate()
+        }
+
+        private fun commitCreateFromTouch() {
+            val targetDay = dragTargetDay.coerceIn(0, columns - 1)
+            val targetMinute = dragTargetMinute.coerceIn(0f, ((hoursInDay * 60) - 1).toFloat())
+            val date = dayDate(targetDay) ?: selectedDate
+            // Keep the draft block on screen while the editor dialog is open so
+            // it marks the new task's slot (matching iOS); clear it on dismiss.
+            dragMode = CALENDAR_INTERACTION_NONE
+            invalidate()
+            showEventEditorDialog(
+                occurrence = null,
+                initialDate = date,
+                initialMinute = targetMinute,
+                preferredKind = createKind,
+                openForNew = true,
+                onDismiss = {
+                    clearCreatePreview()
+                    invalidate()
+                }
+            )
+        }
+
+        private fun commitDragFromTouch() {
+            val laid = dragLaid ?: return
+            val kind = laid.occ.optString("kind")
+            val targetDay = dragTargetDay.coerceIn(0, columns - 1)
+            val targetTime = activeDateTime(targetDay, dragTargetMinute.coerceIn(0f, (hoursInDay * 60 - 1).toFloat())) ?: run {
+                clearDragPreview()
+                return
+            }
+            val start = when (kind) {
+                "event", "reminder" -> MobileDateFormatting.iso(targetTime.toLocalDate(), targetTime.hour, targetTime.minute)
+                else -> null
+            }
+            val end = when (kind) {
+                "event" -> {
+                    val endTime = activeDateTime(targetDay, dragTargetMinute + dragDuration)
+                    endTime?.let { MobileDateFormatting.iso(it.toLocalDate(), it.hour, it.minute) }
+                }
+                "assignment" -> MobileDateFormatting.iso(targetTime.toLocalDate(), targetTime.hour, targetTime.minute)
+                else -> null
+            }
+            val notificationOffset = if (laid.occ.isNull("notification_offset_secs")) null else laid.occ.optInt("notification_offset_secs")
+
+            if (dragMoved) {
+                val commit = { scope: String ->
+                    commitEventEdit(
+                        occurrence = laid.occ,
+                        title = laid.occ.optString("title"),
+                        start = start,
+                        end = end,
+                        rrule = null,
+                        notificationOffsetSecs = notificationOffset,
+                        notificationDirty = true,
+                        done = laid.occ.optBoolean("done", false),
+                        scope = scope
+                    )
+                }
+                clearDragPreview()
+                if (laid.occ.optBoolean("is_recurring", false)) {
+                    showOccurrenceScopeDialog("Recurring task", laid.occ, forDelete = false) { scope ->
+                        commit(scope)
+                    }
+                } else {
+                    commit("all_events")
+                }
+            } else {
+                clearDragPreview()
+                showEventEditorDialog(laid.occ)
+            }
+        }
+
+        private fun endCreate() {
+            if (dragMode != CALENDAR_INTERACTION_CREATE) return
+            if (draftRect == null) {
+                clearCreatePreview()
+                return
+            }
+            commitCreateFromTouch()
+        }
+
+        private fun endDrag() {
+            if (dragMode != CALENDAR_INTERACTION_DRAG) return
+            commitDragFromTouch()
+        }
+
+        private fun cancelDragOrCreate() {
+            when (dragMode) {
+                CALENDAR_INTERACTION_DRAG -> clearDragPreview()
+                CALENDAR_INTERACTION_CREATE -> clearCreatePreview()
+                else -> Unit
+            }
+            dragMode = CALENDAR_INTERACTION_NONE
+            invalidate()
+        }
+
+        private fun updateCreate(x: Float, y: Float) {
+            val rowWidth = max(1, (width - gutterPx) / columns)
+            val candidateDay = dayIndexForX(x).coerceIn(0, columns - 1)
+            // The draft tracks the finger directly on a 5-minute grid, iOS-style.
+            val candidateMinute = snappedMinute(y, 5, false).coerceIn(0f, ((hoursInDay * 60) - 60).toFloat())
+            if (candidateDay != dragTargetDay || abs(candidateMinute - dragTargetMinute) >= 1f) {
+                dragMoved = true
+            }
+            dragTargetDay = candidateDay
+            dragTargetMinute = candidateMinute
+            val left = gutterPx + candidateDay * rowWidth
+            val draftLeft = left + 1f
+            val draftRight = left + rowWidth - 1f
+            val draftTop = topOffset + dragTargetMinute / 60f * hourPx
+            val draftBottom = topOffset + (dragTargetMinute + 60f) / 60f * hourPx
+            draftRect = RectF(draftLeft, draftTop, draftRight, draftBottom)
+            invalidate()
+        }
+
+        private fun updateDrag(y: Float, x: Float) {
+            val laid = dragLaid ?: return
+            val rowWidth = max(1, (width - gutterPx) / columns)
+            val rawMinute = snappedMinute(y - dragOffsetY + dragRect.height() / 2f, 15, true)
+            val kind = laid.occ.optString("kind")
+            val maxStart = if (kind == "event") {
+                hoursInDay * 60 - dragDuration
+            } else {
+                hoursInDay * 60 - 15
+            }
+            val snapped = rawMinute.coerceIn(0f, maxStart.toFloat())
+            // Compare against the first snap, not the raw anchor: 15-minute
+            // re-rounding must not register a "move" for a stationary hold.
+            if (dragSnapBaseline < 0f) dragSnapBaseline = snapped
+            if (abs(snapped - dragSnapBaseline) > 0.5f) {
+                dragMoved = true
+            }
+            val dayIndex = dayIndexForX(x - dragOffsetX + dragRect.width() / 2f)
+            val targetDay = dayIndex.coerceIn(0, columns - 1)
+            val columnLeft = gutterPx + targetDay * rowWidth
+            dragTargetDay = targetDay
+            dragTargetMinute = snapped
+            val targetOffset = dragRect.width() - laid.rect.width().coerceAtLeast(1f)
+            val sourceColumnWidth = max(1f, rowWidth.toFloat())
+            val sourceOffset = dragOffsetX
+            val clampedOffset = sourceOffset.coerceIn(0f, sourceColumnWidth - dragRect.width() - 1f)
+            val top = topOffset + snapped / 60f * hourPx
+            dragRect.set(columnLeft + clampedOffset, top, columnLeft + clampedOffset + laid.rect.width(), top + dragRect.height())
+            invalidate()
+        }
+
+        // Greedy interval colouring identical to the iOS layout: split each
+        // overlap component independently, then let items span any free lanes.
         private fun relayout() {
             val colWidth = max(1, (width - gutterPx) / columns)
             val out = ArrayList<Laid>()
@@ -1394,6 +2367,32 @@ class MainActivity : Activity() {
                 val occsArray = dayObjects[dayIndex].optJSONArray("occurrences") ?: continue
 
                 data class Slot(val occ: JSONObject, val startMin: Float, val endMin: Float)
+                data class PendingSlot(val slot: Slot, val lane: Int)
+                data class PlacedSlot(val slot: Slot, val lane: Int, val laneSpan: Int, val laneCount: Int)
+
+                fun slotsOverlap(a: Slot, b: Slot): Boolean =
+                    a.startMin < b.endMin && b.startMin < a.endMin
+
+                fun flushComponent(component: ArrayList<PendingSlot>, placed: ArrayList<PlacedSlot>) {
+                    if (component.isEmpty()) return
+                    val laneCount = component.maxOf { it.lane } + 1
+                    component.forEach { pending ->
+                        var laneSpan = 1
+                        if (pending.lane + 1 < laneCount) {
+                            for (lane in (pending.lane + 1) until laneCount) {
+                                if (component.any { other ->
+                                        other.lane == lane && slotsOverlap(pending.slot, other.slot)
+                                    }) {
+                                    break
+                                }
+                                laneSpan += 1
+                            }
+                        }
+                        placed.add(PlacedSlot(pending.slot, pending.lane, laneSpan, laneCount))
+                    }
+                    component.clear()
+                }
+
                 val slots = ArrayList<Slot>()
                 occsArray.forEachObject { occ ->
                     val kind = occ.optString("kind")
@@ -1404,37 +2403,50 @@ class MainActivity : Activity() {
                     val rawEnd = minuteOfDay(occ, "end")?.coerceIn(0f, 1440f) ?: (startMin + minDur)
                     slots.add(Slot(occ, startMin, max(startMin + minDur, rawEnd)))
                 }
-                slots.sortBy { it.startMin }
+                slots.sortWith(compareBy<Slot> { it.startMin }.thenByDescending { it.endMin })
 
-                val columnEnd = ArrayList<Float>()
-                val slotCol = IntArray(slots.size)
-                slots.forEachIndexed { i, slot ->
-                    var placed = false
-                    for (c in columnEnd.indices) {
-                        if (slot.startMin >= columnEnd[c]) {
-                            columnEnd[c] = slot.endMin
-                            slotCol[i] = c
-                            placed = true
-                            break
-                        }
+                val placed = ArrayList<PlacedSlot>()
+                val component = ArrayList<PendingSlot>()
+                var componentEnd: Float? = null
+                val active = ArrayList<Pair<Float, Int>>()
+
+                slots.forEach { slot ->
+                    val currentEnd = componentEnd
+                    if (currentEnd != null && slot.startMin >= currentEnd) {
+                        flushComponent(component, placed)
+                        active.clear()
+                        componentEnd = null
                     }
-                    if (!placed) {
-                        slotCol[i] = columnEnd.size
-                        columnEnd.add(slot.endMin)
+
+                    active.removeAll { it.first <= slot.startMin }
+
+                    var lane = 0
+                    while (active.any { it.second == lane }) {
+                        lane += 1
                     }
+                    active.add(slot.endMin to lane)
+                    componentEnd = max(componentEnd ?: slot.endMin, slot.endMin)
+                    component.add(PendingSlot(slot, lane))
                 }
 
-                val subCount = max(1, columnEnd.size)
-                val subWidth = colWidth.toFloat() / subCount
-                val columnX = gutterPx + dayIndex * colWidth
-                slots.forEachIndexed { i, slot ->
+                flushComponent(component, placed)
+
+                val columnX = gutterPx + (dayIndex - leadingColumns) * colWidth
+                placed.forEach { placement ->
+                    val slot = placement.slot
                     val kind = slot.occ.optString("kind")
+                    val subWidth = colWidth.toFloat() / max(1, placement.laneCount)
                     val y = topOffset + slot.startMin / 60f * hourPx
                     val minHeight = if (kind == "event") dp(20).toFloat() else dp(34).toFloat()
                     val height = max(minHeight, (slot.endMin - slot.startMin) / 60f * hourPx - 2f)
-                    val x = columnX + slotCol[i] * subWidth + 1f
-                    val rect = RectF(x, y, x + max(dp(8).toFloat(), subWidth - 2f), y + height)
-                    out.add(Laid(slot.occ, rect, kind == "reminder", kind == "assignment", isShortEvent(slot.occ)))
+                    val x = columnX + placement.lane * subWidth + 1f
+                    val rect = RectF(
+                        x,
+                        y,
+                        x + max(dp(8).toFloat(), subWidth * placement.laneSpan - 2f),
+                        y + height
+                    )
+                    out.add(Laid(slot.occ, rect, kind == "reminder", kind == "assignment", isShortEvent(slot.occ), dayIndex - leadingColumns))
                 }
             }
             laid = out
@@ -1443,34 +2455,206 @@ class MainActivity : Activity() {
         override fun onDraw(canvas: Canvas) {
             if (width <= 0) return
             if (laid.isEmpty() && dayObjects.isNotEmpty()) relayout()
+            drawPastShade(canvas)
             drawGrid(canvas)
+            val dayCanvas = canvas.save()
+            canvas.clipRect(gutterPx.toFloat(), 0f, width.toFloat(), height.toFloat())
+            canvas.translate(swipeOffsetX, 0f)
             laid.forEach { drawEvent(canvas, it) }
+            // The create draft stays visible after the touch ends, while its
+            // editor dialog is open (cleared via the dialog's dismiss callback).
+            draftRect?.let { drawDraftBlock(canvas, it) }
+            if (dragMode == CALENDAR_INTERACTION_DRAG) {
+                dragLaid?.let { laid ->
+                    val kind = laid.occ.optString("kind")
+                    val moving = JSONObject(laid.occ.toString()).apply {
+                        activeDateTime(dragTargetDay, dragTargetMinute)?.let { time ->
+                            when (kind) {
+                                "event", "reminder" -> put("start", MobileDateFormatting.iso(time.toLocalDate(), time.hour, time.minute))
+                            }
+                            when (kind) {
+                                "event" -> {
+                                    activeDateTime(dragTargetDay, dragTargetMinute + dragDuration)?.let { end ->
+                                        put("end", MobileDateFormatting.iso(end.toLocalDate(), end.hour, end.minute))
+                                    }
+                                }
+                                "assignment" -> put("end", MobileDateFormatting.iso(time.toLocalDate(), time.hour, time.minute))
+                            }
+                        }
+                    }
+                    drawEvent(canvas, Laid(moving, dragRect, kind == "reminder", kind == "assignment", laid.hideTime, dragTargetDay))
+                }
+            }
             drawNowLine(canvas)
+            canvas.restoreToCount(dayCanvas)
+            drawStickyIndicators(canvas)
+        }
+
+        /// Tints the already-elapsed part of each day in the calendar blue, like
+        /// iOS/desktop `cal_past`: full column for past days, top-to-now today.
+        private fun drawPastShade(canvas: Canvas) {
+            if (dayObjects.isEmpty()) return
+            val colWidth = max(1, (width - gutterPx) / columns)
+            val today = LocalDate.now()
+            val saved = canvas.save()
+            canvas.clipRect(gutterPx.toFloat(), 0f, width.toFloat(), height.toFloat())
+            canvas.translate(swipeOffsetX, 0f)
+            fillPaint.color = adjustAlpha(calendarDayHighlightColor(), if (theme.isDark) 0.11f else 0.13f)
+            for (objectIndex in dayObjects.indices) {
+                val date = runCatching { LocalDate.parse(dayObjects[objectIndex].optString("date")) }.getOrNull() ?: continue
+                val shadeBottom = when {
+                    date.isBefore(today) -> (topOffset + hoursInDay * hourPx).toFloat()
+                    date == today -> {
+                        val now = LocalTime.now()
+                        topOffset + (now.hour * 60 + now.minute) / 60f * hourPx
+                    }
+                    else -> continue
+                }
+                val x = (gutterPx + (objectIndex - leadingColumns) * colWidth).toFloat()
+                canvas.drawRect(x, 0f, x + colWidth, shadeBottom, fillPaint)
+            }
+            canvas.restoreToCount(saved)
+        }
+
+        private fun drawDraftBlock(canvas: Canvas, rect: RectF) {
+            val radius = dp(3).toFloat()
+            fillPaint.color = adjustAlpha(theme.accent, if (theme.isDark) 0.32f else 0.22f)
+            canvas.drawRoundRect(rect, radius, radius, fillPaint)
+            borderPaint.color = theme.accent
+            borderPaint.alpha = 255
+            borderPaint.strokeWidth = max(1f, 1.5f * resources.displayMetrics.density)
+            canvas.drawRoundRect(rect, radius, radius, borderPaint)
+            val textColor = if (theme.isDark) Color.WHITE else rgb(0x24272d)
+            val saved = canvas.save()
+            canvas.clipRect(rect)
+            val cx = rect.centerX()
+            val availW = max(0f, rect.width() - dp(8))
+            timePaint.color = textColor
+            timePaint.alpha = 255
+            val timeLabel = activeDateTime(dragTargetDay, dragTargetMinute)?.let { time ->
+                MobileDateFormatting.time(MobileDateFormatting.iso(time.toLocalDate(), time.hour, time.minute), timeFormat24())
+            }.orEmpty()
+            val time = TextUtils.ellipsize(timeLabel, timePaint, availW, TextUtils.TruncateAt.END)
+            canvas.drawText(time, 0, time.length, cx, rect.top + dp(3) - timePaint.ascent(), timePaint)
+            titlePaint.color = textColor
+            titlePaint.alpha = 255
+            canvas.drawText("New", cx, rect.top + dp(15) - titlePaint.ascent(), titlePaint)
+            canvas.restoreToCount(saved)
+        }
+
+        /// Stacked "more events" pills pinned to the top/bottom of the viewport
+        /// for events scrolled out of view, fading in with distance like iOS.
+        private fun drawStickyIndicators(canvas: Canvas) {
+            stickyHits.clear()
+            if (viewportHeight <= 0 || dayObjects.isEmpty() || dragMode != CALENDAR_INTERACTION_NONE) return
+            val colWidth = dayColumnWidth()
+            val pillH = dp(26).toFloat()
+            val spacing = dp(4).toFloat()
+            val fadeDistance = dp(44).toFloat()
+            val bottomCutoff = dp(104).toFloat()
+            val stackDepth = 3
+            val timelineBottom = (topOffset + hoursInDay * hourPx).toFloat()
+            val visibleMinY = max(0, viewportTop).toFloat()
+            val visibleMaxY = min(timelineBottom, viewportTop + viewportHeight - bottomCutoff)
+            if (visibleMaxY <= visibleMinY) return
+            val topBaseY = visibleMinY + dp(7)
+            val bottomBaseY = max(topBaseY, viewportTop + viewportHeight - bottomCutoff - pillH - dp(10))
+
+            for (objectIndex in dayObjects.indices) {
+                val visIndex = objectIndex - leadingColumns
+                val columnLeft = gutterPx + visIndex * colWidth + swipeOffsetX
+                val visibleWidth = min(width.toFloat(), columnLeft + colWidth) - max(gutterPx.toFloat(), columnLeft)
+                if (visibleWidth <= 0f) continue
+                val horizontalAlpha = (visibleWidth / min(colWidth, fadeDistance)).coerceIn(0f, 1f)
+                val dayEvents = laid.filter { it.dayIndex == visIndex }
+                val topCandidates = dayEvents
+                    .filter { it.rect.top < visibleMinY }
+                    .sortedWith(compareByDescending<Laid> { it.rect.top }.thenBy { it.rect.left })
+                    .take(stackDepth)
+                    .reversed()
+                val bottomCandidates = dayEvents
+                    .filter { it.rect.top > visibleMaxY }
+                    .sortedWith(compareBy<Laid> { it.rect.top }.thenBy { it.rect.left })
+                    .take(stackDepth)
+                    .reversed()
+                topCandidates.forEachIndexed { index, candidate ->
+                    val alpha = ((visibleMinY - candidate.rect.top) / fadeDistance).coerceIn(0f, 1f) * horizontalAlpha
+                    drawStickyPill(canvas, candidate.occ, columnLeft, colWidth, topBaseY + index * (pillH + spacing), pillH, alpha)
+                }
+                bottomCandidates.forEachIndexed { index, candidate ->
+                    val alpha = ((candidate.rect.top - visibleMaxY) / fadeDistance).coerceIn(0f, 1f) * horizontalAlpha
+                    drawStickyPill(canvas, candidate.occ, columnLeft, colWidth, max(topBaseY, bottomBaseY - index * (pillH + spacing)), pillH, alpha)
+                }
+            }
+        }
+
+        private fun drawStickyPill(
+            canvas: Canvas,
+            occ: JSONObject,
+            columnLeft: Float,
+            colWidth: Float,
+            y: Float,
+            pillH: Float,
+            alpha: Float
+        ) {
+            if (alpha <= 0.02f) return
+            val pillW = min(max(dp(96).toFloat(), colWidth - dp(14)), width - gutterPx - dp(14).toFloat())
+            val minX = gutterPx + dp(7).toFloat()
+            val maxX = max(minX, width - pillW - dp(7))
+            val x = (columnLeft + dp(7)).coerceIn(minX, maxX)
+            val rect = RectF(x, y, x + pillW, y + pillH)
+            val alpha255 = (alpha * 255).roundToInt().coerceIn(0, 255)
+            val radius = pillH / 2f
+            fillPaint.color = if (theme.isDark) adjustAlpha(rgb(0x333333), 0.92f) else adjustAlpha(theme.bgApp, 0.86f)
+            fillPaint.alpha = (Color.alpha(fillPaint.color) * alpha / 1f).roundToInt().coerceIn(0, 255)
+            canvas.drawRoundRect(rect, radius, radius, fillPaint)
+            borderPaint.color = if (theme.isDark) adjustAlpha(Color.WHITE, 0.18f) else theme.dividerSoft
+            borderPaint.alpha = (Color.alpha(borderPaint.color) * alpha).roundToInt().coerceIn(0, 255)
+            borderPaint.strokeWidth = max(1f, 0.75f * resources.displayMetrics.density)
+            canvas.drawRoundRect(rect, radius, radius, borderPaint)
+            fillPaint.color = if (occ.optString("scheme_name") == "Daily") dailyAccent() else schemeColor(occ.optInt("color_index"))
+            fillPaint.alpha = alpha255
+            canvas.drawCircle(rect.left + dp(9) + dp(7) / 2f, rect.centerY(), dp(7) / 2f, fillPaint)
+            stickyTitlePaint.color = theme.textPrimary
+            stickyTitlePaint.alpha = alpha255
+            val title = occ.optString("title").trim().ifEmpty { occ.optString("kind").replaceFirstChar(Char::titlecase) }
+            val availW = max(0f, pillW - dp(30))
+            val label = TextUtils.ellipsize(title, stickyTitlePaint, availW, TextUtils.TruncateAt.END)
+            val baseline = rect.centerY() - (stickyTitlePaint.ascent() + stickyTitlePaint.descent()) / 2f
+            canvas.drawText(label, 0, label.length, rect.left + dp(22), baseline, stickyTitlePaint)
+            stickyHits.add(rect to occ)
         }
 
         private fun drawGrid(canvas: Canvas) {
             val colWidth = max(1, (width - gutterPx) / columns)
-            gridPaint.color = theme.divider
+            gridPaint.color = theme.dividerSoft
             gutterPaint.color = theme.textMuted
             val gridBottom = (topOffset + hoursInDay * hourPx).toFloat()
             for (hour in 0..hoursInDay) {
                 val y = (topOffset + hour * hourPx).toFloat()
                 canvas.drawLine(gutterPx.toFloat(), y, width.toFloat(), y, gridPaint)
-                if (hour < hoursInDay) {
-                    val baseline = y - (gutterPaint.ascent() + gutterPaint.descent()) / 2f
-                    canvas.drawText(hourLabel(hour), (gutterPx - dp(6)).toFloat(), baseline, gutterPaint)
-                }
+                // The very bottom of the timeline is the next midnight (12 AM).
+                val baseline = y - (gutterPaint.ascent() + gutterPaint.descent()) / 2f
+                canvas.drawText(hourLabel(hour % hoursInDay), (gutterPx - dp(6)).toFloat(), baseline, gutterPaint)
             }
-            for (i in 0..columns) {
-                val x = (gutterPx + i * colWidth).toFloat()
+            val saved = canvas.save()
+            canvas.clipRect(gutterPx.toFloat(), topOffset.toFloat(), width.toFloat(), gridBottom)
+            canvas.translate(swipeOffsetX, 0f)
+            for (i in 0..dayObjects.size) {
+                val x = (gutterPx + (i - leadingColumns) * colWidth).toFloat()
                 canvas.drawLine(x, topOffset.toFloat(), x, gridBottom, gridPaint)
             }
+            canvas.restoreToCount(saved)
         }
 
         private fun hourLabel(hour: Int): String {
-            if (timeFormat24()) return hour.toString().padStart(2, '0')
-            val h12 = if (hour % 12 == 0) 12 else hour % 12
-            return "$h12${if (hour < 12) "AM" else "PM"}"
+            if (timeFormat24()) return "%02d:00".format(hour)
+            return when {
+                hour == 0 -> "12 AM"
+                hour == 12 -> "12 PM"
+                hour < 12 -> "$hour AM"
+                else -> "${hour - 12} PM"
+            }
         }
 
         private fun drawEvent(canvas: Canvas, e: Laid) {
@@ -1538,10 +2722,8 @@ class MainActivity : Activity() {
             val colWidth = max(1, (width - gutterPx) / columns)
             val now = LocalTime.now()
             val y = topOffset + (now.hour * 60 + now.minute) / 60f * hourPx
-            val x0 = (gutterPx + dayIndex * colWidth).toFloat()
-            nowPaint.color = if (theme.isDark) rgb(0xff5a53) else rgb(0xd20f39)
-            nowPaint.style = Paint.Style.FILL
-            canvas.drawCircle(x0 + dp(2), y, dp(3).toFloat(), nowPaint)
+            val x0 = (gutterPx + (dayIndex - leadingColumns) * colWidth).toFloat()
+            nowPaint.color = theme.danger
             nowPaint.style = Paint.Style.STROKE
             nowPaint.strokeWidth = max(1f, 1.5f * resources.displayMetrics.density)
             canvas.drawLine(x0, y, x0 + colWidth, y, nowPaint)
@@ -1550,8 +2732,183 @@ class MainActivity : Activity() {
         private fun hitTest(x: Float, y: Float): JSONObject? =
             laid.lastOrNull { it.rect.contains(x, y) }?.occ
 
+        private fun dayColumnWidth(): Float =
+            max(1, (width - gutterPx) / columns).toFloat()
+
+        private fun rubberBandSwipe(dx: Float, limit: Float): Float {
+            val magnitude = abs(dx)
+            if (magnitude <= limit) return dx
+            val sign = if (dx < 0f) -1f else 1f
+            return sign * (limit + (magnitude - limit) * 0.18f)
+        }
+
+        private fun maybeStartDaySwipe(event: MotionEvent): Boolean {
+            if (dragMode != CALENDAR_INTERACTION_NONE) return false
+            val dx = event.x - touchStartX
+            val dy = event.y - touchStartY
+            if (!swipingDays && abs(dx) > touchSlop * 2 && abs(dx) > abs(dy) * 1.18f) {
+                swipingDays = true
+                parent?.requestDisallowInterceptTouchEvent(true)
+            }
+            if (!swipingDays) return false
+            swipeAnimator?.cancel()
+            swipeOffsetX = rubberBandSwipe(dx, dayColumnWidth() * 0.96f)
+            invalidate()
+            return true
+        }
+
+        private fun finishDaySwipe() {
+            val colWidth = dayColumnWidth()
+            // iOS commit rule: project the gesture 0.18s ahead by velocity (only
+            // when that grows the travel) and page when the projection clears the
+            // threshold, or when the raw drag passed 42% of a column.
+            velocityTracker?.computeCurrentVelocity(1000)
+            val vx = velocityTracker?.xVelocity ?: 0f
+            velocityTracker?.recycle()
+            velocityTracker = null
+            val dx = swipeOffsetX
+            val projectedRaw = dx + vx * 0.18f
+            val projected = if (abs(projectedRaw) > abs(dx)) projectedRaw else dx
+            val threshold = max(dp(48).toFloat(), min(width * 0.15f, colWidth * 0.68f))
+            val shouldShift = abs(projected) > threshold || abs(dx) > colWidth * 0.42f
+            val dayDelta = when {
+                shouldShift && projected < 0 -> 1L
+                shouldShift && projected > 0 -> -1L
+                else -> 0L
+            }
+            if (dayDelta == 0L) {
+                animateDaySwipe(0f) {
+                    swipingDays = false
+                    parent?.requestDisallowInterceptTouchEvent(false)
+                }
+                return
+            }
+            val target = if (dayDelta > 0) -colWidth else colWidth
+            animateDaySwipe(target) {
+                val nextDate = selectedDate.plusDays(dayDelta)
+                selectedDate = nextDate
+                weekOffset = 0
+                calendarScrollDate = nextDate.toString()
+                swipeOffsetX = 0f
+                swipingDays = false
+                parent?.requestDisallowInterceptTouchEvent(false)
+                loadSnapshot()
+                render()
+            }
+        }
+
+        private fun animateDaySwipe(target: Float, onEnd: () -> Unit) {
+            swipeAnimator?.cancel()
+            val animator = ValueAnimator.ofFloat(swipeOffsetX, target).apply {
+                duration = 220L
+                interpolator = DecelerateInterpolator(1.6f)
+                addUpdateListener { valueAnimator ->
+                    swipeOffsetX = valueAnimator.animatedValue as Float
+                    invalidate()
+                }
+                addListener(object : AnimatorListenerAdapter() {
+                    private var cancelled = false
+
+                    override fun onAnimationCancel(animation: Animator) {
+                        cancelled = true
+                    }
+
+                    override fun onAnimationEnd(animation: Animator) {
+                        if (swipeAnimator === animation) {
+                            swipeAnimator = null
+                        }
+                        if (!cancelled) onEnd()
+                    }
+                })
+            }
+            swipeAnimator = animator
+            animator.start()
+        }
+
+        private fun cancelPendingDragPickup() {
+            pendingDragRunnable?.let { removeCallbacks(it) }
+            pendingDragRunnable = null
+        }
+
         override fun onTouchEvent(event: MotionEvent): Boolean {
+            when (event.actionMasked) {
+                MotionEvent.ACTION_DOWN -> {
+                    swipeAnimator?.cancel()
+                    velocityTracker?.recycle()
+                    velocityTracker = VelocityTracker.obtain()
+                    velocityTracker?.addMovement(event)
+                    touchStartX = event.x
+                    touchStartY = event.y
+                    swipingDays = false
+                    swipeOffsetX = 0f
+                    // Events pick up for dragging after a short 0.22s hold
+                    // (iOS-style), faster than the long-press create draft.
+                    cancelPendingDragPickup()
+                    val downX = event.x
+                    val downY = event.y
+                    if (dragMode == CALENDAR_INTERACTION_NONE &&
+                        stickyHits.none { it.first.contains(downX, downY) }
+                    ) {
+                        hitTest(downX, downY)?.takeIf { !it.optBoolean("is_read_only", false) }?.let { hit ->
+                            val runnable = Runnable {
+                                pendingDragRunnable = null
+                                if (dragMode == CALENDAR_INTERACTION_NONE && !swipingDays) {
+                                    laid.lastOrNull { it.occ == hit }?.let { matched ->
+                                        beginDrag(matched, downX, downY)
+                                    }
+                                }
+                            }
+                            pendingDragRunnable = runnable
+                            postDelayed(runnable, 220L)
+                        }
+                    }
+                    gestureDetector.onTouchEvent(event)
+                    return true
+                }
+                MotionEvent.ACTION_MOVE -> {
+                    velocityTracker?.addMovement(event)
+                    if (maybeStartDaySwipe(event)) {
+                        cancelPendingDragPickup()
+                        return true
+                    }
+                }
+                MotionEvent.ACTION_UP -> {
+                    cancelPendingDragPickup()
+                    if (swipingDays) {
+                        finishDaySwipe()
+                        return true
+                    }
+                    velocityTracker?.recycle()
+                    velocityTracker = null
+                }
+                MotionEvent.ACTION_CANCEL -> {
+                    cancelPendingDragPickup()
+                    velocityTracker?.recycle()
+                    velocityTracker = null
+                    if (swipingDays) {
+                        animateDaySwipe(0f) {
+                            swipingDays = false
+                            parent?.requestDisallowInterceptTouchEvent(false)
+                        }
+                        return true
+                    }
+                }
+            }
+
             gestureDetector.onTouchEvent(event)
+            when (event.actionMasked) {
+                MotionEvent.ACTION_MOVE -> when (dragMode) {
+                    CALENDAR_INTERACTION_CREATE -> updateCreate(event.x, event.y)
+                    CALENDAR_INTERACTION_DRAG -> updateDrag(event.y, event.x)
+                    else -> Unit
+                }
+                MotionEvent.ACTION_UP -> when (dragMode) {
+                    CALENDAR_INTERACTION_CREATE -> endCreate()
+                    CALENDAR_INTERACTION_DRAG -> endDrag()
+                    else -> Unit
+                }
+                MotionEvent.ACTION_CANCEL -> cancelDragOrCreate()
+            }
             return true
         }
     }
@@ -1564,23 +2921,39 @@ class MainActivity : Activity() {
             orientation = LinearLayout.VERTICAL
             setBackgroundColor(theme.bgApp)
         }
+        // iOS editor chrome: back on the left; scheme color swatch + archive on
+        // the right.
         root.addView(LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
             setPadding(dp(12), 0, dp(12), 0)
             background = underline(theme.bgApp)
-            addView(iconChip("<") {
+            addView(iconChipImage(R.drawable.ic_knotq_chevron_left_24, "Back", iconSize = 20) {
                 activeEditor()?.let { commitSchemeDocument(schemeId, it, rerender = false) }
-                selectedSchemeId = null
-                render()
+                exitSchemeEditor()
             })
             addView(View(this@MainActivity), LinearLayout.LayoutParams(0, 1, 1f))
-            if (!readOnly) {
-                addView(iconChip("+") {
-                    activeEditor()?.let(::insertTaskLine) ?: showItemDialog(schemeId, null)
-                })
+            addView(FrameLayout(this@MainActivity).apply {
+                contentDescription = "Color"
+                background = rounded(theme.buttonBg, dp(7))
+                addView(View(this@MainActivity).apply {
+                    background = rounded(schemeColor(scheme.optInt("color_index")), dp(4), theme.borderOverlay)
+                }, FrameLayout.LayoutParams(dp(16), dp(16), Gravity.CENTER))
+                setOnClickListener { showColorDialog(schemeId) }
+            }, LinearLayout.LayoutParams(dp(32), dp(28)))
+            if (!scheme.optBoolean("is_daily_queue", false)) {
+                addView(iconChipImage(R.drawable.ic_knotq_archive_24, "Archive", iconSize = 17) {
+                    AlertDialog.Builder(this@MainActivity)
+                        .setTitle("Archive \"${scheme.optString("display_name", scheme.optString("name"))}\"?")
+                        .setNegativeButton("Cancel", null)
+                        .setPositiveButton("Archive") { _, _ ->
+                            activeEditor()?.let { commitSchemeDocument(schemeId, it, rerender = false) }
+                            mutate(obj("type" to "delete_scheme", "scheme_id" to schemeId))
+                            exitSchemeEditor()
+                        }
+                        .show()
+                }, LinearLayout.LayoutParams(dp(32), dp(28)).apply { setMargins(dp(6), 0, 0, 0) })
             }
-            addView(chip("More") { showSchemeActions(scheme) }, LinearLayout.LayoutParams(dp(64), dp(28)).apply { setMargins(dp(6), 0, 0, 0) })
         }, LinearLayout.LayoutParams(-1, dp(44)))
 
         val editor = SchemeEditText(this).apply {
@@ -1592,6 +2965,7 @@ class MainActivity : Activity() {
             accentColor = editorChromeColor()
             lineAdornments = editorLineAdornments(scheme, timeFormat24())
             markerTapHandler = { lineIndex -> toggleEditorLineMarker(this, lineIndex) }
+            selectionChangedHandler = { formatBarMarkerRefresh?.invoke() }
             isEnabled = !readOnly
             gravity = Gravity.TOP or Gravity.START
             setTextColor(theme.textPrimary)
@@ -1612,8 +2986,10 @@ class MainActivity : Activity() {
                 if (hasFocus) {
                     hidePhoneDockForEditing()
                 } else {
+                    // Quiet commit: a full re-render here would destroy
+                    // whatever the user just tapped (e.g. the title field).
                     showPhoneDockAfterEditing()
-                    commitSchemeDocument(schemeId, this, rerender = true)
+                    commitSchemeDocument(schemeId, this, rerender = false)
                 }
             }
         }
@@ -1629,7 +3005,9 @@ class MainActivity : Activity() {
         root.addView(editorScroll, LinearLayout.LayoutParams(-1, 0, 1f))
         editorScroll.post {
             placeCursorAtDocumentEnd(editor)
-            editorScroll.fullScroll(View.FOCUS_DOWN)
+            // Plain scroll — fullScroll(FOCUS_DOWN) would transfer focus to the
+            // editor, and its later blur-commit made the title untappable.
+            editorScroll.scrollTo(0, max(0, editorBody.bottom - editorScroll.height))
         }
         if (readOnly) {
             root.addView(text("Imported calendar schemes are read-only.", theme.textMuted, 12f, false).apply {
@@ -1726,7 +3104,7 @@ class MainActivity : Activity() {
             gravity = Gravity.CENTER_VERTICAL
             setPadding(dp(12), 0, dp(12), 0)
             background = underline(theme.bgApp)
-            addView(iconChip("<") {
+            addView(iconChipImage(R.drawable.ic_knotq_chevron_left_24, "Previous day", iconSize = 18) {
                 selectedDate = selectedDate.minusDays(1)
                 ensureDaily()
             })
@@ -1734,13 +3112,13 @@ class MainActivity : Activity() {
                 gravity = Gravity.CENTER
                 setOnClickListener { showDatePicker() }
             }, LinearLayout.LayoutParams(0, -1, 1f))
-            addView(iconChip("+") {
+            addView(iconChipImage(R.drawable.ic_knotq_plus_24, "Add item", iconSize = 17) {
                 activeEditor()?.let(::insertTaskLine)
                     ?: dailyScheme()?.let { scheme ->
                         mutate(obj("type" to "add_item", "scheme_id" to scheme.optString("id"), "text" to "", "marker" to "checkbox"))
                     }
             })
-            addView(iconChip(">") {
+            addView(iconChipImage(R.drawable.ic_knotq_chevron_right_24, "Next day", iconSize = 18) {
                 selectedDate = selectedDate.plusDays(1)
                 ensureDaily()
             }, LinearLayout.LayoutParams(dp(32), dp(28)).apply { setMargins(dp(6), 0, 0, 0) })
@@ -1752,18 +3130,83 @@ class MainActivity : Activity() {
             setBackgroundColor(theme.bgApp)
         }
         val days = dailyEntries()
+        val selectedKey = selectedDate.toString()
+        // iOS feed rules: hide effectively-empty days unless selected, oldest at
+        // the top, and the view opens pinned to the selected/most recent day.
+        val dayViews = LinkedHashMap<String, View>()
         if (days.isEmpty()) {
             list.addView(emptyState("Daily not ready", "Could not create the daily queue."))
         } else {
             days.forEach { day ->
-                list.addView(dailyDayEditor(day), LinearLayout.LayoutParams(-1, -2).apply {
+                val date = day.optString("date")
+                if (date != selectedKey && isDailyEntryEmpty(day)) return@forEach
+                val view = dailyDayEditor(day)
+                dayViews[date] = view
+                list.addView(view, LinearLayout.LayoutParams(-1, -2).apply {
                     setMargins(0, 0, 0, dp(6))
                 })
             }
         }
-        root.addView(scroll(list), LinearLayout.LayoutParams(-1, 0, 1f))
+        val scrollView = scroll(list)
+        var lastObservedScrollY = -1
+        scrollView.viewTreeObserver.addOnScrollChangedListener {
+            val y = scrollView.scrollY
+            // Crossing into the top band while scrolling up loads an older page
+            // (a real upward scroll, so short content can't auto-chain loads).
+            if (lastObservedScrollY > dp(48) && y <= dp(48) && y < lastObservedScrollY) {
+                dayViews.keys.firstOrNull()?.let { loadOlderDailyEntries(it) }
+            }
+            lastObservedScrollY = y
+            dailyScrollY = y
+        }
+        val resetScroll = dailyScrollDate != selectedKey
+        dailyScrollDate = selectedKey
+        scrollView.post {
+            val anchorDate = pendingDailyAnchorDate
+            pendingDailyAnchorDate = null
+            when {
+                // After a history load, keep the previously-oldest day in place
+                // instead of yanking back to the selected day.
+                anchorDate != null && dayViews[anchorDate] != null ->
+                    scrollView.scrollTo(0, max(0, (dayViews[anchorDate]?.top ?: 0) - dp(4)))
+                resetScroll -> {
+                    val target = dayViews[selectedKey]
+                    if (target != null && target.bottom > scrollView.height) {
+                        scrollView.scrollTo(0, max(0, target.bottom - scrollView.height + dp(8)))
+                    } else if (target == null) {
+                        scrollView.fullScroll(View.FOCUS_DOWN)
+                    }
+                }
+                else -> scrollView.scrollTo(0, dailyScrollY)
+            }
+        }
+        root.addView(scrollView, LinearLayout.LayoutParams(-1, 0, 1f))
         root.addView(editorFormatBar(), LinearLayout.LayoutParams(-1, dp(38)))
         return root
+    }
+
+    /// iOS `isEffectivelyEmpty`: a day whose items carry no text, scheduling,
+    /// metadata, or media doesn't earn a row in the feed.
+    private fun isDailyEntryEmpty(day: JSONObject): Boolean {
+        val items = day.optJSONObject("scheme")?.optJSONArray("items") ?: return true
+        for (index in 0 until items.length()) {
+            val item = items.optJSONObject(index) ?: continue
+            val marker = item.optString("marker", "blank")
+            val hasStart = item.optionalString("start") != null
+            val hasEnd = item.optionalString("end") != null
+            val hasRule = item.optionalString("repeat_rule") != null
+            val hasMedia = (item.optJSONArray("media")?.length() ?: 0) > 0
+            if (item.optString("text").trim().isNotEmpty() ||
+                (marker != "blank" && marker != "checkbox") ||
+                item.optInt("indent") != 0 ||
+                hasStart || hasEnd || hasRule || hasMedia ||
+                !item.isNull("notification_offset_secs") ||
+                item.optBoolean("done")
+            ) {
+                return false
+            }
+        }
+        return true
     }
 
     private fun dailyDayEditor(day: JSONObject): View {
@@ -1785,7 +3228,7 @@ class MainActivity : Activity() {
                 })
                 addView(text(MobileDateFormatting.fullDay(date), if (selected) theme.textPrimary else theme.textDim, 13f, true), LinearLayout.LayoutParams(0, -2, 1f))
                 if ((scheme.optJSONArray("items")?.length() ?: 0) == 0) {
-                    addView(text("+", theme.textMuted, 13f, true).apply { gravity = Gravity.CENTER }, LinearLayout.LayoutParams(dp(22), dp(22)))
+                    addView(inlineIcon(R.drawable.ic_knotq_plus_24, theme.textMuted, widthDp = 22, iconSize = 15), LinearLayout.LayoutParams(dp(22), dp(22)))
                 }
                 setOnClickListener {
                     runCatching { LocalDate.parse(date) }.getOrNull()?.let {
@@ -1804,6 +3247,7 @@ class MainActivity : Activity() {
                 accentColor = editorChromeColor()
                 lineAdornments = editorLineAdornments(scheme, timeFormat24())
                 markerTapHandler = { lineIndex -> toggleEditorLineMarker(this, lineIndex) }
+                selectionChangedHandler = { formatBarMarkerRefresh?.invoke() }
                 gravity = Gravity.TOP or Gravity.START
                 setTextColor(theme.textPrimary)
                 setHintTextColor(theme.textMuted)
@@ -1838,20 +3282,37 @@ class MainActivity : Activity() {
     private fun dailyEditorHeight(scheme: JSONObject): Int {
         val items = scheme.optJSONArray("items")
         var visualLines = 1
+        var annotations = 0
         if (items != null && items.length() > 0) {
             visualLines = 0
             for (index in 0 until items.length()) {
-                val textLength = items.optJSONObject(index)?.optString("text")?.length ?: 0
+                val item = items.optJSONObject(index)
+                val textLength = item?.optString("text")?.length ?: 0
                 visualLines += max(1, (max(textLength, 1) + 33) / 34)
+                val hasStart = item?.let { !it.isNull("start") && it.optString("start").isNotEmpty() } ?: false
+                val hasEnd = item?.let { !it.isNull("end") && it.optString("end").isNotEmpty() } ?: false
+                if (hasStart || hasEnd) annotations++
             }
         }
-        return dp(max(92, visualLines * 24 + 28))
+        // Mirror iOS: baseline + per-visual-line + per-date-annotation row.
+        return dp(max(104, visualLines * 24 + annotations * 14 + 52))
     }
 
     private fun dailyAccent(): Int = if (theme.isDark) rgb(0xb8c9e8) else rgb(0x5a7aad)
 
     private fun renderSearch(): View {
         val root = page()
+        if (!isWideLayout()) {
+            root.addView(LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+                background = rounded(theme.buttonBg, dp(5))
+                setPadding(dp(6), 0, dp(12), 0)
+                addView(iconImage(R.drawable.ic_knotq_chevron_left_24, theme.textPrimary, "Back"), LinearLayout.LayoutParams(dp(22), dp(22)))
+                addView(text("Back", theme.textPrimary, 12f, true).apply { setPadding(dp(2), 0, 0, 0) }, LinearLayout.LayoutParams(-2, -1))
+                setOnClickListener { exitSearch() }
+            }, LinearLayout.LayoutParams(dp(78), dp(30)).apply { bottomMargin = dp(10) })
+        }
         val query = edit("").apply {
             hint = "Search KnotQ"
             setSingleLine(true)
@@ -1874,19 +3335,29 @@ class MainActivity : Activity() {
         query.setOnEditorActionListener { _, actionId, _ ->
             if (actionId == EditorInfo.IME_ACTION_SEARCH || actionId == EditorInfo.IME_ACTION_DONE) {
                 searchNow()
+                dismissKeyboard()
                 true
             } else {
                 false
             }
         }
         query.setOnFocusChangeListener { _, hasFocus -> if (!hasFocus) searchNow() }
+        searchNow()
         return root
     }
 
     private fun renderSearchResults(results: LinearLayout, query: String) {
         results.removeAllViews()
+        if (query.isBlank()) {
+            results.addView(emptyState("Search KnotQ", "Find anything across all your schemes."))
+            return
+        }
         try {
             val hits = bridge.requestArray(obj("type" to "search", "query" to query))
+            if (hits.length() == 0) {
+                results.addView(emptyState("No results", "Nothing matched “$query”."))
+                return
+            }
             hits.forEachIndexedObject { idx, hit ->
                 val row = LinearLayout(this).apply {
                     orientation = LinearLayout.HORIZONTAL
@@ -1918,16 +3389,26 @@ class MainActivity : Activity() {
     private fun showSyncAccountDialog() {
         if (syncSession != null) {
             val session = syncSession ?: return
-            val actions = mutableListOf("Sync now", "Sign out", "Delete account")
-            if (session.supportsSync) {
-                actions.add(1, "Cancel subscription")
+            // Lead with the action that matters for the current state: syncing when
+            // it is on, subscribing when it is off. Destructive actions stay last.
+            val actions = if (session.supportsSync) {
+                mutableListOf("Sync now", "Cancel subscription", "Sign out", "Delete account on website")
             } else {
-                actions.add(1, "Subscribe with Google Play")
-                actions.add(2, "Restore purchases")
+                mutableListOf(
+                    "Subscribe with Google Play",
+                    "Restore purchases",
+                    "Sign out",
+                    "Delete account on website"
+                )
+            }
+            val stateLine = if (session.supportsSync) {
+                "Sync is on for this account."
+            } else {
+                "Sync is off — subscribe to turn it on."
             }
             AlertDialog.Builder(this)
                 .setTitle("Sync account")
-                .setMessage("Signed in as ${session.email}\n${session.apiBase}")
+                .setMessage("Signed in as ${session.email}\n$stateLine")
                 .setItems(actions.toTypedArray()) { _, which ->
                     when (actions[which]) {
                         "Sync now" -> syncOnce()
@@ -1935,7 +3416,7 @@ class MainActivity : Activity() {
                         "Restore purchases" -> restoreGooglePlayPurchases()
                         "Cancel subscription" -> confirmCancelSyncSubscription()
                         "Sign out" -> signOutSync()
-                        "Delete account" -> confirmDeleteSyncAccount()
+                        "Delete account on website" -> openSyncAccountPage()
                     }
                 }
                 .setNegativeButton("Close", null)
@@ -1943,54 +3424,152 @@ class MainActivity : Activity() {
             return
         }
 
-        syncLoginChallenge?.let {
-            showLoginCodeDialog(it)
-            return
-        }
+        syncLoginChallenge = null
 
-        val form = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(dp(20), dp(8), dp(20), 0)
-        }
-        val api = EditText(this).apply {
-            setText(DEFAULT_SYNC_API_BASE)
-            hint = "Sync API"
-            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_URI
-            setSingleLine(true)
-        }
-        val email = EditText(this).apply {
-            hint = "Email"
-            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_EMAIL_ADDRESS
-            setSingleLine(true)
-        }
-        val password = EditText(this).apply {
-            hint = "Password"
-            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
-            setSingleLine(true)
-        }
-        form.addView(api)
-        form.addView(email)
-        form.addView(password)
-
-        val dialog = AlertDialog.Builder(this)
-            .setTitle("Sign in")
-            .setView(form)
+        AlertDialog.Builder(this)
+            .setTitle("Sync account")
+            .setMessage("KnotQ will open your browser to sign in, then return here automatically.")
             .setNegativeButton("Cancel", null)
-            .setNeutralButton("Create account", null)
-            .setPositiveButton("Sign in", null)
-            .create()
-        dialog.setOnShowListener {
-            dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
-                dialog.dismiss()
-                signInToSync(api.text.toString(), email.text.toString(), password.text.toString())
-            }
-            dialog.getButton(AlertDialog.BUTTON_NEUTRAL).setOnClickListener {
-                dialog.dismiss()
-                createSyncAccount(api.text.toString(), email.text.toString(), password.text.toString())
-            }
-        }
-        dialog.show()
+            .setNeutralButton("Create account") { _, _ -> beginBrowserSyncAuth(createAccount = true) }
+            .setPositiveButton("Sign in") { _, _ -> beginBrowserSyncAuth(createAccount = false) }
+            .show()
     }
+
+    private fun beginBrowserSyncAuth(createAccount: Boolean) {
+        if (syncAuthInProgress) return
+        val apiBase = normalizeApiBase(syncSession?.apiBase ?: DEFAULT_SYNC_API_BASE)
+        val state = randomUrlToken(24)
+        val verifier = pkceVerifier()
+        val challenge = pkceChallenge(verifier)
+        val authUrl = Uri.parse(SYNC_SIGN_IN_PAGE_URL).buildUpon()
+            .appendQueryParameter("redirect_uri", SYNC_SIGN_IN_REDIRECT_URI)
+            .appendQueryParameter("state", state)
+            .appendQueryParameter("mode", if (createAccount) "create" else "signin")
+            .appendQueryParameter("api", apiBase)
+            .appendQueryParameter("code_challenge", challenge)
+            .appendQueryParameter("code_challenge_method", "S256")
+            .build()
+
+        savePendingSyncBrowserAuth(PendingSyncBrowserAuth(apiBase, state, verifier))
+        syncAuthInProgress = true
+        try {
+            startActivity(Intent(Intent.ACTION_VIEW, authUrl))
+            Toast.makeText(this, "Continue in your browser.", Toast.LENGTH_SHORT).show()
+        } catch (error: ActivityNotFoundException) {
+            clearPendingSyncBrowserAuth()
+            showError("Sign in failed", error.message)
+        } finally {
+            syncAuthInProgress = false
+        }
+    }
+
+    private fun handleIncomingAuthIntent(uri: Uri?) {
+        if (handleSyncBrowserCallback(uri)) return
+        handleGoogleCallback(uri)
+    }
+
+    private fun handleSyncBrowserCallback(uri: Uri?): Boolean {
+        if (uri == null || uri.scheme != SYNC_SIGN_IN_REDIRECT_SCHEME || uri.host != SYNC_SIGN_IN_REDIRECT_HOST) {
+            return false
+        }
+        val pending = loadPendingSyncBrowserAuth()
+        if (pending == null) {
+            showError("Sign in failed", "Sign-in callback arrived without a pending request.")
+            return true
+        }
+        val state = uri.getQueryParameter("state").orEmpty()
+        if (state != pending.state) {
+            clearPendingSyncBrowserAuth()
+            showError("Sign in failed", "Sign-in could not be verified. Please try again.")
+            return true
+        }
+        val errorCode = uri.getQueryParameter("error").orEmpty()
+        if (errorCode.isNotEmpty()) {
+            clearPendingSyncBrowserAuth()
+            showError("Sign in failed", authorizeErrorMessage(errorCode))
+            return true
+        }
+        val code = uri.getQueryParameter("code").orEmpty()
+        if (code.isEmpty()) {
+            clearPendingSyncBrowserAuth()
+            showError("Sign in failed", "Sign-in did not complete.")
+            return true
+        }
+
+        syncAuthInProgress = true
+        Thread {
+            val result = runCatching {
+                parseSyncSession(
+                    httpJson(
+                        "${pending.apiBase}/v1/auth/authorize/exchange",
+                        "POST",
+                        JSONObject()
+                            .put("code", code)
+                            .put("code_verifier", pending.codeVerifier),
+                        authorizeAction = true
+                    ),
+                    pending.apiBase
+                )
+            }
+            runOnUiThread {
+                syncAuthInProgress = false
+                clearPendingSyncBrowserAuth()
+                result.onSuccess { session ->
+                    syncLoginChallenge = null
+                    installSyncSession(session)
+                    Toast.makeText(this, "Signed in as ${session.email}", Toast.LENGTH_SHORT).show()
+                    syncOnce()
+                }.onFailure { error ->
+                    showError("Sign in failed", error.message)
+                }
+            }
+        }.start()
+        return true
+    }
+
+    private fun savePendingSyncBrowserAuth(auth: PendingSyncBrowserAuth) {
+        getSharedPreferences("knotq", MODE_PRIVATE).edit()
+            .putString(SYNC_AUTH_API_BASE_PREF, auth.apiBase)
+            .putString(SYNC_AUTH_STATE_PREF, auth.state)
+            .putString(SYNC_AUTH_VERIFIER_PREF, auth.codeVerifier)
+            .apply()
+    }
+
+    private fun loadPendingSyncBrowserAuth(): PendingSyncBrowserAuth? {
+        val prefs = getSharedPreferences("knotq", MODE_PRIVATE)
+        val apiBase = prefs.getString(SYNC_AUTH_API_BASE_PREF, null)?.takeIf { it.isNotBlank() }
+            ?: return null
+        val state = prefs.getString(SYNC_AUTH_STATE_PREF, null)?.takeIf { it.isNotBlank() }
+            ?: return null
+        val verifier = prefs.getString(SYNC_AUTH_VERIFIER_PREF, null)?.takeIf { it.isNotBlank() }
+            ?: return null
+        return PendingSyncBrowserAuth(apiBase, state, verifier)
+    }
+
+    private fun clearPendingSyncBrowserAuth() {
+        getSharedPreferences("knotq", MODE_PRIVATE).edit()
+            .remove(SYNC_AUTH_API_BASE_PREF)
+            .remove(SYNC_AUTH_STATE_PREF)
+            .remove(SYNC_AUTH_VERIFIER_PREF)
+            .apply()
+    }
+
+    private fun pkceVerifier(): String =
+        randomUrlToken(32)
+
+    private fun pkceChallenge(verifier: String): String {
+        val digest = MessageDigest.getInstance("SHA-256").digest(verifier.toByteArray(Charsets.UTF_8))
+        return base64UrlNoPad(digest)
+    }
+
+    private fun randomUrlToken(byteCount: Int): String {
+        val bytes = ByteArray(byteCount)
+        SecureRandom().nextBytes(bytes)
+        return base64UrlNoPad(bytes)
+    }
+
+    private fun base64UrlNoPad(bytes: ByteArray): String =
+        Base64.encodeToString(bytes, Base64.URL_SAFE or Base64.NO_WRAP or Base64.NO_PADDING)
 
     private fun signInToSync(apiBaseRaw: String, emailRaw: String, password: String) {
         if (syncAuthInProgress) return
@@ -2122,6 +3701,7 @@ class MainActivity : Activity() {
         syncSession = session
         saveSyncSession(session)
         startSyncPolling()
+        scheduleBackgroundSyncWork()
         render()
         // Signing in during the onboarding account step advances to the tour.
         if (onboardingActive && onboardingPhase == ONBOARDING_ACCOUNT) {
@@ -2134,7 +3714,18 @@ class MainActivity : Activity() {
         syncLoginChallenge = null
         saveSyncSession(null)
         syncPollHandler.removeCallbacks(syncPollRunnable)
+        syncPollHandler.removeCallbacks(syncEditRunnable)
+        cancelBackgroundSyncWork()
         render()
+    }
+
+    private fun openSyncAccountPage() {
+        try {
+            startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(SYNC_ACCOUNT_PAGE_URL)))
+            Toast.makeText(this, "Continue on knotq.com.", Toast.LENGTH_SHORT).show()
+        } catch (error: ActivityNotFoundException) {
+            showError("Could not open account page", error.message)
+        }
     }
 
     private fun confirmCancelSyncSubscription() {
@@ -2143,15 +3734,6 @@ class MainActivity : Activity() {
             .setMessage("Your local workspace stays on this device. Paid sync may remain available until the current billing period ends.")
             .setNegativeButton("Keep sync", null)
             .setPositiveButton("Cancel subscription") { _, _ -> cancelSyncSubscription() }
-            .show()
-    }
-
-    private fun confirmDeleteSyncAccount() {
-        AlertDialog.Builder(this)
-            .setTitle("Delete account?")
-            .setMessage("Your account and synced data are scheduled for deletion. You have 14 days to undo this by signing back in before everything is permanently erased.")
-            .setNegativeButton("Keep account", null)
-            .setPositiveButton("Delete account") { _, _ -> deleteSyncAccount() }
             .show()
     }
 
@@ -2338,39 +3920,43 @@ class MainActivity : Activity() {
         }.start()
     }
 
-    private fun deleteSyncAccount() {
-        val session = syncSession ?: return
-        if (syncAccountActionInProgress) return
-        syncAccountActionInProgress = true
-        Thread {
-            val result = runCatching {
-                val active = refreshSyncSessionIfNeeded(session) ?: throw RuntimeException(accountActionErrorMessage("unauthorized"))
-                httpJson(
-                    "${active.apiBase}/v1/auth/account",
-                    "DELETE",
-                    JSONObject().put("confirm_email", active.email),
-                    bearerToken = active.bearerToken,
-                    accountAction = true
-                )
-            }
-            runOnUiThread {
-                syncAccountActionInProgress = false
-                result.onSuccess {
-                    signOutSync()
-                    showError("Account deletion scheduled", "Sign in again within 14 days to cancel deletion. After that, synced data is permanently erased.")
-                }.onFailure { error ->
-                    showError("Could not delete account", error.message)
-                }
-            }
-        }.start()
-    }
-
     private fun startSyncPolling() {
         syncPollHandler.removeCallbacks(syncPollRunnable)
         if (syncSession != null) {
             syncOnce()
             syncPollHandler.postDelayed(syncPollRunnable, 30_000)
         }
+    }
+
+    /// iOS pushes a sync right after every local edit; the short delay coalesces
+    /// rapid bursts (the in-progress guard handles overlap with the 30s poll).
+    private fun requestSyncSoon() {
+        if (syncSession == null) return
+        syncPollHandler.removeCallbacks(syncEditRunnable)
+        syncPollHandler.postDelayed(syncEditRunnable, 350)
+    }
+
+    /// Periodic background refresh while signed in — the Android counterpart of
+    /// the iOS BGAppRefreshTask (3h cadence, network required).
+    private fun scheduleBackgroundSyncWork() {
+        val workManager = runCatching { WorkManager.getInstance(this) }.getOrNull() ?: return
+        val session = syncSession
+        if (session == null || !session.supportsSync) {
+            workManager.cancelUniqueWork(BACKGROUND_SYNC_WORK)
+            return
+        }
+        val request = PeriodicWorkRequest.Builder(BackgroundSyncWorker::class.java, 3, TimeUnit.HOURS)
+            .setConstraints(
+                Constraints.Builder()
+                    .setRequiredNetworkType(NetworkType.CONNECTED)
+                    .build()
+            )
+            .build()
+        workManager.enqueueUniquePeriodicWork(BACKGROUND_SYNC_WORK, ExistingPeriodicWorkPolicy.KEEP, request)
+    }
+
+    private fun cancelBackgroundSyncWork() {
+        runCatching { WorkManager.getInstance(this).cancelUniqueWork(BACKGROUND_SYNC_WORK) }
     }
 
     private fun syncOnce() {
@@ -2415,6 +4001,7 @@ class MainActivity : Activity() {
             runOnUiThread {
                 syncInProgress = false
                 result.onSuccess { response ->
+                    syncFailureNotified = false
                     val changed = response.optBoolean("changed", false)
                     if (changed) {
                         loadSnapshot()
@@ -2423,10 +4010,15 @@ class MainActivity : Activity() {
                     }
                     val notice = response.optString("notice", "")
                     if (notice.isNotEmpty()) {
-                        showError("Sync snapshot applied", notice)
+                        toast(notice)
                     }
                 }.onFailure { error ->
-                    showError("Sync failed", error.message)
+                    // Non-blocking like the iOS banner, and only on the first
+                    // failure so an offline session isn't toasted every poll.
+                    if (!syncFailureNotified) {
+                        syncFailureNotified = true
+                        toast(error.message ?: "Sync failed")
+                    }
                 }
             }
         }.start()
@@ -2516,7 +4108,8 @@ class MainActivity : Activity() {
         method: String,
         body: JSONObject,
         bearerToken: String? = null,
-        accountAction: Boolean = false
+        accountAction: Boolean = false,
+        authorizeAction: Boolean = false
     ): JSONObject {
         val connection = (URL(urlString).openConnection() as HttpURLConnection).apply {
             requestMethod = method
@@ -2538,7 +4131,13 @@ class MainActivity : Activity() {
         }
         if (status !in 200..299) {
             val code = runCatching { JSONObject(raw).optString("code") }.getOrDefault("")
-            throw RuntimeException(if (accountAction) accountActionErrorMessage(code) else syncErrorMessage(code))
+            throw RuntimeException(
+                when {
+                    accountAction -> accountActionErrorMessage(code)
+                    authorizeAction -> authorizeErrorMessage(code)
+                    else -> syncErrorMessage(code)
+                }
+            )
         }
         return if (raw.isBlank()) JSONObject() else JSONObject(raw)
     }
@@ -2597,6 +4196,12 @@ class MainActivity : Activity() {
         "code_expired", "invalid_or_expired_code" -> "That code has expired. Sign in again to get a new one."
         "too_many_attempts" -> "Too many incorrect codes. Sign in again to get a new one."
         else -> "Sync account request failed."
+    }
+
+    private fun authorizeErrorMessage(code: String): String = when (code) {
+        "invalid_authorization_code", "authorization_code_expired", "invalid_code_challenge" ->
+            "Sign-in could not be completed. Please try signing in again."
+        else -> "Sign in failed."
     }
 
     private fun accountActionErrorMessage(code: String): String = when (code) {
@@ -2766,65 +4371,54 @@ class MainActivity : Activity() {
         val googleAccountCount = settings?.optInt("google_account_count", 0) ?: 0
 
         root.addView(settingsSection("Appearance"))
-        root.addView(choiceRow("System", themeMode == "system") { mutate(obj("type" to "set_theme_mode", "theme_mode" to "system")) })
-        root.addView(choiceRow("Dark", themeMode == "dark") { mutate(obj("type" to "set_theme_mode", "theme_mode" to "dark")) })
-        root.addView(choiceRow("Light", themeMode == "light") { mutate(obj("type" to "set_theme_mode", "theme_mode" to "light")) })
+        root.addView(settingsGroup(
+            choiceRow("System", selected = themeMode == "system") { mutate(obj("type" to "set_theme_mode", "theme_mode" to "system")) },
+            choiceRow("Dark", selected = themeMode == "dark") { mutate(obj("type" to "set_theme_mode", "theme_mode" to "dark")) },
+            choiceRow("Light", selected = themeMode == "light") { mutate(obj("type" to "set_theme_mode", "theme_mode" to "light")) }
+        ))
 
         root.addView(settingsSection("Time"))
-        root.addView(choiceRow("12-hour", timeFormat == "twelve_hour") { mutate(obj("type" to "set_time_format", "time_format" to "twelve_hour")) })
-        root.addView(choiceRow("24-hour", timeFormat == "twenty_four_hour") { mutate(obj("type" to "set_time_format", "time_format" to "twenty_four_hour")) })
+        root.addView(settingsGroup(
+            choiceRow("12-hour", selected = timeFormat == "twelve_hour") { mutate(obj("type" to "set_time_format", "time_format" to "twelve_hour")) },
+            choiceRow("24-hour", selected = timeFormat == "twenty_four_hour") { mutate(obj("type" to "set_time_format", "time_format" to "twenty_four_hour")) }
+        ))
 
         root.addView(settingsSection("Notifications"))
-        root.addView(choiceRow("Events: ${notificationLeadTimeLabel(eventOffset, eventDefault = true)}", false) {
-            showNotificationDefaultDialog("Event reminders", eventOffset, eventDefaultNotificationOptions) { next ->
-                mutate(
-                    obj(
-                        "type" to "set_notification_defaults",
-                        "event_offset_secs" to next,
-                        "assignment_offset_secs" to assignmentOffset
-                    )
-                )
+        root.addView(settingsGroup(
+            settingsLinkRow("Events", notificationLeadTimeLabel(eventOffset, eventDefault = true)) {
+                showNotificationDefaultDialog("Event reminders", eventOffset, eventDefaultNotificationOptions) { next ->
+                    mutate(obj("type" to "set_notification_defaults", "event_offset_secs" to next, "assignment_offset_secs" to assignmentOffset))
+                }
+            },
+            settingsLinkRow("Assignments", notificationLeadTimeLabel(assignmentOffset, eventDefault = false)) {
+                showNotificationDefaultDialog("Assignment reminders", assignmentOffset, assignmentDefaultNotificationOptions) { next ->
+                    mutate(obj("type" to "set_notification_defaults", "event_offset_secs" to eventOffset, "assignment_offset_secs" to next))
+                }
             }
-        })
-        root.addView(choiceRow("Assignments: ${notificationLeadTimeLabel(assignmentOffset, eventDefault = false)}", false) {
-            showNotificationDefaultDialog("Assignment reminders", assignmentOffset, assignmentDefaultNotificationOptions) { next ->
-                mutate(
-                    obj(
-                        "type" to "set_notification_defaults",
-                        "event_offset_secs" to eventOffset,
-                        "assignment_offset_secs" to next
-                    )
-                )
-            }
-        })
+        ))
 
         root.addView(settingsSection("Google Calendar"))
         if (googleAccountCount > 0) {
-            root.addView(choiceRow("Connected accounts: $googleAccountCount", true) {
-                syncGoogleCalendars()
-            })
+            root.addView(settingsGroup(
+                settingsLinkRow(if (googleSyncInProgress) "Syncing…" else "Sync Google Calendars", "$googleAccountCount connected") { syncGoogleCalendars() },
+                settingsLinkRow(if (googleAuthInProgress) "Connecting…" else "Connect another account") { startGoogleCalendarImport() }
+            ))
             googleCalendarStatus?.takeIf { it.isNotBlank() }?.let { status ->
                 root.addView(text(status, theme.textMuted, 12f, false).apply {
-                    setPadding(dp(8), dp(3), dp(8), dp(6))
+                    setPadding(dp(8), dp(5), dp(8), dp(2))
                 })
             }
-            root.addView(choiceRow(if (googleSyncInProgress) "Syncing Google Calendars" else "Sync Google Calendars", false) {
-                syncGoogleCalendars()
-            })
-            root.addView(choiceRow(if (googleAuthInProgress) "Connecting Google Calendar" else "Connect another Google Calendar", false) {
-                startGoogleCalendarImport()
-            })
         } else {
-            root.addView(choiceRow(if (googleAuthInProgress) "Connecting Google Calendar" else "Connect Google Calendar", false) {
-                startGoogleCalendarImport()
-            })
+            root.addView(settingsGroup(
+                settingsLinkRow(if (googleAuthInProgress) "Connecting…" else "Connect Google Calendar") { startGoogleCalendarImport() }
+            ))
         }
 
         root.addView(settingsSection("Archive"))
         val schemes = archivedSchemes()
-        root.addView(choiceRow("Archived schemes ${schemes.length()}", false) {
-            showArchiveSettingsDialog()
-        })
+        root.addView(settingsGroup(
+            settingsLinkRow("Archived schemes", schemes.length().toString()) { showArchiveSettingsDialog() }
+        ))
         return root
     }
 
@@ -2858,9 +4452,6 @@ class MainActivity : Activity() {
             addView(LinearLayout(this@MainActivity).apply {
                 orientation = LinearLayout.HORIZONTAL
                 gravity = Gravity.TOP
-                addView(brandMark(34), LinearLayout.LayoutParams(dp(34), dp(34)).apply {
-                    setMargins(0, 0, dp(9), 0)
-                })
                 addView(LinearLayout(this@MainActivity).apply {
                     orientation = LinearLayout.VERTICAL
                     addView(text("KnotQ Sync", theme.textPrimary, 15f, true), LinearLayout.LayoutParams(-1, dp(18)))
@@ -2898,7 +4489,7 @@ class MainActivity : Activity() {
         onSelect: (Int) -> Unit
     ) {
         val labels = options.map { option ->
-            if (option.offsetSecs == current) "${option.label} ✓" else option.label
+            if (option.offsetSecs == current) "${option.label} $GLYPH_TICK" else option.label
         }.toTypedArray()
         AlertDialog.Builder(this)
             .setTitle(title)
@@ -2915,15 +4506,21 @@ class MainActivity : Activity() {
         }
         val selected = selectedSchemeId == node.optString("id")
         val rowHeight = if (spacious) dp(30) else dp(22)
+        val slot = if (spacious) 18 else 16
         val row = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
             setPadding(dp((if (spacious) 8 else 6) + depth * if (spacious) 10 else 8), 0, dp(7), 0)
             background = rounded(if (selected) theme.rowSelected else Color.TRANSPARENT, dp(4))
-            val squareSize = 9
-            addView(colorSquare(schemeColor(node.optInt("color_index")), squareSize), LinearLayout.LayoutParams(dp(squareSize), dp(squareSize)))
+            // Same fixed leading slot as folder rows so squares and folder
+            // icons share a center axis.
+            addView(FrameLayout(this@MainActivity).apply {
+                addView(View(this@MainActivity).apply {
+                    background = rounded(schemeColor(node.optInt("color_index")), dp(3))
+                }, FrameLayout.LayoutParams(dp(if (spacious) 10 else 9), dp(if (spacious) 10 else 9), Gravity.CENTER))
+            }, LinearLayout.LayoutParams(dp(slot), dp(slot)))
             addView(text(node.optString("name"), if (selected) theme.textPrimary else theme.textDim, if (spacious) 13f else 12f, false).apply { maxLines = 1 }, LinearLayout.LayoutParams(0, -1, 1f).apply {
-                setMargins(dp(7), 0, dp(4), 0)
+                setMargins(dp(if (spacious) 7 else 5), 0, dp(4), 0)
             })
             setOnClickListener { openScheme(node.optString("id")) }
             setOnLongClickListener {
@@ -2935,17 +4532,21 @@ class MainActivity : Activity() {
     }
 
     private fun folderRow(node: JSONObject, depth: Int, spacious: Boolean = false): View {
+        val slot = if (spacious) 18 else 16
         return LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
             setPadding(dp((if (spacious) 8 else 6) + depth * if (spacious) 10 else 8), 0, dp(7), 0)
-            addView(text(if (spacious) "⌄" else "▾", theme.textMuted, if (spacious) 13f else 12f, true).apply {
-                gravity = Gravity.CENTER
-            }, LinearLayout.LayoutParams(dp(if (spacious) 14 else 12), -1))
+            addView(FrameLayout(this@MainActivity).apply {
+                addView(
+                    iconImage(R.drawable.ic_knotq_folder_24, theme.textMuted),
+                    FrameLayout.LayoutParams(dp(if (spacious) 14 else 13), dp(if (spacious) 14 else 13), Gravity.CENTER)
+                )
+            }, LinearLayout.LayoutParams(dp(slot), dp(slot)))
             addView(text(node.optString("name"), theme.textPrimary, if (spacious) 13f else 12f, false).apply {
                 maxLines = 1
             }, LinearLayout.LayoutParams(0, -1, 1f).apply {
-                setMargins(dp(if (spacious) 7 else 6), 0, 0, 0)
+                setMargins(dp(if (spacious) 7 else 5), 0, 0, 0)
             })
             setOnLongClickListener {
                 showFolderActions(node)
@@ -2960,7 +4561,7 @@ class MainActivity : Activity() {
             gravity = Gravity.TOP
             setPadding(dp(8 + item.optInt("indent") * 18), dp(7), dp(8), dp(7))
             background = rounded(if (index % 2 == 1) theme.rowAlt else Color.TRANSPARENT, dp(3))
-            addView(iconChip(if (item.optBoolean("done")) "x" else markerLabel(item.optString("marker"))) {
+            addView(iconChip(if (item.optBoolean("done")) GLYPH_TICK else markerLabel(item.optString("marker"))) {
                 if (item.optString("marker") == "checkbox") {
                     mutate(obj("type" to "toggle_item", "scheme_id" to schemeId, "item_id" to item.optString("id")))
                 } else {
@@ -3004,9 +4605,36 @@ class MainActivity : Activity() {
     private fun editorFormatBar(schemeId: String? = null, editor: EditText? = null): View {
         fun targetEditor(): EditText? = editor ?: activeEditor()
         fun targetSchemeId(): String? = schemeId ?: targetEditor()?.let { editorSchemeIds[it] }
+        // iOS toolbar order: dismiss | markers (active highlighted) | indent |
+        // date | bold/italic/heading | image attach.
+        val markerViews = HashMap<String, View>()
+        fun refreshActiveMarker() {
+            val target = targetEditor()
+            val active = target?.let { activeMarkerForEditor(it) }
+            markerViews.forEach { (marker, view) ->
+                val color = if (marker == active) theme.textPrimary else theme.textDim
+                when (view) {
+                    is TextView -> view.setTextColor(color)
+                    is FrameLayout -> (view.getChildAt(0) as? ImageView)?.setColorFilter(color)
+                }
+            }
+        }
+        formatBarMarkerRefresh = ::refreshActiveMarker
         return HorizontalScrollView(this).apply {
             isHorizontalScrollBarEnabled = false
             setBackgroundColor(theme.bgToolbar)
+            // Restore the scroll position from the previous render (before the
+            // first draw), and track it from then on.
+            var restoredScroll = false
+            addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ ->
+                if (!restoredScroll && width > 0) {
+                    restoredScroll = true
+                    scrollTo(formatBarScrollX, 0)
+                }
+            }
+            viewTreeObserver.addOnScrollChangedListener {
+                if (restoredScroll) formatBarScrollX = scrollX
+            }
             var downX = 0f
             var downY = 0f
             setOnTouchListener { _, event ->
@@ -3029,43 +4657,76 @@ class MainActivity : Activity() {
                 orientation = LinearLayout.HORIZONTAL
                 gravity = Gravity.CENTER_VERTICAL
                 setPadding(dp(7), dp(5), dp(7), dp(5))
-                addView(formatButton("B") { targetEditor()?.let { toggleWrappedMarkdown(it, "*") } })
-                addView(formatButton("I") { targetEditor()?.let { toggleWrappedMarkdown(it, "_") } })
-                addView(formatButton("H") { targetEditor()?.let { toggleHeading(it) } })
-                addView(formatDivider())
-                addView(formatButton("T") { targetEditor()?.let { setCurrentLineMarker(it, "blank") } })
-                addView(formatButton("✓") { targetEditor()?.let { setCurrentLineMarker(it, "checkbox") } })
-                addView(formatButton("•") { targetEditor()?.let { setCurrentLineMarker(it, "bullet") } })
-                addView(formatButton("1.") { targetEditor()?.let { setCurrentLineMarker(it, "numbered") } })
-                addView(formatDivider())
-                addView(formatButton("⇤") { targetEditor()?.let { shiftCurrentLineIndent(it, -1) } })
-                addView(formatButton("⇥") { targetEditor()?.let { shiftCurrentLineIndent(it, 1) } })
-                addView(formatDivider())
-                addView(formatButton("◷") {
-                    val target = targetEditor()
-                    val targetId = targetSchemeId()
-                    if (target != null && targetId != null) openDateForEditorLine(targetId, target)
-                })
-                addView(formatButton("+") { targetEditor()?.let(::insertTaskLine) })
-                addView(formatDivider())
-                addView(formatButton("⌄") {
+                addView(formatIconButton(R.drawable.ic_knotq_keyboard_down_24, "Dismiss keyboard") {
                     val target = targetEditor()
                     val targetId = targetSchemeId()
                     if (target != null && targetId != null) commitSchemeDocument(targetId, target, rerender = true)
                     target?.clearFocus()
+                    dismissKeyboard()
                 })
+                addView(formatDivider())
+                addView(formatButton("T") { targetEditor()?.let { setCurrentLineMarker(it, "blank") } }.also { markerViews["blank"] = it })
+                addView(formatIconButton(R.drawable.ic_knotq_check_square_24, "Checkbox") { targetEditor()?.let { setCurrentLineMarker(it, "checkbox") } }.also { markerViews["checkbox"] = it })
+                addView(formatIconButton(R.drawable.ic_knotq_bullet_24, "Bullet") { targetEditor()?.let { setCurrentLineMarker(it, "bullet") } }.also { markerViews["bullet"] = it })
+                addView(formatIconButton(R.drawable.ic_knotq_numbered_24, "Numbered") { targetEditor()?.let { setCurrentLineMarker(it, "numbered") } }.also { markerViews["numbered"] = it })
+                addView(formatDivider())
+                addView(formatIconButton(R.drawable.ic_knotq_outdent_24, "Outdent") { targetEditor()?.let { shiftCurrentLineIndent(it, -1) } })
+                addView(formatIconButton(R.drawable.ic_knotq_indent_24, "Indent") { targetEditor()?.let { shiftCurrentLineIndent(it, 1) } })
+                addView(formatDivider())
+                addView(formatIconButton(R.drawable.ic_knotq_calendar_24, "Set date") {
+                    val target = targetEditor()
+                    val targetId = targetSchemeId()
+                    if (target != null && targetId != null) openDateForEditorLine(targetId, target)
+                })
+                addView(formatDivider())
+                addView(formatButton("B") { targetEditor()?.let { toggleWrappedMarkdown(it, "*") } })
+                addView(formatButton("I") { targetEditor()?.let { toggleWrappedMarkdown(it, "_") } })
+                addView(formatButton("H") { targetEditor()?.let { toggleHeading(it) } })
+                addView(formatDivider())
+                addView(formatIconButton(R.drawable.ic_knotq_image_24, "Attach image") {
+                    val target = targetEditor()
+                    val targetId = targetSchemeId()
+                    if (target != null && targetId != null) startImageAttach(targetId, target)
+                })
+                addView(formatIconButton(R.drawable.ic_knotq_plus_24, "Add line") { targetEditor()?.let(::insertTaskLine) })
             })
+            refreshActiveMarker()
         }
+    }
+
+    private fun activeMarkerForEditor(editor: EditText): String {
+        val value = editor.text?.toString().orEmpty()
+        val cursor = editor.logicalSelectionStart().coerceIn(0, value.length)
+        val start = value.lastIndexOf('\n', (cursor - 1).coerceAtLeast(0)).let { if (it < 0) 0 else it + 1 }
+        val newline = value.indexOf('\n', cursor)
+        val end = if (newline < 0) value.length else newline
+        if (start > end) return "blank"
+        return parseEditorLine(value.substring(start, end)).marker
     }
 
     private fun activeEditor(): EditText? = currentFocus as? EditText
 
     private fun formatButton(label: String, action: () -> Unit): TextView =
-        text(label, theme.textPrimary, 12f, true).apply {
+        text(label, theme.textPrimary, ICON_FORMAT_SIZE_SP, true).apply {
             gravity = Gravity.CENTER
             background = rounded(theme.buttonBg, dp(5))
             setOnClickListener { action() }
-            layoutParams = LinearLayout.LayoutParams(dp(29), dp(27)).apply {
+            layoutParams = LinearLayout.LayoutParams(dp(ICON_FORMAT_WIDTH_DP), dp(ICON_FORMAT_HEIGHT_DP)).apply {
+                setMargins(0, 0, dp(5), 0)
+            }
+        }
+
+    private fun formatIconButton(iconRes: Int, description: String, action: () -> Unit): View =
+        FrameLayout(this).apply {
+            contentDescription = description
+            background = rounded(theme.buttonBg, dp(5))
+            addView(
+                iconImage(iconRes, theme.textPrimary, description),
+                FrameLayout.LayoutParams(dp(17), dp(17), Gravity.CENTER)
+            )
+            isFocusable = true
+            setOnClickListener { action() }
+            layoutParams = LinearLayout.LayoutParams(dp(ICON_FORMAT_WIDTH_DP), dp(ICON_FORMAT_HEIGHT_DP)).apply {
                 setMargins(0, 0, dp(5), 0)
             }
         }
@@ -3086,12 +4747,14 @@ class MainActivity : Activity() {
     }
 
     private fun toggleEditorLineMarker(editor: EditText, lineIndex: Int) {
+        // iOS: only checkbox markers respond to taps (toggling done); other
+        // markers never get converted by a tap.
         editLine(editor, lineIndex) { raw ->
             val line = parseEditorLine(raw)
             if (line.marker == "checkbox") {
                 renderEditorLine(line.copy(done = !line.done), 1)
             } else {
-                renderEditorLine(line.copy(marker = "checkbox", done = false), 1)
+                raw
             }
         }
     }
@@ -3197,6 +4860,122 @@ class MainActivity : Activity() {
         showDateKindDialog(schemeId, item.optString("id"))
     }
 
+    /// Commits the document so the caret's line has a real item, then opens the
+    /// system photo chooser; the pick lands in `onActivityResult`.
+    private fun startImageAttach(schemeId: String, editor: EditText) {
+        commitSchemeDocument(schemeId, editor, rerender = false)
+        val line = currentLineIndex(editor)
+        findScheme(schemeId)?.optJSONArray("items")?.optJSONObject(line) ?: return
+        pendingImageAttach = schemeId to line
+        val intent = Intent(Intent.ACTION_GET_CONTENT).apply {
+            type = "image/*"
+            addCategory(Intent.CATEGORY_OPENABLE)
+        }
+        try {
+            startActivityForResult(Intent.createChooser(intent, "Attach image"), REQUEST_ATTACH_IMAGE)
+        } catch (error: ActivityNotFoundException) {
+            pendingImageAttach = null
+            toast("No image picker available")
+        }
+    }
+
+    @Deprecated("Deprecated in Java")
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode != REQUEST_ATTACH_IMAGE) return
+        val uri = data?.data
+        if (resultCode != RESULT_OK || uri == null) {
+            pendingImageAttach = null
+            return
+        }
+        completeImageAttach(uri)
+    }
+
+    private fun completeImageAttach(uri: Uri) {
+        val (schemeId, lineIndex) = pendingImageAttach ?: return
+        pendingImageAttach = null
+        try {
+            val bytes = contentResolver.openInputStream(uri)?.use { it.readBytes() } ?: run {
+                toast("Could not read image")
+                return
+            }
+            val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+            BitmapFactory.decodeByteArray(bytes, 0, bytes.size, bounds)
+            if (bounds.outWidth <= 0 || bounds.outHeight <= 0) {
+                toast("Unsupported image")
+                return
+            }
+            val mime = contentResolver.getType(uri).orEmpty()
+            var payload = bytes
+            var format: String
+            var extension: String
+            when {
+                mime.contains("png") -> { format = "png"; extension = "png" }
+                mime.contains("jpeg") || mime.contains("jpg") -> { format = "jpeg"; extension = "jpg" }
+                mime.contains("gif") -> { format = "gif"; extension = "gif" }
+                mime.contains("webp") -> { format = "webp"; extension = "webp" }
+                else -> {
+                    // Unknown source format: re-encode as JPEG like iOS does.
+                    val bitmap = BitmapFactory.decodeByteArray(bytes, 0, bytes.size) ?: run {
+                        toast("Unsupported image")
+                        return
+                    }
+                    val out = java.io.ByteArrayOutputStream()
+                    bitmap.compress(Bitmap.CompressFormat.JPEG, 92, out)
+                    payload = out.toByteArray()
+                    format = "jpeg"
+                    extension = "jpg"
+                }
+            }
+            // Must live inside the core's workspace assets dir or the media
+            // entry is rejected on commit.
+            val assetsDir = File(File(filesDir, "KnotQMobile"), "workspace/assets/images")
+            if (!assetsDir.exists() && !assetsDir.mkdirs()) {
+                toast("Could not store image")
+                return
+            }
+            val file = File(assetsDir, "${UUID.randomUUID()}.$extension")
+            file.writeBytes(payload)
+
+            val scheme = findScheme(schemeId) ?: return
+            val items = scheme.optJSONArray("items") ?: return
+            val array = JSONArray()
+            for (index in 0 until items.length()) {
+                val item = items.optJSONObject(index) ?: continue
+                val media = item.optJSONArray("media") ?: JSONArray()
+                if (index == lineIndex) {
+                    media.put(obj(
+                        "kind" to "image",
+                        "path" to file.absolutePath,
+                        "format" to format,
+                        "width" to bounds.outWidth,
+                        "height" to bounds.outHeight
+                    ))
+                }
+                array.put(obj(
+                    "id" to item.optString("id"),
+                    "text" to item.optString("text"),
+                    "marker" to item.optString("marker", "blank"),
+                    "indent" to item.optInt("indent"),
+                    "done" to item.optBoolean("done"),
+                    "start" to item.optionalString("start"),
+                    "end" to item.optionalString("end"),
+                    "notification_offset_secs" to item.takeUnless { it.isNull("notification_offset_secs") }?.optInt("notification_offset_secs"),
+                    "repeat_rule" to item.optionalString("repeat_rule"),
+                    "media" to media
+                ))
+            }
+            bridge.request(obj("type" to "replace_scheme_items", "scheme_id" to schemeId, "items" to array))
+            loadSnapshot()
+            render()
+            requestSyncSoon()
+        } catch (error: RuntimeException) {
+            toast(error.message)
+        } catch (error: java.io.IOException) {
+            toast(error.message)
+        }
+    }
+
     private fun currentLineIndex(editor: EditText): Int {
         val value = editor.text.toString()
         val cursor = editor.logicalSelectionStart().coerceIn(0, value.length)
@@ -3252,17 +5031,19 @@ class MainActivity : Activity() {
                 editor.lineAdornments = editorLineAdornments(refreshed, timeFormat24())
             }
             if (rerender) render()
+            requestSyncSoon()
         } catch (error: RuntimeException) {
             toast(error.message)
         }
     }
 
     private fun occurrenceRow(occurrence: JSONObject, striped: Boolean): View {
+        val accent = occurrenceSchemeColor(occurrence)
         return LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             background = rounded(if (striped) theme.rowAlt else Color.TRANSPARENT, dp(3))
             alpha = if (occurrence.optBoolean("done")) 0.45f else 1f
-            addView(View(this@MainActivity).apply { setBackgroundColor(schemeColor(occurrence.optInt("color_index"))) }, LinearLayout.LayoutParams(dp(2), -1).apply {
+            addView(View(this@MainActivity).apply { setBackgroundColor(accent) }, LinearLayout.LayoutParams(dp(2), -1).apply {
                 setMargins(dp(4), dp(8), dp(6), dp(8))
             })
             addView(LinearLayout(this@MainActivity).apply {
@@ -3270,46 +5051,87 @@ class MainActivity : Activity() {
                 setPadding(0, dp(7), dp(8), dp(7))
                 addView(LinearLayout(this@MainActivity).apply {
                     orientation = LinearLayout.HORIZONTAL
-                    addView(text(occurrence.optString("scheme_name"), schemeColor(occurrence.optInt("color_index")), 11f, true), LinearLayout.LayoutParams(0, -2, 1f))
-                    addView(text(MobileDateFormatting.occurrenceLabel(occurrence, timeFormat24()), theme.textSoft, 10f, true))
+                    addView(text(occurrence.optString("scheme_name"), accent, 11f, true), LinearLayout.LayoutParams(0, -2, 1f))
+                    addView(text(MobileDateFormatting.occurrenceLabel(occurrence, timeFormat24(), showDay = true), occurrenceStatusTimeColor(occurrence), 10f, true).apply {
+                        typeface = Typeface.MONOSPACE
+                    })
                 })
-                addView(text(occurrence.optString("title").ifEmpty { occurrence.optString("kind").replaceFirstChar(Char::titlecase) }, theme.textPrimary, 13f, false))
-            }, LinearLayout.LayoutParams(0, -2, 1f))
-            setOnClickListener { showEventEditorDialog(occurrence) }
-            setOnLongClickListener {
-                AlertDialog.Builder(this@MainActivity)
-                    .setTitle(occurrence.optString("title").ifEmpty { occurrence.optString("kind").replaceFirstChar(Char::titlecase) })
-                    .setItems(arrayOf("Toggle Done", "Open Scheme")) { _, which ->
-                        when (which) {
-                            0 -> mutate(obj(
-                                "type" to "toggle_occurrence",
-                                "scheme_id" to occurrence.optString("scheme_id"),
-                                "item_id" to occurrence.optString("item_id"),
-                                "occurrence_json" to occurrence.optString("occurrence_json", "{\"kind\":\"single\"}")
-                            ))
-                            1 -> openScheme(occurrence.optString("scheme_id"))
-                        }
+                addView(text(occurrence.optString("title").ifEmpty { occurrence.optString("kind").replaceFirstChar(Char::titlecase) }, theme.textPrimary, 13f, false).apply {
+                    maxLines = 2
+                    ellipsize = TextUtils.TruncateAt.END
+                    if (occurrence.optBoolean("done")) {
+                        paintFlags = paintFlags or Paint.STRIKE_THRU_TEXT_FLAG
                     }
-                    .show()
+                })
+            }, LinearLayout.LayoutParams(0, -2, 1f))
+            // iOS row interactions: tap toggles done, a quick long-press opens
+            // the editor.
+            setOnClickListener {
+                mutate(obj(
+                    "type" to "toggle_occurrence",
+                    "scheme_id" to occurrence.optString("scheme_id"),
+                    "item_id" to occurrence.optString("item_id"),
+                    "occurrence_json" to occurrence.optString("occurrence_json", "{\"kind\":\"single\"}")
+                ))
+            }
+            setOnLongClickListener {
+                showEventEditorDialog(occurrence)
                 true
             }
         }
     }
 
+    /// iOS `occurrenceSchemeColor`: the Daily queue gets its own steel-blue
+    /// accent instead of the scheme palette.
+    private fun occurrenceSchemeColor(occurrence: JSONObject): Int =
+        if (occurrence.optString("scheme_name") == "Daily") dailyAccent()
+        else schemeColor(occurrence.optInt("color_index"))
+
+    /// iOS `occurrenceStatusTimeColor`: urgency-tinted time labels (red when
+    /// overdue, blue when current/today, lavender for tomorrow).
+    private fun occurrenceStatusTimeColor(occurrence: JSONObject): Int {
+        if (occurrence.optBoolean("done")) return theme.textMuted
+        val anchorRaw = if (occurrence.optString("kind") == "assignment") {
+            occurrence.optionalString("end")
+        } else {
+            occurrence.optionalString("start") ?: occurrence.optionalString("end")
+        }
+        val anchor = MobileDateFormatting.parseInstant(anchorRaw) ?: return theme.textSoft
+        val now = Instant.now()
+        val end = MobileDateFormatting.parseInstant(occurrence.optionalString("end"))
+        if (occurrence.optString("kind") == "event" && end != null && !anchor.isAfter(now) && end.isAfter(now)) {
+            return todayTimeColor()
+        }
+        if (anchor.isBefore(now)) return if (theme.isDark) rgb(0xff5a53) else rgb(0xd20f39)
+        val anchorDay = anchor.atZone(ZoneId.systemDefault()).toLocalDate()
+        val dayDiff = java.time.temporal.ChronoUnit.DAYS.between(LocalDate.now(), anchorDay)
+        return when {
+            dayDiff <= 0 -> todayTimeColor()
+            dayDiff <= 1 -> if (theme.isDark) rgb(0xe5e5ff) else rgb(0x4f5f8f)
+            else -> theme.textSoft
+        }
+    }
+
+    // Matches the iOS home "+" menu: New Scheme, New Folder, Google Calendar.
     private fun showNewMenu() {
         AlertDialog.Builder(this)
             .setTitle("New")
-            .setItems(arrayOf("Calendar Item", "Item", "Scheme", "Folder")) { _, which ->
+            .setItems(arrayOf("New Scheme", "New Folder", "Google Calendar")) { _, which ->
                 when (which) {
-                    0 -> showCalendarItemDialog()
-                    1 -> {
-                        val schemeId = if (selectedTab == TAB_DAILY) dailyScheme()?.optString("id") else selectedSchemeId
-                        if (schemeId != null) showItemDialog(schemeId, null) else toast("Pick a scheme first")
-                    }
-                    2 -> showNameDialog("New Scheme", "", { validateSchemeName(it, folderId = rootFolderId()) }) { name ->
+                    0 -> showNameDialog("New Scheme", "", { validateSchemeName(it, folderId = rootFolderId()) }) { name ->
                         mutate(obj("type" to "create_scheme", "name" to name, "position" to 0))
+                        snapshot.optJSONArray("schemes")?.let { schemes ->
+                            for (index in schemes.length() - 1 downTo 0) {
+                                val scheme = schemes.optJSONObject(index) ?: continue
+                                if (scheme.optString("display_name") == name || scheme.optString("name") == name) {
+                                    openScheme(scheme.optString("id"))
+                                    return@showNameDialog
+                                }
+                            }
+                        }
                     }
-                    3 -> showNameDialog("New Folder", "", { validateFolderName(it) }) { name -> mutate(obj("type" to "create_folder", "name" to name)) }
+                    1 -> showNameDialog("New Folder", "", { validateFolderName(it) }) { name -> mutate(obj("type" to "create_folder", "name" to name)) }
+                    2 -> startGoogleCalendarImport()
                 }
             }
             .show()
@@ -3343,21 +5165,80 @@ class MainActivity : Activity() {
         showEventEditorDialog(null)
     }
 
-    private fun showEventEditorDialog(occurrence: JSONObject?) {
+    private fun showEventEditorDialog(
+        occurrence: JSONObject?,
+        initialDate: LocalDate? = null,
+        initialMinute: Float? = null,
+        preferredKind: String? = null,
+        openForNew: Boolean = false,
+        onDismiss: (() -> Unit)? = null
+    ) {
         val editing = occurrence != null
         val readOnly = occurrence?.optBoolean("is_read_only", false) == true
-        val initialKind = occurrence?.optString("kind")?.takeIf { it.isNotEmpty() } ?: "task"
-        val startDateTime = MobileDateFormatting.localDateTime(occurrence?.optionalString("start"))
-        val endDateTime = MobileDateFormatting.localDateTime(occurrence?.optionalString("end"))
-        val anchor = startDateTime ?: endDateTime ?: selectedDate.atStartOfDay(ZoneId.systemDefault())
+        val initialKind = if (editing) {
+            occurrence.optString("kind").takeIf { it.isNotEmpty() } ?: "task"
+        } else {
+            preferredKind?.takeIf { it.isNotEmpty() } ?: "task"
+        }
+        val startDateTime = if (editing) MobileDateFormatting.localDateTime(occurrence?.optionalString("start"))?.toLocalDateTime() else null
+        val endDateTime = if (editing) MobileDateFormatting.localDateTime(occurrence?.optionalString("end"))?.toLocalDateTime() else null
+        val selectedMinute = initialMinute?.toInt()?.coerceIn(0, (24 * 60) - 1)
+        val seedDate = initialDate ?: selectedDate
+        val seedTime = selectedMinute?.let { LocalTime.of(it / 60, it % 60) }
+        val anchor = when {
+            openForNew && seedTime != null -> LocalDateTime.of(seedDate, seedTime)
+            editing -> startDateTime ?: endDateTime
+            else -> startDateTime ?: endDateTime ?: selectedDate.atStartOfDay()
+        } ?: selectedDate.atStartOfDay()
+        val defaultStart = startDateTime ?: anchor
+        val defaultEnd = if (editing) {
+            endDateTime ?: if (initialKind == "event") defaultStart.plusHours(1) else defaultStart
+        } else {
+            when (initialKind) {
+                "event" -> defaultStart.plusHours(1)
+                "assignment", "reminder" -> defaultStart
+                else -> defaultStart
+            }
+        }
+        val initialDialogDate = if (editing) {
+            (startDateTime ?: endDateTime)?.toLocalDate() ?: seedDate
+        } else {
+            seedDate
+        }
         val titleInput = edit(occurrence?.optString("title") ?: "").apply {
             hint = "Title"
             isEnabled = !readOnly
         }
+        // iOS-style segmented kind selector instead of a raw lowercase spinner.
         val kindValues = arrayOf("event", "reminder", "assignment", "task")
-        val kind = spinner(kindValues).apply {
-            setSelection(kindValues.indexOf(initialKind).coerceAtLeast(0))
-            isEnabled = !readOnly
+        val kindTitles = arrayOf("Event", "Reminder", "Assignment", "Task")
+        var activeKindValue = if (kindValues.contains(initialKind)) initialKind else "task"
+        val kindChips = HashMap<String, TextView>()
+        val kindRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            kindValues.forEachIndexed { index, value ->
+                val chip = text(kindTitles[index], theme.textDim, 12.5f, true).apply {
+                    gravity = Gravity.CENTER
+                    includeFontPadding = false
+                }
+                kindChips[value] = chip
+                addView(chip, LinearLayout.LayoutParams(0, dp(34), 1f).apply {
+                    setMargins(if (index == 0) 0 else dp(3), 0, if (index == kindValues.lastIndex) 0 else dp(3), 0)
+                })
+            }
+        }
+        fun refreshKindChips() {
+            kindValues.forEach { value ->
+                kindChips[value]?.apply {
+                    val active = value == activeKindValue
+                    background = rounded(
+                        if (active) theme.rowSelected else theme.buttonBg,
+                        dp(8),
+                        if (active) theme.accent else Color.TRANSPARENT
+                    )
+                    setTextColor(if (active) theme.textPrimary else theme.textDim)
+                }
+            }
         }
         val schemeLabels = mutableListOf("Daily")
         val schemeIds = mutableListOf<String?>(null)
@@ -3373,25 +5254,9 @@ class MainActivity : Activity() {
             setSelection(index.coerceAtLeast(0))
             isEnabled = !editing && !readOnly
         }
-        val date = DatePicker(this).apply {
-            val local = anchor.toLocalDate()
-            updateDate(local.year, local.monthValue - 1, local.dayOfMonth)
-            isEnabled = !readOnly
-        }
-        val start = TimePicker(this).apply {
-            setIs24HourView(timeFormat24())
-            val local = startDateTime?.toLocalTime() ?: anchor.toLocalTime().takeIf { it != LocalTime.MIDNIGHT } ?: LocalTime.now().withSecond(0).withNano(0)
-            hour = local.hour
-            minute = local.minute
-            isEnabled = !readOnly
-        }
-        val end = TimePicker(this).apply {
-            setIs24HourView(timeFormat24())
-            val local = endDateTime?.toLocalTime() ?: startDateTime?.toLocalTime()?.plusHours(1) ?: LocalTime.now().plusHours(1).withSecond(0).withNano(0)
-            hour = local.hour
-            minute = local.minute
-            isEnabled = !readOnly
-        }
+        var selectedLocalDate = initialDialogDate
+        var startTime = defaultStart.toLocalTime().takeIf { it != LocalTime.MIDNIGHT } ?: LocalTime.now().withSecond(0).withNano(0)
+        var endTime = defaultEnd.toLocalTime()
         val repeatValues = arrayOf("none", "daily", "weekly", "monthly", "yearly")
         val repeat = spinner(repeatValues).apply {
             setSelection(repeatValues.indexOf(MobileRecurrence.repeatChoiceFromRrule(occurrence?.optionalString("repeat_rule"))).coerceAtLeast(0))
@@ -3411,131 +5276,224 @@ class MainActivity : Activity() {
             isEnabled = !readOnly
         }
 
-        val form = page(compact = true).apply {
-            setPadding(dp(18), dp(8), dp(18), 0)
-            addView(titleInput, spaced())
-            if (!editing) {
-                addView(text("Scheme", theme.textMuted, 12f, true))
-                addView(scheme, spaced())
+        titleInput.apply {
+            setSingleLine(true)
+            background = rounded(theme.buttonBg, dp(8), theme.borderOverlay)
+            setPadding(dp(12), 0, dp(12), 0)
+            minHeight = dp(42)
+        }
+        styleDialogSpinner(scheme)
+        styleDialogSpinner(notification)
+        styleDialogSpinner(repeat)
+
+        val card = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            background = rounded(theme.bgModal, dp(16), theme.borderOverlay)
+            isFocusableInTouchMode = true
+        }
+        card.addView(LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(16), dp(14), dp(16), dp(7))
+            addView(text(if (readOnly) "Details" else if (editing) "Edit" else "New", theme.textPrimary, 21f, true))
+            val subtitle = when {
+                readOnly -> "Imported calendar item"
+                editing -> occurrence?.optString("scheme_name").orEmpty()
+                else -> "Calendar item"
             }
-            addView(text("Type", theme.textMuted, 12f, true))
-            addView(kind, spaced())
-            addView(text("Date", theme.textMuted, 12f, true))
-            addView(date, spaced())
-            addView(text("Start / At", theme.textMuted, 12f, true))
-            addView(start, spaced())
-            addView(text("End / Due", theme.textMuted, 12f, true))
-            addView(end, spaced())
-            addView(text("Notification", theme.textMuted, 12f, true))
-            addView(notification, spaced())
-            addView(text("Repeat", theme.textMuted, 12f, true))
-            addView(repeat, spaced())
-            if (editing) addView(completed, spaced())
-            if (readOnly) {
-                addView(text("Imported calendar items are read-only.", theme.textMuted, 12f, false), spaced())
+            if (subtitle.isNotBlank()) {
+                addView(text(subtitle, theme.textMuted, 12f, false).apply {
+                    setPadding(0, dp(3), 0, 0)
+                })
+            }
+        })
+
+        val form = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(16), 0, dp(16), dp(4))
+            addView(dialogLabel("Title"))
+            addView(titleInput, LinearLayout.LayoutParams(-1, dp(42)).apply { setMargins(0, 0, 0, dp(9)) })
+            if (!editing) {
+                addView(dialogSpinnerField("Scheme", scheme), LinearLayout.LayoutParams(-1, -2).apply { setMargins(0, 0, 0, dp(8)) })
+            }
+            addView(dialogLabel("Type"))
+            addView(kindRow, LinearLayout.LayoutParams(-1, -2).apply { setMargins(0, dp(2), 0, dp(9)) })
+        }
+        lateinit var dateField: DialogField
+        lateinit var startField: DialogField
+        lateinit var endField: DialogField
+        lateinit var notificationFieldView: View
+        lateinit var repeatFieldView: View
+        fun selectedKind(): String = activeKindValue
+        fun refreshScheduleFields() {
+            val activeKind = selectedKind()
+            dateField.value.text = dialogDateLabel(selectedLocalDate)
+            startField.label.text = if (activeKind == "reminder") "At" else "Start"
+            startField.value.text = dialogTimeLabel(startTime)
+            endField.label.text = if (activeKind == "assignment") "Due" else "End"
+            endField.value.text = dialogTimeLabel(endTime)
+            dateField.view.visibility = if (activeKind == "task") View.GONE else View.VISIBLE
+            startField.view.visibility = if (activeKind == "event" || activeKind == "reminder") View.VISIBLE else View.GONE
+            endField.view.visibility = if (activeKind == "event" || activeKind == "assignment") View.VISIBLE else View.GONE
+            notificationFieldView.visibility = if (activeKind == "task") View.GONE else View.VISIBLE
+            repeatFieldView.visibility = if (activeKind == "task") View.GONE else View.VISIBLE
+        }
+        dateField = dialogField("Date", dialogDateLabel(selectedLocalDate), enabled = !readOnly) {
+            DatePickerDialog(this, dateDialogTheme(), { _, year, month, day ->
+                selectedLocalDate = LocalDate.of(year, month + 1, day)
+                refreshScheduleFields()
+            }, selectedLocalDate.year, selectedLocalDate.monthValue - 1, selectedLocalDate.dayOfMonth).show()
+        }
+        startField = dialogField("Start", dialogTimeLabel(startTime), enabled = !readOnly) {
+            TimePickerDialog(this, timeDialogTheme(), { _, hour, minute ->
+                startTime = LocalTime.of(hour, minute)
+                refreshScheduleFields()
+            }, startTime.hour, startTime.minute, timeFormat24()).show()
+        }
+        endField = dialogField("End", dialogTimeLabel(endTime), enabled = !readOnly) {
+            TimePickerDialog(this, timeDialogTheme(), { _, hour, minute ->
+                endTime = LocalTime.of(hour, minute)
+                refreshScheduleFields()
+            }, endTime.hour, endTime.minute, timeFormat24()).show()
+        }
+        form.addView(dateField.view, LinearLayout.LayoutParams(-1, -2).apply { setMargins(0, 0, 0, dp(7)) })
+        form.addView(startField.view, LinearLayout.LayoutParams(-1, -2).apply { setMargins(0, 0, 0, dp(7)) })
+        form.addView(endField.view, LinearLayout.LayoutParams(-1, -2).apply { setMargins(0, 0, 0, dp(8)) })
+        notificationFieldView = dialogSpinnerField("Notification", notification)
+        repeatFieldView = dialogSpinnerField("Repeat", repeat)
+        form.addView(notificationFieldView, LinearLayout.LayoutParams(-1, -2).apply { setMargins(0, 0, 0, dp(8)) })
+        form.addView(repeatFieldView, LinearLayout.LayoutParams(-1, -2).apply { setMargins(0, 0, 0, dp(8)) })
+        if (editing) {
+            form.addView(completed.apply {
+                background = rounded(theme.buttonBg, dp(8), theme.borderOverlay)
+                setPadding(dp(10), 0, dp(10), 0)
+            }, LinearLayout.LayoutParams(-1, dp(42)).apply { setMargins(0, 0, 0, dp(8)) })
+        }
+        if (readOnly) {
+            form.addView(text("Imported calendar items are read-only.", theme.textMuted, 12f, false), LinearLayout.LayoutParams(-1, -2).apply { setMargins(0, 0, 0, dp(8)) })
+        }
+        kindValues.forEach { value ->
+            kindChips[value]?.setOnClickListener {
+                if (readOnly || activeKindValue == value) return@setOnClickListener
+                activeKindValue = value
+                refreshKindChips()
+                refreshScheduleFields()
             }
         }
+        refreshKindChips()
+        refreshScheduleFields()
+        card.addView(ScrollView(this).apply {
+            isFillViewport = false
+            addView(form)
+        }, LinearLayout.LayoutParams(-1, -2))
 
-        val dialog = AlertDialog.Builder(this)
-            .setTitle(if (readOnly) "Task details" else if (editing) "Edit" else "New")
-            .setView(scroll(form))
-            .setNegativeButton(if (readOnly) "Done" else "Cancel", null)
-            .setPositiveButton(if (readOnly) "Open Scheme" else "Save", null)
-            .also { builder ->
-                if (editing && !readOnly) {
-                    builder.setNeutralButton("Delete", null)
-                }
+        lateinit var dialog: AlertDialog
+        fun saveAndDismiss() {
+            if (readOnly) {
+                occurrence?.optString("scheme_id")?.let(::openScheme)
+                dialog.dismiss()
+                return
             }
-            .create()
-        dialog.setOnShowListener {
-            dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
-                if (readOnly) {
-                    occurrence?.optString("scheme_id")?.let(::openScheme)
-                    dialog.dismiss()
-                    return@setOnClickListener
-                }
-                val selectedKind = kind.selectedItem.toString()
-                val localDate = LocalDate.of(date.year, date.month + 1, date.dayOfMonth)
-                val startValue = when (selectedKind) {
-                    "event", "reminder" -> MobileDateFormatting.iso(localDate, start.hour, start.minute)
-                    else -> null
-                }
-                val endValue = when (selectedKind) {
-                    "event", "assignment" -> MobileDateFormatting.iso(localDate, end.hour, end.minute)
-                    else -> null
-                }
-                val rrule = if (selectedKind == "task") null else MobileRecurrence.rruleForRepeat(repeat.selectedItem.toString(), localDate)
-                val notificationOffset = if (selectedKind == "task") null else notificationOptions[notification.selectedItemPosition].offsetSecs
-                if (occurrence != null) {
-                    val commit = { scope: String ->
-                        commitEventEdit(
-                            occurrence = occurrence,
-                            title = titleInput.text.toString().trim(),
-                            start = startValue,
-                            end = endValue,
-                            rrule = rrule,
-                            notificationOffsetSecs = notificationOffset,
-                            notificationDirty = selectedKind != "task",
-                            done = completed.isChecked,
-                            scope = scope
-                        )
-                    }
-                    if (occurrence.optBoolean("is_recurring", false)) {
-                        showOccurrenceScopeDialog("Recurring task", occurrence, forDelete = false) { scope ->
-                            commit(scope)
-                        }
-                    } else {
-                        commit("all_events")
-                    }
-                } else {
-                    val schemeId = schemeIds.getOrNull(scheme.selectedItemPosition)
-                    val newId = createCalendarItemReturningID(
-                        kind = selectedKind,
-                        text = titleInput.text.toString().trim(),
-                        date = localDate,
+            val activeKind = selectedKind()
+            val startValue = when (activeKind) {
+                "event", "reminder" -> MobileDateFormatting.iso(selectedLocalDate, startTime.hour, startTime.minute)
+                else -> null
+            }
+            val endValue = when (activeKind) {
+                "event", "assignment" -> MobileDateFormatting.iso(selectedLocalDate, endTime.hour, endTime.minute)
+                else -> null
+            }
+            val rrule = if (activeKind == "task") null else MobileRecurrence.rruleForRepeat(repeat.selectedItem.toString(), selectedLocalDate)
+            val notificationOffset = if (activeKind == "task") null else notificationOptions[notification.selectedItemPosition].offsetSecs
+            if (occurrence != null) {
+                val commit = { scope: String ->
+                    commitEventEdit(
+                        occurrence = occurrence,
+                        title = titleInput.text.toString().trim(),
                         start = startValue,
                         end = endValue,
-                        schemeId = schemeId
+                        rrule = rrule,
+                        notificationOffsetSecs = notificationOffset,
+                        notificationDirty = activeKind != "task",
+                        done = completed.isChecked,
+                        scope = scope
                     )
-                    val resolvedScheme = schemeId ?: todayDailySchemeId()
-                    if (newId != null && resolvedScheme != null) {
-                        if (rrule != null) {
-                            bridge.request(obj("type" to "set_item_recurrence", "scheme_id" to resolvedScheme, "item_id" to newId, "rrule" to rrule))
-                        }
-                        if (selectedKind != "task") {
-                            bridge.request(
-                                obj(
-                                    "type" to "set_occurrence_notification_offset",
-                                    "scheme_id" to resolvedScheme,
-                                    "item_id" to newId,
-                                    "occurrence_json" to null,
-                                    "offset_secs" to notificationOffset
-                                )
-                            )
-                        }
-                        loadSnapshot()
-                        rescheduleNotifications()
-                        render()
-                    }
                 }
-                dialog.dismiss()
-            }
-            dialog.getButton(AlertDialog.BUTTON_NEUTRAL)?.setOnClickListener {
-                if (occurrence == null) return@setOnClickListener
-                val delete = { scope: String -> deleteEventOccurrence(occurrence, scope) }
                 if (occurrence.optBoolean("is_recurring", false)) {
-                    showOccurrenceScopeDialog("Delete recurring task?", occurrence, forDelete = true, onScope = delete)
+                    showOccurrenceScopeDialog("Recurring task", occurrence, forDelete = false) { scope ->
+                        commit(scope)
+                    }
                 } else {
-                    AlertDialog.Builder(this)
-                        .setTitle("Delete this task?")
-                        .setNegativeButton("Cancel", null)
-                        .setPositiveButton("Delete") { _, _ -> delete("all_events") }
-                        .show()
+                    commit("all_events")
                 }
-                dialog.dismiss()
+            } else {
+                val schemeId = schemeIds.getOrNull(scheme.selectedItemPosition)
+                val newId = createCalendarItemReturningID(
+                    kind = activeKind,
+                    text = titleInput.text.toString().trim(),
+                    date = selectedLocalDate,
+                    start = startValue,
+                    end = endValue,
+                    schemeId = schemeId
+                )
+                val resolvedScheme = schemeId ?: todayDailySchemeId()
+                if (newId != null && resolvedScheme != null) {
+                    if (rrule != null) {
+                        bridge.request(obj("type" to "set_item_recurrence", "scheme_id" to resolvedScheme, "item_id" to newId, "rrule" to rrule))
+                    }
+                    if (activeKind != "task") {
+                        bridge.request(
+                            obj(
+                                "type" to "set_occurrence_notification_offset",
+                                "scheme_id" to resolvedScheme,
+                                "item_id" to newId,
+                                "occurrence_json" to null,
+                                "offset_secs" to notificationOffset
+                            )
+                        )
+                    }
+                    loadSnapshot()
+                    rescheduleNotifications()
+                    render()
+                }
             }
+            dialog.dismiss()
         }
+        fun deleteAndDismiss() {
+            if (occurrence == null) return
+            val delete = { scope: String -> deleteEventOccurrence(occurrence, scope) }
+            if (occurrence.optBoolean("is_recurring", false)) {
+                showOccurrenceScopeDialog("Delete recurring task?", occurrence, forDelete = true, onScope = delete)
+            } else {
+                AlertDialog.Builder(this)
+                    .setTitle("Delete this task?")
+                    .setNegativeButton("Cancel", null)
+                    .setPositiveButton("Delete") { _, _ -> delete("all_events") }
+                    .show()
+            }
+            dialog.dismiss()
+        }
+        card.addView(LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(dp(12), dp(6), dp(12), dp(12))
+            if (editing && !readOnly) {
+                addView(dialogActionButton("Delete", danger = true) { deleteAndDismiss() }, LinearLayout.LayoutParams(-2, dp(38)))
+            }
+            addView(View(this@MainActivity), LinearLayout.LayoutParams(0, 1, 1f))
+            addView(dialogActionButton(if (readOnly) "Done" else "Cancel") { dialog.dismiss() }, LinearLayout.LayoutParams(-2, dp(38)).apply {
+                setMargins(0, 0, dp(8), 0)
+            })
+            addView(dialogActionButton(if (readOnly) "Open Scheme" else "Save", primary = !readOnly) { saveAndDismiss() }, LinearLayout.LayoutParams(-2, dp(38)))
+        })
+
+        dialog = AlertDialog.Builder(this)
+            .setView(card)
+            .create()
+        onDismiss?.let { callback -> dialog.setOnDismissListener { callback() } }
         dialog.show()
+        card.requestFocus()
+        dialog.window?.setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))
+        dialog.window?.setLayout(min(resources.displayMetrics.widthPixels - dp(32), dp(500)), ViewGroup.LayoutParams.WRAP_CONTENT)
     }
 
     private fun commitEventEdit(
@@ -3632,6 +5590,7 @@ class MainActivity : Activity() {
             )
         )
         loadSnapshot()
+        requestSyncSoon()
         return schemeItemIds(targetId).firstOrNull { !before.contains(it) }
     }
 
@@ -3674,33 +5633,45 @@ class MainActivity : Activity() {
             .show()
     }
 
+    /// iOS `ItemDateSheet` equivalent: the full schedule editor (type chips,
+    /// date/time fields, notification, repeat) instead of a Set/Clear list.
     private fun showDateKindDialog(schemeId: String, itemId: String) {
-        val kinds = arrayOf("Set Start", "Set End", "Clear Start", "Clear End", "Clear Both")
-        AlertDialog.Builder(this)
-            .setTitle("Date")
-            .setItems(kinds) { _, which ->
-                when (which) {
-                    0 -> showItemDateDialog(schemeId, itemId, "start")
-                    1 -> showItemDateDialog(schemeId, itemId, "end")
-                    2 -> mutate(obj("type" to "set_item_date", "scheme_id" to schemeId, "item_id" to itemId, "kind" to "start", "date" to null))
-                    3 -> mutate(obj("type" to "set_item_date", "scheme_id" to schemeId, "item_id" to itemId, "kind" to "end", "date" to null))
-                    4 -> {
-                        mutate(obj("type" to "set_item_date", "scheme_id" to schemeId, "item_id" to itemId, "kind" to "start", "date" to null))
-                        mutate(obj("type" to "set_item_date", "scheme_id" to schemeId, "item_id" to itemId, "kind" to "end", "date" to null))
-                    }
-                }
-            }
-            .show()
+        val item = findItem(schemeId, itemId) ?: return
+        val scheme = findScheme(schemeId)
+        val hasStart = item.optionalString("start") != null
+        val hasEnd = item.optionalString("end") != null
+        val kind = when {
+            hasStart && hasEnd -> "event"
+            hasStart -> "reminder"
+            hasEnd -> "assignment"
+            else -> "task"
+        }
+        showEventEditorDialog(obj(
+            "scheme_id" to schemeId,
+            "item_id" to itemId,
+            "title" to item.optString("text"),
+            "kind" to kind,
+            "start" to item.optionalString("start"),
+            "end" to item.optionalString("end"),
+            "occurrence_json" to "{\"kind\":\"single\"}",
+            "is_recurring" to (item.optionalString("repeat_rule") != null),
+            "repeat_rule" to item.optionalString("repeat_rule"),
+            "notification_offset_secs" to item.takeUnless { it.isNull("notification_offset_secs") }?.optInt("notification_offset_secs"),
+            "done" to item.optBoolean("done", false),
+            "scheme_name" to (scheme?.optString("display_name").orEmpty()),
+            "color_index" to (scheme?.optInt("color_index") ?: 0)
+        ))
     }
 
     private fun showItemDateDialog(schemeId: String, itemId: String, kind: String) {
         val form = page(compact = true)
         val initial = MobileDateFormatting.localDateTime(findItem(schemeId, itemId)?.optionalString(kind))
-        val date = DatePicker(this).apply {
+        val pickerCtx = inlinePickerContext()
+        val date = DatePicker(pickerCtx).apply {
             val local = initial?.toLocalDate() ?: selectedDate
             updateDate(local.year, local.monthValue - 1, local.dayOfMonth)
         }
-        val time = TimePicker(this).apply {
+        val time = TimePicker(pickerCtx).apply {
             setIs24HourView(timeFormat24())
             val local = initial?.toLocalTime() ?: LocalTime.now().withSecond(0).withNano(0)
             hour = local.hour
@@ -3748,7 +5719,7 @@ class MainActivity : Activity() {
         }
         AlertDialog.Builder(this)
             .setTitle(nodeOrScheme.optString("name", nodeOrScheme.optString("display_name")))
-            .setItems(arrayOf("Rename", "Color", "Move Up", "Move Down", "Move To Folder", "Archive")) { _, which ->
+            .setItems(arrayOf("Rename", "Color", "Reorder", "Move to Folder", "Archive")) { _, which ->
                 when (which) {
                     0 -> showNameDialog(
                         "Rename Scheme",
@@ -3756,29 +5727,68 @@ class MainActivity : Activity() {
                         { validateSchemeName(it, folderId = parentFolderIdForScheme(id), excludingId = id, checkDuplicates = !isDaily) }
                     ) { name -> mutate(obj("type" to "rename_scheme", "scheme_id" to id, "name" to name)) }
                     1 -> showColorDialog(id)
-                    2 -> moveNavigatorNode("scheme", id, -1)
-                    3 -> moveNavigatorNode("scheme", id, 1)
-                    4 -> showMoveToFolderDialog("scheme", id)
-                    5 -> if (!isDaily) mutate(obj("type" to "delete_scheme", "scheme_id" to id))
+                    2 -> showReorderDialog(id)
+                    3 -> showMoveToFolderDialog("scheme", id)
+                    4 -> if (!isDaily) mutate(obj("type" to "delete_scheme", "scheme_id" to id))
                 }
             }
             .show()
     }
 
+    /// iOS-style swatch grid (3x2, same color order as the iOS popover) instead
+    /// of a text list.
     private fun showColorDialog(schemeId: String) {
-        val labels = arrayOf("Red", "Orange", "Green", "Blue", "Purple", "Yellow")
-        AlertDialog.Builder(this)
-            .setTitle("Color")
-            .setItems(labels) { _, which ->
-                mutate(obj("type" to "set_scheme_color", "scheme_id" to schemeId, "color_index" to which))
-            }
-            .show()
+        val currentIndex = findScheme(schemeId)?.optInt("color_index") ?: 0
+        lateinit var dialog: AlertDialog
+        val order = intArrayOf(0, 1, 5, 2, 3, 4)
+        val grid = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            background = rounded(theme.bgModal, dp(14), theme.borderOverlay)
+            setPadding(dp(10), dp(10), dp(10), dp(10))
+        }
+        for (rowStart in order.indices step 3) {
+            grid.addView(LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER
+                for (cell in rowStart until min(rowStart + 3, order.size)) {
+                    val colorIndex = order[cell]
+                    val selected = colorIndex == currentIndex
+                    addView(FrameLayout(this@MainActivity).apply {
+                        background = rounded(if (selected) theme.rowSelected else Color.TRANSPARENT, dp(8))
+                        addView(FrameLayout(this@MainActivity).apply {
+                            background = rounded(
+                                schemeColor(colorIndex),
+                                dp(6),
+                                if (selected) theme.textPrimary else theme.borderOverlay,
+                                if (selected) dp(2) else max(1, (0.8f * resources.displayMetrics.density).roundToInt())
+                            )
+                            if (selected) {
+                                addView(
+                                    iconImage(R.drawable.ic_knotq_check_24, if (theme.isDark) adjustAlpha(Color.BLACK, 0.82f) else Color.WHITE),
+                                    FrameLayout.LayoutParams(dp(13), dp(13), Gravity.CENTER)
+                                )
+                            }
+                        }, FrameLayout.LayoutParams(dp(28), dp(28), Gravity.CENTER))
+                        setOnClickListener {
+                            mutate(obj("type" to "set_scheme_color", "scheme_id" to schemeId, "color_index" to colorIndex))
+                            dialog.dismiss()
+                        }
+                    }, LinearLayout.LayoutParams(dp(46), dp(46)).apply { setMargins(dp(3), dp(3), dp(3), dp(3)) })
+                }
+            }, LinearLayout.LayoutParams(-2, -2))
+        }
+        dialog = AlertDialog.Builder(this)
+            .setView(grid)
+            .create()
+        dialog.show()
+        dialog.window?.setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))
+        dialog.window?.setLayout(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT)
     }
 
     private fun showFolderActions(node: JSONObject) {
         AlertDialog.Builder(this)
             .setTitle(node.optString("name"))
-            .setItems(arrayOf("New Scheme", "New Folder", "Rename", "Move Up", "Move Down", "Move To Folder", "Archive")) { _, which ->
+            .setItems(arrayOf("New Scheme", "New Folder", "Rename", "Reorder", "Move to Folder", "Archive")) { _, which ->
                 when (which) {
                     0 -> showNameDialog("New Scheme", "", { validateSchemeName(it, folderId = node.optString("id")) }) { name ->
                         mutate(obj("type" to "create_scheme", "folder_id" to node.optString("id"), "name" to name, "position" to 0))
@@ -3789,10 +5799,9 @@ class MainActivity : Activity() {
                     2 -> showNameDialog("Rename Folder", node.optString("name"), { validateFolderName(it, excludingId = node.optString("id")) }) { name ->
                         mutate(obj("type" to "rename_folder", "folder_id" to node.optString("id"), "name" to name))
                     }
-                    3 -> moveNavigatorNode("folder", node.optString("id"), -1)
-                    4 -> moveNavigatorNode("folder", node.optString("id"), 1)
-                    5 -> showMoveToFolderDialog("folder", node.optString("id"), excludedFolderId = node.optString("id"))
-                    6 -> mutate(obj("type" to "delete_folder", "folder_id" to node.optString("id")))
+                    3 -> showReorderDialog(node.optString("id"))
+                    4 -> showMoveToFolderDialog("folder", node.optString("id"), excludedFolderId = node.optString("id"))
+                    5 -> mutate(obj("type" to "delete_folder", "folder_id" to node.optString("id")))
                 }
             }
             .show()
@@ -3891,7 +5900,7 @@ class MainActivity : Activity() {
     }
 
     private fun showDatePicker() {
-        DatePickerDialog(this, { _, year, month, day ->
+        DatePickerDialog(this, dateDialogTheme(), { _, year, month, day ->
             selectedDate = LocalDate.of(year, month + 1, day)
             ensureDaily()
         }, selectedDate.year, selectedDate.monthValue - 1, selectedDate.dayOfMonth).show()
@@ -3943,12 +5952,12 @@ class MainActivity : Activity() {
         container.addView(LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            addView(iconChip("<") {
+            addView(iconChipImage(R.drawable.ic_knotq_chevron_left_24, "Previous month", iconSize = 18) {
                 displayMonth = displayMonth.minusMonths(1)
                 renderMonth()
             })
             addView(title, LinearLayout.LayoutParams(0, dp(38), 1f))
-            addView(iconChip(">") {
+            addView(iconChipImage(R.drawable.ic_knotq_chevron_right_24, "Next month", iconSize = 18) {
                 displayMonth = displayMonth.plusMonths(1)
                 renderMonth()
             })
@@ -4035,8 +6044,17 @@ class MainActivity : Activity() {
     }
 
     private fun openScheme(id: String) {
+        // Remember where the editor was opened from so the back button returns
+        // there (Home on phone), rather than the otherwise-unreachable lists page.
+        if (selectedTab != TAB_SCHEMES) schemeReturnTab = selectedTab
         selectedTab = TAB_SCHEMES
         selectedSchemeId = id
+        render()
+    }
+
+    private fun exitSchemeEditor() {
+        selectedSchemeId = null
+        selectedTab = if (schemeReturnTab == TAB_SCHEMES) TAB_HOME else schemeReturnTab
         render()
     }
 
@@ -4069,14 +6087,32 @@ class MainActivity : Activity() {
             loadSnapshot()
             rescheduleNotifications()
             render()
+            requestSyncSoon()
         } catch (error: RuntimeException) {
             showError("Could not save", error.message)
         }
     }
 
     private fun loadSnapshot() {
-        snapshot = bridge.request(obj("type" to "snapshot", "today" to selectedDate.toString(), "week_offset" to weekOffset))
+        snapshot = bridge.request(obj(
+            "type" to "snapshot",
+            "today" to selectedDate.toString(),
+            "week_offset" to weekOffset,
+            "daily_history_days" to dailyHistoryDays
+        ))
         configureGoogleSyncPolling()
+    }
+
+    /// Mirrors iOS `loadOlderDailyEntries`: extend the daily history window by a
+    /// month when the feed is scrolled to its oldest entry.
+    private fun loadOlderDailyEntries(oldestDate: String) {
+        if (dailyHistoryLoadTriggerDate == oldestDate) return
+        if (dailyHistoryDays >= 3650) return
+        dailyHistoryLoadTriggerDate = oldestDate
+        dailyHistoryDays = min(dailyHistoryDays + 31, 3650)
+        pendingDailyAnchorDate = oldestDate
+        loadSnapshot()
+        render()
     }
 
     private fun rescheduleNotifications() {
@@ -4219,9 +6255,19 @@ class MainActivity : Activity() {
     }
 
     private fun moveNavigatorNode(kind: String, nodeId: String, delta: Int) {
-        val parentId = parentFolderIdForNode(nodeId) ?: return toast("Cannot move this item")
-        val parent = nodeById(parentId, snapshot.optJSONObject("root")) ?: return toast("Cannot find parent")
-        val children = parent.optJSONArray("children") ?: return toast("Cannot move this item")
+        when (applyNodeMove(kind, nodeId, delta)) {
+            true -> { rescheduleNotifications(); render() }
+            false -> toast("Already there")
+        }
+    }
+
+    // Shifts a node one slot within its parent; returns false at a boundary. Applies
+    // the change and reloads the snapshot but does NOT re-render, so callers (e.g. the
+    // reorder sheet) can apply several moves and refresh their own UI cheaply.
+    private fun applyNodeMove(kind: String, nodeId: String, delta: Int): Boolean {
+        val parentId = parentFolderIdForNode(nodeId) ?: return false
+        val parent = nodeById(parentId, snapshot.optJSONObject("root")) ?: return false
+        val children = parent.optJSONArray("children") ?: return false
         var index = -1
         for (i in 0 until children.length()) {
             if (children.optJSONObject(i)?.optString("id") == nodeId) {
@@ -4229,10 +6275,83 @@ class MainActivity : Activity() {
                 break
             }
         }
-        if (index < 0) return toast("Cannot move this item")
-        val position = if (delta < 0) index - 1 else index + 2
-        if (position < 0 || position > children.length()) return toast("Already there")
-        mutate(obj("type" to "move_node", "kind" to kind, "id" to nodeId, "folder_id" to parentId, "position" to position))
+        if (index < 0) return false
+        // move_node removes the node first, so positions index the
+        // post-removal sibling list.
+        val position = if (delta < 0) index - 1 else index + 1
+        if (position < 0 || position > children.length() - 1) return false
+        bridge.request(obj("type" to "move_node", "kind" to kind, "id" to nodeId, "folder_id" to parentId, "position" to position))
+        loadSnapshot()
+        requestSyncSoon()
+        return true
+    }
+
+    // A live reorder sheet for a node's siblings: stays open while you nudge items
+    // up/down (instead of reopening the context menu for each single step, as iOS
+    // drag-to-reorder avoids). Highlights the item the sheet was opened for.
+    private fun showReorderDialog(nodeId: String) {
+        val parentId = parentFolderIdForNode(nodeId) ?: return toast("Cannot reorder this item")
+        val parentName = nodeById(parentId, snapshot.optJSONObject("root"))?.optString("name")?.takeIf { it.isNotBlank() && parentId != rootFolderId() } ?: "Home"
+        val list = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(12), dp(8), dp(12), dp(8))
+        }
+        val scrollView = ScrollView(this).apply { addView(list) }
+        var changed = false
+        lateinit var rebuild: () -> Unit
+        fun siblings(): JSONArray =
+            nodeById(parentId, snapshot.optJSONObject("root"))?.optJSONArray("children") ?: JSONArray()
+        fun moveButton(iconRes: Int, description: String, enabled: Boolean, action: () -> Unit): View =
+            FrameLayout(this).apply {
+                contentDescription = description
+                background = rounded(theme.buttonBg, dp(7), theme.borderOverlay)
+                alpha = if (enabled) 1f else 0.3f
+                addView(iconImage(iconRes, theme.textPrimary, description), FrameLayout.LayoutParams(dp(18), dp(18), Gravity.CENTER))
+                if (enabled) setOnClickListener { action() }
+                layoutParams = LinearLayout.LayoutParams(dp(40), dp(38)).apply { setMargins(dp(6), 0, 0, 0) }
+            }
+        rebuild = {
+            list.removeAllViews()
+            val children = siblings()
+            val lastIndex = children.length() - 1
+            if (children.length() == 0) {
+                list.addView(text("Nothing to reorder", theme.textMuted, 13f, false))
+            }
+            for (i in 0 until children.length()) {
+                val child = children.optJSONObject(i) ?: continue
+                val childId = child.optString("id")
+                val childKind = child.optString("kind")
+                val isFolder = childKind == "folder"
+                val highlight = childId == nodeId
+                val row = LinearLayout(this).apply {
+                    orientation = LinearLayout.HORIZONTAL
+                    gravity = Gravity.CENTER_VERTICAL
+                    setPadding(dp(8), 0, dp(6), 0)
+                    background = rounded(if (highlight) theme.rowSelected else Color.TRANSPARENT, dp(8))
+                    if (isFolder) {
+                        addView(inlineIcon(R.drawable.ic_knotq_folder_24, theme.textMuted, widthDp = 18, iconSize = 15))
+                    } else {
+                        addView(colorSquare(schemeColor(child.optInt("color_index")), 10), LinearLayout.LayoutParams(dp(10), dp(10)).apply { setMargins(dp(4), 0, dp(4), 0) })
+                    }
+                    addView(text(child.optString("name").ifEmpty { child.optString("display_name") }, theme.textPrimary, 14f, highlight || isFolder).apply { maxLines = 1; ellipsize = TextUtils.TruncateAt.END }, LinearLayout.LayoutParams(0, -1, 1f).apply { setMargins(dp(6), 0, 0, 0) })
+                    addView(moveButton(R.drawable.ic_knotq_chevron_up_24, "Move up", i > 0) {
+                        if (applyNodeMove(childKind, childId, -1)) { changed = true; rebuild() }
+                    })
+                    addView(moveButton(R.drawable.ic_knotq_chevron_down_24, "Move down", i < lastIndex) {
+                        if (applyNodeMove(childKind, childId, 1)) { changed = true; rebuild() }
+                    })
+                }
+                list.addView(row, LinearLayout.LayoutParams(-1, dp(46)))
+            }
+        }
+        rebuild()
+        val dialog = AlertDialog.Builder(this)
+            .setTitle("Reorder · $parentName")
+            .setView(scrollView)
+            .setPositiveButton("Done", null)
+            .create()
+        dialog.setOnDismissListener { if (changed) render() }
+        dialog.show()
     }
 
     private fun showMoveToFolderDialog(kind: String, nodeId: String, excludedFolderId: String? = null) {
@@ -4243,7 +6362,7 @@ class MainActivity : Activity() {
         AlertDialog.Builder(this)
             .setTitle("Move To Folder")
             .setItems(destinations.map { destination ->
-                "${"  ".repeat(destination.depth)}${destination.name}${if (destination.id == currentParentId) " ✓" else ""}"
+                "${"   ".repeat(destination.depth)}${destination.name}${if (destination.id == currentParentId) "  (current)" else ""}"
             }.toTypedArray()) { _, which ->
                 val destination = destinations[which]
                 if (destination.id == currentParentId) return@setItems toast("Already there")
@@ -4318,11 +6437,13 @@ class MainActivity : Activity() {
         "${date.month.getDisplayName(TextStyle.FULL, Locale.getDefault())} ${date.year}"
 
     private fun addOccurrenceSection(root: LinearLayout, title: String, empty: String, occurrences: JSONArray?) {
-        root.addView(sectionLabel(title))
+        // iOS section heading: large bold title, not a small caps label.
+        root.addView(text(title, theme.textPrimary, 22f, true).apply {
+            setPadding(dp(2), dp(2), dp(2), dp(6))
+        })
         if (occurrences == null || occurrences.length() == 0) {
-            root.addView(text(empty, theme.textMuted, 13f, false).apply {
-                gravity = Gravity.CENTER
-                setPadding(0, dp(4), 0, dp(6))
+            root.addView(text(empty, theme.textMuted, 14f, false).apply {
+                setPadding(dp(2), dp(4), 0, dp(10))
             })
             return
         }
@@ -4386,18 +6507,199 @@ class MainActivity : Activity() {
     }
 
     private fun settingsSection(value: String): TextView = text(value, theme.textSoft, 12f, true).apply {
-        setPadding(0, dp(16), 0, dp(5))
+        setPadding(dp(4), dp(16), 0, dp(5))
     }
 
-    private fun choiceRow(value: String, selected: Boolean, action: () -> Unit): View {
+    // Groups settings rows into a single rounded card with hairline separators,
+    // mirroring the iOS grouped-list look.
+    private fun settingsGroup(vararg rows: View): View =
+        LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            background = rounded(if (theme.isDark) theme.bgToolbar else theme.bgModal, dp(10), theme.borderOverlay)
+            setPadding(dp(4), dp(3), dp(4), dp(3))
+            rows.forEachIndexed { index, row ->
+                if (index > 0) {
+                    addView(View(this@MainActivity).apply { setBackgroundColor(theme.dividerSoft) }, LinearLayout.LayoutParams(-1, max(1, (0.5f * resources.displayMetrics.density).roundToInt())).apply {
+                        setMargins(dp(8), dp(1), dp(8), dp(1))
+                    })
+                }
+                addView(row, LinearLayout.LayoutParams(-1, -2))
+            }
+        }
+
+    // A tappable settings row showing an optional right-aligned value and a chevron.
+    private fun settingsLinkRow(label: String, value: String? = null, onClick: () -> Unit): View =
+        LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(dp(8), 0, dp(4), 0)
+            addView(text(label, theme.textPrimary, 14f, false), LinearLayout.LayoutParams(0, dp(44), 1f))
+            if (!value.isNullOrEmpty()) {
+                addView(text(value, theme.textMuted, 13f, false).apply {
+                    gravity = Gravity.CENTER_VERTICAL
+                    maxLines = 1
+                    ellipsize = TextUtils.TruncateAt.END
+                }, LinearLayout.LayoutParams(-2, dp(44)).apply { setMargins(dp(6), 0, dp(2), 0) })
+            }
+            addView(inlineIcon(R.drawable.ic_knotq_chevron_right_24, theme.textMuted, widthDp = 20, iconSize = 15))
+            setOnClickListener { onClick() }
+        }
+
+    private fun dialogLabel(value: String): TextView =
+        text(value, theme.textMuted, 11f, true).apply {
+            setPadding(dp(2), 0, dp(2), dp(4))
+        }
+
+    private fun dialogDateLabel(date: LocalDate): String =
+        "${date.dayOfWeek.getDisplayName(TextStyle.SHORT, Locale.getDefault())}, " +
+            "${date.month.getDisplayName(TextStyle.SHORT, Locale.getDefault())} ${date.dayOfMonth}, ${date.year}"
+
+    private fun dialogTimeLabel(time: LocalTime): String {
+        if (timeFormat24()) return "%02d:%02d".format(Locale.US, time.hour, time.minute)
+        val hour = time.hour
+        val hour12 = (hour % 12).let { if (it == 0) 12 else it }
+        val period = if (hour < 12) "AM" else "PM"
+        return "%d:%02d %s".format(Locale.US, hour12, time.minute, period)
+    }
+
+    // Wheel-mode time picker dialog tinted to the active theme (iOS-like, fewer taps
+    // than the default clock face).
+    private fun timeDialogTheme(): Int = if (theme.isDark) R.style.KnotQTimeDialogDark else R.style.KnotQTimeDialogLight
+
+    private fun dateDialogTheme(): Int = if (theme.isDark) R.style.KnotQDateDialogDark else R.style.KnotQDateDialogLight
+
+    // Context that renders embedded DatePicker/TimePicker widgets as compact wheels.
+    private fun inlinePickerContext(): Context =
+        ContextThemeWrapper(this, if (theme.isDark) R.style.KnotQInlinePickerDark else R.style.KnotQInlinePickerLight)
+
+    private fun styleDialogSpinner(spinner: Spinner) {
+        spinner.background = rounded(theme.buttonBg, dp(8), theme.borderOverlay)
+        spinner.setPadding(dp(10), 0, dp(34), 0)
+        spinner.minimumHeight = dp(42)
+    }
+
+    private fun dialogSpinnerField(label: String, spinner: Spinner): View =
+        LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            addView(dialogLabel(label))
+            addView(FrameLayout(this@MainActivity).apply {
+                addView(spinner, FrameLayout.LayoutParams(-1, dp(42)))
+                addView(iconImage(R.drawable.ic_knotq_chevron_down_24, theme.textMuted, null), FrameLayout.LayoutParams(dp(15), dp(15), Gravity.RIGHT or Gravity.CENTER_VERTICAL).apply { rightMargin = dp(11) })
+            }, LinearLayout.LayoutParams(-1, dp(42)))
+            alpha = if (spinner.isEnabled) 1f else 0.55f
+        }
+
+    private fun dialogField(
+        label: String,
+        value: String,
+        enabled: Boolean = true,
+        listener: (() -> Unit)? = null
+    ): DialogField {
+        val labelView = text(label, theme.textMuted, 11f, true)
+        val valueView = text(value, theme.textPrimary, 15f, false).apply {
+            maxLines = 1
+            ellipsize = TextUtils.TruncateAt.END
+        }
+        val row = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(dp(12), 0, dp(10), 0)
+            background = rounded(theme.buttonBg, dp(8), theme.borderOverlay)
+            alpha = if (enabled) 1f else 0.55f
+            addView(LinearLayout(this@MainActivity).apply {
+                orientation = LinearLayout.VERTICAL
+                gravity = Gravity.CENTER_VERTICAL
+                addView(labelView, LinearLayout.LayoutParams(-1, dp(15)))
+                addView(valueView, LinearLayout.LayoutParams(-1, dp(21)))
+            }, LinearLayout.LayoutParams(0, -1, 1f))
+            if (enabled && listener != null) {
+                addView(inlineIcon(R.drawable.ic_knotq_chevron_right_24, theme.textMuted, widthDp = 20, iconSize = 14))
+                setOnClickListener { listener() }
+                isFocusable = true
+            }
+        }.also {
+            it.layoutParams = LinearLayout.LayoutParams(-1, dp(48))
+        }
+        return DialogField(row, labelView, valueView)
+    }
+
+    private fun dialogActionButton(
+        value: String,
+        primary: Boolean = false,
+        danger: Boolean = false,
+        listener: () -> Unit
+    ): TextView =
+        text(
+            value,
+            when {
+                danger -> theme.danger
+                primary -> Color.WHITE
+                else -> theme.textPrimary
+            },
+            13f,
+            true
+        ).apply {
+            gravity = Gravity.CENTER
+            setPadding(dp(14), 0, dp(14), 0)
+            background = rounded(
+                when {
+                    primary -> theme.accent
+                    danger -> adjustAlpha(theme.danger, if (theme.isDark) 0.12f else 0.08f)
+                    else -> theme.buttonBg
+                },
+                dp(8),
+                if (danger) adjustAlpha(theme.danger, 0.32f) else theme.borderOverlay
+            )
+            setOnClickListener { listener() }
+        }
+
+    private fun choiceRow(
+        value: String,
+        icon: String? = null,
+        selected: Boolean,
+        action: () -> Unit
+    ): View {
         return LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
             setPadding(dp(8), 0, dp(8), 0)
             background = rounded(if (selected) theme.rowSelected else Color.TRANSPARENT, dp(5))
-            addView(text(value, theme.textPrimary, 14f, false), LinearLayout.LayoutParams(0, dp(36), 1f))
-            if (selected) addView(colorSquare(theme.accent, 11), LinearLayout.LayoutParams(dp(11), dp(11)))
+            if (icon != null) {
+                addView(text(icon, theme.textPrimary, 14f, true), LinearLayout.LayoutParams(dp(16), dp(36)))
+            }
+            addView(text(value, theme.textPrimary, 14f, false), LinearLayout.LayoutParams(0, dp(36), 1f).apply {
+                if (icon != null) setMargins(dp(4), 0, 0, 0)
+            })
+            if (selected) addView(inlineIcon(R.drawable.ic_knotq_check_24, theme.accent, widthDp = 22, iconSize = 16))
             setOnClickListener { action() }
+        }
+    }
+
+    private fun iconActionChip(value: String, label: String, listener: () -> Unit): TextView {
+        return text("$value $label", theme.textPrimary, 12f, true).apply {
+            gravity = Gravity.CENTER
+            setPadding(dp(10), 0, dp(10), 0)
+            background = rounded(theme.buttonBg, dp(5))
+            setOnClickListener { listener() }
+            contentDescription = label
+            maxLines = 1
+            ellipsize = TextUtils.TruncateAt.END
+            includeFontPadding = false
+            isSingleLine = true
+        }
+    }
+
+    private fun textChip(label: String, listener: () -> Unit): TextView {
+        return text(label, theme.textPrimary, 12f, true).apply {
+            gravity = Gravity.CENTER
+            setPadding(dp(10), 0, dp(10), 0)
+            background = rounded(theme.buttonBg, dp(7), theme.borderOverlay)
+            setOnClickListener { listener() }
+            contentDescription = label
+            maxLines = 1
+            ellipsize = TextUtils.TruncateAt.END
+            includeFontPadding = false
+            isSingleLine = true
         }
     }
 
@@ -4442,26 +6744,55 @@ class MainActivity : Activity() {
     }
 
     private fun iconChip(value: String, listener: () -> Unit): TextView = chip(value, listener).apply {
-        textSize = 13f
+        textSize = ICON_CHIP_SIZE_SP
     }.also {
-        it.layoutParams = LinearLayout.LayoutParams(dp(32), dp(28))
+        it.layoutParams = LinearLayout.LayoutParams(dp(ICON_CHIP_WIDTH_DP), dp(ICON_CHIP_HEIGHT_DP))
     }
 
-    private fun iconSquare(value: String, listener: () -> Unit): TextView = text(value, theme.textPrimary, 15f, true).apply {
+    private fun iconSquare(value: String, listener: () -> Unit): TextView = text(value, theme.textPrimary, ICON_SQUARE_SIZE_SP, true).apply {
         gravity = Gravity.CENTER
         background = rounded(theme.buttonBg, dp(7), theme.borderOverlay)
         setOnClickListener { listener() }
     }
 
-    private fun dockButton(value: String, selected: Boolean, listener: () -> Unit): TextView =
-        text(value, if (selected) theme.textPrimary else theme.textMuted, 20f, true).apply {
-            gravity = Gravity.CENTER
-            contentDescription = when (value) {
-                "⌂" -> "Home"
-                "◷" -> "Calendar"
-                else -> "Settings"
-            }
+    // Square tappable icon button (drawable) used in toolbars/headers — the
+    // vector-drawable replacement for the old text-glyph `iconSquare`.
+    private fun iconSquareImage(iconRes: Int, description: String, iconSize: Int = 18, listener: () -> Unit): View =
+        FrameLayout(this).apply {
+            contentDescription = description
+            background = rounded(theme.buttonBg, dp(7), theme.borderOverlay)
+            addView(iconImage(iconRes, theme.textPrimary, description), FrameLayout.LayoutParams(dp(iconSize), dp(iconSize), Gravity.CENTER))
+            isFocusable = true
+            setOnClickListener { listener() }
+        }
+
+    // Chrome chip with a vector icon (replaces glyph-based `iconChip`).
+    private fun iconChipImage(iconRes: Int, description: String, tint: Int = theme.textPrimary, iconSize: Int = 18, listener: () -> Unit): View =
+        FrameLayout(this).apply {
+            contentDescription = description
+            background = rounded(theme.buttonBg, dp(5))
+            addView(iconImage(iconRes, tint, description), FrameLayout.LayoutParams(dp(iconSize), dp(iconSize), Gravity.CENTER))
+            isFocusable = true
+            setOnClickListener { listener() }
+            layoutParams = LinearLayout.LayoutParams(dp(ICON_CHIP_WIDTH_DP), dp(ICON_CHIP_HEIGHT_DP))
+        }
+
+    // Inline chevron / small directional icon (replaces text glyphs in rows & dialogs).
+    private fun inlineIcon(iconRes: Int, color: Int, widthDp: Int = 24, iconSize: Int = 16): View =
+        FrameLayout(this).apply {
+            addView(iconImage(iconRes, color, null), FrameLayout.LayoutParams(dp(iconSize), dp(iconSize), Gravity.CENTER))
+            layoutParams = LinearLayout.LayoutParams(dp(widthDp), -1)
+        }
+
+    private fun dockButton(iconRes: Int, description: String, selected: Boolean, listener: () -> Unit): View =
+        FrameLayout(this).apply {
+            contentDescription = description
             background = if (selected) rounded(theme.rowSelected, dp(20)) else rounded(Color.TRANSPARENT, dp(20))
+            addView(
+                iconImage(iconRes, if (selected) theme.textPrimary else theme.textMuted, description),
+                FrameLayout.LayoutParams(dp(ICON_DOCK_VECTOR_SIZE_DP), dp(ICON_DOCK_VECTOR_SIZE_DP), Gravity.CENTER)
+            )
+            isFocusable = true
             setOnClickListener { listener() }
         }
 
@@ -4469,14 +6800,14 @@ class MainActivity : Activity() {
         LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER
-            addView(floatingAction("✓", "Daily") {
+            addView(floatingAction(R.drawable.ic_knotq_check_square_24, "Daily") {
                 selectedTab = TAB_DAILY
                 selectedSchemeId = null
                 ensureDaily()
-            }, LinearLayout.LayoutParams(dp(56), dp(56)).apply {
+            }, LinearLayout.LayoutParams(dp(ICON_FLOATING_WIDTH_DP), dp(ICON_FLOATING_WIDTH_DP)).apply {
                 setMargins(0, 0, dp(10), 0)
             })
-            addView(floatingAction("✎", "New Scheme") {
+            addView(floatingAction(R.drawable.ic_knotq_edit_24, "New Scheme") {
                 showNameDialog("New Scheme", "", { validateSchemeName(it, folderId = rootFolderId()) }) { name ->
                     mutate(obj("type" to "create_scheme", "name" to name, "position" to 0))
                     snapshot.optJSONArray("schemes")?.let { schemes ->
@@ -4489,16 +6820,28 @@ class MainActivity : Activity() {
                         }
                     }
                 }
-            }, LinearLayout.LayoutParams(dp(56), dp(56)))
+            }, LinearLayout.LayoutParams(dp(ICON_FLOATING_WIDTH_DP), dp(ICON_FLOATING_WIDTH_DP)))
         }
 
-    private fun floatingAction(value: String, description: String, listener: () -> Unit): TextView =
-        text(value, theme.textPrimary, 22f, true).apply {
-            gravity = Gravity.CENTER
+    private fun floatingAction(iconRes: Int, description: String, listener: () -> Unit): View =
+        FrameLayout(this).apply {
             contentDescription = description
             background = rounded(theme.bgToolbar, dp(28), theme.borderOverlay)
             elevation = dp(if (theme.isDark) 10 else 4).toFloat()
+            addView(
+                iconImage(iconRes, theme.textPrimary, description),
+                FrameLayout.LayoutParams(dp(ICON_FLOATING_VECTOR_SIZE_DP), dp(ICON_FLOATING_VECTOR_SIZE_DP), Gravity.CENTER)
+            )
+            isFocusable = true
             setOnClickListener { listener() }
+        }
+
+    private fun iconImage(iconRes: Int, color: Int, description: String? = null): ImageView =
+        ImageView(this).apply {
+            setImageResource(iconRes)
+            setColorFilter(color, PorterDuff.Mode.SRC_IN)
+            scaleType = ImageView.ScaleType.CENTER_INSIDE
+            contentDescription = description
         }
 
     private fun syncCardButton(value: String, primary: Boolean = false, listener: () -> Unit): TextView =
@@ -4633,6 +6976,26 @@ class MainActivity : Activity() {
         val width = if (visible) 1.8f else 1.4f
         return max(1, (width * resources.displayMetrics.density).roundToInt())
     }
+
+    private fun calendarDayHighlightColor(): Int =
+        if (theme.isDark) rgb(0x0a84ff) else rgb(0x007aff)
+
+    private fun calendarWeekSecondaryHighlightColor(): Int =
+        if (theme.isDark) rgb(0x052547) else rgb(0xbacada)
+
+    private fun calendarWeekConnectorColor(): Int =
+        if (theme.isDark) rgb(0x46515f) else rgb(0x9faebb)
+
+    private fun calendarWeekSecondaryTextColor(): Int =
+        if (theme.isDark) rgb(0xb9dcff) else rgb(0x0059b8)
+
+    private fun calendarWeekDayTextColor(today: Boolean, visible: Boolean): Int =
+        when {
+            visible && today -> Color.WHITE
+            visible -> calendarWeekSecondaryTextColor()
+            today -> calendarDayHighlightColor()
+            else -> theme.textPrimary
+        }
 
     private fun calendarRangeFill(): Int =
         if (theme.isDark) adjustAlpha(Color.WHITE, 0.09f) else adjustAlpha(rgb(0x3f6fd5), 0.08f)

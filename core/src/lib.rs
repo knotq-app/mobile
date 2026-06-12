@@ -1,5 +1,6 @@
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::fs;
+use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
 use std::sync::{Mutex, MutexGuard};
@@ -14,27 +15,32 @@ use knotq_date_util::{upcoming_range, UPCOMING_LIMIT};
 use knotq_index::query::{SearchHitStatus, SearchOptions, SearchTarget};
 use knotq_index::IndexedWorkspace;
 use knotq_model::{
-    daily_queue_scheme_id, daily_queue_sync_metadata, AppSettings, FolderId, ImageAssetFormat,
-    Item, ItemId, ItemKind, ItemMarker, ItemMedia, NodeRef, NotificationDefaults, OccurrenceId,
-    OperationId, Recurrence, Scheme, SchemeId, ThemeMode, TimeFormat, Workspace,
-    DAILY_QUEUE_COLOR_INDEX,
+    daily_queue_scheme_id, daily_queue_sync_metadata, AppSettings, CalendarProvider, DocumentId,
+    FolderId, GoogleOAuthAccount, ImageAssetFormat, ImportedCalendarSource, Item, ItemId, ItemKind,
+    ItemMarker, ItemMedia, NodeRef, NotificationDefaults, OccurrenceId, OperationId, Recurrence,
+    Scheme, SchemeId, SchemeSource, ThemeMode, TimeFormat, Workspace, DAILY_QUEUE_COLOR_INDEX,
 };
 use knotq_notifications::{
     compute_due_notifications_with_lead_times, NotificationLeadTimes, ScheduledNotification,
     DEFAULT_DURABLE_NOTIFICATION_LIMIT,
 };
-use knotq_state::{daily_queue_scheme_name, make_default_workspace};
+use knotq_state::{
+    daily_queue_initial_start, daily_queue_scheme_name, make_default_workspace,
+    CalendarOccurrenceKey, RetainedCompletedItems,
+};
 use knotq_storage_json::{
-    load_app_settings, load_daily_queue_scheme, load_daily_queue_schemes_for_calendar_range,
-    load_local_sync_state, load_workspace_with_options, save_app_settings, save_local_sync_state,
+    load_app_settings, load_crdt_state, load_daily_queue_scheme,
+    load_daily_queue_schemes_for_calendar_range, load_local_sync_state,
+    load_workspace_with_options, save_app_settings, save_crdt_state, save_local_sync_state,
     save_workspace, WorkspaceLoadOptions,
 };
 use knotq_sync::{
     batch_pull_and_apply, batch_push_pending, queue_workspace_bootstrap_updates,
     AccountStatusResponse, BatchPullRequest, BatchPullResponse, BatchPushRequest,
-    BatchPushResponse, DevicePlatform, NotificationPermissionState, NotificationScheduleSnapshot,
-    PendingCrdtEdit, PushChannel, PushEnvironment, RegisterDeviceRequest, RegisterDeviceResponse,
-    SyncTransport, WorkspaceCrdtChangeSet, WorkspaceCrdtDocuments,
+    BatchPushResponse, DevicePlatform, ErrorResponse, NotificationPermissionState,
+    NotificationScheduleSnapshot, PendingCrdtEdit, PushChannel, PushEnvironment,
+    RegisterDeviceRequest, RegisterDeviceResponse, SyncTransport, WorkspaceCrdtChangeSet,
+    WorkspaceCrdtDocuments, MAX_SYNC_MEDIA_BYTES,
 };
 use sha2::{Digest, Sha256};
 
@@ -42,6 +48,9 @@ mod google_calendar;
 use google_calendar::{GoogleCalendarImportResult, GoogleOAuthConfig};
 
 const DAILY_QUEUE_MARKER_COLOR: u32 = 0x42a5f5;
+const MOBILE_DAILY_DEFAULT_HISTORY_DAYS: i32 = 3;
+const MOBILE_DAILY_MAX_HISTORY_DAYS: i32 = 3650;
+const MOBILE_DAILY_LOOKAHEAD_DAYS: i64 = 10;
 const NOTIFICATION_HORIZON_DAYS: i64 = 14;
 const ACTION_SNOOZE_1_MINUTE: &str = "knotq.snooze.1m";
 const ACTION_SNOOZE_5_MINUTES: &str = "knotq.snooze.5m";
@@ -104,9 +113,19 @@ impl MobileCore {
         today: Option<String>,
         week_offset: i32,
     ) -> Result<MobileSnapshot, MobileError> {
+        self.snapshot_with_daily_history(today, week_offset, MOBILE_DAILY_DEFAULT_HISTORY_DAYS)
+    }
+
+    pub fn snapshot_with_daily_history(
+        &self,
+        today: Option<String>,
+        week_offset: i32,
+        daily_history_days: i32,
+    ) -> Result<MobileSnapshot, MobileError> {
         let today = parse_date_or_today(today.as_deref())?;
+        let daily_history_days = normalize_daily_history_days(daily_history_days);
         self.lock()?
-            .snapshot(today, week_offset)
+            .snapshot(today, week_offset, daily_history_days)
             .map_err(Into::into)
     }
 
@@ -224,6 +243,20 @@ impl MobileCore {
             .map_err(Into::into)
     }
 
+    pub fn restore_folder(&self, folder_id: String) -> Result<(), MobileError> {
+        self.lock()?
+            .restore_deleted_folder(parse_id(&folder_id)?)
+            .map_err(Into::into)
+    }
+
+    pub fn permanently_delete_folder(&self, folder_id: String) -> Result<(), MobileError> {
+        self.lock()?
+            .apply(Command::PermanentlyDeleteFolder {
+                id: parse_id(&folder_id)?,
+            })
+            .map_err(Into::into)
+    }
+
     pub fn empty_archive(&self) -> Result<(), MobileError> {
         self.lock()?.empty_archive().map_err(Into::into)
     }
@@ -301,6 +334,13 @@ impl MobileCore {
 
     pub fn sync_google_calendars(&self) -> Result<MobileGoogleSyncResult, MobileError> {
         self.lock()?.sync_google_calendars().map_err(Into::into)
+    }
+
+    pub fn unlink_google_account(&self, account_id: String) -> Result<(), MobileError> {
+        let mut inner = self.lock()?;
+        inner
+            .unlink_google_account(&non_empty(account_id, "Google account id")?)
+            .map_err(Into::into)
     }
 
     pub fn add_item(
@@ -544,6 +584,51 @@ impl MobileCore {
             .map_err(Into::into)
     }
 
+    /// `commit_event_edit` with all arguments in one JSON payload. Android's
+    /// JNA bridge mis-marshals the trailing booleans of the 14-argument form,
+    /// so its bridge routes through this variant.
+    pub fn commit_event_edit_payload(&self, payload: String) -> Result<(), MobileError> {
+        #[derive(serde::Deserialize)]
+        struct Payload {
+            scheme_id: String,
+            item_id: String,
+            occurrence_json: String,
+            #[serde(default)]
+            occurrence_index: i32,
+            #[serde(default)]
+            title: String,
+            occurrence_start: Option<String>,
+            occurrence_end: Option<String>,
+            start: Option<String>,
+            end: Option<String>,
+            rrule: Option<String>,
+            notification_offset_secs: Option<i32>,
+            #[serde(default)]
+            notification_dirty: bool,
+            #[serde(default)]
+            done: bool,
+            scope: String,
+        }
+        let payload: Payload = serde_json::from_str(&payload)
+            .map_err(|error| anyhow!("invalid commit_event_edit payload: {error}"))?;
+        self.commit_event_edit(
+            payload.scheme_id,
+            payload.item_id,
+            payload.occurrence_json,
+            payload.occurrence_index,
+            payload.title,
+            payload.occurrence_start,
+            payload.occurrence_end,
+            payload.start,
+            payload.end,
+            payload.rrule,
+            payload.notification_offset_secs,
+            payload.notification_dirty,
+            payload.done,
+            payload.scope,
+        )
+    }
+
     pub fn toggle_item(&self, scheme_id: String, item_id: String) -> Result<(), MobileError> {
         self.lock()?
             .apply(Command::ToggleOccurrence {
@@ -560,15 +645,20 @@ impl MobileCore {
         item_id: String,
         occurrence_json: String,
     ) -> Result<(), MobileError> {
-        let occurrence =
+        let occurrence: OccurrenceId =
             serde_json::from_str(&occurrence_json).with_context(|| "parse occurrence")?;
-        self.lock()?
-            .apply(Command::ToggleOccurrence {
-                scheme: parse_id(&scheme_id)?,
-                item: parse_id(&item_id)?,
-                occurrence,
-            })
-            .map_err(Into::into)
+        let scheme = parse_id(&scheme_id)?;
+        let item = parse_id(&item_id)?;
+        let mut inner = self.lock()?;
+        inner.apply(Command::ToggleOccurrence {
+            scheme,
+            item,
+            occurrence: occurrence.clone(),
+        })?;
+        // Retain it on the upcoming panel while it's completed, so checking it off
+        // fades the row in place instead of dropping it until the next reload.
+        inner.sync_retained_completed(scheme, item, occurrence);
+        Ok(())
     }
 
     pub fn delete_item(&self, scheme_id: String, item_id: String) -> Result<(), MobileError> {
@@ -652,7 +742,8 @@ impl MobileCore {
     pub fn reset_workspace(&self) -> Result<(), MobileError> {
         let mut inner = self.lock()?;
         inner.workspace = make_default_workspace();
-        inner.crdt = WorkspaceCrdtDocuments::empty(&inner.workspace);
+        inner.crdt =
+            WorkspaceCrdtDocuments::empty_for_replica(&inner.workspace, inner.settings.replica_id);
         let mut changes = WorkspaceCrdtChangeSet::default().workspace();
         for id in inner.workspace.schemes.keys().copied().collect::<Vec<_>>() {
             changes = changes.touch_scheme(id);
@@ -760,6 +851,10 @@ struct MobileCoreInner {
     push_token: Option<String>,
     push_environment: Option<PushEnvironment>,
     registered_push_token: Option<String>,
+    // Occurrences completed this session, kept on the upcoming panel (faded, in
+    // place) until they're un-completed or the app reloads — mirroring desktop's
+    // `retained_completed_calendar_items`.
+    retained_completed: RetainedCompletedItems,
 }
 
 impl MobileCoreInner {
@@ -769,7 +864,9 @@ impl MobileCoreInner {
         let image_assets_dir = workspace_dir.join("assets/images");
         let settings_path = app_dir.join("settings.json");
         let mut should_reset_workspace_dir = false;
-        let load_options = WorkspaceLoadOptions::all();
+        let today = default_today();
+        let load_options =
+            WorkspaceLoadOptions::daily_queue_range(daily_queue_initial_start(today), today);
         let mut workspace = match load_workspace_with_options(&workspace_path, load_options) {
             Ok(Some(workspace)) => workspace,
             Ok(None) => make_default_workspace(),
@@ -795,7 +892,12 @@ impl MobileCoreInner {
             .max()
             .unwrap_or(0)
             + 1;
-        let crdt = WorkspaceCrdtDocuments::try_new(&workspace)?;
+        // Restore the long-lived CRDT documents from disk with this replica's stable
+        // deterministic clientID, so their Yjs identity survives restarts instead of
+        // being rebuilt from plain data with a throwaway identity.
+        let crdt_states = load_crdt_state(&workspace_path).unwrap_or_default();
+        let crdt =
+            WorkspaceCrdtDocuments::from_states(&workspace, settings.replica_id, &crdt_states)?;
         Ok(Self {
             workspace_path,
             settings_path,
@@ -808,7 +910,35 @@ impl MobileCoreInner {
             push_token: None,
             push_environment: None,
             registered_push_token: None,
+            retained_completed: RetainedCompletedItems::default(),
         })
+    }
+
+    /// Insert/remove a toggled occurrence from the retained-completed set based on
+    /// its resulting done state — mirroring desktop's
+    /// `sync_retained_completed_calendar_items`.
+    fn sync_retained_completed(
+        &mut self,
+        scheme: SchemeId,
+        item: ItemId,
+        occurrence: OccurrenceId,
+    ) {
+        let is_done = self
+            .workspace
+            .scheme(scheme)
+            .and_then(|scheme| scheme.item(item))
+            .map(|item| item.state_for_occurrence(&occurrence).is_done())
+            .unwrap_or(false);
+        let key = CalendarOccurrenceKey {
+            scheme_id: scheme,
+            item_id: item,
+            occurrence,
+        };
+        if is_done {
+            self.retained_completed.insert(key);
+        } else {
+            self.retained_completed.remove(&key);
+        }
     }
 
     fn apply(&mut self, command: Command) -> Result<()> {
@@ -821,7 +951,10 @@ impl MobileCoreInner {
     }
 
     fn save_workspace(&self) -> Result<()> {
-        save_workspace(&self.workspace_path, &self.workspace)
+        save_workspace(&self.workspace_path, &self.workspace)?;
+        // Persist the CRDT documents' state in lockstep with the workspace so a
+        // restart restores them consistently (and with their stable identity).
+        save_crdt_state(&self.workspace_path, &self.crdt.document_states())
     }
 
     fn load_daily_queue_scheme_if_needed(&mut self, date: NaiveDate) -> Result<Option<SchemeId>> {
@@ -1136,7 +1269,6 @@ impl MobileCoreInner {
         sync_state.workspace_id = Some(self.workspace.id);
         sync_state.replica_id = Some(self.settings.replica_id);
         sync_state.server_url = Some(client.api_base.clone());
-        sync_state.bearer_token = Some(client.bearer_token.clone());
 
         // Register this device (with its push token, if any) so the backend can
         // wake it via silent push. Best effort — never block sync on it.
@@ -1153,6 +1285,15 @@ impl MobileCoreInner {
             workspace,
             self.settings.replica_id,
         )?;
+        // Log skipped documents (per-document errors that did not block the pull).
+        for skipped in &pull.skipped {
+            if !skipped.unknown_scheme_document {
+                eprintln!(
+                    "sync: skipped document {}: {}",
+                    skipped.document, skipped.reason
+                );
+            }
+        }
         let remote_updates_applied = pull.remote_updates_applied;
         self.workspace = pull.workspace;
         let mut repaired_workspace_changed = self
@@ -1190,27 +1331,51 @@ impl MobileCoreInner {
             }
         }
 
+        mobile_upload_local_media_assets(
+            &client,
+            &mut sync_state,
+            &self.workspace,
+            &self.image_assets_dir,
+            &pull.remote_latest,
+        )?;
+        let media_downloaded =
+            mobile_download_missing_media_assets(&client, &self.workspace, &self.image_assets_dir)?;
+
         // Persist the merged workspace BEFORE pushing. The durable pull cursors are
         // saved after the push regardless of its outcome, so the workspace must be
         // on disk first — otherwise a push failure would advance the cursor while
         // discarding the just-pulled remote schemes and archive (recently_deleted)
         // state, and the next sync (cursor already advanced) would never re-pull
         // them. That desync silently drops other devices' schemes and re-activates
-        // archived ones.
-        if remote_updates_applied > 0 || local_workspace_changed || repaired_workspace_changed {
-            self.crdt = WorkspaceCrdtDocuments::try_new(&self.workspace)?;
-            self.save_workspace()?;
-        }
-
+        // archived ones. `self.crdt` is the long-lived document set that
+        // `batch_pull_and_apply` merged remote state into in place — it is NOT
+        // rebuilt (which would mint a throwaway identity); `save_workspace` persists
+        // its merged state alongside the workspace.
+        //
         // The server's per-document seq (our advanced pull cursor) tells the
-        // bootstrap which documents the server already has a base for; the rest get
-        // a full snapshot queued before their deltas.
-        queue_workspace_bootstrap_updates(
+        // bootstrap which documents the server already has a base for; the rest get a
+        // full snapshot from the persistent CRDT (so the re-seed shares identity with
+        // this device's diffs) queued before their deltas. The bootstrap also repairs
+        // schema-less documents (a scheme added outside the command path) by
+        // repopulating them from the workspace before snapshotting — run it before
+        // the save so the healed state is persisted alongside the workspace.
+        let healed_documents = queue_workspace_bootstrap_updates(
             &mut sync_state,
+            &mut self.crdt,
             &self.workspace,
             self.settings.replica_id,
             &pull.remote_latest,
         );
+        for document in &healed_documents {
+            eprintln!("mobile sync: repopulated schema-less CRDT document {document}");
+        }
+        if remote_updates_applied > 0
+            || local_workspace_changed
+            || repaired_workspace_changed
+            || !healed_documents.is_empty()
+        {
+            self.save_workspace()?;
+        }
         let notification_schedule = mobile_notification_schedule_snapshot(
             &self.workspace,
             self.settings.notification_defaults,
@@ -1228,11 +1393,16 @@ impl MobileCoreInner {
             self.settings.replica_id,
             &notification_schedule,
             &mut pushed,
+            &mut self.crdt,
+            &self.workspace,
         );
         save_local_sync_state(&self.workspace_path, &sync_state)?;
         push_result?;
 
-        Ok(remote_updates_applied > 0 || repaired_workspace_changed || !pushed.is_empty())
+        Ok(remote_updates_applied > 0
+            || repaired_workspace_changed
+            || !pushed.is_empty()
+            || media_downloaded)
     }
 
     fn ensure_daily_queue(&mut self, date: NaiveDate) -> Result<SchemeId> {
@@ -1290,6 +1460,17 @@ impl MobileCoreInner {
         let sources = google_calendar::google_calendar_sources(&self.workspace);
         let result = google_calendar::run_google_calendar_background_sync(accounts, sources)?;
         self.finish_google_calendar_sync(result, false, self.workspace.root)
+    }
+
+    fn unlink_google_account(&mut self, account_id: &str) -> Result<()> {
+        let old_len = self.settings.google_accounts.len();
+        self.settings
+            .google_accounts
+            .retain(|account| account.account_id != account_id);
+        if self.settings.google_accounts.len() != old_len {
+            self.save_settings()?;
+        }
+        Ok(())
     }
 
     fn finish_google_calendar_sync(
@@ -1350,6 +1531,44 @@ impl MobileCoreInner {
             }
         }
         changed
+    }
+
+    fn google_accounts(&self) -> Vec<MobileGoogleAccount> {
+        self.settings
+            .google_accounts
+            .iter()
+            .map(|account| {
+                let title = account
+                    .email
+                    .clone()
+                    .filter(|email| !email.trim().is_empty())
+                    .unwrap_or_else(|| account.account_id.clone());
+                let count = self.google_calendar_scheme_count_for_account(account);
+                let detail = match count {
+                    1 => "1 calendar".to_string(),
+                    count => format!("{count} calendars"),
+                };
+                MobileGoogleAccount {
+                    id: account.account_id.clone(),
+                    title,
+                    detail,
+                }
+            })
+            .collect()
+    }
+
+    fn google_calendar_scheme_count_for_account(&self, account: &GoogleOAuthAccount) -> usize {
+        self.workspace
+            .schemes
+            .values()
+            .filter(|scheme| {
+                let SchemeSource::ImportedCalendar(source) = &scheme.source else {
+                    return false;
+                };
+                source.provider == CalendarProvider::Google
+                    && google_account_matches_calendar_source(account, source)
+            })
+            .count()
     }
 
     fn apply_imported_google_calendars(
@@ -1473,10 +1692,28 @@ impl MobileCoreInner {
         changed
     }
 
-    fn snapshot(&mut self, today: NaiveDate, week_offset: i32) -> Result<MobileSnapshot> {
-        let daily_start = today - Duration::days(3);
-        let daily_end = daily_start + Duration::days(13);
+    fn snapshot(
+        &mut self,
+        today: NaiveDate,
+        week_offset: i32,
+        daily_history_days: i64,
+    ) -> Result<MobileSnapshot> {
+        let daily_start = today - Duration::days(daily_history_days);
+        let daily_end = today + Duration::days(MOBILE_DAILY_LOOKAHEAD_DAYS);
         self.load_daily_queue_date_range(daily_start, daily_end)?;
+        let previous_daily_date =
+            if daily_history_days > i64::from(MOBILE_DAILY_DEFAULT_HISTORY_DAYS) {
+                self.workspace
+                    .daily_queue
+                    .range(..daily_start)
+                    .next_back()
+                    .map(|(date, _)| *date)
+            } else {
+                None
+            };
+        if let Some(date) = previous_daily_date {
+            self.load_daily_queue_scheme_if_needed(date)?;
+        }
 
         let week_start = today + Duration::days((week_offset as i64) * 7);
         let week_end = week_start + Duration::days(7);
@@ -1499,10 +1736,13 @@ impl MobileCoreInner {
             .iter_deleted_schemes()
             .map(|scheme| self.mobile_scheme(scheme))
             .collect::<Vec<_>>();
+        let archived_nodes = self.archived_nodes()?;
 
-        let daily = (0..14)
-            .filter_map(|offset| {
-                let date = daily_start + Duration::days(offset);
+        let daily_days = daily_end.signed_duration_since(daily_start).num_days() + 1;
+        let daily = previous_daily_date
+            .into_iter()
+            .chain((0..daily_days).map(|offset| daily_start + Duration::days(offset)))
+            .filter_map(|date| {
                 self.workspace
                     .daily_queue_scheme_id(date)
                     .and_then(|id| self.workspace.scheme(id))
@@ -1542,9 +1782,16 @@ impl MobileCoreInner {
             .into_iter()
             .map(|context| MobileOccurrence::from_context(&self.workspace, context))
             .collect();
+        let retained = &self.retained_completed;
         let overdue = indexed
             .calendar_query()
-            .overdue(Utc::now())
+            .overdue_retaining(Utc::now(), |event| {
+                retained.contains(&CalendarOccurrenceKey {
+                    scheme_id: event.scheme_id,
+                    item_id: event.item_id,
+                    occurrence: event.occurrence.id.clone(),
+                })
+            })
             .into_iter()
             .map(|context| MobileOccurrence::from_context(&self.workspace, context))
             .collect();
@@ -1552,6 +1799,7 @@ impl MobileCoreInner {
             root,
             schemes,
             archived_schemes,
+            archived_nodes,
             daily,
             calendar: MobileCalendar {
                 start_date: week_start.to_string(),
@@ -1570,6 +1818,7 @@ impl MobileCoreInner {
                     self.settings.notification_defaults.assignment_offset_secs,
                 ),
                 google_account_count: self.settings.google_accounts.len() as i32,
+                google_accounts: self.google_accounts(),
             },
             workspace_path: self.workspace_path.display().to_string(),
         })
@@ -1666,6 +1915,64 @@ impl MobileCoreInner {
         }
     }
 
+    /// The archive as a tree mirroring the desktop trash view: each top-level
+    /// archived folder keeps its subtree (nested folders + schemes), followed by
+    /// archived schemes that aren't inside an archived folder.
+    fn archived_nodes(&self) -> Result<Vec<MobileNode>> {
+        let mut nodes = Vec::new();
+        let archived_folders = self
+            .workspace
+            .iter_deleted_folders()
+            .map(|folder| folder.id)
+            .collect::<Vec<_>>();
+        for folder_id in archived_folders {
+            nodes.push(self.archived_folder_node(folder_id)?);
+        }
+        let archived_schemes = self
+            .workspace
+            .iter_deleted_schemes()
+            .filter(|scheme| {
+                !self
+                    .workspace
+                    .is_scheme_in_deleted_folder_subtree(scheme.id)
+            })
+            .map(|scheme| scheme.id)
+            .collect::<Vec<_>>();
+        for scheme_id in archived_schemes {
+            if let Some(scheme) = self.workspace.scheme(scheme_id) {
+                nodes.push(archived_scheme_node(scheme));
+            }
+        }
+        Ok(nodes)
+    }
+
+    fn archived_folder_node(&self, id: FolderId) -> Result<MobileNode> {
+        let folder = self
+            .workspace
+            .folder(id)
+            .ok_or_else(|| anyhow!("archived folder {id} is missing"))?;
+        Ok(MobileNode {
+            kind: "folder".to_string(),
+            id: id.to_string(),
+            name: folder.name.clone(),
+            color_index: None,
+            is_daily_queue: false,
+            is_read_only: false,
+            children: folder
+                .children
+                .iter()
+                .filter_map(|child| self.archived_child_node(child).transpose())
+                .collect::<Result<Vec<_>>>()?,
+        })
+    }
+
+    fn archived_child_node(&self, child: &NodeRef) -> Result<Option<MobileNode>> {
+        match child {
+            NodeRef::Folder(id) => self.archived_folder_node(*id).map(Some),
+            NodeRef::Scheme(id) => Ok(self.workspace.scheme(*id).map(archived_scheme_node)),
+        }
+    }
+
     fn mobile_scheme(&self, scheme: &Scheme) -> MobileScheme {
         let is_daily_queue = self.workspace.is_daily_queue_scheme(scheme.id);
         let date = self.workspace.daily_queue_date_for_scheme(scheme.id);
@@ -1751,6 +2058,9 @@ impl MobileCoreInner {
             self.record_crdt_changes(WorkspaceCrdtChangeSet::default().workspace())?;
             return self.save_workspace();
         };
+        // A nested scheme has no live origin folder, so this lands it at the root;
+        // `RestoreScheme` detaches it from the archived folder's subtree, leaving
+        // the archive entirely.
         let (folder, position) = self.deleted_scheme_restore_target(scheme_id);
         self.apply(Command::RestoreScheme {
             folder,
@@ -1759,10 +2069,86 @@ impl MobileCoreInner {
         })
     }
 
+    fn restore_deleted_folder(&mut self, folder_id: FolderId) -> Result<()> {
+        let is_archived_root = self.workspace.is_folder_deleted(folder_id);
+        // A folder nested under an archived folder isn't itself flagged deleted;
+        // it still needs lifting out so it (and its schemes) leave the archive.
+        let is_nested = !is_archived_root
+            && self
+                .workspace
+                .is_node_in_deleted_folder_subtree(NodeRef::Folder(folder_id));
+        if !is_archived_root && !is_nested {
+            return Ok(());
+        }
+        let Some(folder) = self.workspace.folder(folder_id).cloned() else {
+            if is_archived_root {
+                self.workspace.remove_folder_from_archive(folder_id);
+                self.record_crdt_changes(WorkspaceCrdtChangeSet::default().workspace())?;
+                return self.save_workspace();
+            }
+            return Ok(());
+        };
+        // Top-level archived folders restore to their origin (or root); nested
+        // ones lift to the root. `RestoreFolder` detaches the folder and clears
+        // the deleted flag across its whole subtree.
+        let (parent, position) = if is_archived_root {
+            self.deleted_folder_restore_target(folder_id)
+        } else {
+            let root = self.workspace.root;
+            let position = self
+                .workspace
+                .folder(root)
+                .map(|folder| folder.children.len())
+                .unwrap_or(0);
+            (root, position)
+        };
+        self.apply(Command::RestoreFolder {
+            parent,
+            position,
+            folder,
+        })
+    }
+
+    fn deleted_folder_restore_target(&self, folder_id: FolderId) -> (FolderId, usize) {
+        if let Some(origin) = self.workspace.deleted_folder_origin(folder_id) {
+            if self.is_valid_folder_restore_parent(origin.parent) {
+                let len = self
+                    .workspace
+                    .folder(origin.parent)
+                    .map(|folder| folder.children.len())
+                    .unwrap_or(0);
+                return (origin.parent, origin.position.min(len));
+            }
+        }
+
+        let root = self.workspace.root;
+        let position = self
+            .workspace
+            .folder(root)
+            .map(|folder| folder.children.len())
+            .unwrap_or(0);
+        (root, position)
+    }
+
+    fn is_valid_folder_restore_parent(&self, folder_id: FolderId) -> bool {
+        self.workspace.folder(folder_id).is_some()
+            && !self
+                .workspace
+                .is_node_in_deleted_folder_subtree(NodeRef::Folder(folder_id))
+    }
+
     fn empty_archive(&mut self) -> Result<()> {
+        // Archived folders first — each takes its whole subtree (nested folders
+        // and schemes) with it — then any standalone archived schemes that remain.
+        let deleted_folders = self.workspace.recently_deleted_folders.clone();
+        for id in deleted_folders {
+            self.apply(Command::PermanentlyDeleteFolder { id })?;
+        }
         let deleted = self.workspace.recently_deleted.clone();
         for id in deleted {
-            self.apply(Command::PermanentlyDeleteScheme { id })?;
+            if self.workspace.is_scheme_deleted(id) {
+                self.apply(Command::PermanentlyDeleteScheme { id })?;
+            }
         }
         Ok(())
     }
@@ -1790,6 +2176,10 @@ impl MobileCoreInner {
 
     fn is_valid_scheme_restore_folder(&self, folder: FolderId) -> bool {
         self.workspace.folder(folder).is_some()
+            && !self.workspace.is_folder_deleted(folder)
+            && !self
+                .workspace
+                .is_node_in_deleted_folder_subtree(NodeRef::Folder(folder))
     }
 
     fn seed_editor_image_fixture(&mut self) -> Result<()> {
@@ -1960,6 +2350,19 @@ struct MobileSyncHttpClient {
     bearer_token: String,
 }
 
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+struct MobileSyncMediaAsset {
+    document: DocumentId,
+    asset: uuid::Uuid,
+    format: ImageAssetFormat,
+}
+
+impl MobileSyncMediaAsset {
+    fn image_name(self) -> String {
+        format!("{}.{}", self.asset, self.format.extension())
+    }
+}
+
 struct GoogleCalendarApplyResult {
     content_changed: bool,
     created_count: i32,
@@ -2025,6 +2428,57 @@ impl MobileSyncHttpClient {
         self.post_json(&url, request)
     }
 
+    fn upload_media_asset(&self, media: MobileSyncMediaAsset, bytes: &[u8]) -> Result<()> {
+        let url = self.media_url(media);
+        self.authorized(ureq::put(&url))
+            .set("content-type", mobile_media_content_type(media.format))
+            .send_bytes(bytes)
+            .map_err(mobile_sync_http_error)?;
+        Ok(())
+    }
+
+    fn download_media_asset(&self, media: MobileSyncMediaAsset) -> Result<Option<Vec<u8>>> {
+        let url = self.media_url(media);
+        let response = match self.authorized(ureq::get(&url)).call() {
+            Ok(response) => response,
+            Err(ureq::Error::Status(404, response)) => {
+                let code = response
+                    .into_json::<ErrorResponse>()
+                    .map(|error| error.code)
+                    .unwrap_or_else(|_| "404".to_string());
+                if code == "not_found" {
+                    return Ok(None);
+                }
+                return Err(anyhow!("sync backend rejected request: {code}"));
+            }
+            Err(error) => return Err(mobile_sync_http_error(error)),
+        };
+        let mut reader = response
+            .into_reader()
+            .take((MAX_SYNC_MEDIA_BYTES + 1) as u64);
+        let mut bytes = Vec::new();
+        reader
+            .read_to_end(&mut bytes)
+            .with_context(|| format!("read media response from {url}"))?;
+        if bytes.len() > MAX_SYNC_MEDIA_BYTES {
+            return Err(anyhow!(
+                "sync backend returned image {} above the {} byte sync limit",
+                media.image_name(),
+                MAX_SYNC_MEDIA_BYTES
+            ));
+        }
+        Ok(Some(bytes))
+    }
+
+    fn media_url(&self, media: MobileSyncMediaAsset) -> String {
+        format!(
+            "{}/v1/sync/documents/{}/media/{}",
+            self.api_base,
+            media.document,
+            media.image_name()
+        )
+    }
+
     fn get_json<T: serde::de::DeserializeOwned>(&self, url: &str) -> Result<T> {
         self.authorized(ureq::get(url))
             .call()
@@ -2062,6 +2516,154 @@ impl SyncTransport for MobileSyncHttpClient {
         let url = format!("{}/v1/sync/push", self.api_base);
         self.post_json(&url, request)
     }
+}
+
+fn mobile_workspace_media_assets(workspace: &Workspace) -> Vec<MobileSyncMediaAsset> {
+    let mut seen = HashSet::new();
+    let mut assets = Vec::new();
+    for scheme in workspace.iter_schemes() {
+        let Some(meta) = workspace.scheme_sync.get(&scheme.id) else {
+            continue;
+        };
+        for item in &scheme.items {
+            for media in &item.media {
+                let ItemMedia::Image { asset, format, .. } = media;
+                let media = MobileSyncMediaAsset {
+                    document: meta.id,
+                    asset: *asset,
+                    format: *format,
+                };
+                if seen.insert(media) {
+                    assets.push(media);
+                }
+            }
+        }
+    }
+    assets
+}
+
+fn mobile_upload_local_media_assets(
+    client: &MobileSyncHttpClient,
+    local_state: &mut knotq_sync::LocalSyncState,
+    workspace: &Workspace,
+    image_assets_dir: &Path,
+    remote_latest: &HashMap<DocumentId, u64>,
+) -> Result<()> {
+    for media in mobile_workspace_media_assets(workspace) {
+        let path = mobile_image_asset_path(image_assets_dir, media.asset, media.format);
+        let Ok(metadata) = fs::metadata(&path) else {
+            continue;
+        };
+        if !metadata.is_file() {
+            continue;
+        }
+        let byte_length = metadata.len();
+        if byte_length == 0 {
+            continue;
+        }
+        if byte_length > MAX_SYNC_MEDIA_BYTES as u64 {
+            return Err(anyhow!(
+                "image {} is {} bytes, above the {} byte sync limit",
+                media.image_name(),
+                byte_length,
+                MAX_SYNC_MEDIA_BYTES
+            ));
+        }
+        let image_name = media.image_name();
+        let bytes = fs::read(&path).with_context(|| format!("read {}", path.display()))?;
+        if bytes.len() > MAX_SYNC_MEDIA_BYTES {
+            return Err(anyhow!(
+                "image {} is {} bytes, above the {} byte sync limit",
+                image_name,
+                bytes.len(),
+                MAX_SYNC_MEDIA_BYTES
+            ));
+        }
+        let sha256 = mobile_media_sha256(&bytes);
+        if !local_state.should_upload_media_asset(
+            &image_name,
+            media.document,
+            byte_length,
+            &sha256,
+            remote_latest,
+        ) {
+            continue;
+        }
+        client.upload_media_asset(media, &bytes)?;
+        local_state.mark_media_uploaded(image_name, media.document, byte_length, sha256);
+    }
+    Ok(())
+}
+
+fn mobile_download_missing_media_assets(
+    client: &MobileSyncHttpClient,
+    workspace: &Workspace,
+    image_assets_dir: &Path,
+) -> Result<bool> {
+    let mut downloaded = false;
+    for media in mobile_workspace_media_assets(workspace) {
+        let path = mobile_image_asset_path(image_assets_dir, media.asset, media.format);
+        if !mobile_media_asset_needs_download(&path)? {
+            continue;
+        }
+        let image_name = media.image_name();
+        let Some(bytes) = client.download_media_asset(media)? else {
+            eprintln!("mobile sync media missing on backend: {image_name}; skipping download");
+            continue;
+        };
+        if bytes.len() > MAX_SYNC_MEDIA_BYTES {
+            return Err(anyhow!(
+                "downloaded image {} is {} bytes, above the {} byte sync limit",
+                image_name,
+                bytes.len(),
+                MAX_SYNC_MEDIA_BYTES
+            ));
+        }
+        if let Some(parent) = path.parent() {
+            fs::create_dir_all(parent).with_context(|| format!("create {}", parent.display()))?;
+        }
+        fs::write(&path, bytes).with_context(|| format!("write {}", path.display()))?;
+        downloaded = true;
+    }
+    Ok(downloaded)
+}
+
+fn mobile_image_asset_path(
+    image_assets_dir: &Path,
+    asset: uuid::Uuid,
+    format: ImageAssetFormat,
+) -> PathBuf {
+    image_assets_dir.join(format!("{asset}.{}", format.extension()))
+}
+
+fn mobile_media_asset_needs_download(path: &Path) -> Result<bool> {
+    match fs::metadata(path) {
+        Ok(metadata) if metadata.is_file() && metadata.len() > 0 => Ok(false),
+        Ok(metadata) if metadata.is_file() => Ok(true),
+        Ok(_) => Err(anyhow!(
+            "image asset path {} exists but is not a file",
+            path.display()
+        )),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(true),
+        Err(error) => Err(error).with_context(|| format!("stat {}", path.display())),
+    }
+}
+
+fn mobile_media_content_type(format: ImageAssetFormat) -> &'static str {
+    match format {
+        ImageAssetFormat::Png => "image/png",
+        ImageAssetFormat::Jpeg => "image/jpeg",
+        ImageAssetFormat::Webp => "image/webp",
+        ImageAssetFormat::Gif => "image/gif",
+        ImageAssetFormat::Svg => "image/svg+xml",
+        ImageAssetFormat::Bmp => "image/bmp",
+        ImageAssetFormat::Tiff => "image/tiff",
+    }
+}
+
+fn mobile_media_sha256(bytes: &[u8]) -> String {
+    let digest = Sha256::digest(bytes);
+    digest.iter().map(|byte| format!("{byte:02x}")).collect()
 }
 
 fn mobile_sync_http_error(error: ureq::Error) -> anyhow::Error {
@@ -2108,7 +2710,11 @@ fn mobile_is_secure_api_base(url: &str) -> bool {
 
 #[cfg(test)]
 mod sync_api_base_tests {
-    use super::normalize_sync_api_base;
+    use super::{
+        mobile_media_asset_needs_download, mobile_workspace_media_assets, normalize_sync_api_base,
+    };
+    use knotq_model::{ImageAssetFormat, Item, ItemMedia, Scheme, Workspace};
+    use std::{fs, path::PathBuf};
 
     #[test]
     fn https_is_accepted_http_loopback_only() {
@@ -2119,6 +2725,65 @@ mod sync_api_base_tests {
         assert!(normalize_sync_api_base("http://127.0.0.1:8787").is_ok());
         assert!(normalize_sync_api_base("http://sync.example.com").is_err());
         assert!(normalize_sync_api_base("").is_err());
+    }
+
+    #[test]
+    fn zero_byte_mobile_media_file_is_downloaded_again() {
+        let dir = unique_temp_dir("knotq-mobile-media");
+        let path = dir.join("asset.png");
+        fs::write(&path, []).unwrap();
+
+        assert!(mobile_media_asset_needs_download(&path).unwrap());
+
+        fs::write(&path, [1, 2, 3]).unwrap();
+        assert!(!mobile_media_asset_needs_download(&path).unwrap());
+
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn mobile_media_assets_use_scheme_sync_document_ids() {
+        let mut workspace = Workspace::new();
+        let mut scheme = Scheme::new("Images", 0);
+        let scheme_id = scheme.id;
+        let asset = uuid::Uuid::new_v4();
+        let mut item = Item::new("photo");
+        item.media.push(ItemMedia::Image {
+            asset,
+            format: ImageAssetFormat::Png,
+            width: Some(10),
+            height: Some(10),
+        });
+        item.media.push(ItemMedia::Image {
+            asset,
+            format: ImageAssetFormat::Png,
+            width: Some(10),
+            height: Some(10),
+        });
+        scheme.items.push(item);
+        workspace.schemes.insert(scheme_id, scheme);
+        workspace.ensure_sync_metadata();
+        let document = workspace.scheme_sync.get(&scheme_id).unwrap().id;
+
+        let media = mobile_workspace_media_assets(&workspace);
+
+        assert_eq!(media.len(), 1);
+        assert_eq!(media[0].document, document);
+        assert_eq!(media[0].asset, asset);
+    }
+
+    fn unique_temp_dir(prefix: &str) -> PathBuf {
+        let mut path = std::env::temp_dir();
+        path.push(format!(
+            "{prefix}-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        fs::create_dir_all(&path).unwrap();
+        path
     }
 }
 
@@ -2135,6 +2800,7 @@ fn mobile_collect_crdt_changes(command: &Command, out: &mut WorkspaceCrdtChangeS
         | Command::RenameFolder { .. }
         | Command::SetFolderExpanded { .. }
         | Command::DeleteFolder { .. }
+        | Command::PermanentlyDeleteFolder { .. }
         | Command::CreateScheme { .. }
         | Command::RenameScheme { .. }
         | Command::SetSchemeColor { .. }
@@ -2148,6 +2814,12 @@ fn mobile_collect_crdt_changes(command: &Command, out: &mut WorkspaceCrdtChangeS
         Command::RestoreScheme { scheme, .. } | Command::RestoreDeletedScheme { scheme, .. } => {
             out.workspace = true;
             out.schemes.insert(scheme.id);
+        }
+        Command::RestoreDeletedFolder { schemes, .. } => {
+            out.workspace = true;
+            for scheme in schemes {
+                out.schemes.insert(scheme.id);
+            }
         }
         Command::InsertItem { scheme, .. }
         | Command::UpdateItemText { scheme, .. }
@@ -2176,6 +2848,7 @@ pub struct MobileSnapshot {
     pub root: MobileNode,
     pub schemes: Vec<MobileScheme>,
     pub archived_schemes: Vec<MobileScheme>,
+    pub archived_nodes: Vec<MobileNode>,
     pub daily: Vec<MobileDailyEntry>,
     pub calendar: MobileCalendar,
     pub settings: MobileSettings,
@@ -2392,6 +3065,14 @@ pub struct MobileSettings {
     pub event_notification_offset_secs: i32,
     pub assignment_notification_offset_secs: i32,
     pub google_account_count: i32,
+    pub google_accounts: Vec<MobileGoogleAccount>,
+}
+
+#[derive(Clone, Debug)]
+pub struct MobileGoogleAccount {
+    pub id: String,
+    pub title: String,
+    pub detail: String,
 }
 
 #[derive(Clone, Debug)]
@@ -2546,6 +3227,13 @@ fn parse_date_or_today(raw: Option<&str>) -> Result<NaiveDate> {
     }
 }
 
+fn normalize_daily_history_days(days: i32) -> i64 {
+    i64::from(days.clamp(
+        MOBILE_DAILY_DEFAULT_HISTORY_DAYS,
+        MOBILE_DAILY_MAX_HISTORY_DAYS,
+    ))
+}
+
 fn parse_datetime_opt(raw: Option<&str>) -> Result<Option<DateTime<Utc>>> {
     match raw {
         Some(raw) if !raw.is_empty() => Ok(Some(parse_datetime(raw)?)),
@@ -2620,6 +3308,18 @@ fn occurrence_anchor(
         .start
         .or(event.occurrence.end)
         .or(event.occurrence.available)
+}
+
+fn archived_scheme_node(scheme: &Scheme) -> MobileNode {
+    MobileNode {
+        kind: "scheme".to_string(),
+        id: scheme.id.to_string(),
+        name: scheme.name.clone(),
+        color_index: Some(i32::from(scheme.color_index)),
+        is_daily_queue: false,
+        is_read_only: scheme.is_read_only(),
+        children: Vec::new(),
+    }
 }
 
 fn format_datetime(dt: DateTime<Utc>) -> String {
@@ -2724,6 +3424,29 @@ fn as_u8(value: i32, label: &str) -> Result<u8> {
     u8::try_from(value).map_err(|_| anyhow!("{label} must be between 0 and 255: {value}"))
 }
 
+fn google_account_matches_calendar_source(
+    account: &GoogleOAuthAccount,
+    source: &ImportedCalendarSource,
+) -> bool {
+    if account.account_id == source.account_id {
+        return true;
+    }
+    let Some(account_email) = account.email.as_deref() else {
+        return false;
+    };
+    let source_email = source.account_email.as_deref().or_else(|| {
+        source
+            .account_id
+            .contains('@')
+            .then_some(source.account_id.as_str())
+    });
+    source_email.is_some_and(|source_email| emails_match(account_email, source_email))
+}
+
+fn emails_match(left: &str, right: &str) -> bool {
+    left.trim().eq_ignore_ascii_case(right.trim())
+}
+
 uniffi::include_scaffolding!("knotq_mobile_core");
 
 #[cfg(test)]
@@ -2771,6 +3494,7 @@ mod tests {
 
         queue_workspace_bootstrap_updates(
             &mut sync_state,
+            &mut WorkspaceCrdtDocuments::try_new(&workspace).unwrap(),
             &workspace,
             replica_id,
             &std::collections::HashMap::new(),
@@ -2818,6 +3542,7 @@ mod tests {
 
         queue_workspace_bootstrap_updates(
             &mut sync_state,
+            &mut WorkspaceCrdtDocuments::try_new(&workspace).unwrap(),
             &workspace,
             replica_id,
             &std::collections::HashMap::new(),
@@ -2869,10 +3594,285 @@ mod tests {
     }
 
     #[test]
+    fn archive_keeps_folder_hierarchy_and_restores_and_purges() {
+        let dir = std::env::temp_dir().join(format!("knotq-mobile-test-{}", uuid::Uuid::new_v4()));
+        let core = MobileCore::new(dir.display().to_string()).expect("open mobile core");
+
+        core.create_folder(None, "Projects".to_string(), None)
+            .expect("create folder");
+        let snapshot = core.snapshot(None, 0).expect("snapshot");
+        let folder = snapshot
+            .root
+            .children
+            .iter()
+            .find(|node| node.kind == "folder" && node.name == "Projects")
+            .expect("folder in tree");
+        let folder_id = folder.id.clone();
+
+        core.create_scheme(Some(folder_id.clone()), "Nested".to_string(), Some(1), None)
+            .expect("create nested scheme");
+
+        // Archive the folder as one unit.
+        core.delete_folder(folder_id.clone())
+            .expect("archive folder");
+        let snapshot = core.snapshot(None, 0).expect("snapshot after archive");
+        assert!(
+            !snapshot
+                .root
+                .children
+                .iter()
+                .any(|node| node.id == folder_id),
+            "archived folder should leave the sidebar tree"
+        );
+        let archived_folder = snapshot
+            .archived_nodes
+            .iter()
+            .find(|node| node.id == folder_id)
+            .expect("folder appears in archived tree");
+        assert_eq!(archived_folder.kind, "folder");
+        assert!(
+            archived_folder
+                .children
+                .iter()
+                .any(|child| child.kind == "scheme" && child.name == "Nested"),
+            "archived folder keeps its nested scheme"
+        );
+
+        // Restore brings the whole subtree back to the sidebar.
+        core.restore_folder(folder_id.clone())
+            .expect("restore folder");
+        let snapshot = core.snapshot(None, 0).expect("snapshot after restore");
+        assert!(
+            snapshot
+                .root
+                .children
+                .iter()
+                .any(|node| node.id == folder_id),
+            "restored folder returns to the sidebar tree"
+        );
+        assert!(snapshot.archived_nodes.is_empty());
+
+        // Re-archive then purge permanently.
+        core.delete_folder(folder_id.clone())
+            .expect("re-archive folder");
+        core.permanently_delete_folder(folder_id.clone())
+            .expect("purge folder");
+        let snapshot = core.snapshot(None, 0).expect("snapshot after purge");
+        assert!(snapshot.archived_nodes.is_empty());
+        assert!(
+            !snapshot
+                .schemes
+                .iter()
+                .any(|scheme| scheme.name == "Nested"),
+            "purged folder's schemes are gone"
+        );
+
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn restoring_a_nested_scheme_lifts_it_to_root_and_out_of_archive() {
+        let dir = std::env::temp_dir().join(format!("knotq-mobile-test-{}", uuid::Uuid::new_v4()));
+        let core = MobileCore::new(dir.display().to_string()).expect("open mobile core");
+
+        core.create_folder(None, "Parent".to_string(), None)
+            .expect("create folder");
+        let snapshot = core.snapshot(None, 0).expect("snapshot");
+        let folder_id = snapshot
+            .root
+            .children
+            .iter()
+            .find(|node| node.kind == "folder" && node.name == "Parent")
+            .expect("folder")
+            .id
+            .clone();
+        core.create_scheme(Some(folder_id.clone()), "Child".to_string(), Some(1), None)
+            .expect("create nested scheme");
+        let snapshot = core.snapshot(None, 0).expect("snapshot");
+        let scheme_id = snapshot
+            .schemes
+            .iter()
+            .find(|scheme| scheme.name == "Child")
+            .expect("nested scheme")
+            .id
+            .clone();
+
+        // Archive the whole folder, then restore only the nested scheme.
+        core.delete_folder(folder_id.clone())
+            .expect("archive folder");
+        core.restore_scheme(scheme_id.clone())
+            .expect("restore nested scheme");
+
+        let snapshot = core.snapshot(None, 0).expect("snapshot after restore");
+        // The scheme is back at the root, no longer under the archived folder.
+        assert!(
+            snapshot
+                .root
+                .children
+                .iter()
+                .any(|node| node.id == scheme_id),
+            "restored scheme sits at the root"
+        );
+        let archived_folder = snapshot
+            .archived_nodes
+            .iter()
+            .find(|node| node.id == folder_id)
+            .expect("folder still archived");
+        assert!(
+            !contains_node(archived_folder, &scheme_id),
+            "restored scheme is gone from the archived subtree"
+        );
+        assert!(
+            !snapshot
+                .archived_schemes
+                .iter()
+                .any(|scheme| scheme.id == scheme_id),
+            "restored scheme is gone from the archive"
+        );
+
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn restoring_a_nested_folder_lifts_its_subtree_to_root() {
+        let dir = std::env::temp_dir().join(format!("knotq-mobile-test-{}", uuid::Uuid::new_v4()));
+        let core = MobileCore::new(dir.display().to_string()).expect("open mobile core");
+
+        core.create_folder(None, "Outer".to_string(), None)
+            .expect("create outer");
+        let outer_id = core
+            .snapshot(None, 0)
+            .unwrap()
+            .root
+            .children
+            .iter()
+            .find(|node| node.name == "Outer")
+            .unwrap()
+            .id
+            .clone();
+        core.create_folder(Some(outer_id.clone()), "Inner".to_string(), None)
+            .expect("create inner");
+        let inner_id = core
+            .snapshot(None, 0)
+            .unwrap()
+            .root
+            .children
+            .iter()
+            .find(|node| node.id == outer_id)
+            .unwrap()
+            .children
+            .iter()
+            .find(|node| node.name == "Inner")
+            .unwrap()
+            .id
+            .clone();
+        core.create_scheme(Some(inner_id.clone()), "Deep".to_string(), Some(1), None)
+            .expect("create deep scheme");
+
+        core.delete_folder(outer_id.clone()).expect("archive outer");
+        core.restore_folder(inner_id.clone())
+            .expect("restore nested folder");
+
+        let snapshot = core.snapshot(None, 0).expect("snapshot after restore");
+        assert!(
+            snapshot
+                .root
+                .children
+                .iter()
+                .any(|node| node.id == inner_id),
+            "restored inner folder sits at the root"
+        );
+        assert!(
+            snapshot.schemes.iter().any(|scheme| scheme.name == "Deep"),
+            "the inner folder's scheme is no longer archived"
+        );
+        let archived_outer = snapshot
+            .archived_nodes
+            .iter()
+            .find(|node| node.id == outer_id)
+            .expect("outer still archived");
+        assert!(
+            !contains_node(archived_outer, &inner_id),
+            "restored inner folder left the archived subtree"
+        );
+
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    fn contains_node(node: &MobileNode, id: &str) -> bool {
+        node.id == id || node.children.iter().any(|child| contains_node(child, id))
+    }
+
+    #[test]
+    fn completing_an_overdue_assignment_keeps_it_on_the_upcoming_panel() {
+        let dir = std::env::temp_dir().join(format!("knotq-mobile-test-{}", uuid::Uuid::new_v4()));
+        let core = MobileCore::new(dir.display().to_string()).expect("open mobile core");
+
+        core.create_scheme(None, "Work".to_string(), Some(1), None)
+            .expect("create scheme");
+        let scheme_id = core
+            .snapshot(None, 0)
+            .unwrap()
+            .schemes
+            .iter()
+            .find(|scheme| scheme.name == "Work")
+            .unwrap()
+            .id
+            .clone();
+        core.add_calendar_item(
+            Some(scheme_id),
+            None,
+            "Old essay".to_string(),
+            "assignment".to_string(),
+            None,
+            Some("2020-01-01T10:00:00Z".to_string()),
+        )
+        .expect("add overdue assignment");
+
+        let overdue = core.snapshot(None, 0).unwrap().calendar.overdue;
+        let occ = overdue
+            .iter()
+            .find(|occ| occ.title == "Old essay")
+            .expect("overdue assignment present");
+        assert!(!occ.done);
+
+        // Completing it keeps it on the panel (marked done), not dropped.
+        core.toggle_occurrence(
+            occ.scheme_id.clone(),
+            occ.item_id.clone(),
+            occ.occurrence_json.clone(),
+        )
+        .expect("complete");
+        let overdue = core.snapshot(None, 0).unwrap().calendar.overdue;
+        let occ = overdue
+            .iter()
+            .find(|occ| occ.title == "Old essay")
+            .expect("retained after completion");
+        assert!(occ.done, "the completed assignment stays, faded");
+
+        // Un-completing removes the retention but it's still overdue, so it stays.
+        core.toggle_occurrence(
+            occ.scheme_id.clone(),
+            occ.item_id.clone(),
+            occ.occurrence_json.clone(),
+        )
+        .expect("un-complete");
+        let overdue = core.snapshot(None, 0).unwrap().calendar.overdue;
+        let occ = overdue
+            .iter()
+            .find(|occ| occ.title == "Old essay")
+            .expect("still present");
+        assert!(!occ.done);
+
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
     fn daily_queue_loads_old_entries_on_demand() {
         let dir = std::env::temp_dir().join(format!("knotq-mobile-test-{}", uuid::Uuid::new_v4()));
         let workspace_path = dir.join("workspace").join("workspace.json");
-        let old_date = NaiveDate::from_ymd_opt(2000, 1, 15).unwrap();
+        let old_date = NaiveDate::from_ymd_opt(2026, 5, 1).unwrap();
+        let current_date = NaiveDate::from_ymd_opt(2026, 5, 26).unwrap();
         let old_id = daily_queue_scheme_id(old_date);
         let mut workspace = Workspace::new();
         let mut old_daily = Scheme::new(daily_queue_scheme_name(old_date), DAILY_QUEUE_COLOR_INDEX);
@@ -2883,14 +3883,16 @@ mod tests {
         save_workspace(&workspace_path, &workspace).expect("seed workspace");
 
         let core = MobileCore::new(dir.display().to_string()).expect("open mobile core");
-        let current = core.snapshot(None, 0).expect("current snapshot");
+        let current = core
+            .snapshot(Some(current_date.to_string()), 0)
+            .expect("current snapshot");
         assert!(!current
             .daily
             .iter()
             .any(|entry| entry.date == old_date.to_string()));
 
         let old = core
-            .snapshot(Some(old_date.to_string()), 0)
+            .snapshot_with_daily_history(Some(current_date.to_string()), 0, 31)
             .expect("old snapshot");
         let loaded = old
             .daily

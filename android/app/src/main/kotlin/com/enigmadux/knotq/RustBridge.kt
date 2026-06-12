@@ -5,6 +5,7 @@ import com.enigmadux.knotq.ffi.MobileCalendar
 import com.enigmadux.knotq.ffi.MobileCalendarDay
 import com.enigmadux.knotq.ffi.MobileCore
 import com.enigmadux.knotq.ffi.MobileDailyEntry
+import com.enigmadux.knotq.ffi.MobileGoogleAccount
 import com.enigmadux.knotq.ffi.MobileGoogleAuthRequest
 import com.enigmadux.knotq.ffi.MobileGoogleSyncResult
 import com.enigmadux.knotq.ffi.MobileItem
@@ -34,7 +35,11 @@ internal class RustBridge(context: Context) : AutoCloseable {
 
     fun request(body: JSONObject): JSONObject {
         when (body.getString("type")) {
-            "snapshot" -> return core.snapshot(body.stringOrNull("today"), body.optInt("week_offset", 0)).toJson()
+            "snapshot" -> return core.snapshotWithDailyHistory(
+                body.stringOrNull("today"),
+                body.optInt("week_offset", 0),
+                body.optInt("daily_history_days", 3)
+            ).toJson()
             "google_auth_request" -> return core.googleAuthRequest(
                 body.getString("client_id"),
                 body.getString("redirect_uri")
@@ -48,6 +53,7 @@ internal class RustBridge(context: Context) : AutoCloseable {
                 body.stringOrNull("parent_id")
             ).toJson()
             "sync_google_calendars" -> return core.syncGoogleCalendars().toJson()
+            "unlink_google_account" -> core.unlinkGoogleAccount(body.getString("account_id"))
             "create_folder" -> core.createFolder(body.stringOrNull("parent_id"), body.getString("name"), body.intOrNull("position"))
             "rename_folder" -> core.renameFolder(body.getString("folder_id"), body.getString("name"))
             "delete_folder" -> core.deleteFolder(body.getString("folder_id"))
@@ -123,21 +129,26 @@ internal class RustBridge(context: Context) : AutoCloseable {
                 body.stringOrNull("occurrence_json"),
                 body.intOrNull("offset_secs")
             )
-            "commit_event_edit" -> core.commitEventEdit(
-                body.getString("scheme_id"),
-                body.getString("item_id"),
-                body.getString("occurrence_json"),
-                body.optInt("occurrence_index", 0),
-                body.getString("title"),
-                body.stringOrNull("occurrence_start"),
-                body.stringOrNull("occurrence_end"),
-                body.stringOrNull("start"),
-                body.stringOrNull("end"),
-                body.stringOrNull("rrule"),
-                body.intOrNull("notification_offset_secs"),
-                body.optBoolean("notification_dirty", false),
-                body.optBoolean("done", false),
-                body.optString("scope", "all_events")
+            // The 14-argument FFI form mis-marshals its trailing booleans
+            // through JNA/libffi on device, so this goes through the
+            // single-JSON-argument variant.
+            "commit_event_edit" -> core.commitEventEditPayload(
+                JSONObject()
+                    .put("scheme_id", body.getString("scheme_id"))
+                    .put("item_id", body.getString("item_id"))
+                    .put("occurrence_json", body.getString("occurrence_json"))
+                    .put("occurrence_index", body.optInt("occurrence_index", 0))
+                    .put("title", body.getString("title"))
+                    .putOpt("occurrence_start", body.stringOrNull("occurrence_start"))
+                    .putOpt("occurrence_end", body.stringOrNull("occurrence_end"))
+                    .putOpt("start", body.stringOrNull("start"))
+                    .putOpt("end", body.stringOrNull("end"))
+                    .putOpt("rrule", body.stringOrNull("rrule"))
+                    .putOpt("notification_offset_secs", body.intOrNull("notification_offset_secs"))
+                    .put("notification_dirty", body.optBoolean("notification_dirty", false))
+                    .put("done", body.optBoolean("done", false))
+                    .put("scope", body.optString("scope", "all_events"))
+                    .toString()
             )
             "toggle_item" -> core.toggleItem(body.getString("scheme_id"), body.getString("item_id"))
             "toggle_occurrence" -> core.toggleOccurrence(
@@ -302,6 +313,12 @@ internal class RustBridge(context: Context) : AutoCloseable {
         .put("event_notification_offset_secs", eventNotificationOffsetSecs)
         .put("assignment_notification_offset_secs", assignmentNotificationOffsetSecs)
         .put("google_account_count", googleAccountCount)
+        .put("google_accounts", googleAccounts.toJsonArray { it.toJson() })
+
+    private fun MobileGoogleAccount.toJson(): JSONObject = JSONObject()
+        .put("id", id)
+        .put("title", title)
+        .put("detail", detail)
 
     private fun MobileGoogleAuthRequest.toJson(): JSONObject = JSONObject()
         .put("auth_url", authUrl)
