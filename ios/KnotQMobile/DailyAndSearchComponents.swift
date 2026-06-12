@@ -1,4 +1,6 @@
+import Foundation
 import SwiftUI
+import UIKit
 
 struct DesktopSchemePane: View {
     let scheme: MobileScheme
@@ -163,11 +165,7 @@ struct DailyFeedPane: View {
         if hasNonEmptyValue(item.start) || hasNonEmptyValue(item.end) || hasNonEmptyValue(item.repeatRule) {
             return true
         }
-        return item.notificationOffsetSecs != nil || !item.media.isEmpty
-    }
-
-    private func hasNonEmptyValue(_ value: String?) -> Bool {
-        value?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false
+        return item.notificationOffsetSecs != nil || item.media.contains(where: dailyMediaIsDisplayable)
     }
 
     private func handleOlderEntryAppear(_ date: String) {
@@ -287,7 +285,7 @@ struct DailyDayEditorSection: View {
 
     var body: some View {
         IntegratedSchemeEditorPane(
-            scheme: entry.scheme,
+            scheme: displayScheme,
             theme: theme,
             onBack: nil,
             onAdd: {},
@@ -296,9 +294,13 @@ struct DailyDayEditorSection: View {
             editorScrollEnabled: false,
             editorInsets: UIEdgeInsets(top: 3, left: 14, bottom: 5, right: 14),
             showsInlineTitle: !isEmpty,
-            autoFocusOnAppear: selected && autoFocusOnAppear
+            autoFocusOnAppear: selected && autoFocusOnAppear && !isEmpty
         )
-        .frame(minHeight: editorHeight)
+        // Non-empty days self-size from the editor's TextKit measurement
+        // (SchemeTextView.sizeThatFits); only the empty selected day gets a
+        // fixed compact tap target.
+        .frame(height: isEmpty ? (selected ? 44 : 0) : nil, alignment: .top)
+        .clipped()
         .background(selected ? theme.rowSelected.opacity(0.42) : Color.clear)
         .clipShape(RoundedRectangle(cornerRadius: 7))
         .contentShape(Rectangle())
@@ -309,16 +311,41 @@ struct DailyDayEditorSection: View {
         }
     }
 
-    private var editorHeight: CGFloat {
-        if isEmpty {
-            return selected ? 44 : 0
-        }
-        let visualLineCount = entry.scheme.items.reduce(0) { total, item in
-            total + max(1, Int(ceil(Double(max(item.text.count, 1)) / 34.0)))
-        }
-        let annotationCount = entry.scheme.items.filter { $0.start != nil || $0.end != nil }.count
-        return max(48, CGFloat(max(1, visualLineCount)) * 24 + CGFloat(annotationCount) * 14 + 16)
+    private var displayScheme: MobileScheme {
+        MobileScheme(
+            id: entry.scheme.id,
+            name: entry.scheme.name,
+            displayName: entry.scheme.displayName,
+            colorIndex: entry.scheme.colorIndex,
+            isDailyQueue: entry.scheme.isDailyQueue,
+            isReadOnly: entry.scheme.isReadOnly,
+            date: entry.scheme.date,
+            items: displayItems
+        )
     }
+
+    private var displayItems: [MobileItem] {
+        entry.scheme.items.map { item in
+            var item = item
+            item.media = item.media.filter(dailyMediaIsDisplayable)
+            return item
+        }
+    }
+
+}
+
+private func dailyMediaIsDisplayable(_ media: MobileItemMedia) -> Bool {
+    guard media.kind == "image",
+          let path = media.path?.trimmingCharacters(in: .whitespacesAndNewlines),
+          !path.isEmpty
+    else {
+        return false
+    }
+    return FileManager.default.fileExists(atPath: path)
+}
+
+private func hasNonEmptyValue(_ value: String?) -> Bool {
+    value?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false
 }
 
 private struct DailyBackButtonStyle: ButtonStyle {

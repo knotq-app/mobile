@@ -42,6 +42,8 @@ private final class TransparentInputAccessoryView: UIInputView {
 
 struct SchemeTextView: UIViewRepresentable {
     let controller: EditorController
+    let items: [MobileItem]
+    let timeFormat: String
     let theme: KnotQTheme
     let accent: Color
     let isScrollEnabled: Bool
@@ -94,7 +96,6 @@ struct SchemeTextView: UIViewRepresentable {
         view.smartQuotesType = .no
         view.isEditable = !readOnly
         view.isSelectable = true
-        view.inputAccessoryView = readOnly ? nil : coordinator.makeToolbar(for: view)
         view.configureTitle(title: schemeTitle, theme: theme, visible: showsTitle, editable: titleEditable, validator: titleValidator, onCommit: onRenameTitle)
         let checkboxTap = UITapGestureRecognizer(target: coordinator, action: #selector(EditorCoordinator.handleEditorTap(_:)))
         checkboxTap.delegate = coordinator
@@ -103,6 +104,10 @@ struct SchemeTextView: UIViewRepresentable {
         view.addGestureRecognizer(checkboxTap)
         controller.view = view
         view.typingAttributes = EditorAttributes.bodyAttributes(meta: LineMeta(), theme: theme)
+        // Populate storage before SwiftUI's first sizeThatFits pass so a
+        // self-sizing (Daily feed) editor measures real content from frame one;
+        // the pane's onAppear load runs only after layout.
+        view.loadItems(items, theme: theme, timeFormat: timeFormat, placeCursorAtEnd: false)
         return view
     }
 
@@ -121,9 +126,21 @@ struct SchemeTextView: UIViewRepresentable {
         uiView.keyboardDismissMode = .none
         uiView.isEditable = !readOnly
         uiView.isSelectable = true
-        uiView.inputAccessoryView = readOnly ? nil : uiView.inputAccessoryView ?? coordinator.makeToolbar(for: uiView)
+        if readOnly, uiView.inputAccessoryView != nil {
+            uiView.inputAccessoryView = nil
+        }
         uiView.configureTitle(title: schemeTitle, theme: theme, visible: showsTitle, editable: titleEditable, validator: titleValidator, onCommit: onRenameTitle)
         uiView.setNeedsDisplay()
+    }
+
+    /// Self-sizing for embedded (non-scrolling) editors: report the exact
+    /// TextKit-measured height for the proposed width so the Daily feed lays
+    /// days out without estimated heights. Scrolling editors keep the default
+    /// fill-proposed-space behavior.
+    func sizeThatFits(_ proposal: ProposedViewSize, uiView: EditorTextView, context: Context) -> CGSize? {
+        guard !isScrollEnabled else { return nil }
+        guard let width = proposal.width, width.isFinite, width > 0 else { return nil }
+        return CGSize(width: width, height: uiView.measuredHeight(forWidth: width))
     }
 }
 
@@ -393,6 +410,12 @@ final class EditorCoordinator: NSObject, UITextViewDelegate, @preconcurrency NST
     /// auto-bulletize. Programmatic edits (set marker, toggle indent, etc.)
     /// suppress this callback because they already maintain the invariants.
     func textStorage(_ storage: NSTextStorage, didProcessEditing actions: NSTextStorage.EditActions, range editedRange: NSRange, changeInLength delta: Int) {
+        // Self-sizing (Daily feed) editors must re-measure after *any* storage
+        // mutation — including suppressed programmatic ones (marker changes,
+        // checkbox toggles, document loads) that never reach textViewDidChange.
+        if let view, !view.isScrollEnabled {
+            view.invalidateIntrinsicContentSize()
+        }
         guard suppressDelegateDepth == 0 else { return }
         guard actions.contains(.editedCharacters) else { return }
 

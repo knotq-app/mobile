@@ -169,6 +169,8 @@ struct IntegratedSchemeEditorPane: View {
                 ZStack(alignment: .topLeading) {
                     SchemeTextView(
                         controller: controller,
+                        items: scheme.items,
+                        timeFormat: timeFormat,
                         theme: theme,
                         accent: accent,
                         isScrollEnabled: editorScrollEnabled,

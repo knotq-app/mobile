@@ -133,6 +133,40 @@ final class EditorTextView: UITextView {
     required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
 
     private var lastIntrinsicWidth: CGFloat = 0
+    private var measurementWidth: CGFloat?
+    private var cachedFitSize = CGSize(width: -1, height: -1)
+
+    override func invalidateIntrinsicContentSize() {
+        cachedFitSize = CGSize(width: -1, height: -1)
+        super.invalidateIntrinsicContentSize()
+    }
+
+    /// Exact content height for a proposed layout width; drives the Daily
+    /// feed's self-sizing sections. Media/annotation spacing is routed through
+    /// `measurementWidth` so image scaling matches the width being proposed
+    /// rather than the (possibly stale or zero) current bounds.
+    func measuredHeight(forWidth width: CGFloat) -> CGFloat {
+        if cachedFitSize.width == width { return cachedFitSize.height }
+        measurementWidth = width
+        defer { measurementWidth = nil }
+        let fitted = sizeThatFits(CGSize(width: width, height: .greatestFiniteMagnitude))
+        let height = ceil(fitted.height)
+        cachedFitSize = CGSize(width: width, height: height)
+        return height
+    }
+
+    override func becomeFirstResponder() -> Bool {
+        // The formatting toolbar is built on demand: the Daily feed mounts an
+        // editor per day while scrolling, and only a focused one shows it.
+        if isEditable, inputAccessoryView == nil, let coordinator {
+            inputAccessoryView = coordinator.makeToolbar(for: self)
+        }
+        let became = super.becomeFirstResponder()
+        if became {
+            coordinator?.refreshToolbarActiveMarker(in: self)
+        }
+        return became
+    }
 
     override func layoutSubviews() {
         super.layoutSubviews()
@@ -878,7 +912,8 @@ final class EditorTextView: UITextView {
     }
 
     private func editorImageMaxWidth(textLeft: CGFloat) -> CGFloat {
-        max(120, bounds.width - textLeft - textContainerInset.right - 8)
+        let referenceWidth = measurementWidth ?? bounds.width
+        return max(120, referenceWidth - textLeft - textContainerInset.right - 8)
     }
 
     private func editorImageMaxWidth(meta: LineMeta) -> CGFloat {
@@ -941,7 +976,12 @@ final class EditorTextView: UITextView {
 
 extension EditorCoordinator {
     fileprivate func markClean() {
-        controller?.isDirty = false
+        // Skip the redundant write: loadItems now also runs inside makeUIView,
+        // and publishing an unchanged @Published value there would trip
+        // "publishing changes from within view updates".
+        if controller?.isDirty == true {
+            controller?.isDirty = false
+        }
     }
 }
 
