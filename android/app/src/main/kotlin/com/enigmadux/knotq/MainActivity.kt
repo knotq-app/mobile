@@ -1480,12 +1480,11 @@ class MainActivity : Activity() {
     private fun homeDailySchemeRow(): View {
         val entry = dailyEntryForHome()
         val scheme = entry?.optJSONObject("scheme")
-        val itemCount = scheme?.optJSONArray("items")?.length() ?: 0
-        val doneCount = countDoneItems(scheme)
+        val openCount = countOpenItems(scheme)
         val date = entry?.optString("date") ?: selectedDate.toString()
         val detail = when {
-            itemCount == 0 -> MobileDateFormatting.shortDay(date)
-            else -> "${MobileDateFormatting.shortDay(date)} · $doneCount/$itemCount"
+            openCount == 0 -> MobileDateFormatting.shortDay(date)
+            else -> "${MobileDateFormatting.shortDay(date)} · $openCount"
         }
         return LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
@@ -1583,6 +1582,15 @@ class MainActivity : Activity() {
             if (item.optBoolean("done")) done++
         }
         return done
+    }
+
+    // Matches iOS HomeDailySchemeRow.openCount: not done, non-blank text.
+    private fun countOpenItems(scheme: JSONObject?): Int {
+        var open = 0
+        scheme?.optJSONArray("items")?.forEachObject { item ->
+            if (!item.optBoolean("done") && item.optString("text").trim().isNotEmpty()) open++
+        }
+        return open
     }
 
     private fun renderListsPage(): LinearLayout {
