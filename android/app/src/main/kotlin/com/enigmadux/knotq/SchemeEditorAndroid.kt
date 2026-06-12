@@ -5,11 +5,15 @@ import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.Canvas
 import android.graphics.Color
+import android.graphics.ColorFilter
 import android.graphics.Paint
 import android.graphics.Path
+import android.graphics.PixelFormat
 import android.graphics.Rect
 import android.graphics.RectF
 import android.graphics.Typeface
+import android.graphics.drawable.Drawable
+import android.os.Build
 import android.text.Editable
 import android.text.Spannable
 import android.text.TextWatcher
@@ -44,6 +48,41 @@ private const val EDITOR_IMAGE_STACK_GAP_DP = 7
 private const val EDITOR_IMAGE_MAX_HEIGHT_DP = 300
 private const val EDITOR_IMAGE_FALLBACK_WIDTH_DP = 320
 private const val EDITOR_IMAGE_FALLBACK_HEIGHT_DP = 180
+private class FixedHeightCursorDrawable(
+    color: Int,
+    private val maxHeightPx: Int,
+    private val widthPx: Int
+) : Drawable() {
+    private val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply { this.color = color }
+
+    override fun draw(canvas: Canvas) {
+        val cursorHeight = min(maxHeightPx, bounds.height())
+        val radius = widthPx / 2f
+        canvas.drawRoundRect(
+            bounds.left.toFloat(),
+            bounds.top.toFloat(),
+            (bounds.left + widthPx).toFloat(),
+            (bounds.top + cursorHeight).toFloat(),
+            radius,
+            radius,
+            paint
+        )
+    }
+
+    override fun setAlpha(alpha: Int) {
+        paint.alpha = alpha
+    }
+
+    override fun setColorFilter(colorFilter: ColorFilter?) {
+        paint.colorFilter = colorFilter
+    }
+
+    @Deprecated("Deprecated in Java")
+    override fun getOpacity(): Int = PixelFormat.TRANSLUCENT
+
+    override fun getIntrinsicWidth(): Int = widthPx
+}
+
 internal class MaxWidthLinearLayout(context: android.content.Context, private val maxWidthPx: Int) : LinearLayout(context) {
     override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
         val width = View.MeasureSpec.getSize(widthMeasureSpec)
@@ -60,9 +99,23 @@ internal class SchemeEditText(context: android.content.Context) : EditText(conte
     var editorTheme: UiTheme = UiTheme.dark
         set(value) {
             field = value
+            applyCursorDrawable()
             editableText?.let { applyPrefixSpans(it, fullDocument = true) }
             invalidate()
         }
+
+    /// Lines with media/annotations reserve extra height below the text, and
+    /// the stock cursor stretches across all of it. Cap the caret at one text
+    /// line (iOS keeps a text-sized caret there too; selection stays rough).
+    private fun applyCursorDrawable() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            textCursorDrawable = FixedHeightCursorDrawable(
+                color = editorTheme.accent,
+                maxHeightPx = dp(26),
+                widthPx = max(2, dp(2))
+            )
+        }
+    }
     var accentColor: Int = Color.BLUE
         set(value) {
             field = value

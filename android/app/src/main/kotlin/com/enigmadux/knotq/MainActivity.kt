@@ -62,6 +62,7 @@ import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.Spinner
+import android.widget.Switch
 import android.widget.TextView
 import android.widget.TimePicker
 import android.widget.Toast
@@ -1944,6 +1945,9 @@ class MainActivity : Activity() {
         private var dragOffsetY = 0f
         private var dragMoved = false
         private var dragSnapBaseline = -1f
+        // The dragged block stays rendered at its drop slot while the recurring
+        // scope prompt is open.
+        private var dragHeldForDialog = false
         private var draftDay = -1
         private var draftMinute = -1f
         private var draftRect: RectF? = null
@@ -2152,6 +2156,7 @@ class MainActivity : Activity() {
 
         private fun clearDragPreview() {
             dragMode = CALENDAR_INTERACTION_NONE
+            dragHeldForDialog = false
             dragLaid = null
             dragSourceDay = -1
             dragStartMinute = 0f
@@ -2270,16 +2275,31 @@ class MainActivity : Activity() {
                         scope = scope
                     )
                 }
-                clearDragPreview()
                 if (laid.occ.optBoolean("is_recurring", false)) {
-                    showOccurrenceScopeDialog("Recurring task", laid.occ, forDelete = false) { scope ->
+                    // Keep the dragged block at its target slot while the scope
+                    // prompt is up; snap back only if the prompt is cancelled.
+                    dragMode = CALENDAR_INTERACTION_NONE
+                    dragHeldForDialog = true
+                    invalidate()
+                    showOccurrenceScopeDialog(
+                        "Recurring task",
+                        laid.occ,
+                        forDelete = false,
+                        onCancel = {
+                            clearDragPreview()
+                            invalidate()
+                        }
+                    ) { scope ->
                         commit(scope)
                     }
                 } else {
+                    clearDragPreview()
+                    invalidate()
                     commit("all_events")
                 }
             } else {
                 clearDragPreview()
+                invalidate()
                 showEventEditorDialog(laid.occ)
             }
         }
@@ -2460,11 +2480,16 @@ class MainActivity : Activity() {
             val dayCanvas = canvas.save()
             canvas.clipRect(gutterPx.toFloat(), 0f, width.toFloat(), height.toFloat())
             canvas.translate(swipeOffsetX, 0f)
-            laid.forEach { drawEvent(canvas, it) }
+            // While dragging (or holding for the scope prompt), only the moving
+            // copy is drawn — not the original.
+            val dragActive = dragMode == CALENDAR_INTERACTION_DRAG || dragHeldForDialog
+            laid.forEach {
+                if (!dragActive || it !== dragLaid) drawEvent(canvas, it)
+            }
             // The create draft stays visible after the touch ends, while its
             // editor dialog is open (cleared via the dialog's dismiss callback).
             draftRect?.let { drawDraftBlock(canvas, it) }
-            if (dragMode == CALENDAR_INTERACTION_DRAG) {
+            if (dragActive) {
                 dragLaid?.let { laid ->
                     val kind = laid.occ.optString("kind")
                     val moving = JSONObject(laid.occ.toString()).apply {
@@ -3099,34 +3124,27 @@ class MainActivity : Activity() {
             orientation = LinearLayout.VERTICAL
             setBackgroundColor(theme.bgApp)
         }
+        // iOS DailyEditorNavigationBar: a back-only bar over the feed.
         root.addView(LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
             setPadding(dp(12), 0, dp(12), 0)
             background = underline(theme.bgApp)
-            addView(iconChipImage(R.drawable.ic_knotq_chevron_left_24, "Previous day", iconSize = 18) {
-                selectedDate = selectedDate.minusDays(1)
-                ensureDaily()
+            addView(iconChipImage(R.drawable.ic_knotq_chevron_left_24, "Back", iconSize = 20) {
+                currentFocus?.clearFocus()
+                selectedTab = TAB_HOME
+                selectedSchemeId = null
+                render()
             })
-            addView(text(MobileDateFormatting.fullDay(selectedDate.toString()), theme.textPrimary, 14f, true).apply {
-                gravity = Gravity.CENTER
-                setOnClickListener { showDatePicker() }
-            }, LinearLayout.LayoutParams(0, -1, 1f))
-            addView(iconChipImage(R.drawable.ic_knotq_plus_24, "Add item", iconSize = 17) {
-                activeEditor()?.let(::insertTaskLine)
-                    ?: dailyScheme()?.let { scheme ->
-                        mutate(obj("type" to "add_item", "scheme_id" to scheme.optString("id"), "text" to "", "marker" to "checkbox"))
-                    }
-            })
-            addView(iconChipImage(R.drawable.ic_knotq_chevron_right_24, "Next day", iconSize = 18) {
-                selectedDate = selectedDate.plusDays(1)
-                ensureDaily()
-            }, LinearLayout.LayoutParams(dp(32), dp(28)).apply { setMargins(dp(6), 0, 0, 0) })
+            addView(View(this@MainActivity), LinearLayout.LayoutParams(0, 1, 1f))
         }, LinearLayout.LayoutParams(-1, dp(44)))
 
+        // iOS DailyFeedPane: a bottom-pinned feed of day sections — each one a
+        // scheme editor with the date as its inline title — loading more
+        // history as you scroll up.
         val list = MaxWidthLinearLayout(this, dp(760)).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(dp(14), dp(8), dp(14), dp(14))
+            setPadding(dp(10), dp(2), dp(10), dp(14))
             setBackgroundColor(theme.bgApp)
         }
         val days = dailyEntries()
@@ -3209,35 +3227,34 @@ class MainActivity : Activity() {
         return true
     }
 
+    /// iOS `DailyDayEditorSection`: each day is a scheme editor with the date
+    /// as its inline title, the selected day softly highlighted; tapping an
+    /// unselected day selects it.
     private fun dailyDayEditor(day: JSONObject): View {
         val date = day.optString("date")
         val scheme = day.optJSONObject("scheme") ?: return emptyState(MobileDateFormatting.fullDay(date), "Daily not ready")
         val schemeId = scheme.optString("id")
         val selected = date == selectedDate.toString()
+        val empty = isDailyEntryEmpty(day)
         val originalLines = documentLines(scheme)
+        // iOS rowSelected.opacity(0.42): rowSelected's own alpha times 0.42
+        // (adjustAlpha REPLACES alpha, so compute the product explicitly).
+        val selectedFill = if (theme.isDark) {
+            adjustAlpha(Color.WHITE, 0.059f)
+        } else {
+            adjustAlpha(rgb(0xe66f1f), 0.043f)
+        }
         return LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            addView(LinearLayout(this@MainActivity).apply {
-                orientation = LinearLayout.HORIZONTAL
-                gravity = Gravity.CENTER_VERTICAL
-                setPadding(dp(6), 0, dp(6), dp(3))
-                addView(View(this@MainActivity).apply {
-                    background = rounded(if (selected) dailyAccent() else theme.divider, dp(4))
-                }, LinearLayout.LayoutParams(dp(7), dp(7)).apply {
-                    setMargins(0, 0, dp(8), 0)
-                })
-                addView(text(MobileDateFormatting.fullDay(date), if (selected) theme.textPrimary else theme.textDim, 13f, true), LinearLayout.LayoutParams(0, -2, 1f))
-                if ((scheme.optJSONArray("items")?.length() ?: 0) == 0) {
-                    addView(inlineIcon(R.drawable.ic_knotq_plus_24, theme.textMuted, widthDp = 22, iconSize = 15), LinearLayout.LayoutParams(dp(22), dp(22)))
-                }
-                setOnClickListener {
-                    runCatching { LocalDate.parse(date) }.getOrNull()?.let {
-                        selectedDate = it
-                        loadSnapshot()
-                        render()
-                    }
-                }
-            })
+            background = rounded(if (selected) selectedFill else Color.TRANSPARENT, dp(7))
+            setPadding(0, dp(3), 0, dp(5))
+            if (!empty) {
+                addView(text(MobileDateFormatting.fullDay(date), theme.textPrimary, 26f, true).apply {
+                    includeFontPadding = false
+                    gravity = Gravity.CENTER_VERTICAL
+                    setPadding(dp(14), 0, dp(14), 0)
+                }, LinearLayout.LayoutParams(-1, dp(44)))
+            }
             val editor = SchemeEditText(this@MainActivity).apply {
                 setText(renderDocument(originalLines))
                 placeCursorAtDocumentEnd(this)
@@ -3251,18 +3268,17 @@ class MainActivity : Activity() {
                 gravity = Gravity.TOP or Gravity.START
                 setTextColor(theme.textPrimary)
                 setHintTextColor(theme.textMuted)
-                hint = "Start typing"
                 inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_MULTI_LINE or InputType.TYPE_TEXT_FLAG_CAP_SENTENCES
                 setSingleLine(false)
                 imeOptions = EditorInfo.IME_ACTION_DONE
                 setTextSize(16f)
                 setHorizontallyScrolling(false)
-                setPadding(dp(EDITOR_TEXT_LEFT_PAD_DP), dp(8), dp(18), dp(12))
+                setPadding(dp(14), dp(3), dp(14), dp(5))
                 setLineSpacing(0f, 1f)
-                minHeight = dailyEditorHeight(scheme)
+                minHeight = if (empty) dp(44) else dailyEditorHeight(scheme)
                 isVerticalScrollBarEnabled = false
                 overScrollMode = View.OVER_SCROLL_NEVER
-                background = rounded(if (selected) theme.rowSelected else Color.TRANSPARENT, dp(7))
+                background = null
                 setOnFocusChangeListener { _, hasFocus ->
                     if (hasFocus) {
                         hidePhoneDockForEditing()
@@ -3272,7 +3288,21 @@ class MainActivity : Activity() {
                     }
                 }
             }
-            if (selected) {
+            if (!selected) {
+                // Unselected days select on tap (like iOS); editing starts once
+                // the day is the active one.
+                editor.isFocusable = false
+                editor.isFocusableInTouchMode = false
+                val select = View.OnClickListener {
+                    runCatching { LocalDate.parse(date) }.getOrNull()?.let {
+                        selectedDate = it
+                        loadSnapshot()
+                        render()
+                    }
+                }
+                setOnClickListener(select)
+                editor.setOnClickListener(select)
+            } else {
                 editor.post { placeCursorAtDocumentEnd(editor) }
             }
             addView(editor, LinearLayout.LayoutParams(-1, -2))
@@ -3294,25 +3324,14 @@ class MainActivity : Activity() {
                 if (hasStart || hasEnd) annotations++
             }
         }
-        // Mirror iOS: baseline + per-visual-line + per-date-annotation row.
-        return dp(max(104, visualLines * 24 + annotations * 14 + 52))
+        // Mirror iOS `DailyDayEditorSection.editorHeight`.
+        return dp(max(48, visualLines * 24 + annotations * 14 + 16))
     }
 
     private fun dailyAccent(): Int = if (theme.isDark) rgb(0xb8c9e8) else rgb(0x5a7aad)
 
     private fun renderSearch(): View {
         val root = page()
-        if (!isWideLayout()) {
-            root.addView(LinearLayout(this).apply {
-                orientation = LinearLayout.HORIZONTAL
-                gravity = Gravity.CENTER_VERTICAL
-                background = rounded(theme.buttonBg, dp(5))
-                setPadding(dp(6), 0, dp(12), 0)
-                addView(iconImage(R.drawable.ic_knotq_chevron_left_24, theme.textPrimary, "Back"), LinearLayout.LayoutParams(dp(22), dp(22)))
-                addView(text("Back", theme.textPrimary, 12f, true).apply { setPadding(dp(2), 0, 0, 0) }, LinearLayout.LayoutParams(-2, -1))
-                setOnClickListener { exitSearch() }
-            }, LinearLayout.LayoutParams(dp(78), dp(30)).apply { bottomMargin = dp(10) })
-        }
         val query = edit("").apply {
             hint = "Search KnotQ"
             setSingleLine(true)
@@ -3320,7 +3339,22 @@ class MainActivity : Activity() {
             setPadding(dp(12), 0, dp(12), 0)
         }
         val results = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
-        root.addView(query, LinearLayout.LayoutParams(-1, dp(46)).apply { setMargins(0, 0, 0, dp(10)) })
+        // Back and the search field share one row.
+        root.addView(LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            if (!isWideLayout()) {
+                addView(FrameLayout(this@MainActivity).apply {
+                    background = rounded(theme.buttonBg, dp(7))
+                    addView(
+                        iconImage(R.drawable.ic_knotq_chevron_left_24, theme.textPrimary, "Back"),
+                        FrameLayout.LayoutParams(dp(20), dp(20), Gravity.CENTER)
+                    )
+                    setOnClickListener { exitSearch() }
+                }, LinearLayout.LayoutParams(dp(40), dp(40)).apply { setMargins(0, 0, dp(8), 0) })
+            }
+            addView(query, LinearLayout.LayoutParams(0, dp(46), 1f))
+        }, LinearLayout.LayoutParams(-1, -2).apply { setMargins(0, 0, 0, dp(10)) })
         root.addView(results)
         val searchNow = {
             renderSearchResults(results, query.text.toString())
@@ -4452,6 +4486,10 @@ class MainActivity : Activity() {
             addView(LinearLayout(this@MainActivity).apply {
                 orientation = LinearLayout.HORIZONTAL
                 gravity = Gravity.TOP
+                // iOS card header: brand logo beside the title.
+                addView(brandMark(34), LinearLayout.LayoutParams(dp(34), dp(34)).apply {
+                    setMargins(0, dp(2), dp(9), 0)
+                })
                 addView(LinearLayout(this@MainActivity).apply {
                     orientation = LinearLayout.VERTICAL
                     addView(text("KnotQ Sync", theme.textPrimary, 15f, true), LinearLayout.LayoutParams(-1, dp(18)))
@@ -4688,7 +4726,6 @@ class MainActivity : Activity() {
                     val targetId = targetSchemeId()
                     if (target != null && targetId != null) startImageAttach(targetId, target)
                 })
-                addView(formatIconButton(R.drawable.ic_knotq_plus_24, "Add line") { targetEditor()?.let(::insertTaskLine) })
             })
             refreshActiveMarker()
         }
@@ -5258,10 +5295,57 @@ class MainActivity : Activity() {
         var startTime = defaultStart.toLocalTime().takeIf { it != LocalTime.MIDNIGHT } ?: LocalTime.now().withSecond(0).withNano(0)
         var endTime = defaultEnd.toLocalTime()
         val repeatValues = arrayOf("none", "daily", "weekly", "monthly", "yearly")
-        val repeat = spinner(repeatValues).apply {
+        val repeatLabels = arrayOf("Never", "Daily", "Weekly", "Monthly", "Yearly")
+        val repeat = spinner(repeatLabels).apply {
             setSelection(repeatValues.indexOf(MobileRecurrence.repeatChoiceFromRrule(occurrence?.optionalString("repeat_rule"))).coerceAtLeast(0))
             isEnabled = !readOnly
         }
+        // iOS WeeklyRepeatDaysPicker: weekday circles shown for weekly repeats.
+        val selectedWeekdays = MobileRecurrence.selectedWeekdays(occurrence?.optionalString("repeat_rule"), initialDialogDate)
+        val weekdayChips = ArrayList<Pair<String, TextView>>()
+        lateinit var refreshWeekdayChips: () -> Unit
+        val weekdayRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER
+            MobileRecurrence.weekdayCodes.forEachIndexed { index, code ->
+                val chip = text(MobileRecurrence.weekdayChipLabels[index], theme.textDim, 12f, true).apply {
+                    gravity = Gravity.CENTER
+                    includeFontPadding = false
+                    setOnClickListener {
+                        if (readOnly) return@setOnClickListener
+                        if (selectedWeekdays.contains(code)) {
+                            // Never allow an empty weekly selection, like iOS.
+                            if (selectedWeekdays.size > 1) selectedWeekdays.remove(code)
+                        } else {
+                            selectedWeekdays.add(code)
+                        }
+                        refreshWeekdayChips()
+                    }
+                }
+                weekdayChips.add(code to chip)
+                addView(chip, LinearLayout.LayoutParams(dp(34), dp(34)).apply {
+                    setMargins(dp(3), 0, dp(3), 0)
+                })
+            }
+        }
+        refreshWeekdayChips = {
+            weekdayChips.forEach { (code, chip) ->
+                val active = selectedWeekdays.contains(code)
+                chip.background = rounded(
+                    if (active) theme.accent else Color.TRANSPARENT,
+                    dp(17),
+                    if (active) Color.TRANSPARENT else theme.borderOverlay
+                )
+                chip.setTextColor(
+                    if (active) {
+                        if (theme.isDark) rgb(0x10131a) else Color.WHITE
+                    } else {
+                        theme.textDim
+                    }
+                )
+            }
+        }
+        refreshWeekdayChips()
         val defaultOffset = defaultNotificationOffset(initialKind)
         val currentOffset = occurrence?.takeUnless { it.isNull("notification_offset_secs") }?.optInt("notification_offset_secs") ?: defaultOffset
         val notificationOptions = occurrenceNotificationOptionsIncluding(currentOffset)
@@ -5269,11 +5353,19 @@ class MainActivity : Activity() {
             setSelection(notificationOptions.indexOfFirst { it.offsetSecs == currentOffset }.coerceAtLeast(0))
             isEnabled = !readOnly
         }
-        val completed = CheckBox(this).apply {
-            text = "Completed"
-            setTextColor(theme.textPrimary)
+        // iOS-style toggle row: label on the left, switch on the right.
+        val completed = Switch(this).apply {
             isChecked = occurrence?.optBoolean("done", false) == true
             isEnabled = !readOnly
+        }
+        val completedRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            background = rounded(theme.buttonBg, dp(8), theme.borderOverlay)
+            setPadding(dp(12), 0, dp(12), 0)
+            addView(text("Completed", theme.textPrimary, 15f, false), LinearLayout.LayoutParams(0, -2, 1f))
+            addView(completed, LinearLayout.LayoutParams(-2, -2))
+            setOnClickListener { if (!readOnly) completed.toggle() }
         }
 
         titleInput.apply {
@@ -5362,11 +5454,23 @@ class MainActivity : Activity() {
         repeatFieldView = dialogSpinnerField("Repeat", repeat)
         form.addView(notificationFieldView, LinearLayout.LayoutParams(-1, -2).apply { setMargins(0, 0, 0, dp(8)) })
         form.addView(repeatFieldView, LinearLayout.LayoutParams(-1, -2).apply { setMargins(0, 0, 0, dp(8)) })
+        form.addView(weekdayRow, LinearLayout.LayoutParams(-1, -2).apply { setMargins(0, 0, 0, dp(10)) })
+        fun refreshWeekdayRowVisibility() {
+            weekdayRow.visibility = if (selectedKind() != "task" && repeat.selectedItemPosition == repeatValues.indexOf("weekly")) {
+                View.VISIBLE
+            } else {
+                View.GONE
+            }
+        }
+        repeat.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
+            override fun onItemSelected(parent: AdapterView<*>?, view: View?, position: Int, id: Long) {
+                refreshWeekdayRowVisibility()
+            }
+
+            override fun onNothingSelected(parent: AdapterView<*>?) = Unit
+        }
         if (editing) {
-            form.addView(completed.apply {
-                background = rounded(theme.buttonBg, dp(8), theme.borderOverlay)
-                setPadding(dp(10), 0, dp(10), 0)
-            }, LinearLayout.LayoutParams(-1, dp(42)).apply { setMargins(0, 0, 0, dp(8)) })
+            form.addView(completedRow, LinearLayout.LayoutParams(-1, dp(46)).apply { setMargins(0, dp(2), 0, dp(8)) })
         }
         if (readOnly) {
             form.addView(text("Imported calendar items are read-only.", theme.textMuted, 12f, false), LinearLayout.LayoutParams(-1, -2).apply { setMargins(0, 0, 0, dp(8)) })
@@ -5377,10 +5481,12 @@ class MainActivity : Activity() {
                 activeKindValue = value
                 refreshKindChips()
                 refreshScheduleFields()
+                refreshWeekdayRowVisibility()
             }
         }
         refreshKindChips()
         refreshScheduleFields()
+        refreshWeekdayRowVisibility()
         card.addView(ScrollView(this).apply {
             isFillViewport = false
             addView(form)
@@ -5402,7 +5508,7 @@ class MainActivity : Activity() {
                 "event", "assignment" -> MobileDateFormatting.iso(selectedLocalDate, endTime.hour, endTime.minute)
                 else -> null
             }
-            val rrule = if (activeKind == "task") null else MobileRecurrence.rruleForRepeat(repeat.selectedItem.toString(), selectedLocalDate)
+            val rrule = if (activeKind == "task") null else MobileRecurrence.rruleForRepeat(repeatValues[repeat.selectedItemPosition.coerceIn(0, repeatValues.lastIndex)], selectedLocalDate, selectedWeekdays)
             val notificationOffset = if (activeKind == "task") null else notificationOptions[notification.selectedItemPosition].offsetSecs
             if (occurrence != null) {
                 val commit = { scope: String ->
@@ -5545,6 +5651,7 @@ class MainActivity : Activity() {
         title: String,
         occurrence: JSONObject,
         forDelete: Boolean,
+        onCancel: (() -> Unit)? = null,
         onScope: (String) -> Unit
     ) {
         val choices = mutableListOf("This task" to "this_event")
@@ -5552,13 +5659,17 @@ class MainActivity : Activity() {
             choices.add("This and future tasks" to "all_future")
         }
         choices.add("All tasks" to "all_events")
+        var chose = false
+        // No setMessage here: AlertDialog drops the item list when a message is
+        // set, which left this dialog with nothing but Cancel.
         AlertDialog.Builder(this)
-            .setTitle(title)
-            .setMessage(if (forDelete) "Which tasks should be deleted?" else "Which tasks should these changes apply to?")
+            .setTitle(if (forDelete) "$title — which tasks should be deleted?" else "$title — which tasks should these changes apply to?")
             .setItems(choices.map { it.first }.toTypedArray()) { _, which ->
+                chose = true
                 onScope(choices[which].second)
             }
             .setNegativeButton("Cancel", null)
+            .setOnDismissListener { if (!chose) onCancel?.invoke() }
             .show()
     }
 
@@ -5743,6 +5854,7 @@ class MainActivity : Activity() {
         val order = intArrayOf(0, 1, 5, 2, 3, 4)
         val grid = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
+            gravity = Gravity.CENTER_HORIZONTAL
             background = rounded(theme.bgModal, dp(14), theme.borderOverlay)
             setPadding(dp(10), dp(10), dp(10), dp(10))
         }
@@ -5911,7 +6023,7 @@ class MainActivity : Activity() {
         val container = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(12), dp(8), dp(12), dp(12))
-            setBackgroundColor(theme.bgApp)
+            background = rounded(theme.bgApp, dp(16), theme.borderOverlay)
         }
         val title = text(monthTitle(displayMonth), theme.textPrimary, 20f, true).apply {
             gravity = Gravity.CENTER
@@ -5968,10 +6080,13 @@ class MainActivity : Activity() {
 
         dialog = AlertDialog.Builder(this)
             .setView(container)
-            .setNegativeButton("Close", null)
             .create()
         renderMonth()
         dialog.show()
+        // Card-style chrome (rounded, no button bar) — dismiss by tapping a
+        // day or outside the card.
+        dialog.window?.setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))
+        dialog.window?.setLayout(min(resources.displayMetrics.widthPixels - dp(24), dp(520)), ViewGroup.LayoutParams.WRAP_CONTENT)
     }
 
     private fun monthWeekdayRow(): View =

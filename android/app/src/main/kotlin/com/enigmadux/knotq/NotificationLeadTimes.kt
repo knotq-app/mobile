@@ -43,13 +43,28 @@ internal fun notificationLeadTimeLabel(offsetSecs: Int, eventDefault: Boolean? =
             null -> "At time"
         }
     }
-    return (
+    (
         occurrenceNotificationOptions +
             eventDefaultNotificationOptions +
             assignmentDefaultNotificationOptions
-        ).firstOrNull { it.offsetSecs == offsetSecs }?.label
-        ?: "${offsetSecs / 60} minutes before"
+        ).firstOrNull { it.offsetSecs == offsetSecs }?.let { return it.label }
+    // Desktop `format_lead_time` fallback: decomposed duration + before/after.
+    val suffix = if (offsetSecs > 0) "before" else "after"
+    return "${formatLeadDuration(kotlin.math.abs(offsetSecs))} $suffix"
 }
+
+private fun formatLeadDuration(seconds: Int): String {
+    val days = seconds / 86_400
+    if (days > 0 && seconds % 86_400 == 0) return pluralUnit(days, "day")
+    val hours = seconds / 3_600
+    if (hours > 0 && seconds % 3_600 == 0) return pluralUnit(hours, "hour")
+    val minutes = seconds / 60
+    if (minutes > 0) return pluralUnit(minutes, "minute")
+    return pluralUnit(seconds, "second")
+}
+
+private fun pluralUnit(count: Int, unit: String): String =
+    if (count == 1) "1 $unit" else "$count ${unit}s"
 
 internal fun occurrenceNotificationOptionsIncluding(offsetSecs: Int): List<NotificationLeadTimeOption> {
     if (occurrenceNotificationOptions.any { it.offsetSecs == offsetSecs }) {

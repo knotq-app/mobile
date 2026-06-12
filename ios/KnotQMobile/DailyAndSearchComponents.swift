@@ -153,17 +153,21 @@ struct DailyFeedPane: View {
     }
 
     private func isEffectivelyEmpty(_ entry: MobileDailyEntry) -> Bool {
-        entry.scheme.items.allSatisfy { item in
-            item.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-                && (item.marker == "blank" || item.marker == "checkbox")
-                && item.indent == 0
-                && item.start == nil
-                && item.end == nil
-                && item.notificationOffsetSecs == nil
-                && item.repeatRule == nil
-                && !item.done
-                && item.media.isEmpty
+        !entry.scheme.items.contains(where: itemHasVisibleDailyContent)
+    }
+
+    private func itemHasVisibleDailyContent(_ item: MobileItem) -> Bool {
+        if !item.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            return true
         }
+        if hasNonEmptyValue(item.start) || hasNonEmptyValue(item.end) || hasNonEmptyValue(item.repeatRule) {
+            return true
+        }
+        return item.notificationOffsetSecs != nil || !item.media.isEmpty
+    }
+
+    private func hasNonEmptyValue(_ value: String?) -> Bool {
+        value?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false
     }
 
     private func handleOlderEntryAppear(_ date: String) {
