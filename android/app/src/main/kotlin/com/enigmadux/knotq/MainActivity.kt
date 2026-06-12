@@ -3156,14 +3156,18 @@ class MainActivity : Activity() {
         }
         val days = dailyEntries()
         val selectedKey = selectedDate.toString()
-        // Desktop feed rules: every existing day renders with its title,
-        // oldest at the top, opening pinned to the selected/most recent day.
+        val todayKey = LocalDate.now().toString()
+        val yesterdayKey = LocalDate.now().minusDays(1).toString()
+        // Desktop/iOS feed rules: every day renders with its title, but empty
+        // days only earn a section when they're today, yesterday, or selected.
         val dayViews = LinkedHashMap<String, View>()
         if (days.isEmpty()) {
             list.addView(emptyState("Daily not ready", "Could not create the daily queue."))
         } else {
             days.forEach { day ->
                 val date = day.optString("date")
+                val keepWhenEmpty = date == selectedKey || date == todayKey || date == yesterdayKey
+                if (!keepWhenEmpty && isDailyEntryEmpty(day)) return@forEach
                 val view = dailyDayEditor(day)
                 dayViews[date] = view
                 list.addView(view, LinearLayout.LayoutParams(-1, -2).apply {
