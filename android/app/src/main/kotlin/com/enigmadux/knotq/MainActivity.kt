@@ -3156,15 +3156,14 @@ class MainActivity : Activity() {
         }
         val days = dailyEntries()
         val selectedKey = selectedDate.toString()
-        // iOS feed rules: hide effectively-empty days unless selected, oldest at
-        // the top, and the view opens pinned to the selected/most recent day.
+        // Desktop feed rules: every existing day renders with its title,
+        // oldest at the top, opening pinned to the selected/most recent day.
         val dayViews = LinkedHashMap<String, View>()
         if (days.isEmpty()) {
             list.addView(emptyState("Daily not ready", "Could not create the daily queue."))
         } else {
             days.forEach { day ->
                 val date = day.optString("date")
-                if (date != selectedKey && isDailyEntryEmpty(day)) return@forEach
                 val view = dailyDayEditor(day)
                 dayViews[date] = view
                 list.addView(view, LinearLayout.LayoutParams(-1, -2).apply {
@@ -3244,26 +3243,16 @@ class MainActivity : Activity() {
         val selected = date == selectedDate.toString()
         val empty = isDailyEntryEmpty(day)
         val originalLines = documentLines(scheme)
-        // iOS rowSelected.opacity(0.42): rowSelected's own alpha times 0.42
-        // (adjustAlpha REPLACES alpha, so compute the product explicitly).
-        val selectedFill = if (theme.isDark) {
-            adjustAlpha(Color.WHITE, 0.059f)
-        } else {
-            adjustAlpha(rgb(0xe66f1f), 0.043f)
-        }
         return LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            background = rounded(if (selected) selectedFill else Color.TRANSPARENT, dp(7))
             setPadding(0, dp(3), 0, dp(5))
-            if (!empty) {
-                // Same short label iOS shows ("Thu, Jun 11") — the daily
-                // scheme's display name.
-                addView(text(scheme.optString("display_name").ifEmpty { MobileDateFormatting.fullDay(date) }, theme.textPrimary, 26f, true).apply {
-                    includeFontPadding = false
-                    gravity = Gravity.CENTER_VERTICAL
-                    setPadding(dp(14), 0, dp(14), 0)
-                }, LinearLayout.LayoutParams(-1, dp(44)))
-            }
+            // Every day carries its title, like the desktop feed — the same
+            // short label iOS shows ("Thu, Jun 11").
+            addView(text(scheme.optString("display_name").ifEmpty { MobileDateFormatting.fullDay(date) }, theme.textPrimary, 26f, true).apply {
+                includeFontPadding = false
+                gravity = Gravity.CENTER_VERTICAL
+                setPadding(dp(14), 0, dp(14), 0)
+            }, LinearLayout.LayoutParams(-1, dp(44)))
             val editor = SchemeEditText(this@MainActivity).apply {
                 setText(renderDocument(originalLines))
                 placeCursorAtDocumentEnd(this)
