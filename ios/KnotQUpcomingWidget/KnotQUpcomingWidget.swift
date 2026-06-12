@@ -393,7 +393,9 @@ private struct WidgetOccurrenceCompactRow: View {
     }
 
     private var schemeAccent: Color {
-        schemeColor(index: Int32(item.colorIndex), dark: theme.isDark)
+        item.schemeName == dailyQueueSchemeName
+            ? dailyQueueColor(dark: theme.isDark)
+            : schemeColor(index: Int32(item.colorIndex), dark: theme.isDark)
     }
 
     private var occurrenceTimeColor: Color {
@@ -473,6 +475,14 @@ private struct WidgetTheme {
             textSoft: Color(hex: 0x382c22).opacity(0.85)
         )
     }
+}
+
+private let dailyQueueSchemeName = "Daily"
+
+// Mirrors the app's dailyQueueColor (Theme+Colors.swift): daily rows use the
+// steel-blue daily accent everywhere, not palette index 0 (red).
+private func dailyQueueColor(dark: Bool) -> Color {
+    dark ? Color(hex: 0xb8c9e8) : Color(hex: 0x5a7aad)
 }
 
 private func schemeColor(index: Int32, dark: Bool) -> Color {
