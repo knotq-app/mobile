@@ -6,7 +6,6 @@ struct SettingsScreen: View {
     @Environment(\.colorScheme) private var systemScheme
     @State private var showingSyncSignIn = false
     @State private var showingCancelConfirm = false
-    @State private var showingDeleteConfirm = false
 
     private var theme: KnotQTheme {
         KnotQTheme.resolve(mode: model.snapshot?.settings.themeMode, systemScheme: systemScheme)
@@ -18,8 +17,7 @@ struct SettingsScreen: View {
                 SyncSettingsCard(
                     theme: theme,
                     showingSyncSignIn: $showingSyncSignIn,
-                    showingCancelConfirm: $showingCancelConfirm,
-                    showingDeleteConfirm: $showingDeleteConfirm
+                    showingCancelConfirm: $showingCancelConfirm
                 )
             }
             .listRowInsets(EdgeInsets(top: 12, leading: 16, bottom: 6, trailing: 16))
@@ -81,33 +79,31 @@ struct SettingsScreen: View {
         } message: {
             Text("Your local workspace stays on this device. Paid sync may remain available until the current billing period ends.")
         }
-        .confirmationDialog(
-            "Delete account?",
-            isPresented: $showingDeleteConfirm,
-            titleVisibility: .visible
-        ) {
-            Button("Delete Account", role: .destructive) {
-                Task { await model.deleteSyncAccount() }
-            }
-            Button("Keep Account", role: .cancel) {}
-        } message: {
-            Text("Your account and synced data are scheduled for deletion. You have 14 days to undo this by signing back in before everything is permanently erased.")
-        }
     }
 }
 
 struct GoogleCalendarSettingsSection: View {
     @EnvironmentObject private var model: AppModel
     let theme: KnotQTheme
-
-    private var accountCount: Int32 {
-        model.snapshot?.settings.googleAccountCount ?? 0
-    }
+    @State private var accountPendingUnlink: MobileGoogleAccount?
 
     var body: some View {
+        let accounts = model.snapshot?.settings.googleAccounts ?? []
+
         Section("Google Calendar") {
-            if accountCount > 0 {
-                LabeledContent("Accounts", value: "\(accountCount)")
+            if accounts.isEmpty {
+                LabeledContent("Status") {
+                    Text("Not connected")
+                        .foregroundStyle(theme.textMuted)
+                }
+            } else {
+                ForEach(accounts) { account in
+                    GoogleCalendarAccountSettingsRow(
+                        account: account,
+                        theme: theme,
+                        onUnlink: { accountPendingUnlink = account }
+                    )
+                }
                 if let status = model.googleCalendarStatus, !status.isEmpty {
                     Text(status)
                         .font(.footnote)
@@ -123,29 +119,57 @@ struct GoogleCalendarSettingsSection: View {
                     }
                 }
                 .disabled(model.googleSyncInProgress || model.googleAuthInProgress)
-                Button {
-                    Task { await model.connectGoogleCalendar() }
-                } label: {
-                    Label("Connect Another Google Calendar", systemImage: "calendar.badge.plus")
-                }
-                .disabled(model.googleAuthInProgress || model.googleSyncInProgress)
-            } else {
-                LabeledContent("Status") {
-                    Text("Not connected")
-                        .foregroundStyle(theme.textMuted)
-                }
-                Button {
-                    Task { await model.connectGoogleCalendar() }
-                } label: {
-                    if model.googleAuthInProgress {
-                        Label("Connecting Google Calendar", systemImage: "calendar.badge.plus")
-                    } else {
-                        Label("Connect Google Calendar", systemImage: "calendar.badge.plus")
-                    }
-                }
-                .disabled(model.googleAuthInProgress || model.googleSyncInProgress)
             }
         }
         .listRowBackground(theme.bgModal)
+        .confirmationDialog(
+            "Unlink Google Calendar account?",
+            isPresented: Binding(
+                get: { accountPendingUnlink != nil },
+                set: { isPresented in
+                    if !isPresented {
+                        accountPendingUnlink = nil
+                    }
+                }
+            ),
+            titleVisibility: .visible
+        ) {
+            Button("Unlink", role: .destructive) {
+                guard let account = accountPendingUnlink else { return }
+                model.unlinkGoogleCalendarAccount(account)
+                accountPendingUnlink = nil
+            }
+            Button("Keep Account", role: .cancel) {
+                accountPendingUnlink = nil
+            }
+        } message: {
+            let title = accountPendingUnlink?.title ?? "this account"
+            Text("KnotQ will stop refreshing calendars for \(title). Imported calendar schemes stay in your workspace.")
+        }
+    }
+}
+
+private struct GoogleCalendarAccountSettingsRow: View {
+    let account: MobileGoogleAccount
+    let theme: KnotQTheme
+    let onUnlink: () -> Void
+
+    var body: some View {
+        HStack(spacing: 12) {
+            VStack(alignment: .leading, spacing: 3) {
+                Text(account.title)
+                    .font(.body)
+                    .foregroundStyle(theme.textPrimary)
+                    .lineLimit(1)
+                Text(account.detail)
+                    .font(.footnote)
+                    .foregroundStyle(theme.textMuted)
+            }
+            Spacer(minLength: 12)
+            Button("Unlink", role: .destructive, action: onUnlink)
+                .buttonStyle(.borderless)
+                .font(.system(size: 13, weight: .semibold))
+        }
+        .padding(.vertical, 2)
     }
 }

@@ -3,6 +3,36 @@ import Foundation
 final class RustBridge: @unchecked Sendable {
     private let core: MobileCore
 
+    // All core access funnels through this serial queue. The Rust core is one
+    // big mutex, and sync_once holds it across network I/O — a snapshot or edit
+    // issued from the main thread would otherwise block the UI for the whole
+    // sync. Serial + FIFO also preserves the submission order of edits.
+    private let queue = DispatchQueue(label: "com.knotq.rust-bridge", qos: .userInitiated)
+
+    /// Run core work on the bridge queue and deliver the result on the main
+    /// actor. Submission order is preserved (serial queue), so fire-and-forget
+    /// mutations enqueued from the main thread apply in UI order.
+    func enqueue<T: Sendable>(
+        _ work: @escaping @Sendable (RustBridge) throws -> T,
+        completion: @escaping @MainActor (Result<T, Error>) -> Void
+    ) {
+        queue.async {
+            let result = Result { try work(self) }
+            Task { @MainActor in
+                completion(result)
+            }
+        }
+    }
+
+    /// Awaitable variant of `enqueue` for callers that need the result inline.
+    func perform<T: Sendable>(_ work: @escaping @Sendable (RustBridge) throws -> T) async throws -> T {
+        try await withCheckedThrowingContinuation { continuation in
+            queue.async {
+                continuation.resume(with: Result { try work(self) })
+            }
+        }
+    }
+
     init() throws {
         let support = try FileManager.default.url(
             for: .applicationSupportDirectory,
@@ -15,8 +45,12 @@ final class RustBridge: @unchecked Sendable {
         core = try MobileCore(appDir: appDir.path)
     }
 
-    func snapshot(today: String, weekOffset: Int) throws -> MobileSnapshot {
-        try core.snapshot(today: today, weekOffset: Int32(weekOffset))
+    func snapshot(today: String, weekOffset: Int, dailyHistoryDays: Int = 3) throws -> MobileSnapshot {
+        try core.snapshotWithDailyHistory(
+            today: today,
+            weekOffset: Int32(weekOffset),
+            dailyHistoryDays: Int32(dailyHistoryDays)
+        )
     }
 
     func monthDays(year: Int, month: Int) throws -> [MobileCalendarDay] {
@@ -57,6 +91,14 @@ final class RustBridge: @unchecked Sendable {
 
     func permanentlyDeleteScheme(id: String) throws {
         try core.permanentlyDeleteScheme(schemeId: id)
+    }
+
+    func restoreFolder(id: String) throws {
+        try core.restoreFolder(folderId: id)
+    }
+
+    func permanentlyDeleteFolder(id: String) throws {
+        try core.permanentlyDeleteFolder(folderId: id)
     }
 
     func emptyArchive() throws {
@@ -203,6 +245,10 @@ final class RustBridge: @unchecked Sendable {
 
     func syncGoogleCalendars() throws -> MobileGoogleSyncResult {
         try core.syncGoogleCalendars()
+    }
+
+    func unlinkGoogleAccount(accountID: String) throws {
+        try core.unlinkGoogleAccount(accountId: accountID)
     }
 
     func setThemeMode(_ mode: String) throws {

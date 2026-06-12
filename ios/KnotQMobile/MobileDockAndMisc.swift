@@ -26,7 +26,6 @@ struct SyncSettingsCard: View {
     let theme: KnotQTheme
     @Binding var showingSyncSignIn: Bool
     @Binding var showingCancelConfirm: Bool
-    @Binding var showingDeleteConfirm: Bool
 
     private var state: SyncPanelState {
         if model.syncSession?.supportsSync == true {
@@ -117,7 +116,6 @@ struct SyncSettingsCard: View {
             } else {
                 upgradeActions
             }
-            signOutRow
         } else {
             Button("Sign in") {
                 showingSyncSignIn = true
@@ -128,31 +126,17 @@ struct SyncSettingsCard: View {
     }
 
     private var enabledActions: some View {
-        ViewThatFits(in: .horizontal) {
-            HStack(spacing: 8) {
-                checkStatusButton
-                cancelSubscriptionButton
-                deleteAccountButton
-            }
-            VStack(alignment: .leading, spacing: 8) {
-                checkStatusButton
-                HStack(spacing: 8) {
-                    cancelSubscriptionButton
-                    deleteAccountButton
-                }
-            }
+        HStack(spacing: 8) {
+            checkStatusButton
+            Spacer(minLength: 8)
+            manageAccountMenu
         }
     }
 
     private var upgradeActions: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("Sync is turned off for this account. Subscribe to enable it.")
-                .font(.system(size: 11))
-                .lineSpacing(1)
-                .foregroundStyle(theme.textSoft)
-
             if model.syncProducts.isEmpty {
-                Text("Subscription products are still loading.")
+                Text("Loading subscription options…")
                     .font(.system(size: 11))
                     .foregroundStyle(theme.textMuted)
             } else {
@@ -177,17 +161,50 @@ struct SyncSettingsCard: View {
                 HStack(spacing: 8) {
                     restorePurchasesButton
                     checkStatusButton
-                    deleteAccountButton
+                    Spacer(minLength: 8)
+                    manageAccountMenu
                 }
                 VStack(alignment: .leading, spacing: 8) {
                     restorePurchasesButton
                     HStack(spacing: 8) {
                         checkStatusButton
-                        deleteAccountButton
+                        Spacer(minLength: 8)
+                        manageAccountMenu
                     }
                 }
             }
         }
+    }
+
+    /// Account housekeeping (sign out, cancel, delete) lives behind one standard
+    /// menu so destructive options are reachable without dominating the card.
+    private var manageAccountMenu: some View {
+        Menu {
+            if model.syncSession?.supportsSync == true {
+                Button("Cancel Subscription") {
+                    showingCancelConfirm = true
+                }
+            }
+            Button("Sign Out") {
+                model.signOutSync()
+            }
+            Button("Delete Account on Website") {
+                model.openOnlineAccountManagement()
+            }
+        } label: {
+            HStack(spacing: 4) {
+                Text("Manage")
+                Image(systemName: "chevron.down")
+                    .font(.system(size: 9, weight: .semibold))
+            }
+            .font(.system(size: 12))
+            .foregroundStyle(theme.textPrimary)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 6)
+            .frame(minHeight: 30)
+            .background(theme.buttonBg, in: RoundedRectangle(cornerRadius: 5, style: .continuous))
+        }
+        .disabled(model.syncAccountActionInProgress)
     }
 
     private var checkStatusButton: some View {
@@ -198,30 +215,14 @@ struct SyncSettingsCard: View {
                 HStack(spacing: 6) {
                     ProgressView()
                         .controlSize(.small)
-                    Text("Checking...")
+                    Text("Resyncing...")
                 }
             } else {
-                Text(model.syncSession?.supportsSync == true ? "Check status" : "I've subscribed")
+                Text("Resync")
             }
         }
         .buttonStyle(SyncCardButtonStyle(theme: theme))
         .disabled(model.syncInProgress || model.syncAccountActionInProgress)
-    }
-
-    private var cancelSubscriptionButton: some View {
-        Button("Cancel subscription") {
-            showingCancelConfirm = true
-        }
-        .buttonStyle(SyncCardButtonStyle(theme: theme))
-        .disabled(model.syncAccountActionInProgress)
-    }
-
-    private var deleteAccountButton: some View {
-        Button("Delete account") {
-            showingDeleteConfirm = true
-        }
-        .buttonStyle(SyncCardButtonStyle(theme: theme, prominence: .destructive))
-        .disabled(model.syncAccountActionInProgress)
     }
 
     private var restorePurchasesButton: some View {
@@ -232,16 +233,6 @@ struct SyncSettingsCard: View {
         }
         .buttonStyle(SyncCardButtonStyle(theme: theme))
         .disabled(model.purchaseInProgress)
-    }
-
-    private var signOutRow: some View {
-        HStack {
-            Spacer()
-            Button("Sign out") {
-                model.signOutSync()
-            }
-            .buttonStyle(SyncCardButtonStyle(theme: theme))
-        }
     }
 
     private var syncPanelBackground: Color {
@@ -365,6 +356,12 @@ struct DesktopSettingsPane: View {
         NavigationStack {
             SettingsForm(theme: theme)
                 .navigationTitle("Settings")
+                .navigationDestination(for: SettingsRoute.self) { route in
+                    switch route {
+                    case .archive:
+                        SettingsArchiveList(theme: theme)
+                    }
+                }
         }
         .tint(theme.accent)
     }
@@ -377,7 +374,6 @@ struct SettingsForm: View {
     let theme: KnotQTheme
     @State private var showingSyncSignIn = false
     @State private var showingCancelConfirm = false
-    @State private var showingDeleteConfirm = false
 
     var body: some View {
         Form {
@@ -385,8 +381,7 @@ struct SettingsForm: View {
                 SyncSettingsCard(
                     theme: theme,
                     showingSyncSignIn: $showingSyncSignIn,
-                    showingCancelConfirm: $showingCancelConfirm,
-                    showingDeleteConfirm: $showingDeleteConfirm
+                    showingCancelConfirm: $showingCancelConfirm
                 )
             }
             .listRowInsets(EdgeInsets(top: 12, leading: 16, bottom: 6, trailing: 16))
@@ -426,6 +421,9 @@ struct SettingsForm: View {
         .scrollContentBackground(.hidden)
         .background(theme.bgApp)
         .tint(theme.accent)
+        .safeAreaInset(edge: .bottom) {
+            Color.clear.frame(height: 96)
+        }
         .sheet(isPresented: $showingSyncSignIn) {
             SyncSignInSheet(theme: theme)
                 .environmentObject(model)
@@ -442,18 +440,6 @@ struct SettingsForm: View {
             Button("Keep Sync", role: .cancel) {}
         } message: {
             Text("Your local workspace stays on this device. Paid sync may remain available until the current billing period ends.")
-        }
-        .confirmationDialog(
-            "Delete account?",
-            isPresented: $showingDeleteConfirm,
-            titleVisibility: .visible
-        ) {
-            Button("Delete Account", role: .destructive) {
-                Task { await model.deleteSyncAccount() }
-            }
-            Button("Keep Account", role: .cancel) {}
-        } message: {
-            Text("Your account and synced data are scheduled for deletion. You have 14 days to undo this by signing back in before everything is permanently erased.")
         }
     }
 
@@ -773,12 +759,18 @@ struct MonthGridView: View {
     }
 
     private func loadMonth() {
-        let components = calendar.dateComponents([.year, .month], from: displayMonth)
+        let requestedMonth = displayMonth
+        let components = calendar.dateComponents([.year, .month], from: requestedMonth)
         guard let year = components.year, let month = components.month else { return }
-        var map: [String: [MobileOccurrence]] = [:]
-        for day in model.monthDays(year: year, month: month) {
-            map[day.date] = day.occurrences
+        Task {
+            let days = await model.monthDays(year: year, month: month)
+            // The user may have paged to another month while this one loaded.
+            guard displayMonth == requestedMonth else { return }
+            var map: [String: [MobileOccurrence]] = [:]
+            for day in days {
+                map[day.date] = day.occurrences
+            }
+            dayOccurrences = map
         }
-        dayOccurrences = map
     }
 }

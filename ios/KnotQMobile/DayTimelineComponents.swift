@@ -62,6 +62,7 @@ struct DayTimelineMoveTarget: Equatable {
 }
 
 final class DayTimelineDayCell: UIControl {
+    let pill = UIView()
     let weekdayLabel = UILabel()
     let dayLabel = UILabel()
     let todayDot = UIView()
@@ -73,8 +74,21 @@ final class DayTimelineDayCell: UIControl {
     static let pillTop: CGFloat = 21
     static let pillHeight: CGFloat = 37
 
+    /// When true, the weekday and day number sit on one centered line with the
+    /// highlight drawn as a capsule behind both (the compact multi-day header).
+    var singleLine = false {
+        didSet { if singleLine != oldValue { setNeedsLayout() } }
+    }
+    /// Capsule shown behind the single-line content for highlighted days.
+    var showsPill = false
+    var pillColor: UIColor = .clear
+
     override init(frame: CGRect) {
         super.init(frame: frame)
+        pill.isUserInteractionEnabled = false
+        pill.layer.cornerCurve = .continuous
+        pill.isHidden = true
+        addSubview(pill)
         addSubview(weekdayLabel)
         addSubview(dayLabel)
         addSubview(todayDot)
@@ -94,6 +108,11 @@ final class DayTimelineDayCell: UIControl {
 
     override func layoutSubviews() {
         super.layoutSubviews()
+        if singleLine {
+            layoutSingleLine()
+            return
+        }
+        pill.isHidden = true
         weekdayLabel.frame = CGRect(x: 0, y: 6, width: bounds.width, height: 12)
         dayLabel.frame = CGRect(x: 0, y: Self.pillTop, width: bounds.width, height: Self.pillHeight)
         let dotSize: CGFloat = 5
@@ -104,6 +123,36 @@ final class DayTimelineDayCell: UIControl {
             height: dotSize
         )
         todayDot.layer.cornerRadius = dotSize / 2
+    }
+
+    /// "Tue 9" on a single centered row, with the highlight capsule sized to
+    /// hug the weekday + number group.
+    private func layoutSingleLine() {
+        todayDot.isHidden = true
+        let gap: CGFloat = 5
+        weekdayLabel.sizeToFit()
+        dayLabel.sizeToFit()
+        let weekdayWidth = ceil(weekdayLabel.bounds.width)
+        let dayWidth = ceil(dayLabel.bounds.width)
+        let contentWidth = weekdayWidth + gap + dayWidth
+        let centerX = bounds.width / 2
+        let centerY = bounds.height / 2
+        let groupLeft = (centerX - contentWidth / 2).rounded()
+
+        weekdayLabel.frame = CGRect(x: groupLeft, y: 0, width: weekdayWidth, height: bounds.height)
+        dayLabel.frame = CGRect(x: groupLeft + weekdayWidth + gap, y: 0, width: dayWidth, height: bounds.height)
+
+        let pillHeight: CGFloat = 26
+        let pillWidth = contentWidth + 20
+        pill.frame = CGRect(
+            x: (centerX - pillWidth / 2).rounded(),
+            y: (centerY - pillHeight / 2).rounded(),
+            width: pillWidth,
+            height: pillHeight
+        )
+        pill.layer.cornerRadius = pillHeight / 2
+        pill.backgroundColor = pillColor
+        pill.isHidden = !showsPill
     }
 }
 

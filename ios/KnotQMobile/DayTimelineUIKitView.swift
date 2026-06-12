@@ -93,6 +93,10 @@ final class DayTimelineUIKitView: UIView, UIGestureRecognizerDelegate, UIScrollV
     private static let titleHeight: CGFloat = 42
     private static let weekHeight: CGFloat = 66
     private static let separatorHeight: CGFloat = 1
+
+    /// The multi-day (iPad) header puts the weekday + number on one line, so it
+    /// needs far less vertical room than the stacked single-day strip.
+    private var weekStripHeight: CGFloat { preferredVisibleDays != nil ? 42 : Self.weekHeight }
     private static let hourHeight: CGFloat = 44
     private static let gutterWidth: CGFloat = 50
     private static let timeYOffset: CGFloat = 8
@@ -269,15 +273,16 @@ final class DayTimelineUIKitView: UIView, UIGestureRecognizerDelegate, UIScrollV
 
     override func layoutSubviews() {
         super.layoutSubviews()
-        headerSurface.frame = CGRect(x: 0, y: 0, width: bounds.width, height: Self.titleHeight + Self.weekHeight)
+        let weekHeight = weekStripHeight
+        headerSurface.frame = CGRect(x: 0, y: 0, width: bounds.width, height: Self.titleHeight + weekHeight)
         headerSurface.layer.shadowPath = UIBezierPath(rect: headerSurface.bounds).cgPath
-        weekStrip.frame = CGRect(x: 0, y: Self.titleHeight, width: bounds.width, height: Self.weekHeight)
-        separator.frame = CGRect(x: 0, y: Self.titleHeight + Self.weekHeight, width: bounds.width, height: Self.separatorHeight)
+        weekStrip.frame = CGRect(x: 0, y: Self.titleHeight, width: bounds.width, height: weekHeight)
+        separator.frame = CGRect(x: 0, y: Self.titleHeight + weekHeight, width: bounds.width, height: Self.separatorHeight)
         scrollView.frame = CGRect(
             x: 0,
-            y: Self.titleHeight + Self.weekHeight + Self.separatorHeight,
+            y: Self.titleHeight + weekHeight + Self.separatorHeight,
             width: bounds.width,
-            height: max(0, bounds.height - Self.titleHeight - Self.weekHeight - Self.separatorHeight)
+            height: max(0, bounds.height - Self.titleHeight - weekHeight - Self.separatorHeight)
         )
         let sizeChanged = renderedBoundsSize != bounds.size
         if needsFullRender || sizeChanged {
@@ -455,43 +460,11 @@ final class DayTimelineUIKitView: UIView, UIGestureRecognizerDelegate, UIScrollV
         let secondaryText = theme.isDark ? UIColor(hex: 0xb9dcff) : UIColor(hex: 0x0059b8)
         let onAccent = onAccentTextColor(accent)
         let weekdayTextColor = UIColor(theme.textMuted).withAlphaComponent(theme.isDark ? 0.56 : 0.64)
-        let dividerColor = UIColor(theme.dividerSoft)
-        let pillTop = DayTimelineDayCell.pillTop
-        let pillHeight = DayTimelineDayCell.pillHeight
-
         let gutter = UIView(frame: CGRect(x: 0, y: 0, width: Self.gutterWidth, height: weekStrip.bounds.height))
         gutter.isUserInteractionEnabled = false
         weekStrip.addSubview(gutter)
 
-        for index in 0...visibleCount {
-            let line = UIView(frame: CGRect(
-                x: Self.gutterWidth + CGFloat(index) * columnWidth,
-                y: 0,
-                width: 0.5,
-                height: weekStrip.bounds.height
-            ))
-            line.isUserInteractionEnabled = false
-            line.backgroundColor = dividerColor.withAlphaComponent(theme.isDark ? 0.45 : 0.70)
-            weekStrip.addSubview(line)
-        }
-
-        for index in 0..<visibleCount {
-            let date = dayDate(index)
-            let today = isToday(date)
-            let circleSize = pillHeight
-            let circle = UIView(frame: CGRect(
-                x: Self.gutterWidth + CGFloat(index) * columnWidth + (columnWidth - circleSize) / 2,
-                y: pillTop,
-                width: circleSize,
-                height: circleSize
-            ))
-            circle.isUserInteractionEnabled = false
-            circle.backgroundColor = today ? accent : secondaryAccent
-            circle.layer.cornerRadius = circleSize / 2
-            circle.layer.cornerCurve = .continuous
-            weekStrip.addSubview(circle)
-        }
-
+        // Single-line "Tue 9" cells, each with its own highlight capsule.
         for index in 0..<visibleCount {
             let date = dayDate(index)
             let cell = DayTimelineDayCell(frame: CGRect(
@@ -501,14 +474,16 @@ final class DayTimelineUIKitView: UIView, UIGestureRecognizerDelegate, UIScrollV
                 height: weekStrip.bounds.height
             ))
             let today = isToday(date)
+            cell.singleLine = true
             cell.date = date
             cell.weekdayLabel.text = weekdayShort(date)
             cell.dayLabel.text = dayNumber(date)
-            cell.weekdayLabel.textColor = today ? accent : weekdayTextColor
-            cell.dayLabel.font = .systemFont(ofSize: 18, weight: today ? .bold : .medium)
+            cell.weekdayLabel.font = .systemFont(ofSize: 13, weight: .semibold)
+            cell.dayLabel.font = .systemFont(ofSize: 15, weight: today ? .bold : .semibold)
+            cell.weekdayLabel.textColor = today ? onAccent : weekdayTextColor
             cell.dayLabel.textColor = today ? onAccent : secondaryText
-            cell.todayDot.isHidden = true
-            cell.todayDot.backgroundColor = accent
+            cell.showsPill = true
+            cell.pillColor = today ? accent : secondaryAccent
             cell.addTarget(self, action: #selector(handleWeekdayTap(_:)), for: .touchUpInside)
             weekStrip.addSubview(cell)
         }
@@ -557,7 +532,11 @@ final class DayTimelineUIKitView: UIView, UIGestureRecognizerDelegate, UIScrollV
 
         if !didInitialScroll {
             didInitialScroll = true
+            #if DEBUG
+            let focusHour = AppModel.screenshotFixtureRequested ? 10 : (hasToday() ? max(0, Calendar.current.component(.hour, from: Date()) - 1) : 7)
+            #else
             let focusHour = hasToday() ? max(0, Calendar.current.component(.hour, from: Date()) - 1) : 7
+            #endif
             let y = min(max(0, Self.timeYOffset + CGFloat(focusHour) * Self.hourHeight), max(0, scrollView.contentSize.height - scrollView.bounds.height))
             scrollView.setContentOffset(CGPoint(x: 0, y: y), animated: false)
         } else if preserveScroll {
@@ -681,6 +660,48 @@ final class DayTimelineUIKitView: UIView, UIGestureRecognizerDelegate, UIScrollV
             let startMinute: CGFloat
             let endMinute: CGFloat
         }
+        struct PendingSlot {
+            let slot: Slot
+            let lane: Int
+        }
+        struct PlacedSlot {
+            let slot: Slot
+            let lane: Int
+            let laneSpan: Int
+            let laneCount: Int
+        }
+
+        func slotsOverlap(_ lhs: Slot, _ rhs: Slot) -> Bool {
+            lhs.startMinute < rhs.endMinute && rhs.startMinute < lhs.endMinute
+        }
+
+        func flushComponent(_ component: inout [PendingSlot], into placed: inout [PlacedSlot]) {
+            guard !component.isEmpty else { return }
+            let laneCount = (component.map(\.lane).max() ?? 0) + 1
+
+            for pending in component {
+                var laneSpan = 1
+                if pending.lane + 1 < laneCount {
+                    for lane in (pending.lane + 1)..<laneCount {
+                        if component.contains(where: { other in
+                            other.lane == lane && slotsOverlap(pending.slot, other.slot)
+                        }) {
+                            break
+                        }
+                        laneSpan += 1
+                    }
+                }
+                placed.append(PlacedSlot(
+                    slot: pending.slot,
+                    lane: pending.lane,
+                    laneSpan: laneSpan,
+                    laneCount: laneCount
+                ))
+            }
+
+            component.removeAll(keepingCapacity: true)
+        }
+
         var slots: [Slot] = []
         for occurrence in occurrences(forDayIndex: dayIndex) {
             guard let startMinute = minuteOfDay(occurrence.start) ?? minuteOfDay(occurrence.end) else { continue }
@@ -688,35 +709,49 @@ final class DayTimelineUIKitView: UIView, UIGestureRecognizerDelegate, UIScrollV
             let endMinute = max(startMinute + minimumDuration, minuteOfDay(occurrence.end) ?? startMinute + minimumDuration)
             slots.append(Slot(occurrence: occurrence, startMinute: startMinute, endMinute: endMinute))
         }
-        slots.sort { $0.startMinute < $1.startMinute }
-
-        var columnEnd: [CGFloat] = []
-        var slotColumn = Array(repeating: 0, count: slots.count)
-        for (index, slot) in slots.enumerated() {
-            var placed = false
-            for (column, end) in columnEnd.enumerated() where slot.startMinute >= end {
-                columnEnd[column] = slot.endMinute
-                slotColumn[index] = column
-                placed = true
-                break
+        slots.sort {
+            if $0.startMinute == $1.startMinute {
+                return $0.endMinute > $1.endMinute
             }
-            if !placed {
-                slotColumn[index] = columnEnd.count
-                columnEnd.append(slot.endMinute)
-            }
+            return $0.startMinute < $1.startMinute
         }
 
-        let subCount = max(1, columnEnd.count)
-        let subWidth = geometry.columnWidth / CGFloat(subCount)
+        var placed: [PlacedSlot] = []
+        var component: [PendingSlot] = []
+        var componentEnd: CGFloat?
+        var active: [(endMinute: CGFloat, lane: Int)] = []
+
+        for slot in slots {
+            if let currentEnd = componentEnd, slot.startMinute >= currentEnd {
+                flushComponent(&component, into: &placed)
+                active.removeAll(keepingCapacity: true)
+                componentEnd = nil
+            }
+
+            active.removeAll { $0.endMinute <= slot.startMinute }
+
+            var lane = 0
+            while active.contains(where: { $0.lane == lane }) {
+                lane += 1
+            }
+            active.append((slot.endMinute, lane))
+            componentEnd = max(componentEnd ?? slot.endMinute, slot.endMinute)
+            component.append(PendingSlot(slot: slot, lane: lane))
+        }
+
+        flushComponent(&component, into: &placed)
+
         let columnX = geometry.canvasX(forDayIndex: dayIndex)
-        return slots.enumerated().map { index, slot in
+        return placed.map { placement in
+            let slot = placement.slot
+            let subWidth = geometry.columnWidth / CGFloat(max(1, placement.laneCount))
             let y = Self.timeYOffset + slot.startMinute / 60 * Self.hourHeight
             let minimumHeight: CGFloat = slot.occurrence.kind == "event" ? 20 : 34
             let height = max(minimumHeight, (slot.endMinute - slot.startMinute) / 60 * Self.hourHeight - 2)
             let frame = CGRect(
-                x: columnX + CGFloat(slotColumn[index]) * subWidth + 1,
+                x: columnX + CGFloat(placement.lane) * subWidth + 1,
                 y: y,
-                width: max(8, subWidth - 2),
+                width: max(8, subWidth * CGFloat(placement.laneSpan) - 2),
                 height: height
             )
             return DayTimelineLaidOccurrence(
@@ -925,7 +960,12 @@ final class DayTimelineUIKitView: UIView, UIGestureRecognizerDelegate, UIScrollV
     }
 
     private func bottomStickyCutoff() -> CGFloat {
-        max(Self.bottomStickyChromeInset, safeAreaInsets.bottom + 64)
+        // iPad has no floating tab dock, so the bottom sticky indicator can sit
+        // lower — only clear the safe area instead of the iPhone chrome inset.
+        if UIDevice.current.userInterfaceIdiom == .pad {
+            return safeAreaInsets.bottom + 24
+        }
+        return max(Self.bottomStickyChromeInset, safeAreaInsets.bottom + 64)
     }
 
     private func hideStickyIndicators() {

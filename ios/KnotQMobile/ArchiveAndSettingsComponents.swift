@@ -108,17 +108,21 @@ struct ArchiveSchemeRow: View {
     }
 }
 
+/// Pushed destinations within the settings detail stack. Value-based so the iPad
+/// detail column can pop them programmatically when the sidebar selection changes.
+enum SettingsRoute: Hashable {
+    case archive
+}
+
 struct SettingsArchiveSection: View {
     let schemes: [MobileScheme]
     let theme: KnotQTheme
 
     var body: some View {
         Section {
-            NavigationLink {
-                SettingsArchiveList(theme: theme)
-            } label: {
+            NavigationLink(value: SettingsRoute.archive) {
                 HStack(spacing: 10) {
-                    Label("Archived Schemes", systemImage: "archivebox")
+                    Label("Archived Items", systemImage: "archivebox")
                     Spacer(minLength: 0)
                     Text("\(schemes.count)")
                         .foregroundStyle(theme.textMuted)
@@ -131,6 +135,13 @@ struct SettingsArchiveSection: View {
     }
 }
 
+/// One flattened, depth-tagged row of the archive tree.
+private struct ArchiveTreeRow: Identifiable {
+    let node: MobileNode
+    let depth: Int
+    var id: String { node.id }
+}
+
 struct SettingsArchiveList: View {
     @EnvironmentObject private var model: AppModel
     let theme: KnotQTheme
@@ -139,16 +150,19 @@ struct SettingsArchiveList: View {
     var body: some View {
         Form {
             Section {
-                if schemes.isEmpty {
-                    Text("No archived schemes")
+                if nodes.isEmpty {
+                    Text("No archived items")
                         .foregroundStyle(theme.textMuted)
+                        .listRowSeparator(.hidden)
                 } else {
-                    ForEach(schemes) { scheme in
-                        SettingsArchiveRow(scheme: scheme, theme: theme)
+                    ForEach(rows) { row in
+                        SettingsArchiveNodeRow(node: row.node, depth: row.depth, theme: theme)
+                            .listRowSeparator(.hidden)
                     }
                     Button("Empty Archive", systemImage: "trash", role: .destructive) {
-                        confirmEmptyArchive = .emptyArchive(count: schemes.count)
+                        confirmEmptyArchive = .emptyArchive(count: archivedSchemeCount)
                     }
+                    .listRowSeparator(.hidden)
                 }
             }
             .listRowBackground(theme.bgModal)
@@ -161,48 +175,103 @@ struct SettingsArchiveList: View {
         }
     }
 
-    private var schemes: [MobileScheme] {
-        model.snapshot?.archivedSchemes ?? []
+    private var nodes: [MobileNode] {
+        model.snapshot?.archivedNodes ?? []
+    }
+
+    private var archivedSchemeCount: Int {
+        model.snapshot?.archivedSchemes.count ?? 0
+    }
+
+    /// The whole archive tree, always expanded — folders are told apart by their
+    /// icon, not a disclosure arrow.
+    private var rows: [ArchiveTreeRow] {
+        var out: [ArchiveTreeRow] = []
+        flatten(nodes, depth: 0, into: &out)
+        return out
+    }
+
+    private func flatten(_ nodes: [MobileNode], depth: Int, into out: inout [ArchiveTreeRow]) {
+        for node in nodes {
+            out.append(ArchiveTreeRow(node: node, depth: depth))
+            if node.kind == "folder" {
+                flatten(node.children, depth: depth + 1, into: &out)
+            }
+        }
     }
 }
 
-struct SettingsArchiveRow: View {
+struct SettingsArchiveNodeRow: View {
     @EnvironmentObject private var model: AppModel
-    let scheme: MobileScheme
+    let node: MobileNode
+    let depth: Int
     let theme: KnotQTheme
     @State private var confirmPermanentDelete: DestructiveConfirmationTarget?
 
+    private var isFolder: Bool { node.kind == "folder" }
+
     var body: some View {
         HStack(spacing: 10) {
-            RoundedRectangle(cornerRadius: 2)
-                .fill(schemeColor(scheme.colorIndex, dark: theme.isDark).opacity(0.72))
-                .frame(width: 11, height: 11)
-            Text(scheme.displayName)
+            if isFolder {
+                Image(systemName: "folder")
+                    .font(.system(size: 13))
+                    .foregroundStyle(theme.textMuted)
+                    .frame(width: 13)
+            } else {
+                RoundedRectangle(cornerRadius: 2)
+                    .fill(schemeColor(node.colorIndex ?? 0, dark: theme.isDark).opacity(0.72))
+                    .frame(width: 11, height: 11)
+            }
+            Text(node.name.isEmpty ? (isFolder ? "Folder" : "Untitled") : node.name)
                 .foregroundStyle(theme.textPrimary)
                 .lineLimit(1)
             Spacer(minLength: 0)
             Button("Restore") {
-                model.restoreScheme(id: scheme.id)
+                restore()
             }
             .buttonStyle(.borderless)
         }
+        .padding(.leading, CGFloat(depth) * 16)
+        .contentShape(Rectangle())
         .contextMenu {
             Button("Restore", systemImage: "arrow.uturn.backward") {
-                model.restoreScheme(id: scheme.id)
+                restore()
             }
             Button("Delete Permanently", systemImage: "trash", role: .destructive) {
-                confirmPermanentDelete = .permanentlyDeleteScheme(scheme)
+                confirmPermanentDelete = deleteTarget
             }
         }
         .swipeActions(edge: .trailing, allowsFullSwipe: false) {
             Button(role: .destructive) {
-                confirmPermanentDelete = .permanentlyDeleteScheme(scheme)
+                confirmPermanentDelete = deleteTarget
             } label: {
                 Label("Delete", systemImage: "trash")
             }
         }
         .destructiveConfirmation(target: $confirmPermanentDelete) { _ in
-            model.permanentlyDeleteScheme(id: scheme.id)
+            permanentlyDelete()
+        }
+    }
+
+    private var deleteTarget: DestructiveConfirmationTarget {
+        isFolder
+            ? .permanentlyDeleteArchivedFolder(name: node.name, id: node.id)
+            : .permanentlyDeleteArchivedScheme(name: node.name, id: node.id)
+    }
+
+    private func restore() {
+        if isFolder {
+            model.restoreFolder(id: node.id)
+        } else {
+            model.restoreScheme(id: node.id)
+        }
+    }
+
+    private func permanentlyDelete() {
+        if isFolder {
+            model.permanentlyDeleteFolder(id: node.id)
+        } else {
+            model.permanentlyDeleteScheme(id: node.id)
         }
     }
 }

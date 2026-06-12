@@ -2,7 +2,6 @@ import SwiftUI
 
 struct CalendarScreen: View {
     @EnvironmentObject private var model: AppModel
-    @State private var showingAdd = false
 
     var body: some View {
         List {
@@ -61,15 +60,6 @@ struct CalendarScreen: View {
             }
         }
         .navigationTitle("Calendar")
-        .toolbar {
-            ToolbarItem(placement: .topBarTrailing) {
-                Button { showingAdd = true } label: { Image(systemName: "plus") }
-            }
-        }
-        .sheet(isPresented: $showingAdd) {
-            AddCalendarItemSheet()
-                .presentationDetents([.fraction(0.50)])
-        }
         .refreshable { model.refresh() }
     }
 }
@@ -457,27 +447,35 @@ struct EventEditorSheet: View {
             )
         } else {
             let anchorDay = startValue ?? endValue ?? start
-            let newID = model.createCalendarItemReturningID(
-                kind: derivedKind,
-                text: trimmed,
-                date: anchorDay,
-                start: startValue,
-                end: endValue,
-                schemeID: schemeID
-            )
-            if let newID {
-                let resolvedScheme = schemeID ?? model.todayDailySchemeID()
-                if let resolvedScheme {
-                    if (hasStart || hasEnd), let choiceRule = repeatChoice.rrule(weekdays: weeklyRepeatDays) {
-                        model.setItemRecurrence(schemeID: resolvedScheme, itemID: newID, rrule: choiceRule)
-                    }
-                    if (hasStart || hasEnd), notificationDirty {
-                        model.setOccurrenceNotificationOffset(
-                            schemeID: resolvedScheme,
-                            itemID: newID,
-                            offsetSecs: notificationOffsetSecs
-                        )
-                    }
+            let schemeID = schemeID
+            let kind = derivedKind
+            let hasSchedule = hasStart || hasEnd
+            let choiceRule = repeatChoice.rrule(weekdays: weeklyRepeatDays)
+            let notificationDirty = notificationDirty
+            let notificationOffsetSecs = notificationOffsetSecs
+            let model = model
+            // The create resolves on the bridge queue; the follow-ups run after
+            // it returns, so the sheet can dismiss immediately.
+            Task {
+                let newID = await model.createCalendarItemReturningID(
+                    kind: kind,
+                    text: trimmed,
+                    date: anchorDay,
+                    start: startValue,
+                    end: endValue,
+                    schemeID: schemeID
+                )
+                guard let newID,
+                      let resolvedScheme = schemeID ?? model.todayDailySchemeID() else { return }
+                if hasSchedule, let choiceRule {
+                    model.setItemRecurrence(schemeID: resolvedScheme, itemID: newID, rrule: choiceRule)
+                }
+                if hasSchedule, notificationDirty {
+                    model.setOccurrenceNotificationOffset(
+                        schemeID: resolvedScheme,
+                        itemID: newID,
+                        offsetSecs: notificationOffsetSecs
+                    )
                 }
             }
         }
@@ -531,23 +529,33 @@ struct AddCalendarItemSheet: View {
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Add") {
-                        let itemID = model.createCalendarItemReturningID(
-                            kind: kind,
-                            text: text,
-                            date: date,
-                            start: kind == .event || kind == .reminder ? start : nil,
-                            end: kind == .event || kind == .assignment ? end : nil,
-                            schemeID: selectedSchemeID
-                        )
-                        if kind != .task, notificationDirty, let itemID {
-                            let resolvedSchemeID = selectedSchemeID ?? model.todayDailySchemeID()
-                            if let resolvedSchemeID {
-                                model.setOccurrenceNotificationOffset(
-                                    schemeID: resolvedSchemeID,
-                                    itemID: itemID,
-                                    offsetSecs: notificationOffsetSecs
-                                )
+                        let kind = kind
+                        let text = text
+                        let date = date
+                        let start = kind == .event || kind == .reminder ? start : nil
+                        let end = kind == .event || kind == .assignment ? end : nil
+                        let selectedSchemeID = selectedSchemeID
+                        let notificationDirty = notificationDirty
+                        let notificationOffsetSecs = notificationOffsetSecs
+                        let model = model
+                        Task {
+                            let itemID = await model.createCalendarItemReturningID(
+                                kind: kind,
+                                text: text,
+                                date: date,
+                                start: start,
+                                end: end,
+                                schemeID: selectedSchemeID
+                            )
+                            guard kind != .task, notificationDirty, let itemID,
+                                  let resolvedSchemeID = selectedSchemeID ?? model.todayDailySchemeID() else {
+                                return
                             }
+                            model.setOccurrenceNotificationOffset(
+                                schemeID: resolvedSchemeID,
+                                itemID: itemID,
+                                offsetSecs: notificationOffsetSecs
+                            )
                         }
                         dismiss()
                     }

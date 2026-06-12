@@ -15,6 +15,7 @@ struct UpcomingSection: View {
             Text(title)
                 .font(.system(size: 12, weight: .semibold))
                 .foregroundStyle(theme.textDim)
+                .frame(maxWidth: .infinity, alignment: .center)
                 .padding(.horizontal, 4)
             if occurrences.isEmpty {
                 Text(empty)
@@ -29,6 +30,7 @@ struct UpcomingSection: View {
                         theme: theme,
                         timeFormat: timeFormat,
                         striped: idx % 2 == 1,
+                        showDayLabel: true,
                         moreAction: { onOpenOccurrence(occurrence) }
                     ) {
                         onToggleOccurrence(occurrence)

@@ -121,6 +121,24 @@ struct DestructiveConfirmationTarget: Identifiable, Equatable {
         )
     }
 
+    static func permanentlyDeleteArchivedScheme(name: String, id: String) -> DestructiveConfirmationTarget {
+        DestructiveConfirmationTarget(
+            id: "permanent-\(id)",
+            title: "Delete Permanently",
+            message: "\"\(name)\" will be removed from the archive permanently.",
+            confirmTitle: "Delete Permanently"
+        )
+    }
+
+    static func permanentlyDeleteArchivedFolder(name: String, id: String) -> DestructiveConfirmationTarget {
+        DestructiveConfirmationTarget(
+            id: "permanent-folder-\(id)",
+            title: "Delete Folder Permanently",
+            message: "\"\(name)\" and all of its schemes will be removed from the archive permanently.",
+            confirmTitle: "Delete Permanently"
+        )
+    }
+
     static func emptyArchive(count: Int) -> DestructiveConfirmationTarget {
         DestructiveConfirmationTarget(
             id: "empty-archive",

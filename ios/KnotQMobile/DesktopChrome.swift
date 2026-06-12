@@ -245,7 +245,7 @@ struct DesktopUpcomingRail: View {
 }
 
 /// Native iPad sidebar for the NavigationSplitView: the fixed destinations
-/// (Home/Calendar/Daily/Settings) as native rows, then the reused UIKit scheme
+/// (Calendar/Daily/Settings) as native rows, then the reused UIKit scheme
 /// tree (folders, drag-drop, archive) sized up for iPad.
 struct IPadSidebar: View {
     let root: MobileNode?
@@ -256,17 +256,32 @@ struct IPadSidebar: View {
     let onNewScheme: () -> Void
     let onNewFolder: () -> Void
     let onGoogleCalendar: (String?) -> Void
+    let searchQuery: Binding<String>
+    let searchHits: [MobileSearchHit]
+    let onSearch: () -> Void
+    let onOpenSearchHit: (MobileSearchHit) -> Void
 
     var body: some View {
+        // Fixed top section, then the scheme tree fills the remaining height.
+        // The tree is a UIKit table (its own scroll view), so it needs a
+        // concrete height — nesting it in an outer ScrollView collapses it to
+        // zero and the schemes vanish.
         VStack(alignment: .leading, spacing: 0) {
+            iPadSearchRow()
+                .padding(.horizontal, 8)
+                .padding(.top, 10)
+                .padding(.bottom, 10)
+
+            iPadSearchResults()
+                .padding(.horizontal, 4)
+                .padding(.bottom, 10)
+
             VStack(spacing: 2) {
-                row(.home, title: "Home", icon: "square.stack.3d.up", color: theme.accent)
                 row(.calendar, title: "Calendar", icon: "calendar", color: theme.textPrimary)
                 row(.daily, title: "Daily", icon: "checklist", color: dailyQueueColor(dark: theme.isDark))
                 row(.settings, title: "Settings", icon: "gearshape", color: theme.textDim)
             }
             .padding(.horizontal, 10)
-            .padding(.top, 10)
 
             HStack(spacing: 6) {
                 Text("Schemes")
@@ -296,12 +311,75 @@ struct IPadSidebar: View {
                 selectedSchemeID: selectedSchemeID,
                 theme: theme,
                 compact: false,
+                hidesChevron: true,
                 onOpenScheme: onSelectScheme
             )
             .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .padding(.bottom, 12)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .background(theme.bgSidebar.ignoresSafeArea())
+    }
+
+    @ViewBuilder
+    private func iPadSearchRow() -> some View {
+        HStack(spacing: 8) {
+            Image(systemName: "magnifyingglass")
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(theme.textDim)
+                .frame(width: 18)
+
+            TextField("Search", text: searchQuery)
+                .autocorrectionDisabled()
+                .textInputAutocapitalization(.never)
+                .submitLabel(.search)
+                .onSubmit { onSearch() }
+
+            if !searchQuery.wrappedValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                Button {
+                    searchQuery.wrappedValue = ""
+                } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .font(.system(size: 13, weight: .regular))
+                        .foregroundStyle(theme.textMuted)
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .font(.system(size: 14))
+        .frame(height: 38)
+        .padding(.horizontal, 12)
+        .background(theme.rowSelected.opacity(0.32), in: Capsule())
+        .overlay {
+            Capsule().stroke(theme.borderOverlay.opacity(0.7), lineWidth: 0.8)
+        }
+    }
+
+    @ViewBuilder
+    private func iPadSearchResults() -> some View {
+        if searchQuery.wrappedValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            EmptyView()
+        } else if searchHits.isEmpty {
+            Text("No results.")
+                .font(.system(size: 13))
+                .foregroundStyle(theme.textMuted)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, 14)
+                .padding(.vertical, 8)
+        } else {
+            VStack(alignment: .leading, spacing: 0) {
+                ForEach(Array(searchHits.enumerated()), id: \.element.id) { idx, hit in
+                    Button {
+                        onOpenSearchHit(hit)
+                    } label: {
+                        HomeSearchHitRow(hit: hit, theme: theme, striped: idx % 2 == 1)
+                    }
+                    .buttonStyle(.plain)
+                    .padding(.horizontal, 2)
+                    .padding(.vertical, 2)
+                }
+            }
+        }
     }
 
     @ViewBuilder

@@ -88,14 +88,47 @@ enum MobileDate {
     }
 
     static func annotationText(start: String?, end: String?, timeFormat: String) -> String? {
-        let startText = formatTime(start, timeFormat: timeFormat)
-        let endText = formatTime(end, timeFormat: timeFormat)
-        switch (startText, endText) {
-        case let (.some(startText), .some(endText)): return "\(startText) → \(endText)"
-        case let (.some(startText), .none): return "At \(startText)"
-        case let (.none, .some(endText)): return "Due \(endText)"
+        let startDate = parseDateTime(start)
+        let endDate = parseDateTime(end)
+        switch (startDate, endDate) {
+        case let (.some(startDate), .some(endDate)):
+            let startText = annotationDateTime(startDate, previous: nil, timeFormat: timeFormat)
+            let endText = annotationDateTime(endDate, previous: startDate, timeFormat: timeFormat)
+            return "\(startText) → \(endText)"
+        case let (.some(startDate), .none):
+            return "At \(annotationDateTime(startDate, previous: nil, timeFormat: timeFormat))"
+        case let (.none, .some(endDate)):
+            return "Due \(annotationDateTime(endDate, previous: nil, timeFormat: timeFormat))"
         default: return nil
         }
+    }
+
+    /// Mirrors the desktop editor's `format_annotation_datetime`: drop the day
+    /// when it matches the paired date or is today, otherwise prefix the
+    /// contextual date (e.g. "June 12 11:10 PM", with a year when it differs).
+    private static func annotationDateTime(_ date: Date, previous: Date?, timeFormat: String) -> String {
+        let calendar = Calendar.current
+        let time = timeFormatter(timeFormat: timeFormat).string(from: date)
+        if let previous, calendar.isDate(previous, inSameDayAs: date) {
+            return time
+        }
+        if calendar.isDateInToday(date) {
+            return time
+        }
+        return "\(contextualDate(date)) \(time)"
+    }
+
+    private static func contextualDate(_ date: Date) -> String {
+        let calendar = Calendar.current
+        let formatter = DateFormatter()
+        formatter.calendar = Calendar(identifier: .gregorian)
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        if calendar.component(.year, from: date) == calendar.component(.year, from: Date()) {
+            formatter.dateFormat = "MMMM d"
+        } else {
+            formatter.dateFormat = "MMMM d, yyyy"
+        }
+        return formatter.string(from: date)
     }
 
     static func occurrenceLabel(_ occurrence: MobileOccurrence, timeFormat: String, showDay: Bool = false) -> String {

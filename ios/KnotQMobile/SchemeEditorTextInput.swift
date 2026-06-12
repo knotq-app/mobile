@@ -7,6 +7,7 @@ private final class TransparentInputAccessoryView: UIInputView {
         allowsSelfSizing = true
         backgroundColor = .clear
         isOpaque = false
+        insetsLayoutMarginsFromSafeArea = false
     }
 
     override var intrinsicContentSize: CGSize {
@@ -46,6 +47,7 @@ struct SchemeTextView: UIViewRepresentable {
     let isScrollEnabled: Bool
     let textInsets: UIEdgeInsets
     let schemeTitle: String
+    let showsTitle: Bool
     let titleEditable: Bool
     let titleValidator: (String) -> String?
     let onRenameTitle: (String) -> Void
@@ -93,7 +95,7 @@ struct SchemeTextView: UIViewRepresentable {
         view.isEditable = !readOnly
         view.isSelectable = true
         view.inputAccessoryView = readOnly ? nil : coordinator.makeToolbar(for: view)
-        view.configureTitle(title: schemeTitle, theme: theme, editable: titleEditable, validator: titleValidator, onCommit: onRenameTitle)
+        view.configureTitle(title: schemeTitle, theme: theme, visible: showsTitle, editable: titleEditable, validator: titleValidator, onCommit: onRenameTitle)
         let checkboxTap = UITapGestureRecognizer(target: coordinator, action: #selector(EditorCoordinator.handleEditorTap(_:)))
         checkboxTap.delegate = coordinator
         checkboxTap.cancelsTouchesInView = false
@@ -120,7 +122,7 @@ struct SchemeTextView: UIViewRepresentable {
         uiView.isEditable = !readOnly
         uiView.isSelectable = true
         uiView.inputAccessoryView = readOnly ? nil : uiView.inputAccessoryView ?? coordinator.makeToolbar(for: uiView)
-        uiView.configureTitle(title: schemeTitle, theme: theme, editable: titleEditable, validator: titleValidator, onCommit: onRenameTitle)
+        uiView.configureTitle(title: schemeTitle, theme: theme, visible: showsTitle, editable: titleEditable, validator: titleValidator, onCommit: onRenameTitle)
         uiView.setNeedsDisplay()
     }
 }
@@ -515,6 +517,10 @@ final class EditorCoordinator: NSObject, UITextViewDelegate, @preconcurrency NST
         scroll.translatesAutoresizingMaskIntoConstraints = false
         scroll.showsHorizontalScrollIndicator = false
         scroll.backgroundColor = .clear
+        // With a hardware keyboard the bar docks at the screen bottom, and the
+        // automatic inset would add the home-indicator safe area, shifting the
+        // icons up inside the glass. Pin them to the bar's own bounds instead.
+        scroll.contentInsetAdjustmentBehavior = .never
         backdrop.contentView.addSubview(scroll)
 
         let stack = UIStackView()
@@ -524,6 +530,10 @@ final class EditorCoordinator: NSObject, UITextViewDelegate, @preconcurrency NST
         stack.translatesAutoresizingMaskIntoConstraints = false
         stack.layoutMargins = UIEdgeInsets(top: 5, left: 10, bottom: 5, right: 10)
         stack.isLayoutMarginsRelativeArrangement = true
+        // Without this, a docked hardware-keyboard bar adds the bottom safe
+        // area to the stack's margins, pushing the icons up inside the glass.
+        stack.insetsLayoutMarginsFromSafeArea = false
+        scroll.insetsLayoutMarginsFromSafeArea = false
         scroll.addSubview(stack)
 
         // Desktop format-palette order, with dismiss-keyboard as the leftmost
@@ -553,9 +563,7 @@ final class EditorCoordinator: NSObject, UITextViewDelegate, @preconcurrency NST
             },
         ].forEach(stack.addArrangedSubview)
 
-        NSLayoutConstraint.activate([
-            backdrop.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 8),
-            backdrop.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -8),
+        var constraints: [NSLayoutConstraint] = [
             backdrop.topAnchor.constraint(equalTo: container.topAnchor, constant: 4),
             backdrop.bottomAnchor.constraint(equalTo: container.bottomAnchor, constant: -6),
             scroll.leadingAnchor.constraint(equalTo: backdrop.contentView.leadingAnchor),
@@ -567,7 +575,27 @@ final class EditorCoordinator: NSObject, UITextViewDelegate, @preconcurrency NST
             stack.topAnchor.constraint(equalTo: scroll.contentLayoutGuide.topAnchor),
             stack.bottomAnchor.constraint(equalTo: scroll.contentLayoutGuide.bottomAnchor),
             stack.heightAnchor.constraint(equalTo: scroll.frameLayoutGuide.heightAnchor)
-        ])
+        ]
+
+        if UIDevice.current.userInterfaceIdiom == .pad {
+            // iPad: hug the buttons and center the bar, but cap at the available
+            // width so it falls back to a full-width scrolling bar (like iPhone)
+            // when the buttons would overflow the screen.
+            let hugContent = scroll.frameLayoutGuide.widthAnchor.constraint(equalTo: scroll.contentLayoutGuide.widthAnchor)
+            hugContent.priority = .defaultHigh
+            constraints += [
+                backdrop.centerXAnchor.constraint(equalTo: container.centerXAnchor),
+                backdrop.leadingAnchor.constraint(greaterThanOrEqualTo: container.leadingAnchor, constant: 8),
+                backdrop.trailingAnchor.constraint(lessThanOrEqualTo: container.trailingAnchor, constant: -8),
+                hugContent
+            ]
+        } else {
+            constraints += [
+                backdrop.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 8),
+                backdrop.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -8)
+            ]
+        }
+        NSLayoutConstraint.activate(constraints)
         return container
     }
 

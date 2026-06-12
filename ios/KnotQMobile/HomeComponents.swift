@@ -257,14 +257,13 @@ struct HomeUpcomingSection: View {
 
 struct HomeNavigationPane: View {
     @EnvironmentObject private var model: AppModel
-    @Environment(\.dismissSearch) private var dismissSearch
     let snapshot: MobileSnapshot?
     let selectedDate: Date
     let theme: KnotQTheme
     let onToggleOccurrence: (MobileOccurrence) -> Void
     let onOpenOccurrence: (MobileOccurrence) -> Void
     let onOpenCalendar: () -> Void
-    let onCreateScheme: () -> String?
+    let onCreateScheme: () async -> String?
     let onNewFolder: () -> Void
     let onGoogleCalendar: (String?) -> Void
     let onAddItem: (String) -> Void
@@ -274,42 +273,43 @@ struct HomeNavigationPane: View {
     @Binding var navigationDepth: Int
     @State private var path: [HomeRoute] = []
     @State private var searchQuery = ""
-    @State private var searchPresented = false
 
     var body: some View {
         NavigationStack(path: $path) {
-            Group {
-                if isSearching {
-                    HomeSearchResultsPane(
-                        hits: model.searchHits,
-                        query: trimmedSearchQuery,
-                        theme: theme,
-                        onOpenHit: openSearchHit
-                    )
-                } else {
-                    HomeDashboardPane(
-                        snapshot: snapshot,
-                        selectedDate: selectedDate,
-                        theme: theme,
-                        onOpenDaily: openDailyInStack,
-                        onOpenScheme: openSchemeInStack,
-                        onToggleOccurrence: onToggleOccurrence,
-                        onOpenOccurrence: onOpenOccurrence,
-                        onNewScheme: createSchemeInStack,
-                        onNewFolder: onNewFolder,
-                        onGoogleCalendar: onGoogleCalendar
-                    )
+            VStack(spacing: 12) {
+                HomeInlineSearchField(query: $searchQuery, theme: theme)
+                    .padding(.horizontal, 14)
+                    .padding(.top, 10)
+
+                Group {
+                    if isSearching {
+                        HomeSearchResultsPane(
+                            hits: model.searchHits,
+                            query: trimmedSearchQuery,
+                            theme: theme,
+                            onOpenHit: openSearchHit
+                        )
+                    } else {
+                        HomeDashboardPane(
+                            snapshot: snapshot,
+                            selectedDate: selectedDate,
+                            theme: theme,
+                            onOpenDaily: openDailyInStack,
+                            onOpenScheme: openSchemeInStack,
+                            onToggleOccurrence: onToggleOccurrence,
+                            onOpenOccurrence: onOpenOccurrence,
+                            onNewScheme: createSchemeInStack,
+                            onNewFolder: onNewFolder,
+                            onGoogleCalendar: onGoogleCalendar
+                        )
+                    }
                 }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
+            .background(theme.bgApp)
             .navigationTitle("")
             .navigationBarTitleDisplayMode(.inline)
-            .toolbarBackground(.hidden, for: .navigationBar)
-            .searchable(
-                text: $searchQuery,
-                isPresented: $searchPresented,
-                placement: .navigationBarDrawer(displayMode: .automatic),
-                prompt: "Search KnotQ"
-            )
+            .toolbar(.hidden, for: .navigationBar)
             .onSubmit(of: .search) {
                 updateSearchResults(for: searchQuery)
             }
@@ -349,6 +349,13 @@ struct HomeNavigationPane: View {
                         onPrevious: { model.selectDate(Calendar.current.date(byAdding: .day, value: -1, to: model.selectedDate) ?? model.selectedDate) },
                         onNext: { model.selectDate(Calendar.current.date(byAdding: .day, value: 1, to: model.selectedDate) ?? model.selectedDate) },
                         onDate: onSelectDailyDate,
+                        onLoadOlder: { oldestDate in
+                            model.loadOlderDailyEntries(from: oldestDate)
+                        },
+                        loadAnchorDate: model.dailyHistoryLoadAnchorDate,
+                        onLoadAnchorRestored: {
+                            model.clearDailyHistoryLoadAnchor()
+                        },
                         onBack: {},
                         onAdd: {
                             if let daily = model.snapshot?.daily.first(where: { $0.date == AppModel.dateOnly(model.selectedDate) })?.scheme {
@@ -393,8 +400,10 @@ struct HomeNavigationPane: View {
     }
 
     private func createSchemeInStack() {
-        guard let id = onCreateScheme() else { return }
-        openSchemeInStack(id)
+        Task {
+            guard let id = await onCreateScheme() else { return }
+            openSchemeInStack(id)
+        }
     }
 
     private func openSchemeInStack(_ id: String) {
@@ -409,9 +418,7 @@ struct HomeNavigationPane: View {
     }
 
     private func closeHomeSearch() {
-        dismissSearch()
         searchQuery = ""
-        searchPresented = false
         model.searchHits = []
     }
 
@@ -428,6 +435,49 @@ struct HomeNavigationPane: View {
             openDailyInStack()
         } else if let schemeID = hit.schemeId {
             openSchemeInStack(schemeID)
+        }
+    }
+}
+
+private struct HomeInlineSearchField: View {
+    @Binding var query: String
+    let theme: KnotQTheme
+    @FocusState private var focused: Bool
+
+    var body: some View {
+        HStack(spacing: 9) {
+            Image(systemName: "magnifyingglass")
+                .font(.system(size: 16, weight: .medium))
+                .foregroundStyle(theme.textMuted)
+
+            TextField("Search KnotQ", text: $query)
+                .textFieldStyle(.plain)
+                .font(.system(size: 16, weight: .regular))
+                .foregroundStyle(theme.textPrimary)
+                .submitLabel(.search)
+                .autocorrectionDisabled(true)
+                .textInputAutocapitalization(.never)
+                .focused($focused)
+
+            if !query.isEmpty {
+                Button {
+                    query = ""
+                    focused = false
+                } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundStyle(theme.textMuted)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Clear Search")
+            }
+        }
+        .padding(.horizontal, 12)
+        .frame(height: 42)
+        .background(theme.buttonBg, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .strokeBorder(theme.borderOverlay.opacity(theme.isDark ? 0.35 : 0.55), lineWidth: 1)
         }
     }
 }

@@ -3,6 +3,7 @@ import SwiftUI
 extension MobileNode: Identifiable {}
 extension MobileScheme: Identifiable {}
 extension MobileItem: Identifiable {}
+extension MobileGoogleAccount: Identifiable {}
 
 extension MobileDailyEntry: Identifiable {
     public var id: String { date }

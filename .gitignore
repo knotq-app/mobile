@@ -13,3 +13,4 @@ ios/DerivedData/
 ios/com.apple.DeveloperTools/
 ios/KnotQMobile.xcodeproj/project.xcworkspace/xcuserdata/
 ios/KnotQMobile.xcodeproj/xcuserdata/
+*.hprof

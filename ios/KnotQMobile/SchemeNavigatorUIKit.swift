@@ -7,6 +7,7 @@ struct SchemeNavigatorListView: UIViewRepresentable {
     let selectedSchemeID: String?
     let theme: KnotQTheme
     let compact: Bool
+    var hidesChevron: Bool = false
     let onOpenScheme: (String) -> Void
 
     func makeUIView(context: Context) -> SchemeNavigatorUIKitView {
@@ -19,6 +20,7 @@ struct SchemeNavigatorListView: UIViewRepresentable {
             selectedSchemeID: selectedSchemeID,
             theme: theme,
             compact: compact,
+            hidesChevron: hidesChevron,
             onOpenScheme: onOpenScheme,
             onMoveNode: { kind, id, folderID, position in
                 model.moveNode(kind: kind, id: id, folderID: folderID, position: position)
@@ -124,6 +126,7 @@ final class SchemeNavigatorUIKitView: UIView, UITableViewDataSource, UITableView
     private var selectedSchemeID: String?
     private var theme: KnotQTheme = .dark
     private var compact = false
+    private var hidesChevron = false
     private var onOpenScheme: (String) -> Void = { _ in }
     private var onMoveNode: (String, String, String, Int) -> Void = { _, _, _, _ in }
     private var onArchiveScheme: (String) -> Void = { _ in }
@@ -184,6 +187,7 @@ final class SchemeNavigatorUIKitView: UIView, UITableViewDataSource, UITableView
         selectedSchemeID: String?,
         theme: KnotQTheme,
         compact: Bool,
+        hidesChevron: Bool,
         onOpenScheme: @escaping (String) -> Void,
         onMoveNode: @escaping (String, String, String, Int) -> Void,
         onArchiveScheme: @escaping (String) -> Void,
@@ -196,7 +200,7 @@ final class SchemeNavigatorUIKitView: UIView, UITableViewDataSource, UITableView
         // Never reshuffle the list out from under an in-progress drag; the
         // reorder applied on release will refresh it.
         if dragSession != nil { return }
-        let styleChanged = self.selectedSchemeID != selectedSchemeID || self.compact != compact || self.theme.isDark != theme.isDark
+        let styleChanged = self.selectedSchemeID != selectedSchemeID || self.compact != compact || self.theme.isDark != theme.isDark || self.hidesChevron != hidesChevron
         tableView.contentInset = UIEdgeInsets(top: compact ? 1 : 4, left: 0, bottom: compact ? 4 : 5, right: 0)
         tableView.backgroundColor = .clear
         syncExpandedFolders(root)
@@ -206,6 +210,7 @@ final class SchemeNavigatorUIKitView: UIView, UITableViewDataSource, UITableView
         self.selectedSchemeID = selectedSchemeID
         self.theme = theme
         self.compact = compact
+        self.hidesChevron = hidesChevron
         rows = nextRows
         if rowsChanged || styleChanged {
             tableView.reloadData()
@@ -230,7 +235,8 @@ final class SchemeNavigatorUIKitView: UIView, UITableViewDataSource, UITableView
             expanded: expandedFolderIDs.contains(row.id),
             selected: selectedSchemeID == row.id,
             theme: theme,
-            compact: compact
+            compact: compact,
+            hidesChevron: hidesChevron
         )
         return cell
     }
@@ -603,6 +609,7 @@ private final class SchemeNavigatorCell: UITableViewCell {
     private var depth = 0
     private var compact = false
     private var nodeKind = "scheme"
+    private var hidesChevron = false
 
     override init(style: UITableViewCell.CellStyle, reuseIdentifier: String?) {
         super.init(style: style, reuseIdentifier: reuseIdentifier)
@@ -633,18 +640,20 @@ private final class SchemeNavigatorCell: UITableViewCell {
         expanded: Bool,
         selected: Bool,
         theme: KnotQTheme,
-        compact: Bool
+        compact: Bool,
+        hidesChevron: Bool
     ) {
         self.depth = depth
         self.compact = compact
         self.nodeKind = node.kind
+        self.hidesChevron = hidesChevron
 
         selectedFill.backgroundColor = selected ? UIColor(theme.rowSelected) : .clear
         titleLabel.text = node.name
         titleLabel.textColor = UIColor(theme.textPrimary)
         titleLabel.font = .systemFont(ofSize: compact ? 13 : 14, weight: node.kind == "folder" ? .semibold : .medium)
         chevronView.tintColor = UIColor(theme.textMuted)
-        chevronView.isHidden = node.kind == "folder"
+        chevronView.isHidden = node.kind == "folder" || hidesChevron
 
         if node.kind == "folder" {
             iconView.isHidden = false
@@ -687,7 +696,7 @@ private final class SchemeNavigatorCell: UITableViewCell {
         chevronView.frame = CGRect(x: chevronX, y: (bounds.height - chevronSize) * 0.5, width: chevronSize, height: chevronSize)
 
         let titleX = iconX + iconSize + 8
-        let titleRight = nodeKind == "folder" ? bounds.width - rightInset : chevronX - 4
+        let titleRight = (nodeKind == "folder" || hidesChevron) ? bounds.width - rightInset : chevronX - 4
         titleLabel.frame = CGRect(x: titleX, y: 0, width: max(0, titleRight - titleX), height: bounds.height)
     }
 }

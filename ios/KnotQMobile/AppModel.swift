@@ -18,8 +18,8 @@ final class AppModel: ObservableObject {
     @Published var weekOffset = 0
     @Published var syncSession: LocalSyncSession?
     @Published var syncAuthInProgress = false
-    // True while a destructive account action (cancel subscription / delete
-    // account) is in flight, so Settings can disable its buttons.
+    // True while a destructive account action, such as cancelling a subscription,
+    // is in flight, so Settings can disable its buttons.
     @Published var syncAccountActionInProgress = false
     @Published var syncInProgress = false
     @Published var googleAuthInProgress = false
@@ -28,9 +28,13 @@ final class AppModel: ObservableObject {
     // Available StoreKit subscription products (empty until loaded / if unconfigured).
     @Published var syncProducts: [Product] = []
     @Published var purchaseInProgress = false
+    @Published private(set) var dailyHistoryLoadAnchorDate: String?
 
     // App Store Connect product id(s) for the sync subscription.
     static let syncProductIDs: Set<String> = ["com.knotq.sync.monthly"]
+    private static let minimumDailyHistoryDays = 3
+    private static let dailyHistoryPageDays = 31
+    private static let maxDailyHistoryDays = 3650
     private static let foregroundGoogleSyncIntervalNanos: UInt64 = 120_000_000_000
     private static let backgroundGoogleSyncInterval: TimeInterval = 6 * 60 * 60
 
@@ -43,6 +47,9 @@ final class AppModel: ObservableObject {
     private var googleOAuthSession: WebAuthenticationSessionCoordinator?
     private var browserSignInSession: WebAuthenticationSessionCoordinator?
     private var transactionListener: Task<Void, Never>?
+    private var dailyHistoryDays = AppModel.initialDailyHistoryDays(for: Date())
+    private var dailyHistoryLoadInProgress = false
+    private var pendingDailyHistoryLoadAnchorDate: String?
 
     init() {
         bridge = try? RustBridge()
@@ -52,11 +59,26 @@ final class AppModel: ObservableObject {
             errorMessage = "Rust core failed to initialize"
         }
         MobileNotificationScheduler.shared.configure(model: self)
+        #if DEBUG
+        let seededScreenshotFixture = seedScreenshotFixtureIfRequested()
+        #endif
+        // refresh() now hops through the bridge queue; read the first snapshot
+        // directly so the initial frame isn't blank. Nothing else contends for
+        // the core this early, so this stays fast.
+        if let bridge {
+            snapshot = try? bridge.snapshot(
+                today: Self.dateOnly(selectedDate),
+                weekOffset: weekOffset,
+                dailyHistoryDays: dailyHistoryDays
+            )
+        }
         refresh()
         startSyncPolling()
         startTransactionListener()
         #if DEBUG
-        seedEditorImageFixture()
+        if !seededScreenshotFixture {
+            seedEditorImageFixture()
+        }
         #endif
     }
 
@@ -74,32 +96,84 @@ final class AppModel: ObservableObject {
 
     func refresh() {
         guard let bridge else { return }
-        do {
-            let nextSnapshot = try bridge.snapshot(today: Self.dateOnly(selectedDate), weekOffset: weekOffset)
-            snapshot = nextSnapshot
-            KnotQWidgetSnapshotStore.publish(snapshot: nextSnapshot)
-            rescheduleNotifications()
-            configureGoogleSyncPolling(accountCount: nextSnapshot.settings.googleAccountCount)
-            BackgroundSyncCoordinator.shared.scheduleIfEligible(backgroundRefreshEligible)
-            errorMessage = nil
-        } catch {
-            errorMessage = error.localizedDescription
+        let today = Self.dateOnly(selectedDate)
+        let week = weekOffset
+        let history = dailyHistoryDays
+        let loadAnchorDate = pendingDailyHistoryLoadAnchorDate
+        pendingDailyHistoryLoadAnchorDate = nil
+        bridge.enqueue({ b in
+            (
+                try b.snapshot(today: today, weekOffset: week, dailyHistoryDays: history),
+                try b.pendingNotifications()
+            )
+        }) { [weak self] result in
+            guard let self else { return }
+            self.dailyHistoryLoadInProgress = false
+            switch result {
+            case .success(let (snapshot, pending)):
+                self.apply(snapshot: snapshot, pendingNotifications: pending)
+                self.dailyHistoryLoadAnchorDate = loadAnchorDate
+                self.errorMessage = nil
+            case .failure(let error):
+                self.dailyHistoryLoadAnchorDate = nil
+                self.errorMessage = error.localizedDescription
+            }
         }
+    }
+
+    func loadOlderDailyEntries(from oldestDate: String) {
+        guard !dailyHistoryLoadInProgress else { return }
+        guard dailyHistoryDays < Self.maxDailyHistoryDays else { return }
+        dailyHistoryLoadInProgress = true
+        pendingDailyHistoryLoadAnchorDate = oldestDate
+        dailyHistoryDays = min(
+            dailyHistoryDays + Self.dailyHistoryPageDays,
+            Self.maxDailyHistoryDays
+        )
+        refresh()
+    }
+
+    func clearDailyHistoryLoadAnchor() {
+        dailyHistoryLoadAnchorDate = nil
+    }
+
+    /// Install a freshly-read snapshot plus its derived state. Always runs on
+    /// the main actor with data produced on the bridge queue.
+    private func apply(snapshot: MobileSnapshot, pendingNotifications: [MobileNotificationRequest]) {
+        self.snapshot = snapshot
+        KnotQWidgetSnapshotStore.publish(snapshot: snapshot)
+        MobileNotificationScheduler.shared.reschedule(pendingNotifications)
+        configureGoogleSyncPolling(accountCount: snapshot.settings.googleAccountCount)
+        BackgroundSyncCoordinator.shared.scheduleIfEligible(backgroundRefreshEligible)
     }
 
     func search(_ query: String) {
         guard let bridge else { return }
-        do {
-            searchHits = try bridge.search(query)
-            errorMessage = nil
-        } catch {
-            errorMessage = error.localizedDescription
+        bridge.enqueue({ try $0.search(query) }) { [weak self] result in
+            guard let self else { return }
+            switch result {
+            case .success(let hits):
+                self.searchHits = hits
+                self.errorMessage = nil
+            case .failure(let error):
+                self.errorMessage = error.localizedDescription
+            }
         }
     }
 
-    func monthDays(year: Int, month: Int) -> [MobileCalendarDay] {
+    func dismissErrorMessage() {
+        let dismissedMessage = errorMessage
+        Task { @MainActor [weak self] in
+            await Task.yield()
+            if self?.errorMessage == dismissedMessage {
+                self?.errorMessage = nil
+            }
+        }
+    }
+
+    func monthDays(year: Int, month: Int) async -> [MobileCalendarDay] {
         guard let bridge else { return [] }
-        return (try? bridge.monthDays(year: year, month: month)) ?? []
+        return (try? await bridge.perform { try $0.monthDays(year: year, month: month) }) ?? []
     }
 
     func createFolder(name: String, parentID: String? = nil) {
@@ -119,11 +193,38 @@ final class AppModel: ObservableObject {
     }
 
     @discardableResult
-    func createScheme(name: String, folderID: String? = nil, position: Int32? = 0) -> String? {
-        let before = Set(snapshot?.schemes.map(\.id) ?? [])
-        mutate { try $0.createScheme(name: name, folderID: folderID, position: position) }
-        return snapshot?.schemes.first { !before.contains($0.id) && $0.name == name }?.id
-            ?? snapshot?.schemes.first { !before.contains($0.id) }?.id
+    func createScheme(name: String, folderID: String? = nil, position: Int32? = 0) async -> String? {
+        guard let bridge else { return nil }
+        let today = Self.dateOnly(selectedDate)
+        let week = weekOffset
+        let history = dailyHistoryDays
+        do {
+            let (id, after, pending) = try await bridge.perform { b in
+                let before = Set(try b.snapshot(
+                    today: today,
+                    weekOffset: week,
+                    dailyHistoryDays: history
+                ).schemes.map(\.id))
+                try b.createScheme(name: name, folderID: folderID, position: position)
+                let after = try b.snapshot(
+                    today: today,
+                    weekOffset: week,
+                    dailyHistoryDays: history
+                )
+                let id = after.schemes.first { !before.contains($0.id) && $0.name == name }?.id
+                    ?? after.schemes.first { !before.contains($0.id) }?.id
+                return (id, after, try b.pendingNotifications())
+            }
+            apply(snapshot: after, pendingNotifications: pending)
+            errorMessage = nil
+            if syncSession != nil {
+                scheduleSync()
+            }
+            return id
+        } catch {
+            errorMessage = error.localizedDescription
+            return nil
+        }
     }
 
     func renameScheme(id: String, name: String) {
@@ -146,6 +247,14 @@ final class AppModel: ObservableObject {
         mutate { try $0.permanentlyDeleteScheme(id: id) }
     }
 
+    func restoreFolder(id: String) {
+        mutate { try $0.restoreFolder(id: id) }
+    }
+
+    func permanentlyDeleteFolder(id: String) {
+        mutate { try $0.permanentlyDeleteFolder(id: id) }
+    }
+
     func emptyArchive() {
         mutate { try $0.emptyArchive() }
     }
@@ -160,15 +269,20 @@ final class AppModel: ObservableObject {
 
     func ensureDailyQueue(date: Date) {
         selectedDate = date
-        mutate { try $0.ensureDailyQueue(date: Self.dateOnly(date)) }
+        let key = Self.dateOnly(date)
+        mutate { try $0.ensureDailyQueue(date: key) }
     }
 
     func ensureTodayDailyQueue() {
-        mutate { try $0.ensureDailyQueue(date: Self.dateOnly(Date())) }
+        let key = Self.dateOnly(Date())
+        mutate { try $0.ensureDailyQueue(date: key) }
     }
 
     func selectDate(_ date: Date) {
         selectedDate = date
+        dailyHistoryDays = Self.initialDailyHistoryDays(for: date)
+        pendingDailyHistoryLoadAnchorDate = nil
+        dailyHistoryLoadAnchorDate = nil
         refresh()
     }
 
@@ -178,9 +292,10 @@ final class AppModel: ObservableObject {
 
     func addTodayDailyItem(text: String, marker: Marker = .checkbox, indent: Int32 = 0) {
         selectedDate = Date()
+        let today = Self.dateOnly(Date())
         mutate {
             try $0.addTodayDailyItem(
-                today: Self.dateOnly(Date()),
+                today: today,
                 text: text,
                 marker: marker,
                 indent: indent
@@ -209,12 +324,13 @@ final class AppModel: ObservableObject {
     }
 
     func setItemDate(schemeID: String, itemID: String, kind: String, date: Date?) {
+        let dateString = date.map { iso.string(from: $0) }
         mutate {
             try $0.setItemDate(
                 schemeID: schemeID,
                 itemID: itemID,
                 kind: kind,
-                date: date.map { iso.string(from: $0) }
+                date: dateString
             )
         }
     }
@@ -234,14 +350,16 @@ final class AppModel: ObservableObject {
         done: Bool,
         scope: EventOccurrenceScope
     ) {
+        let startString = start.map { iso.string(from: $0) }
+        let endString = end.map { iso.string(from: $0) }
         mutate {
             try $0.commitEventEdit(
                 occurrence: occurrence,
                 title: title,
                 occurrenceStart: occurrence.start,
                 occurrenceEnd: occurrence.end,
-                start: start.map { iso.string(from: $0) },
-                end: end.map { iso.string(from: $0) },
+                start: startString,
+                end: endString,
                 rrule: rrule,
                 notificationOffsetSecs: notificationOffsetSecs,
                 notificationDirty: notificationDirty,
@@ -272,6 +390,8 @@ final class AppModel: ObservableObject {
     }
 
     func toggleOccurrence(_ occurrence: MobileOccurrence) {
+        // Retention (keeping a just-completed item on the upcoming panel) is
+        // handled in the core, so the snapshot already includes it.
         mutate {
             try $0.toggleOccurrence(
                 schemeID: occurrence.schemeId,
@@ -290,13 +410,16 @@ final class AppModel: ObservableObject {
     }
 
     func addCalendarItem(kind: CalendarKind, text: String, date: Date, start: Date?, end: Date?, schemeID: String? = nil) {
+        let dateKey = Self.dateOnly(date)
+        let startString = start.map { iso.string(from: $0) }
+        let endString = end.map { iso.string(from: $0) }
         mutate {
             try $0.addCalendarItem(
                 kind: kind,
                 text: text,
-                date: Self.dateOnly(date),
-                start: start.map { iso.string(from: $0) },
-                end: end.map { iso.string(from: $0) },
+                date: dateKey,
+                start: startString,
+                end: endString,
                 schemeID: schemeID
             )
         }
@@ -317,31 +440,73 @@ final class AppModel: ObservableObject {
         start: Date?,
         end: Date?,
         schemeID: String?
-    ) -> String? {
+    ) async -> String? {
         guard let bridge else { return nil }
-        let targetID: String
-        if let schemeID {
-            targetID = schemeID
-        } else {
-            let todayKey = Self.dateOnly(Date())
-            try? bridge.ensureDailyQueue(date: todayKey)
-            refresh()
-            guard let dailyID = snapshot?.daily.first(where: { $0.date == todayKey })?.scheme.id else {
-                addCalendarItem(kind: kind, text: text, date: date, start: start, end: end, schemeID: nil)
-                return nil
+        let snapshotKey = Self.dateOnly(selectedDate)
+        let week = weekOffset
+        let history = dailyHistoryDays
+        let todayKey = Self.dateOnly(Date())
+        let dateKey = Self.dateOnly(date)
+        let startString = start.map { iso.string(from: $0) }
+        let endString = end.map { iso.string(from: $0) }
+        do {
+            let (id, after, pending) = try await bridge.perform { b in
+                // Resolve nil schemes to today's daily queue, then diff that
+                // scheme's items to recover the new item's id.
+                var targetID = schemeID
+                if targetID == nil {
+                    try b.ensureDailyQueue(date: todayKey)
+                    let current = try b.snapshot(
+                        today: snapshotKey,
+                        weekOffset: week,
+                        dailyHistoryDays: history
+                    )
+                    targetID = current.daily.first { $0.date == todayKey }?.scheme.id
+                }
+                var before: Set<String> = []
+                if let targetID {
+                    let current = try b.snapshot(
+                        today: snapshotKey,
+                        weekOffset: week,
+                        dailyHistoryDays: history
+                    )
+                    before = Set(Self.schemeItems(in: current, id: targetID).map(\.id))
+                }
+                try b.addCalendarItem(
+                    kind: kind,
+                    text: text,
+                    date: dateKey,
+                    start: startString,
+                    end: endString,
+                    schemeID: targetID
+                )
+                let after = try b.snapshot(
+                    today: snapshotKey,
+                    weekOffset: week,
+                    dailyHistoryDays: history
+                )
+                let id = targetID.flatMap { target in
+                    Self.schemeItems(in: after, id: target).first { !before.contains($0.id) }?.id
+                }
+                return (id, after, try b.pendingNotifications())
             }
-            targetID = dailyID
+            apply(snapshot: after, pendingNotifications: pending)
+            errorMessage = nil
+            if syncSession != nil {
+                scheduleSync()
+            }
+            return id
+        } catch {
+            errorMessage = error.localizedDescription
+            return nil
         }
-        let before = Set(schemeItems(id: targetID).map(\.id))
-        addCalendarItem(kind: kind, text: text, date: date, start: start, end: end, schemeID: targetID)
-        return schemeItems(id: targetID).first { !before.contains($0.id) }?.id
     }
 
     /// Items for a scheme id, searching active, archived, and daily schemes.
-    private func schemeItems(id: String) -> [MobileItem] {
-        if let s = snapshot?.schemes.first(where: { $0.id == id }) { return s.items }
-        if let s = snapshot?.daily.first(where: { $0.scheme.id == id })?.scheme { return s.items }
-        if let s = snapshot?.archivedSchemes.first(where: { $0.id == id }) { return s.items }
+    private nonisolated static func schemeItems(in snapshot: MobileSnapshot, id: String) -> [MobileItem] {
+        if let s = snapshot.schemes.first(where: { $0.id == id }) { return s.items }
+        if let s = snapshot.daily.first(where: { $0.scheme.id == id })?.scheme { return s.items }
+        if let s = snapshot.archivedSchemes.first(where: { $0.id == id }) { return s.items }
         return []
     }
 
@@ -376,7 +541,9 @@ final class AppModel: ObservableObject {
 
         do {
             let config = try Self.googleOAuthConfigForImport()
-            let request = try bridge.googleAuthRequest(clientID: config.clientID, redirectURI: config.redirectURI)
+            let clientID = config.clientID
+            let redirectURI = config.redirectURI
+            let request = try await bridge.perform { try $0.googleAuthRequest(clientID: clientID, redirectURI: redirectURI) }
             guard let authURL = URL(string: request.authUrl) else {
                 throw GoogleOAuthConfigError.message("Google returned an invalid authorization URL.")
             }
@@ -384,17 +551,18 @@ final class AppModel: ObservableObject {
             let session = WebAuthenticationSessionCoordinator()
             googleOAuthSession = session
             let callbackURL = try await session.authenticate(url: authURL, callbackScheme: config.redirectScheme)
-            let result = try await Task.detached {
-                try bridge.completeGoogleCalendarImport(
+            let callback = callbackURL.absoluteString
+            let result = try await bridge.perform { b in
+                try b.completeGoogleCalendarImport(
                     request: request,
-                    callbackURL: callbackURL.absoluteString,
+                    callbackURL: callback,
                     parentID: parentID
                 )
-            }.value
+            }
             googleCalendarStatus = result.message
             refresh()
             if syncSession != nil {
-                await syncOnce()
+                scheduleSync()
             }
             errorMessage = nil
         } catch {
@@ -413,13 +581,11 @@ final class AppModel: ObservableObject {
         defer { googleSyncInProgress = false }
 
         do {
-            let result = try await Task.detached {
-                try bridge.syncGoogleCalendars()
-            }.value
+            let result = try await bridge.perform { try $0.syncGoogleCalendars() }
             googleCalendarStatus = result.message
             refresh()
             if syncSession != nil {
-                await syncOnce()
+                scheduleSync()
             }
             if !silent {
                 errorMessage = nil
@@ -435,7 +601,12 @@ final class AppModel: ObservableObject {
         }
     }
 
+    func unlinkGoogleCalendarAccount(_ account: MobileGoogleAccount) {
+        mutate { try $0.unlinkGoogleAccount(accountID: account.id) }
+    }
+
     private static let signInPageURL = "https://www.knotq.com/signin.html"
+    private static let accountPageURL = "https://www.knotq.com/account.html#signin"
     private static let signInRedirectScheme = "knotq"
     private static let signInRedirectURI = "knotq://auth-callback"
     private static let defaultSyncApiBase = "https://api.knotq.com"
@@ -486,7 +657,7 @@ final class AppModel: ObservableObject {
             let payload = try await exchangeAuthorizeCode(apiBase: apiBase, code: code, codeVerifier: verifier)
             installSyncSession(payload, apiBase: apiBase)
             errorMessage = nil
-            await syncOnce()
+            scheduleSync()
         } catch {
             if Self.isWebAuthCancellation(error) {
                 return
@@ -590,6 +761,14 @@ final class AppModel: ObservableObject {
         UserDefaults.standard.removeObject(forKey: syncSessionKey)
     }
 
+    func openOnlineAccountManagement() {
+        guard let url = URL(string: Self.accountPageURL) else { return }
+        UIApplication.shared.open(url) { [weak self] success in
+            guard !success else { return }
+            self?.errorMessage = "Could not open the account page."
+        }
+    }
+
     /// Turn off the sync entitlement for this account while keeping the account and
     /// the local workspace intact (the in-app "cancel subscription" action). The
     /// backend rotates the session, so we install the credentials it returns.
@@ -624,41 +803,6 @@ final class AppModel: ObservableObject {
             } else {
                 errorMessage = "Sync has been turned off for this account. Your local workspace stays on this device, and you can sign in again later to re-enable sync."
             }
-        } catch {
-            errorMessage = error.localizedDescription
-        }
-    }
-
-    /// Schedule account deletion: the account is immediately inaccessible but is
-    /// only purged after a 14-day grace window, so signing back in undoes it. Apple
-    /// requires this in-app path for any app that supports account creation.
-    func deleteSyncAccount() async {
-        guard syncSession != nil else { return }
-        syncAccountActionInProgress = true
-        defer { syncAccountActionInProgress = false }
-        guard await refreshSyncSessionIfNeeded(),
-              let session = syncSession,
-              let url = URL(string: "\(session.apiBase)/v1/auth/account") else {
-            return
-        }
-        do {
-            var request = URLRequest(url: url)
-            request.httpMethod = "DELETE"
-            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-            request.setValue("Bearer \(session.bearerToken)", forHTTPHeaderField: "Authorization")
-            // The backend echoes the email back as a deliberate-action guard.
-            request.httpBody = try JSONSerialization.data(withJSONObject: ["confirm_email": session.email])
-            let (data, response) = try await URLSession.shared.data(for: request)
-            guard let http = response as? HTTPURLResponse else {
-                throw SyncAuthError.message("Sync backend returned an invalid response.")
-            }
-            guard (200..<300).contains(http.statusCode) else {
-                let code = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
-                throw SyncAuthError.message(Self.accountActionErrorMessage(code?["code"] as? String))
-            }
-            // The session is revoked server-side; drop it locally and tell the user.
-            signOutSync()
-            errorMessage = "Your account is scheduled for deletion. Sign in again within 14 days to cancel it; after that your synced data is permanently erased."
         } catch {
             errorMessage = error.localizedDescription
         }
@@ -829,7 +973,7 @@ final class AppModel: ObservableObject {
         saveSyncSession(updated)
         BackgroundSyncCoordinator.shared.scheduleIfEligible(backgroundRefreshEligible)
         if updated.supportsSync {
-            Task { await self.syncOnce() }
+            scheduleSync()
         }
     }
 
@@ -837,13 +981,11 @@ final class AppModel: ObservableObject {
     /// next sync registers this device for silent background wake-ups.
     func setPushToken(_ token: String, environment: String = "production") {
         guard let bridge else { return }
-        do {
-            try bridge.setPushRegistration(token: token, environment: environment)
-        } catch {
-            return
-        }
-        if syncSession?.supportsSync == true {
-            Task { await runBackgroundSync() }
+        bridge.enqueue({ try $0.setPushRegistration(token: token, environment: environment) }) { [weak self] result in
+            guard let self, case .success = result else { return }
+            if self.syncSession?.supportsSync == true {
+                Task { await self.runBackgroundSync() }
+            }
         }
     }
 
@@ -858,14 +1000,13 @@ final class AppModel: ObservableObject {
             return false
         }
         do {
-            let result = try await Task.detached {
-                let changed = try bridge.syncOnce(
-                    apiBase: current.apiBase,
-                    bearerToken: current.bearerToken,
-                )
-                let notice = try bridge.takeSyncNotice()
+            let apiBase = current.apiBase
+            let bearerToken = current.bearerToken
+            let result = try await bridge.perform { b in
+                let changed = try b.syncOnce(apiBase: apiBase, bearerToken: bearerToken)
+                let notice = try b.takeSyncNotice()
                 return (changed, notice)
-            }.value
+            }
             if result.0 {
                 refresh()
             }
@@ -902,11 +1043,13 @@ final class AppModel: ObservableObject {
 
         guard let bridge, let session = syncSession, session.supportsSync else { return }
         do {
-            let result = try await Task.detached {
-                let changed = try bridge.syncOnce(apiBase: session.apiBase, bearerToken: session.bearerToken)
-                let notice = try bridge.takeSyncNotice()
+            let apiBase = session.apiBase
+            let bearerToken = session.bearerToken
+            let result = try await bridge.perform { b in
+                let changed = try b.syncOnce(apiBase: apiBase, bearerToken: bearerToken)
+                let notice = try b.takeSyncNotice()
                 return (changed, notice)
-            }.value
+            }
             if result.0 {
                 refresh()
             }
@@ -914,6 +1057,11 @@ final class AppModel: ObservableObject {
         } catch {
             errorMessage = error.localizedDescription
         }
+    }
+
+    private func scheduleSync() {
+        guard syncSession != nil else { return }
+        Task { await self.syncOnce() }
     }
 
     /// Refresh the access token before syncing if it's near expiry, persisting the
@@ -985,44 +1133,65 @@ final class AppModel: ObservableObject {
             ?? snapshot?.archivedSchemes.first { $0.id == id }
     }
 
-    private func mutate(_ action: (RustBridge) throws -> Void) {
+    /// Apply a local edit on the bridge queue, then install the resulting
+    /// snapshot. The bridge queue is serial and FIFO, so edits submitted from
+    /// the main thread land in UI order even though nothing blocks here.
+    private func mutate(_ action: @escaping @Sendable (RustBridge) throws -> Void) {
         guard let bridge else { return }
-        do {
-            try action(bridge)
-            refresh()
-            errorMessage = nil
-            if syncSession != nil {
-                Task { await syncOnce() }
+        let today = Self.dateOnly(selectedDate)
+        let week = weekOffset
+        let history = dailyHistoryDays
+        bridge.enqueue({ b in
+            try action(b)
+            return (
+                try b.snapshot(today: today, weekOffset: week, dailyHistoryDays: history),
+                try b.pendingNotifications()
+            )
+        }) { [weak self] result in
+            guard let self else { return }
+            switch result {
+            case .success(let (snapshot, pending)):
+                self.apply(snapshot: snapshot, pendingNotifications: pending)
+                self.errorMessage = nil
+                if self.syncSession != nil {
+                    self.scheduleSync()
+                }
+            case .failure(let error):
+                self.errorMessage = error.localizedDescription
             }
-        } catch {
-            errorMessage = error.localizedDescription
         }
     }
 
     func handleNotificationAction(_ request: MobileNotificationActionRequest) {
         guard let bridge else { return }
-        do {
-            let changed = try bridge.applyNotificationAction(request)
-            if changed {
-                refresh()
-                if syncSession != nil {
-                    Task { await syncOnce() }
+        bridge.enqueue({ try $0.applyNotificationAction(request) }) { [weak self] result in
+            guard let self else { return }
+            switch result {
+            case .success(let changed):
+                if changed {
+                    self.refresh()
+                    if self.syncSession != nil {
+                        self.scheduleSync()
+                    }
+                } else {
+                    self.rescheduleNotifications()
                 }
-            } else {
-                rescheduleNotifications()
+                self.errorMessage = nil
+            case .failure(let error):
+                self.errorMessage = error.localizedDescription
             }
-            errorMessage = nil
-        } catch {
-            errorMessage = error.localizedDescription
         }
     }
 
     private func rescheduleNotifications() {
         guard let bridge else { return }
-        do {
-            MobileNotificationScheduler.shared.reschedule(try bridge.pendingNotifications())
-        } catch {
-            errorMessage = error.localizedDescription
+        bridge.enqueue({ try $0.pendingNotifications() }) { [weak self] result in
+            switch result {
+            case .success(let pending):
+                MobileNotificationScheduler.shared.reschedule(pending)
+            case .failure(let error):
+                self?.errorMessage = error.localizedDescription
+            }
         }
     }
 
@@ -1183,6 +1352,257 @@ final class AppModel: ObservableObject {
     }
 
     #if DEBUG
+    static var screenshotFixtureRequested: Bool {
+        #if targetEnvironment(simulator)
+        let process = ProcessInfo.processInfo
+        return process.arguments.contains("--knotq-screenshot-fixture")
+            || process.environment["KNOTQ_SCREENSHOT_FIXTURE"] == "1"
+        #else
+        return false
+        #endif
+    }
+
+    @discardableResult
+    private func seedScreenshotFixtureIfRequested() -> Bool {
+        guard Self.screenshotFixtureRequested, let bridge else { return false }
+
+        do {
+            syncSession = nil
+            UserDefaults.standard.removeObject(forKey: syncSessionKey)
+            UserDefaults.standard.set(true, forKey: "knotq.mobile.onboardingCompleted.v1")
+
+            selectedDate = Date()
+            weekOffset = 0
+
+            try bridge.resetWorkspace()
+            try bridge.setThemeMode("dark")
+            try bridge.setTimeFormat("twelve_hour")
+            try bridge.setNotificationDefaults(
+                eventOffsetSecs: 10 * 60,
+                assignmentOffsetSecs: 2 * 60 * 60
+            )
+
+            let launchID = try renameOrCreateScreenshotScheme(
+                bridge: bridge,
+                currentNames: ["Start Here", "Example Plan", "Coursework"],
+                targetName: "Semester Plan",
+                colorIndex: 4
+            )
+            let scheduleID = try renameOrCreateScreenshotScheme(
+                bridge: bridge,
+                currentNames: ["Scheduling"],
+                targetName: "Schedule",
+                colorIndex: 5
+            )
+            let roadmapID = try renameOrCreateScreenshotScheme(
+                bridge: bridge,
+                currentNames: ["Projects"],
+                targetName: "Research Project",
+                colorIndex: 2
+            )
+            let classesID = try createScreenshotScheme(bridge: bridge, name: "Classes", colorIndex: 3)
+            let fitnessID = try createScreenshotScheme(bridge: bridge, name: "Fitness", colorIndex: 0)
+            let musicID = try createScreenshotScheme(bridge: bridge, name: "Music", colorIndex: 5)
+            let lifeID = try createScreenshotScheme(bridge: bridge, name: "Life Admin", colorIndex: 9)
+            let financeID = try createScreenshotScheme(bridge: bridge, name: "Finances", colorIndex: 7)
+
+            try bridge.replaceSchemeItems(schemeID: launchID, items: launchPlanItems())
+            try bridge.replaceSchemeItems(schemeID: scheduleID, items: scheduleItems())
+            try bridge.replaceSchemeItems(schemeID: roadmapID, items: roadmapItems())
+            try bridge.replaceSchemeItems(schemeID: classesID, items: classesItems())
+            try bridge.replaceSchemeItems(schemeID: fitnessID, items: fitnessItems())
+            try bridge.replaceSchemeItems(schemeID: musicID, items: musicItems())
+            try bridge.replaceSchemeItems(schemeID: lifeID, items: lifeAdminItems())
+            try bridge.replaceSchemeItems(schemeID: financeID, items: financeItems())
+            try seedDailyScreenshotItems(bridge: bridge)
+
+            snapshot = try bridge.snapshot(today: Self.dateOnly(selectedDate), weekOffset: weekOffset)
+            errorMessage = nil
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+
+        return true
+    }
+
+    private func renameOrCreateScreenshotScheme(
+        bridge: RustBridge,
+        currentNames: [String],
+        targetName: String,
+        colorIndex: Int32
+    ) throws -> String {
+        let snapshot = try bridge.snapshot(today: Self.dateOnly(selectedDate), weekOffset: weekOffset)
+        if let existing = snapshot.schemes.first(where: { currentNames.contains($0.name) || $0.name == targetName }) {
+            if existing.name != targetName {
+                try bridge.renameScheme(id: existing.id, name: targetName)
+            }
+            try bridge.setSchemeColor(id: existing.id, colorIndex: colorIndex)
+            return existing.id
+        }
+        return try createScreenshotScheme(bridge: bridge, name: targetName, colorIndex: colorIndex)
+    }
+
+    private func createScreenshotScheme(bridge: RustBridge, name: String, colorIndex: Int32) throws -> String {
+        let before = Set(try bridge.snapshot(today: Self.dateOnly(selectedDate), weekOffset: weekOffset).schemes.map(\.id))
+        try bridge.createScheme(name: name, folderID: nil, position: nil)
+        let snapshot = try bridge.snapshot(today: Self.dateOnly(selectedDate), weekOffset: weekOffset)
+        guard let scheme = snapshot.schemes.first(where: { !before.contains($0.id) && $0.name == name })
+            ?? snapshot.schemes.first(where: { $0.name == name }) else {
+            throw ScreenshotFixtureError.message("Could not create screenshot scheme \(name).")
+        }
+        try bridge.setSchemeColor(id: scheme.id, colorIndex: colorIndex)
+        return scheme.id
+    }
+
+    private func seedDailyScreenshotItems(bridge: RustBridge) throws {
+        let todayKey = Self.dateOnly(selectedDate)
+        try bridge.ensureDailyQueue(date: todayKey)
+        let snapshot = try bridge.snapshot(today: todayKey, weekOffset: weekOffset)
+        guard let dailyID = snapshot.daily.first(where: { $0.date == todayKey })?.scheme.id else {
+            throw ScreenshotFixtureError.message("Could not prepare today's daily queue.")
+        }
+        try bridge.replaceSchemeItems(schemeID: dailyID, items: [
+            screenshotItem("Today", marker: .blank),
+            screenshotItem("Review lecture notes", marker: .checkbox, done: true),
+            screenshotItem("Finish calculus questions", marker: .checkbox),
+            screenshotItem("Email lab partner", marker: .checkbox),
+            screenshotItem("Pack books for tutoring", marker: .checkbox),
+            screenshotItem("Draft history thesis paragraph", marker: .checkbox, end: screenshotDate(dayOffset: 0, hour: 21, minute: 15)),
+            screenshotItem("Inbox", marker: .blank),
+            screenshotItem("Check scholarship portal", marker: .checkbox),
+            screenshotItem("Text study group", marker: .checkbox),
+            screenshotItem("Loose notes", marker: .blank),
+            screenshotItem("Bring blue notebook to art history", marker: .bullet, indent: 1),
+        ])
+    }
+
+    private func launchPlanItems() -> [MobileItemEdit] {
+        [
+            screenshotItem("Spring semester", marker: .blank),
+            screenshotItem("Coursework", marker: .bullet),
+            screenshotItem("Read philosophy chapter 8", marker: .checkbox, indent: 1, done: true),
+            screenshotItem("Outline art history essay", marker: .checkbox, indent: 1),
+            screenshotItem("Prepare stats lab questions", marker: .checkbox, indent: 1, end: screenshotDate(dayOffset: 1, hour: 16, minute: 30)),
+            screenshotItem("Campus", marker: .bullet),
+            screenshotItem("Reserve library study room", marker: .checkbox, indent: 1, done: true),
+            screenshotItem("Meet writing tutor", marker: .checkbox, indent: 1),
+            screenshotItem("Print music theory worksheet", marker: .checkbox, indent: 1),
+            screenshotItem("Submit financial aid form", marker: .checkbox, indent: 1),
+            screenshotItem("Exam prep", marker: .bullet),
+            screenshotItem("Make flashcards for psychology", marker: .checkbox, indent: 1),
+            screenshotItem("Archive last week's notes", marker: .checkbox, indent: 1),
+        ]
+    }
+
+    private func scheduleItems() -> [MobileItemEdit] {
+        [
+            screenshotItem("Calendar blocks", marker: .blank),
+            screenshotItem("Morning review", marker: .checkbox, done: true, start: screenshotDate(dayOffset: 0, hour: 11, minute: 15), end: screenshotDate(dayOffset: 0, hour: 11, minute: 45)),
+            screenshotItem("Library study block", marker: .checkbox, done: true),
+            screenshotItem("Essay drafting", marker: .checkbox, done: true),
+            screenshotItem("Group project meeting", marker: .checkbox, start: screenshotDate(dayOffset: 1, hour: 12, minute: 30), end: screenshotDate(dayOffset: 1, hour: 13, minute: 15)),
+            screenshotItem("Office hours", marker: .checkbox),
+            screenshotItem("Weekly planning", marker: .checkbox),
+        ]
+    }
+
+    private func roadmapItems() -> [MobileItemEdit] {
+        [
+            screenshotItem("History research paper", marker: .blank),
+            screenshotItem("Find five primary sources", marker: .checkbox, done: true),
+            screenshotItem("Annotate museum catalog", marker: .checkbox),
+            screenshotItem("Send thesis to professor", marker: .checkbox, end: screenshotDate(dayOffset: 2, hour: 12, minute: 0)),
+            screenshotItem("Draft sections", marker: .blank),
+            screenshotItem("Write intro paragraph", marker: .checkbox),
+            screenshotItem("Revise source notes", marker: .checkbox),
+        ]
+    }
+
+    private func classesItems() -> [MobileItemEdit] {
+        [
+            screenshotItem("Coursework", marker: .blank),
+            screenshotItem("Calculus problem set", marker: .checkbox, done: true),
+            screenshotItem("Art History critique", marker: .checkbox, end: screenshotDate(dayOffset: 1, hour: 22, minute: 0)),
+            screenshotItem("Psych reading response Ch. 7", marker: .checkbox, end: screenshotDate(dayOffset: 1, hour: 23, minute: 0)),
+            screenshotItem("Stats problem set 8", marker: .checkbox),
+            screenshotItem("Creative writing portfolio", marker: .checkbox),
+            screenshotItem("Seminars", marker: .blank),
+            screenshotItem("Chemistry lecture", marker: .checkbox, done: true, start: screenshotDate(dayOffset: 0, hour: 12, minute: 0), end: screenshotDate(dayOffset: 0, hour: 12, minute: 50)),
+            screenshotItem("Art History seminar", marker: .checkbox, start: screenshotDate(dayOffset: 1, hour: 11, minute: 15), end: screenshotDate(dayOffset: 1, hour: 12, minute: 0)),
+            screenshotItem("Stats lab", marker: .checkbox, start: screenshotDate(dayOffset: 3, hour: 14, minute: 0), end: screenshotDate(dayOffset: 3, hour: 15, minute: 15)),
+        ]
+    }
+
+    private func fitnessItems() -> [MobileItemEdit] {
+        [
+            screenshotItem("Training", marker: .blank),
+            screenshotItem("Club run", marker: .checkbox, start: screenshotDate(dayOffset: 1, hour: 15, minute: 15), end: screenshotDate(dayOffset: 1, hour: 16, minute: 0)),
+            screenshotItem("Gym: upper body", marker: .checkbox, start: screenshotDate(dayOffset: 2, hour: 8, minute: 0), end: screenshotDate(dayOffset: 2, hour: 9, minute: 0)),
+            screenshotItem("Yoga class", marker: .checkbox),
+            screenshotItem("Pack running shoes", marker: .checkbox, done: true),
+        ]
+    }
+
+    private func musicItems() -> [MobileItemEdit] {
+        [
+            screenshotItem("Practice", marker: .blank),
+            screenshotItem("Piano practice", marker: .checkbox, done: true),
+            screenshotItem("Band rehearsal", marker: .checkbox, start: screenshotDate(dayOffset: 2, hour: 14, minute: 0), end: screenshotDate(dayOffset: 2, hour: 15, minute: 30)),
+            screenshotItem("Theory analysis", marker: .checkbox),
+        ]
+    }
+
+    private func lifeAdminItems() -> [MobileItemEdit] {
+        [
+            screenshotItem("Errands", marker: .blank),
+            screenshotItem("Pick up groceries", marker: .checkbox, start: screenshotDate(dayOffset: 4, hour: 17, minute: 0)),
+            screenshotItem("Call Maya", marker: .checkbox),
+            screenshotItem("Renew library books", marker: .checkbox),
+            screenshotItem("Movie night", marker: .checkbox),
+        ]
+    }
+
+    private func financeItems() -> [MobileItemEdit] {
+        [
+            screenshotItem("Monthly", marker: .blank),
+            screenshotItem("Rent due", marker: .checkbox, end: screenshotDate(dayOffset: 6, hour: 9, minute: 0)),
+            screenshotItem("Reconcile subscriptions", marker: .checkbox),
+            screenshotItem("Update budget notes", marker: .checkbox),
+        ]
+    }
+
+    private func screenshotItem(
+        _ text: String,
+        marker: Marker,
+        indent: Int32 = 0,
+        done: Bool = false,
+        start: Date? = nil,
+        end: Date? = nil,
+        notificationOffsetSecs: Int32? = nil,
+        repeatRule: String? = nil
+    ) -> MobileItemEdit {
+        MobileItemEdit(
+            id: nil,
+            text: text,
+            marker: marker.rawValue,
+            indent: indent,
+            done: done,
+            start: start.map { iso.string(from: $0) },
+            end: end.map { iso.string(from: $0) },
+            notificationOffsetSecs: notificationOffsetSecs,
+            repeatRule: repeatRule,
+            media: []
+        )
+    }
+
+    private func screenshotDate(dayOffset: Int, hour: Int, minute: Int) -> Date {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = .current
+        let base = calendar.startOfDay(for: selectedDate)
+        let day = calendar.date(byAdding: .day, value: dayOffset, to: base) ?? base
+        return calendar.date(bySettingHour: hour, minute: minute, second: 0, of: day) ?? day
+    }
+
     private func seedEditorImageFixture() {
         guard let bridge else { return }
         do {
@@ -1193,6 +1613,22 @@ final class AppModel: ObservableObject {
         }
     }
     #endif
+
+    private static func initialDailyHistoryDays(for date: Date) -> Int {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = .current
+        let day = calendar.startOfDay(for: date)
+        let components = calendar.dateComponents([.year, .month], from: day)
+        guard
+            let currentMonthStart = calendar.date(from: components),
+            let previousMonthStart = calendar.date(byAdding: .month, value: -1, to: currentMonthStart)
+        else {
+            return dailyHistoryPageDays
+        }
+        let days = calendar.dateComponents([.day], from: previousMonthStart, to: day).day
+            ?? dailyHistoryPageDays
+        return min(max(days, minimumDailyHistoryDays), maxDailyHistoryDays)
+    }
 
     static func dateOnly(_ date: Date) -> String {
         MobileDate.dateOnly(date)
@@ -1206,6 +1642,19 @@ final class AppModel: ObservableObject {
         MobileDate.parseDateOnly(raw)
     }
 }
+
+#if DEBUG
+private enum ScreenshotFixtureError: LocalizedError {
+    case message(String)
+
+    var errorDescription: String? {
+        switch self {
+        case .message(let message):
+            return message
+        }
+    }
+}
+#endif
 
 private struct SyncLoginResponse: Decodable {
     let userId: String

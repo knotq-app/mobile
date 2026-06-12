@@ -21,15 +21,27 @@ struct DesktopSchemePane: View {
 }
 
 struct DailyFeedPane: View {
+    private static let bottomAnchorID = "daily-feed-bottom-anchor"
+    private static let scrollCoordinateSpace = "daily-feed-scroll-space"
+
     let entries: [MobileDailyEntry]
     let selectedDate: Date
     let theme: KnotQTheme
     let onPrevious: () -> Void
     let onNext: () -> Void
     let onDate: @MainActor (Date) -> Void
+    var onLoadOlder: @MainActor (String) -> Void = { _ in }
+    var loadAnchorDate: String?
+    var onLoadAnchorRestored: @MainActor () -> Void = {}
     let onBack: () -> Void
     let onAdd: () -> Void
     var usesNativeNavigation: Bool = false
+    var autoFocusSelectedDay: Bool = true
+    @State private var didInitialBottomPin = false
+    @State private var olderLoadsEnabled = false
+    @State private var userScrolledTowardOlderEntries = false
+    @State private var topSentinelNearViewport = false
+    @State private var restoringLoadAnchorDate: String?
 
     var body: some View {
         VStack(spacing: 0) {
@@ -43,42 +55,75 @@ struct DailyFeedPane: View {
                 } else {
                     ScrollViewReader { proxy in
                         ScrollView {
-                            VStack(spacing: 0) {
+                            LazyVStack(spacing: 0) {
+                                Color.clear
+                                    .frame(height: 1)
+                                    .background {
+                                        GeometryReader { geometry in
+                                            Color.clear.preference(
+                                                key: DailyFeedTopOffsetPreferenceKey.self,
+                                                value: geometry.frame(in: .named(Self.scrollCoordinateSpace)).minY
+                                            )
+                                        }
+                                    }
                                 ForEach(visibleEntries) { entry in
                                     DailyDayEditorSection(
                                         entry: entry,
+                                        isEmpty: isEffectivelyEmpty(entry),
                                         selected: entry.date == selectedDateKey,
                                         theme: theme,
+                                        autoFocusOnAppear: autoFocusSelectedDay,
                                         onSelect: { onDate(AppModel.date(from: entry.date) ?? selectedDate) }
                                     )
                                     .id(entry.date)
+                                    .onAppear {
+                                        handleOlderEntryAppear(entry.date)
+                                    }
                                 }
+                                Color.clear
+                                    .frame(height: 1)
+                                    .id(Self.bottomAnchorID)
                             }
                             .frame(maxWidth: 760, alignment: .leading)
                             .padding(.horizontal, 10)
-                            .padding(.top, 4)
+                            .padding(.top, 2)
                             .padding(.bottom, 76)
                             .frame(maxWidth: .infinity, alignment: .leading)
                         }
+                        .coordinateSpace(name: Self.scrollCoordinateSpace)
                         .scrollDismissesKeyboard(.never)
+                        .simultaneousGesture(
+                            DragGesture(minimumDistance: 8)
+                                .onChanged { value in
+                                    if value.translation.height > 12 {
+                                        userScrolledTowardOlderEntries = true
+                                        loadOlderIfReady()
+                                    }
+                                },
+                            including: .subviews
+                        )
+                            .onPreferenceChange(DailyFeedTopOffsetPreferenceKey.self) { value in
+                                topSentinelNearViewport = value >= -20 && value <= 80
+                                loadOlderIfReady()
+                            }
                             .onAppear {
-                                // Land on the selected day immediately, then re-pin once
-                                // the editor rows have measured their height so the day
-                                // settles in place instead of drifting a beat later.
-                                proxy.scrollTo(selectedDateKey, anchor: .bottom)
-                                DispatchQueue.main.async {
-                                    proxy.scrollTo(selectedDateKey, anchor: .bottom)
-                                }
+                                pinInitialBottomIfNeeded(proxy)
+                            }
+                            .onChange(of: loadAnchorDate) { _, _ in
+                                restoreLoadAnchorIfNeeded(proxy)
+                            }
+                            .onChange(of: visibleEntryDateSignature) { _, _ in
+                                restoreLoadAnchorIfNeeded(proxy)
                             }
                             .onChange(of: selectedDateKey) { _, value in
-                                proxy.scrollTo(value, anchor: .bottom)
+                                scrollWithoutAnimation(proxy, to: value)
                             }
                         }
                     }
             }
         }
         .background(theme.bgApp.ignoresSafeArea())
-        .navigationTitle(usesNativeNavigation ? "Daily" : "")
+        .navigationTitle("")
         .navigationBarTitleDisplayMode(.inline)
     }
 
@@ -90,19 +135,18 @@ struct DailyFeedPane: View {
         entries.sorted { $0.date < $1.date }
     }
 
-    private var selectedEntry: MobileDailyEntry? {
-        entries.first { $0.date == selectedDateKey }
+    private var oldestVisibleDate: String? {
+        visibleEntries.first?.date
     }
 
-    /// Hide empty queues that are neither today nor yesterday — they would
-    /// otherwise just show "Start typing" and waste vertical space.
+    private var visibleEntryDateSignature: String {
+        visibleEntries.map(\.date).joined(separator: "|")
+    }
+
+    /// Hide empty queues unless they are the selected editable day; otherwise
+    /// they reserve editor height without showing meaningful content.
     private var visibleEntries: [MobileDailyEntry] {
-        let today = AppModel.dateOnly(Date())
-        let yesterday = AppModel.dateOnly(
-            Calendar.current.date(byAdding: .day, value: -1, to: Date()) ?? Date()
-        )
         return sortedEntries.filter { entry in
-            if entry.date == today || entry.date == yesterday { return true }
             if entry.date == selectedDateKey { return true }
             return !isEffectivelyEmpty(entry)
         }
@@ -110,12 +154,100 @@ struct DailyFeedPane: View {
 
     private func isEffectivelyEmpty(_ entry: MobileDailyEntry) -> Bool {
         entry.scheme.items.allSatisfy { item in
-            item.text.isEmpty
-                && item.marker == "blank"
+            item.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                && (item.marker == "blank" || item.marker == "checkbox")
                 && item.indent == 0
                 && item.start == nil
                 && item.end == nil
+                && item.notificationOffsetSecs == nil
+                && item.repeatRule == nil
+                && !item.done
+                && item.media.isEmpty
         }
+    }
+
+    private func handleOlderEntryAppear(_ date: String) {
+        guard olderLoadsEnabled,
+              userScrolledTowardOlderEntries,
+              topSentinelNearViewport,
+              date == oldestVisibleDate
+        else {
+            return
+        }
+        loadOlderIfReady()
+    }
+
+    private func loadOlderIfReady() {
+        guard olderLoadsEnabled,
+              userScrolledTowardOlderEntries,
+              topSentinelNearViewport,
+              let oldestVisibleDate
+        else {
+            return
+        }
+        userScrolledTowardOlderEntries = false
+        onLoadOlder(oldestVisibleDate)
+    }
+
+    private func pinInitialBottomIfNeeded(_ proxy: ScrollViewProxy) {
+        guard !didInitialBottomPin else { return }
+        didInitialBottomPin = true
+        olderLoadsEnabled = false
+        userScrolledTowardOlderEntries = false
+        topSentinelNearViewport = false
+        pinToBottom(proxy)
+        DispatchQueue.main.async {
+            pinToBottom(proxy)
+            DispatchQueue.main.async {
+                pinToBottom(proxy)
+            }
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
+            pinToBottom(proxy)
+            olderLoadsEnabled = true
+        }
+    }
+
+    private func pinToBottom(_ proxy: ScrollViewProxy) {
+        scrollWithoutAnimation(proxy, to: Self.bottomAnchorID)
+    }
+
+    private func restoreLoadAnchorIfNeeded(_ proxy: ScrollViewProxy) {
+        guard let anchor = loadAnchorDate else { return }
+        guard visibleEntries.contains(where: { $0.date == anchor }) else {
+            onLoadAnchorRestored()
+            return
+        }
+        guard restoringLoadAnchorDate != anchor else { return }
+        restoringLoadAnchorDate = anchor
+        DispatchQueue.main.async {
+            scrollWithoutAnimation(proxy, to: anchor, anchor: .top)
+            DispatchQueue.main.async {
+                scrollWithoutAnimation(proxy, to: anchor, anchor: .top)
+                restoringLoadAnchorDate = nil
+                onLoadAnchorRestored()
+            }
+        }
+    }
+
+    private func scrollWithoutAnimation<ID: Hashable>(
+        _ proxy: ScrollViewProxy,
+        to id: ID,
+        anchor: UnitPoint = .bottom
+    ) {
+        var transaction = Transaction()
+        transaction.disablesAnimations = true
+        withTransaction(transaction) {
+            proxy.scrollTo(id, anchor: anchor)
+        }
+    }
+}
+
+private struct DailyFeedTopOffsetPreferenceKey: PreferenceKey {
+    static let defaultValue: CGFloat = .greatestFiniteMagnitude
+
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = nextValue()
     }
 }
 
@@ -129,11 +261,8 @@ struct DailyEditorNavigationBar: View {
             Button(action: onBack) {
                 Image(systemName: "chevron.left")
             }
-            .buttonStyle(TitleIconButton(theme: theme))
-
-            Text("Daily")
-                .font(.system(size: 15, weight: .semibold))
-                .foregroundStyle(theme.textPrimary)
+            .buttonStyle(DailyBackButtonStyle(theme: theme))
+            .accessibilityLabel("Back")
 
             Spacer()
         }
@@ -146,8 +275,10 @@ struct DailyEditorNavigationBar: View {
 
 struct DailyDayEditorSection: View {
     let entry: MobileDailyEntry
+    let isEmpty: Bool
     let selected: Bool
     let theme: KnotQTheme
+    let autoFocusOnAppear: Bool
     let onSelect: () -> Void
 
     var body: some View {
@@ -160,7 +291,8 @@ struct DailyDayEditorSection: View {
             showsEditorNavigation: false,
             editorScrollEnabled: false,
             editorInsets: UIEdgeInsets(top: 3, left: 14, bottom: 5, right: 14),
-            autoFocusOnAppear: selected
+            showsInlineTitle: !isEmpty,
+            autoFocusOnAppear: selected && autoFocusOnAppear
         )
         .frame(minHeight: editorHeight)
         .background(selected ? theme.rowSelected.opacity(0.42) : Color.clear)
@@ -174,11 +306,55 @@ struct DailyDayEditorSection: View {
     }
 
     private var editorHeight: CGFloat {
+        if isEmpty {
+            return selected ? 44 : 0
+        }
         let visualLineCount = entry.scheme.items.reduce(0) { total, item in
             total + max(1, Int(ceil(Double(max(item.text.count, 1)) / 34.0)))
         }
         let annotationCount = entry.scheme.items.filter { $0.start != nil || $0.end != nil }.count
-        return max(104, CGFloat(max(1, visualLineCount)) * 24 + CGFloat(annotationCount) * 14 + 52)
+        return max(48, CGFloat(max(1, visualLineCount)) * 24 + CGFloat(annotationCount) * 14 + 16)
+    }
+}
+
+private struct DailyBackButtonStyle: ButtonStyle {
+    let theme: KnotQTheme
+
+    func makeBody(configuration: Configuration) -> some View {
+        let shape = Circle()
+        configuration.label
+            .font(.system(size: 15, weight: .semibold))
+            .foregroundStyle(theme.textPrimary)
+            .frame(width: 38, height: 38)
+            .background {
+                if #available(iOS 26.0, *), UIDevice.current.userInterfaceIdiom != .pad {
+                    Color.clear
+                } else {
+                    shape.fill(theme.buttonBg)
+                }
+            }
+            .overlay {
+                if UIDevice.current.userInterfaceIdiom == .pad {
+                    shape.strokeBorder(theme.isDark ? Color.white.opacity(0.16) : theme.borderOverlay.opacity(0.75), lineWidth: 0.7)
+                }
+            }
+            .glassEffectIfAvailable(theme: theme, in: shape)
+            .scaleEffect(configuration.isPressed ? 0.96 : 1)
+    }
+}
+
+private extension View {
+    @ViewBuilder
+    func glassEffectIfAvailable<S: Shape>(theme: KnotQTheme, in shape: S) -> some View {
+        if #available(iOS 26.0, *), UIDevice.current.userInterfaceIdiom != .pad {
+            self
+                .glassEffect(.regular.tint(theme.isDark ? Color.white.opacity(0.06) : Color.white.opacity(0.20)).interactive(), in: shape)
+                .overlay {
+                    shape.stroke(theme.isDark ? Color.white.opacity(0.15) : theme.borderOverlay.opacity(0.72), lineWidth: 0.7)
+                }
+        } else {
+            self
+        }
     }
 }
 
@@ -330,8 +506,8 @@ struct DesktopItemRow: View {
 struct IPadSearchDetail: View {
     @EnvironmentObject private var model: AppModel
     let theme: KnotQTheme
+    @Binding var query: String
     let onOpenScheme: (String) -> Void
-    @State private var query = ""
 
     var body: some View {
         List {
@@ -361,10 +537,7 @@ struct IPadSearchDetail: View {
         .listStyle(.plain)
         .scrollContentBackground(.hidden)
         .background(theme.bgApp)
-        .searchable(text: $query, placement: .navigationBarDrawer(displayMode: .always), prompt: "Search KnotQ")
         .autocorrectionDisabled()
-        .onChange(of: query) { _, value in model.search(value) }
-        .onAppear { model.search(query) }
         .navigationTitle("Search")
         .navigationBarTitleDisplayMode(.inline)
     }
@@ -491,4 +664,3 @@ struct DesktopSearchPane: View {
         }
     }
 }
-

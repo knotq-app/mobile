@@ -21,6 +21,13 @@ struct DailyScreen: View {
                     model.selectDate(date)
                 }
             },
+            onLoadOlder: { oldestDate in
+                model.loadOlderDailyEntries(from: oldestDate)
+            },
+            loadAnchorDate: model.dailyHistoryLoadAnchorDate,
+            onLoadAnchorRestored: {
+                model.clearDailyHistoryLoadAnchor()
+            },
             onBack: { dismiss() },
             onAdd: {
                 model.addTodayDailyItem(text: "", marker: .checkbox)

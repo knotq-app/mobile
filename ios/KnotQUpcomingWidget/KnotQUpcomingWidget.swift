@@ -377,14 +377,6 @@ private struct WidgetOccurrenceCompactRow: View {
                         .layoutPriority(2)
 
                     Spacer(minLength: 2)
-
-                    if !compact {
-                        Text(schemeLabel)
-                            .font(.system(size: 10, weight: .bold))
-                            .foregroundStyle(schemeAccent)
-                            .lineLimit(1)
-                            .truncationMode(.tail)
-                    }
                 }
             }
             .padding(.vertical, compact ? 4 : 6)
@@ -393,11 +385,6 @@ private struct WidgetOccurrenceCompactRow: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(striped ? theme.rowAlt : Color.clear)
         .opacity(item.done ? 0.5 : 1)
-    }
-
-    private var schemeLabel: String {
-        let scheme = item.schemeName.trimmingCharacters(in: .whitespacesAndNewlines)
-        return scheme.isEmpty ? "Scheme" : scheme
     }
 
     private var titleLabel: String {

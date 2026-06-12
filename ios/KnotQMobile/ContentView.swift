@@ -62,7 +62,6 @@ enum HomeRoute: Hashable {
 /// Selection in the iPad NavigationSplitView sidebar: the fixed destinations plus
 /// a specific scheme (driven by the embedded scheme tree).
 enum SidebarItem: Hashable {
-    case home
     case calendar
     case daily
     case settings
@@ -73,23 +72,25 @@ struct ContentView: View {
     @EnvironmentObject private var model: AppModel
     @Environment(\.colorScheme) private var systemScheme
 
-    @State private var pane: MobilePane = .home
+    @State private var pane: MobilePane = UIDevice.current.userInterfaceIdiom == .pad ? .calendar : .home
     @State private var selectedSchemeID: String?
+    /// Pushed submenu stack for the iPad detail column (e.g. Archive). Reset when
+    /// the sidebar selection changes so picking a new item leaves the submenu.
+    @State private var detailPath = NavigationPath()
     @State private var addItemTarget: AddItemTarget?
-    @State private var showingCalendarAdd = false
     @State private var showingMonthView = false
     @State private var showingNewFolder = false
     @State private var eventEditor: EventEditorTarget?
     @State private var pendingOccurrenceMove: PendingOccurrenceMove?
     @State private var keyboardVisible = false
     @State private var titleFocusSchemeID: String?
+    @State private var iPadSearchQuery = ""
     @State private var homeNavigationDepth = 0
     @State private var timelineResetToken = 0
+    @State private var appliedScreenshotRoute = false
     @AppStorage("knotq.mobile.onboardingCompleted.v1") private var onboardingCompleted = false
     @State private var onboardingPhase: OnboardingPhase = .account
     @State private var onboardingStep = 0
-    // iPad NavigationSplitView state.
-    @State private var columnVisibility: NavigationSplitViewVisibility = .all
 
     private var theme: KnotQTheme {
         KnotQTheme.resolve(mode: model.snapshot?.settings.themeMode, systemScheme: systemScheme)
@@ -128,6 +129,8 @@ struct ContentView: View {
             } else {
                 returnHome()
             }
+        case .home where isPadLayout:
+            pane = .calendar
         case .daily:
             openDaily()
         default:
@@ -144,7 +147,7 @@ struct ContentView: View {
 
     private func finishOnboarding() {
         homeNavigationDepth = 0
-        pane = .home
+        pane = defaultHomePane
         withAnimation(.easeOut(duration: 0.2)) {
             onboardingCompleted = true
         }
@@ -156,22 +159,26 @@ struct ContentView: View {
 
     var body: some View {
         GeometryReader { proxy in
-            let wide = proxy.size.width >= 760
+            let isWide = proxy.size.width >= 760
             Group {
-                if wide {
+                if isPadLayout {
                     iPadRoot()
                 } else {
-                    iPhoneRoot()
+                    iPhoneRoot(isWide: isWide)
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .background(theme.bgApp.ignoresSafeArea())
             .foregroundStyle(theme.textPrimary)
             .preferredColorScheme(theme.isDark ? .dark : .light)
-            .onChange(of: wide) { _, isWide in
-                if !isWide, pane == .search {
+            .onChange(of: isWide) { _, value in
+                if !isPadLayout, !value, pane == .search {
                     pane = .home
                 }
+            }
+            .onChange(of: iPadSearchQuery) { _, value in
+                guard isPadLayout else { return }
+                model.search(value.trimmingCharacters(in: .whitespacesAndNewlines))
             }
             // The window itself is black by default, so it shows through the
             // bottom safe-area lip and behind the transparent keyboard toolbar.
@@ -182,12 +189,12 @@ struct ContentView: View {
                 get: { model.errorMessage != nil },
                 set: { showing in
                     if !showing {
-                        model.errorMessage = nil
+                        model.dismissErrorMessage()
                     }
                 }
             )) {
                 Button("OK", role: .cancel) {
-                    model.errorMessage = nil
+                    model.dismissErrorMessage()
                 }
             } message: {
                 Text(model.errorMessage ?? "")
@@ -220,24 +227,16 @@ struct ContentView: View {
         .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillHideNotification)) { _ in
             withAnimation(.easeOut(duration: 0.24)) { keyboardVisible = false }
         }
-        .sheet(item: $addItemTarget) { target in
-            Group {
-                switch target {
-                case .scheme(let id):
-                    AddItemSheet(schemeID: id)
-                case .todayDaily:
-                    AddItemSheet(todayDaily: true)
-                }
+        .adaptiveEditorPresentation(item: $addItemTarget, isPad: isPadLayout, detents: [.fraction(0.50)]) { target in
+            switch target {
+            case .scheme(let id):
+                AddItemSheet(schemeID: id)
+            case .todayDaily:
+                AddItemSheet(todayDaily: true)
             }
-            .presentationDetents([.fraction(0.50)])
         }
-        .sheet(item: $eventEditor) { target in
+        .adaptiveEditorPresentation(item: $eventEditor, isPad: isPadLayout, detents: [.fraction(0.50)]) { target in
             EventEditorSheet(theme: theme, target: target)
-                .presentationDetents([.fraction(0.50)])
-        }
-        .sheet(isPresented: $showingCalendarAdd) {
-            AddCalendarItemSheet()
-                .presentationDetents([.fraction(0.50)])
         }
         .sheet(isPresented: $showingMonthView) {
             MonthGridView(theme: theme, initialDate: model.selectedDate) { date in
@@ -250,14 +249,14 @@ struct ContentView: View {
             .presentationDragIndicator(.visible)
         }
         .sheet(isPresented: $showingNewFolder) {
-            NameSheet(title: "New Folder", placeholder: "Folder name", validator: { name in
-                WorkspaceNameValidation.folderError(name, root: model.snapshot?.root)
-            }) { name in
-                model.createFolder(name: name)
-                pane = .home
+                NameSheet(title: "New Folder", placeholder: "Folder name", validator: { name in
+                    WorkspaceNameValidation.folderError(name, root: model.snapshot?.root)
+                }) { name in
+                    model.createFolder(name: name)
+                    pane = defaultHomePane
+                }
+                .presentationDetents([.height(220)])
             }
-            .presentationDetents([.height(220)])
-        }
         .confirmationDialog("Recurring Task", isPresented: Binding(
             get: { pendingOccurrenceMove != nil },
             set: { showing in
@@ -277,14 +276,19 @@ struct ContentView: View {
         } message: {
             Text("Which tasks should this move apply to?")
         }
-        .onAppear { model.ensureTodayDailyQueue() }
+        .onAppear {
+            model.ensureTodayDailyQueue()
+            #if DEBUG
+            applyScreenshotInitialRouteIfNeeded()
+            #endif
+        }
     }
 
     // MARK: - iPhone (compact) root
 
     @ViewBuilder
-    private func iPhoneRoot() -> some View {
-        mainPane(wide: false)
+    private func iPhoneRoot(isWide: Bool) -> some View {
+        mainPane(wide: isWide)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .overlay(alignment: .bottom) {
                 if !keyboardVisible && homeNavigationDepth == 0 {
@@ -316,7 +320,9 @@ struct ContentView: View {
 
     @ViewBuilder
     private func iPadRoot() -> some View {
-        NavigationSplitView(columnVisibility: $columnVisibility) {
+        // Sidebar is permanent: pin both columns and drop the toggle so it
+        // can't be collapsed (landscape-only iPad always has room for it).
+        NavigationSplitView(columnVisibility: .constant(.doubleColumn)) {
             IPadSidebar(
                 root: model.snapshot?.root,
                 selection: sidebarSelectionBinding,
@@ -325,25 +331,65 @@ struct ContentView: View {
                 onSelectScheme: selectScheme,
                 onNewScheme: quickCreateScheme,
                 onNewFolder: { showingNewFolder = true },
-                onGoogleCalendar: { startGoogleCalendarImport(parentID: $0) }
+                onGoogleCalendar: { startGoogleCalendarImport(parentID: $0) },
+                searchQuery: $iPadSearchQuery,
+                searchHits: model.searchHits,
+                onSearch: {
+                    iPadSearchQuery = iPadSearchQuery.trimmingCharacters(in: .whitespacesAndNewlines)
+                    model.search(iPadSearchQuery)
+                },
+                onOpenSearchHit: { hit in
+                    if let schemeID = hit.schemeId {
+                        selectScheme(schemeID)
+                    }
+                }
             )
             .navigationSplitViewColumnWidth(min: 220, ideal: 264, max: 340)
             .navigationTitle("KnotQ")
-        } content: {
-            DesktopUpcomingRail(
-                calendar: model.snapshot?.calendar,
-                theme: theme,
-                timeFormat: currentTimeFormat,
-                onToggleOccurrence: handleOccurrenceTap,
-                onOpenOccurrence: { eventEditor = .edit($0) }
-            )
-            .navigationSplitViewColumnWidth(min: 236, ideal: 258, max: 320)
         } detail: {
-            NavigationStack {
-                iPadDetail()
+            HStack(spacing: 0) {
+                // Separator right after the sidebar — shown for every detail view,
+                // not just the calendar.
+                Rectangle()
+                    .fill(theme.dividerSoft)
+                    .frame(width: 1)
+                    .ignoresSafeArea(.container, edges: .bottom)
+
+                NavigationStack(path: $detailPath) {
+                    iPadDetail()
+                        .toolbar(removing: .sidebarToggle)
+                        .navigationDestination(for: SettingsRoute.self) { route in
+                            settingsRouteDestination(route)
+                        }
+                }
+                // Picking any sidebar item resets the pushed submenu (e.g. Archive)
+                // so the detail shows that item's root instead of staying stuck.
+                .onChange(of: pane) { _, _ in detailPath = NavigationPath() }
+                .onChange(of: selectedSchemeID) { _, _ in detailPath = NavigationPath() }
             }
         }
         .navigationSplitViewStyle(.balanced)
+    }
+
+    @ViewBuilder
+    private func settingsRouteDestination(_ route: SettingsRoute) -> some View {
+        switch route {
+        case .archive:
+            SettingsArchiveList(theme: theme)
+        }
+    }
+
+    private var ipadActivePane: MobilePane {
+        guard isPadLayout else { return pane }
+        if pane == .home && screenshotHomeRouteRequested {
+            return .home
+        }
+        switch pane {
+        case .home, .search:
+            return .calendar
+        default:
+            return pane
+        }
     }
 
     /// Maps the existing `pane`/`selectedSchemeID` state to/from the sidebar's
@@ -352,22 +398,20 @@ struct ContentView: View {
         Binding(
             get: {
                 switch pane {
-                case .home: return .home
-                case .calendar: return .calendar
-                case .daily: return .daily
-                case .settings: return .settings
-                case .scheme: return selectedSchemeID.map(SidebarItem.scheme)
-                case .search: return nil
+                    case .home, .search: return .calendar
+                    case .calendar: return .calendar
+                    case .daily: return .daily
+                    case .settings: return .settings
+                    case .scheme: return selectedSchemeID.map(SidebarItem.scheme)
                 }
             },
             set: { newValue in
                 guard let newValue else { return }
                 switch newValue {
-                case .home: returnHome()
-                case .calendar: selectedSchemeID = nil; pane = .calendar
-                case .daily: openDaily()
-                case .settings: selectedSchemeID = nil; pane = .settings
-                case .scheme(let id): selectScheme(id)
+                    case .calendar: selectedSchemeID = nil; pane = .calendar
+                    case .daily: openDaily()
+                    case .settings: selectedSchemeID = nil; pane = .settings
+                    case .scheme(let id): selectScheme(id)
                 }
             }
         )
@@ -375,8 +419,8 @@ struct ContentView: View {
 
     @ViewBuilder
     private func iPadDetail() -> some View {
-        switch pane {
-        case .home:
+        switch ipadActivePane {
+        case .home where screenshotHomeRouteRequested:
             HomeDashboardPane(
                 snapshot: model.snapshot,
                 selectedDate: model.selectedDate,
@@ -391,41 +435,52 @@ struct ContentView: View {
             )
             .navigationTitle("Home")
             .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItemGroup(placement: .topBarTrailing) {
-                    searchToolbarButton
-                }
+        case .calendar, .home, .search:
+            // Upcoming rail between the sidebar and the timeline, mirroring the
+            // desktop calendar's upcoming panel. It eats some width, so the
+            // timeline shows a few fewer days.
+            HStack(spacing: 0) {
+                DesktopUpcomingRail(
+                    calendar: model.snapshot?.calendar,
+                    theme: theme,
+                    timeFormat: currentTimeFormat,
+                    onToggleOccurrence: handleOccurrenceTap,
+                    onOpenOccurrence: { eventEditor = .edit($0) }
+                )
+                .frame(width: 248)
+                .ignoresSafeArea(.container, edges: .bottom)
+
+                Rectangle()
+                    .fill(theme.dividerSoft)
+                    .frame(width: 1)
+                    .ignoresSafeArea(.container, edges: .bottom)
+
+                DayTimelinePane(
+                    calendar: model.snapshot?.calendar,
+                    selectedDate: model.selectedDate,
+                    theme: theme,
+                    timeFormat: currentTimeFormat,
+                    onSetDate: { date in
+                        model.selectedDate = date
+                        model.weekOffset = 0
+                        model.refresh()
+                    },
+                    onCreate: { date in eventEditor = .create(date) },
+                    onOpenOccurrence: { occ in eventEditor = .edit(occ) },
+                    onMoveOccurrence: moveOccurrence,
+                    onTapTitle: { showingMonthView = true },
+                    isCreatingEvent: isCreatingEventDraft,
+                    resetToken: timelineResetToken,
+                    preferredVisibleDays: 4
+                )
+                .ignoresSafeArea(.container, edges: .bottom)
             }
-        case .calendar:
-            DayTimelinePane(
-                calendar: model.snapshot?.calendar,
-                selectedDate: model.selectedDate,
-                theme: theme,
-                timeFormat: currentTimeFormat,
-                onSetDate: { date in
-                    model.selectedDate = date
-                    model.weekOffset = 0
-                    model.refresh()
-                },
-                onCreate: { date in eventEditor = .create(date) },
-                onOpenOccurrence: { occ in eventEditor = .edit(occ) },
-                onMoveOccurrence: moveOccurrence,
-                onTapTitle: { showingMonthView = true },
-                isCreatingEvent: isCreatingEventDraft,
-                resetToken: timelineResetToken,
-                preferredVisibleDays: 5
-            )
-            .ignoresSafeArea(.container, edges: .bottom)
             .navigationTitle("")
             .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItemGroup(placement: .topBarTrailing) {
-                    Button { showingCalendarAdd = true } label: {
-                        Image(systemName: "calendar.badge.plus")
-                    }
-                    searchToolbarButton
-                }
-            }
+            // The timeline carries its own month-title header, so the empty
+            // nav bar was pure dead space at the top — hide it so the calendar
+            // sits flush under the safe area.
+            .toolbar(.hidden, for: .navigationBar)
             .onboardingTarget(.calendar)
         case .scheme:
             if let selectedScheme {
@@ -451,28 +506,27 @@ struct ContentView: View {
                 onPrevious: { selectDailyDate(Calendar.current.date(byAdding: .day, value: -1, to: model.selectedDate) ?? model.selectedDate) },
                 onNext: { selectDailyDate(Calendar.current.date(byAdding: .day, value: 1, to: model.selectedDate) ?? model.selectedDate) },
                 onDate: selectDailyDate,
+                onLoadOlder: { oldestDate in
+                    model.loadOlderDailyEntries(from: oldestDate)
+                },
+                loadAnchorDate: model.dailyHistoryLoadAnchorDate,
+                onLoadAnchorRestored: {
+                    model.clearDailyHistoryLoadAnchor()
+                },
                 onBack: {},
                 onAdd: { addItemTarget = .todayDaily },
-                usesNativeNavigation: true
+                usesNativeNavigation: true,
+                autoFocusSelectedDay: false
             )
-            .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button { addItemTarget = .todayDaily } label: { Image(systemName: "plus") }
-                }
-            }
+            // No in-pane header here, so drop the empty nav bar and let the
+            // daily content rise to the top (the sidebar's Daily row gives
+            // context). Mirrors the calendar pane.
+            .toolbar(.hidden, for: .navigationBar)
             .onboardingTarget(.daily)
         case .settings:
             SettingsForm(theme: theme)
                 .navigationTitle("Settings")
                 .navigationBarTitleDisplayMode(.inline)
-        case .search:
-            IPadSearchDetail(theme: theme, onOpenScheme: selectScheme)
-        }
-    }
-
-    private var searchToolbarButton: some View {
-        Button { pane = .search } label: {
-            Image(systemName: "magnifyingglass")
         }
     }
 
@@ -558,8 +612,16 @@ struct ContentView: View {
                 onPrevious: { selectDailyDate(Calendar.current.date(byAdding: .day, value: -1, to: model.selectedDate) ?? model.selectedDate) },
                 onNext: { selectDailyDate(Calendar.current.date(byAdding: .day, value: 1, to: model.selectedDate) ?? model.selectedDate) },
                 onDate: selectDailyDate,
+                onLoadOlder: { oldestDate in
+                    model.loadOlderDailyEntries(from: oldestDate)
+                },
+                loadAnchorDate: model.dailyHistoryLoadAnchorDate,
+                onLoadAnchorRestored: {
+                    model.clearDailyHistoryLoadAnchor()
+                },
                 onBack: returnHome,
-                onAdd: { addItemTarget = .todayDaily }
+                onAdd: { addItemTarget = .todayDaily },
+                autoFocusSelectedDay: !screenshotDailyRouteRequested
             )
             .onboardingTarget(.daily)
         case .search:
@@ -585,6 +647,57 @@ struct ContentView: View {
         pane = .daily
     }
 
+    #if DEBUG
+    private func applyScreenshotInitialRouteIfNeeded() {
+        guard !appliedScreenshotRoute, AppModel.screenshotFixtureRequested else { return }
+        appliedScreenshotRoute = true
+
+        switch screenshotInitialRoute {
+        case "home":
+            selectedSchemeID = nil
+            pane = .home
+        case "calendar", nil:
+            selectedSchemeID = nil
+            pane = .calendar
+        case "scheme":
+            if let id = model.snapshot?.schemes.first(where: { $0.name == "Semester Plan" })?.id
+                ?? firstRegularSchemeID {
+                selectScheme(id)
+            }
+        case "daily":
+            openDaily()
+        default:
+            break
+        }
+    }
+
+    private var screenshotInitialRoute: String? {
+        let process = ProcessInfo.processInfo
+        let args = process.arguments
+        if args.contains("--knotq-screenshot-home") { return "home" }
+        if args.contains("--knotq-screenshot-calendar") { return "calendar" }
+        if args.contains("--knotq-screenshot-scheme") { return "scheme" }
+        if args.contains("--knotq-screenshot-daily") { return "daily" }
+        return process.environment["KNOTQ_SCREENSHOT_ROUTE"]?.lowercased()
+    }
+    #endif
+
+    private var screenshotHomeRouteRequested: Bool {
+        #if DEBUG
+        AppModel.screenshotFixtureRequested && screenshotInitialRoute == "home"
+        #else
+        false
+        #endif
+    }
+
+    private var screenshotDailyRouteRequested: Bool {
+        #if DEBUG
+        AppModel.screenshotFixtureRequested && screenshotInitialRoute == "daily"
+        #else
+        false
+        #endif
+    }
+
     private func prepareDaily() {
         model.ensureTodayDailyQueue()
         selectedSchemeID = nil
@@ -605,12 +718,12 @@ struct ContentView: View {
 
     private func returnHome() {
         selectedSchemeID = nil
-        pane = .home
+        pane = defaultHomePane
     }
 
-    private func quickCreateSchemeID() -> String? {
+    private func quickCreateSchemeID() async -> String? {
         let name = nextUntitledSchemeName()
-        guard let id = model.createScheme(name: name) else {
+        guard let id = await model.createScheme(name: name) else {
             return nil
         }
         titleFocusSchemeID = id
@@ -618,11 +731,21 @@ struct ContentView: View {
     }
 
     private func quickCreateScheme() {
-        guard let id = quickCreateSchemeID() else {
-            pane = .home
-            return
+        Task {
+            guard let id = await quickCreateSchemeID() else {
+                pane = defaultHomePane
+                return
+            }
+            selectScheme(id)
         }
-        selectScheme(id)
+    }
+
+    private var isPadLayout: Bool {
+        UIDevice.current.userInterfaceIdiom == .pad
+    }
+
+    private var defaultHomePane: MobilePane {
+        isPadLayout ? .calendar : .home
     }
 
     private func consumeTitleFocus(for id: String) {
@@ -718,4 +841,23 @@ struct ContentView: View {
         }
     }
 
+}
+
+private extension View {
+    /// The create/edit forms present as a centered form sheet on iPad — covering
+    /// roughly the middle of the screen — while iPhone keeps the half-height
+    /// bottom sheet.
+    @ViewBuilder
+    func adaptiveEditorPresentation<Item: Identifiable, FormContent: View>(
+        item: Binding<Item?>,
+        isPad: Bool,
+        detents: Set<PresentationDetent>,
+        @ViewBuilder content: @escaping (Item) -> FormContent
+    ) -> some View {
+        if isPad {
+            sheet(item: item, content: content)
+        } else {
+            sheet(item: item) { content($0).presentationDetents(detents) }
+        }
+    }
 }

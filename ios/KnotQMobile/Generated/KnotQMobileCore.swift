@@ -528,6 +528,8 @@ public protocol MobileCoreProtocol: AnyObject, Sendable {
     
     func commitEventEdit(schemeId: String, itemId: String, occurrenceJson: String, occurrenceIndex: Int32, title: String, occurrenceStart: String?, occurrenceEnd: String?, start: String?, end: String?, rrule: String?, notificationOffsetSecs: Int32?, notificationDirty: Bool, done: Bool, scope: String) throws 
     
+    func commitEventEditPayload(payload: String) throws 
+    
     func completeGoogleCalendarImport(clientId: String, redirectUri: String, state: String, codeVerifier: String, callbackUrl: String, parentId: String?) throws  -> MobileGoogleSyncResult
     
     func createFolder(parentId: String?, name: String, position: Int32?) throws 
@@ -554,6 +556,8 @@ public protocol MobileCoreProtocol: AnyObject, Sendable {
     
     func pendingNotifications(now: String?, horizonDays: Int32) throws  -> [MobileNotificationRequest]
     
+    func permanentlyDeleteFolder(folderId: String) throws 
+    
     func permanentlyDeleteScheme(schemeId: String) throws 
     
     func renameFolder(folderId: String, name: String) throws 
@@ -565,6 +569,8 @@ public protocol MobileCoreProtocol: AnyObject, Sendable {
     func replaceSchemeItems(schemeId: String, items: [MobileItemEdit]) throws 
     
     func resetWorkspace() throws 
+    
+    func restoreFolder(folderId: String) throws 
     
     func restoreScheme(schemeId: String) throws 
     
@@ -594,6 +600,8 @@ public protocol MobileCoreProtocol: AnyObject, Sendable {
     
     func snapshot(today: String?, weekOffset: Int32) throws  -> MobileSnapshot
     
+    func snapshotWithDailyHistory(today: String?, weekOffset: Int32, dailyHistoryDays: Int32) throws  -> MobileSnapshot
+    
     func syncGoogleCalendars() throws  -> MobileGoogleSyncResult
     
     func syncOnce(apiBase: String, bearerToken: String) throws  -> Bool
@@ -603,6 +611,8 @@ public protocol MobileCoreProtocol: AnyObject, Sendable {
     func toggleItem(schemeId: String, itemId: String) throws 
     
     func toggleOccurrence(schemeId: String, itemId: String, occurrenceJson: String) throws 
+    
+    func unlinkGoogleAccount(accountId: String) throws 
     
     func updateItemText(schemeId: String, itemId: String, text: String) throws 
     
@@ -738,6 +748,14 @@ open func commitEventEdit(schemeId: String, itemId: String, occurrenceJson: Stri
 }
 }
     
+open func commitEventEditPayload(payload: String)throws   {try rustCallWithError(FfiConverterTypeMobileError_lift) {
+    uniffi_knotq_mobile_core_fn_method_mobilecore_commit_event_edit_payload(
+            self.uniffiCloneHandle(),
+        FfiConverterString.lower(payload),$0
+    )
+}
+}
+    
 open func completeGoogleCalendarImport(clientId: String, redirectUri: String, state: String, codeVerifier: String, callbackUrl: String, parentId: String?)throws  -> MobileGoogleSyncResult  {
     return try  FfiConverterTypeMobileGoogleSyncResult_lift(try rustCallWithError(FfiConverterTypeMobileError_lift) {
     uniffi_knotq_mobile_core_fn_method_mobilecore_complete_google_calendar_import(
@@ -866,6 +884,14 @@ open func pendingNotifications(now: String?, horizonDays: Int32)throws  -> [Mobi
 })
 }
     
+open func permanentlyDeleteFolder(folderId: String)throws   {try rustCallWithError(FfiConverterTypeMobileError_lift) {
+    uniffi_knotq_mobile_core_fn_method_mobilecore_permanently_delete_folder(
+            self.uniffiCloneHandle(),
+        FfiConverterString.lower(folderId),$0
+    )
+}
+}
+    
 open func permanentlyDeleteScheme(schemeId: String)throws   {try rustCallWithError(FfiConverterTypeMobileError_lift) {
     uniffi_knotq_mobile_core_fn_method_mobilecore_permanently_delete_scheme(
             self.uniffiCloneHandle(),
@@ -914,6 +940,14 @@ open func replaceSchemeItems(schemeId: String, items: [MobileItemEdit])throws   
 open func resetWorkspace()throws   {try rustCallWithError(FfiConverterTypeMobileError_lift) {
     uniffi_knotq_mobile_core_fn_method_mobilecore_reset_workspace(
             self.uniffiCloneHandle(),$0
+    )
+}
+}
+    
+open func restoreFolder(folderId: String)throws   {try rustCallWithError(FfiConverterTypeMobileError_lift) {
+    uniffi_knotq_mobile_core_fn_method_mobilecore_restore_folder(
+            self.uniffiCloneHandle(),
+        FfiConverterString.lower(folderId),$0
     )
 }
 }
@@ -1047,6 +1081,17 @@ open func snapshot(today: String?, weekOffset: Int32)throws  -> MobileSnapshot  
 })
 }
     
+open func snapshotWithDailyHistory(today: String?, weekOffset: Int32, dailyHistoryDays: Int32)throws  -> MobileSnapshot  {
+    return try  FfiConverterTypeMobileSnapshot_lift(try rustCallWithError(FfiConverterTypeMobileError_lift) {
+    uniffi_knotq_mobile_core_fn_method_mobilecore_snapshot_with_daily_history(
+            self.uniffiCloneHandle(),
+        FfiConverterOptionString.lower(today),
+        FfiConverterInt32.lower(weekOffset),
+        FfiConverterInt32.lower(dailyHistoryDays),$0
+    )
+})
+}
+    
 open func syncGoogleCalendars()throws  -> MobileGoogleSyncResult  {
     return try  FfiConverterTypeMobileGoogleSyncResult_lift(try rustCallWithError(FfiConverterTypeMobileError_lift) {
     uniffi_knotq_mobile_core_fn_method_mobilecore_sync_google_calendars(
@@ -1088,6 +1133,14 @@ open func toggleOccurrence(schemeId: String, itemId: String, occurrenceJson: Str
         FfiConverterString.lower(schemeId),
         FfiConverterString.lower(itemId),
         FfiConverterString.lower(occurrenceJson),$0
+    )
+}
+}
+    
+open func unlinkGoogleAccount(accountId: String)throws   {try rustCallWithError(FfiConverterTypeMobileError_lift) {
+    uniffi_knotq_mobile_core_fn_method_mobilecore_unlink_google_account(
+            self.uniffiCloneHandle(),
+        FfiConverterString.lower(accountId),$0
     )
 }
 }
@@ -1321,6 +1374,64 @@ public func FfiConverterTypeMobileDailyEntry_lift(_ buf: RustBuffer) throws -> M
 #endif
 public func FfiConverterTypeMobileDailyEntry_lower(_ value: MobileDailyEntry) -> RustBuffer {
     return FfiConverterTypeMobileDailyEntry.lower(value)
+}
+
+
+public struct MobileGoogleAccount: Equatable, Hashable {
+    public var id: String
+    public var title: String
+    public var detail: String
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(id: String, title: String, detail: String) {
+        self.id = id
+        self.title = title
+        self.detail = detail
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension MobileGoogleAccount: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeMobileGoogleAccount: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> MobileGoogleAccount {
+        return
+            try MobileGoogleAccount(
+                id: FfiConverterString.read(from: &buf), 
+                title: FfiConverterString.read(from: &buf), 
+                detail: FfiConverterString.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: MobileGoogleAccount, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.id, into: &buf)
+        FfiConverterString.write(value.title, into: &buf)
+        FfiConverterString.write(value.detail, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeMobileGoogleAccount_lift(_ buf: RustBuffer) throws -> MobileGoogleAccount {
+    return try FfiConverterTypeMobileGoogleAccount.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeMobileGoogleAccount_lower(_ value: MobileGoogleAccount) -> RustBuffer {
+    return FfiConverterTypeMobileGoogleAccount.lower(value)
 }
 
 
@@ -2138,15 +2249,17 @@ public struct MobileSettings: Equatable, Hashable {
     public var eventNotificationOffsetSecs: Int32
     public var assignmentNotificationOffsetSecs: Int32
     public var googleAccountCount: Int32
+    public var googleAccounts: [MobileGoogleAccount]
 
     // Default memberwise initializers are never public by default, so we
     // declare one manually.
-    public init(themeMode: String, timeFormat: String, eventNotificationOffsetSecs: Int32, assignmentNotificationOffsetSecs: Int32, googleAccountCount: Int32) {
+    public init(themeMode: String, timeFormat: String, eventNotificationOffsetSecs: Int32, assignmentNotificationOffsetSecs: Int32, googleAccountCount: Int32, googleAccounts: [MobileGoogleAccount]) {
         self.themeMode = themeMode
         self.timeFormat = timeFormat
         self.eventNotificationOffsetSecs = eventNotificationOffsetSecs
         self.assignmentNotificationOffsetSecs = assignmentNotificationOffsetSecs
         self.googleAccountCount = googleAccountCount
+        self.googleAccounts = googleAccounts
     }
 
     
@@ -2169,7 +2282,8 @@ public struct FfiConverterTypeMobileSettings: FfiConverterRustBuffer {
                 timeFormat: FfiConverterString.read(from: &buf), 
                 eventNotificationOffsetSecs: FfiConverterInt32.read(from: &buf), 
                 assignmentNotificationOffsetSecs: FfiConverterInt32.read(from: &buf), 
-                googleAccountCount: FfiConverterInt32.read(from: &buf)
+                googleAccountCount: FfiConverterInt32.read(from: &buf), 
+                googleAccounts: FfiConverterSequenceTypeMobileGoogleAccount.read(from: &buf)
         )
     }
 
@@ -2179,6 +2293,7 @@ public struct FfiConverterTypeMobileSettings: FfiConverterRustBuffer {
         FfiConverterInt32.write(value.eventNotificationOffsetSecs, into: &buf)
         FfiConverterInt32.write(value.assignmentNotificationOffsetSecs, into: &buf)
         FfiConverterInt32.write(value.googleAccountCount, into: &buf)
+        FfiConverterSequenceTypeMobileGoogleAccount.write(value.googleAccounts, into: &buf)
     }
 }
 
@@ -2202,6 +2317,7 @@ public struct MobileSnapshot: Equatable, Hashable {
     public var root: MobileNode
     public var schemes: [MobileScheme]
     public var archivedSchemes: [MobileScheme]
+    public var archivedNodes: [MobileNode]
     public var daily: [MobileDailyEntry]
     public var calendar: MobileCalendar
     public var settings: MobileSettings
@@ -2209,10 +2325,11 @@ public struct MobileSnapshot: Equatable, Hashable {
 
     // Default memberwise initializers are never public by default, so we
     // declare one manually.
-    public init(root: MobileNode, schemes: [MobileScheme], archivedSchemes: [MobileScheme], daily: [MobileDailyEntry], calendar: MobileCalendar, settings: MobileSettings, workspacePath: String) {
+    public init(root: MobileNode, schemes: [MobileScheme], archivedSchemes: [MobileScheme], archivedNodes: [MobileNode], daily: [MobileDailyEntry], calendar: MobileCalendar, settings: MobileSettings, workspacePath: String) {
         self.root = root
         self.schemes = schemes
         self.archivedSchemes = archivedSchemes
+        self.archivedNodes = archivedNodes
         self.daily = daily
         self.calendar = calendar
         self.settings = settings
@@ -2238,6 +2355,7 @@ public struct FfiConverterTypeMobileSnapshot: FfiConverterRustBuffer {
                 root: FfiConverterTypeMobileNode.read(from: &buf), 
                 schemes: FfiConverterSequenceTypeMobileScheme.read(from: &buf), 
                 archivedSchemes: FfiConverterSequenceTypeMobileScheme.read(from: &buf), 
+                archivedNodes: FfiConverterSequenceTypeMobileNode.read(from: &buf), 
                 daily: FfiConverterSequenceTypeMobileDailyEntry.read(from: &buf), 
                 calendar: FfiConverterTypeMobileCalendar.read(from: &buf), 
                 settings: FfiConverterTypeMobileSettings.read(from: &buf), 
@@ -2249,6 +2367,7 @@ public struct FfiConverterTypeMobileSnapshot: FfiConverterRustBuffer {
         FfiConverterTypeMobileNode.write(value.root, into: &buf)
         FfiConverterSequenceTypeMobileScheme.write(value.schemes, into: &buf)
         FfiConverterSequenceTypeMobileScheme.write(value.archivedSchemes, into: &buf)
+        FfiConverterSequenceTypeMobileNode.write(value.archivedNodes, into: &buf)
         FfiConverterSequenceTypeMobileDailyEntry.write(value.daily, into: &buf)
         FfiConverterTypeMobileCalendar.write(value.calendar, into: &buf)
         FfiConverterTypeMobileSettings.write(value.settings, into: &buf)
@@ -2438,6 +2557,31 @@ fileprivate struct FfiConverterSequenceTypeMobileDailyEntry: FfiConverterRustBuf
         seq.reserveCapacity(Int(len))
         for _ in 0 ..< len {
             seq.append(try FfiConverterTypeMobileDailyEntry.read(from: &buf))
+        }
+        return seq
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterSequenceTypeMobileGoogleAccount: FfiConverterRustBuffer {
+    typealias SwiftType = [MobileGoogleAccount]
+
+    public static func write(_ value: [MobileGoogleAccount], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypeMobileGoogleAccount.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [MobileGoogleAccount] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [MobileGoogleAccount]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterTypeMobileGoogleAccount.read(from: &buf))
         }
         return seq
     }
@@ -2673,6 +2817,9 @@ private let initializationResult: InitializationResult = {
     if (uniffi_knotq_mobile_core_checksum_method_mobilecore_commit_event_edit() != 44971) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_knotq_mobile_core_checksum_method_mobilecore_commit_event_edit_payload() != 16549) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_knotq_mobile_core_checksum_method_mobilecore_complete_google_calendar_import() != 5997) {
         return InitializationResult.apiChecksumMismatch
     }
@@ -2712,6 +2859,9 @@ private let initializationResult: InitializationResult = {
     if (uniffi_knotq_mobile_core_checksum_method_mobilecore_pending_notifications() != 49328) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_knotq_mobile_core_checksum_method_mobilecore_permanently_delete_folder() != 50313) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_knotq_mobile_core_checksum_method_mobilecore_permanently_delete_scheme() != 55645) {
         return InitializationResult.apiChecksumMismatch
     }
@@ -2728,6 +2878,9 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_knotq_mobile_core_checksum_method_mobilecore_reset_workspace() != 7354) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_knotq_mobile_core_checksum_method_mobilecore_restore_folder() != 50150) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_knotq_mobile_core_checksum_method_mobilecore_restore_scheme() != 61831) {
@@ -2772,6 +2925,9 @@ private let initializationResult: InitializationResult = {
     if (uniffi_knotq_mobile_core_checksum_method_mobilecore_snapshot() != 52252) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_knotq_mobile_core_checksum_method_mobilecore_snapshot_with_daily_history() != 46876) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_knotq_mobile_core_checksum_method_mobilecore_sync_google_calendars() != 29004) {
         return InitializationResult.apiChecksumMismatch
     }
@@ -2785,6 +2941,9 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_knotq_mobile_core_checksum_method_mobilecore_toggle_occurrence() != 33368) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_knotq_mobile_core_checksum_method_mobilecore_unlink_google_account() != 39212) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_knotq_mobile_core_checksum_method_mobilecore_update_item_text() != 59124) {

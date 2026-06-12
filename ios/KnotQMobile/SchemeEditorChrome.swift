@@ -90,6 +90,7 @@ struct IntegratedSchemeEditorPane: View {
     let transparentOverlayNavigation: Bool
     let editorScrollEnabled: Bool
     let editorInsets: UIEdgeInsets
+    let showsInlineTitle: Bool
 
     @StateObject private var controller = EditorController()
     @State private var schemeSignature = ""
@@ -109,7 +110,7 @@ struct IntegratedSchemeEditorPane: View {
 
     private var editorTextInsets: UIEdgeInsets {
         UIEdgeInsets(
-            top: editorInsets.top + DesktopEditorMetrics.titleBlockHeight + overlayNavigationInset,
+            top: editorInsets.top + (showsInlineTitle ? DesktopEditorMetrics.titleBlockHeight : 0) + overlayNavigationInset,
             left: editorInsets.left,
             bottom: editorInsets.bottom,
             right: editorInsets.right
@@ -138,6 +139,7 @@ struct IntegratedSchemeEditorPane: View {
         transparentOverlayNavigation: Bool = false,
         editorScrollEnabled: Bool = true,
         editorInsets: UIEdgeInsets = UIEdgeInsets(top: 6, left: DesktopEditorMetrics.textLeftPad, bottom: 120, right: 24),
+        showsInlineTitle: Bool = true,
         autoFocusOnAppear: Bool = false,
         autoFocusTitleOnAppear: Bool = false,
         onAutoFocusTitleConsumed: @escaping () -> Void = {}
@@ -151,6 +153,7 @@ struct IntegratedSchemeEditorPane: View {
         self.transparentOverlayNavigation = transparentOverlayNavigation
         self.editorScrollEnabled = editorScrollEnabled
         self.editorInsets = editorInsets
+        self.showsInlineTitle = showsInlineTitle
         self.autoFocusOnAppear = autoFocusOnAppear
         self.autoFocusTitleOnAppear = autoFocusTitleOnAppear
         self.onAutoFocusTitleConsumed = onAutoFocusTitleConsumed
@@ -159,7 +162,7 @@ struct IntegratedSchemeEditorPane: View {
     var body: some View {
         ZStack(alignment: .top) {
             VStack(spacing: 0) {
-                if showsEditorNavigation && !usesNativeNavigation && !showsOverlayNavigation {
+                if usesEmbeddedNavigationBar {
                     editorNavigationBar(showsDivider: true)
                 }
 
@@ -171,6 +174,7 @@ struct IntegratedSchemeEditorPane: View {
                         isScrollEnabled: editorScrollEnabled,
                         textInsets: editorTextInsets,
                         schemeTitle: scheme.displayName,
+                        showsTitle: showsInlineTitle,
                         titleEditable: !scheme.isDailyQueue,
                         titleValidator: titleValidator,
                         onRenameTitle: { title in
@@ -195,26 +199,19 @@ struct IntegratedSchemeEditorPane: View {
         .background(theme.bgApp.ignoresSafeArea())
         .navigationTitle("")
         .navigationBarTitleDisplayMode(.inline)
-        .navigationBarBackButtonHidden(transparentOverlayNavigation)
-        .toolbar(transparentOverlayNavigation ? .hidden : .automatic, for: .navigationBar)
+        .navigationBarBackButtonHidden(hideSystemNavigationBar)
+        .toolbar(hideSystemNavigationBar ? .hidden : .automatic, for: .navigationBar)
         .toolbarBackground(.hidden, for: .navigationBar)
         .background {
-            if usesNativeNavigation && !transparentOverlayNavigation {
+            if usesNativeNavigation && !transparentOverlayNavigation && !usesEmbeddedNavigationBar {
                 SchemeEditorTransparentNavigationBar()
             }
         }
         .toolbar {
-            if usesNativeNavigation && showsEditorNavigation && !transparentOverlayNavigation {
+            if usesNativeNavigation && showsEditorNavigation && !transparentOverlayNavigation && !usesEmbeddedNavigationBar {
                 ToolbarItem(placement: .topBarTrailing) {
-                    HStack(spacing: 4) {
-                        SchemeColorPickerButton(scheme: scheme, theme: theme, accent: accent)
-                        if !scheme.isDailyQueue {
-                            SchemeArchiveButton(theme: theme) {
-                                pendingArchive = .scheme(scheme)
-                            }
-                        }
-                    }
-                    .padding(.leading, 12)
+                    editorTrailingControls
+                        .padding(.leading, 12)
                 }
             }
         }
@@ -238,6 +235,16 @@ struct IntegratedSchemeEditorPane: View {
             guard newValue != schemeSignature else { return }
             loadDocument(force: false)
         }
+        // On iPad the editor pane is reused across schemes (no fresh `onAppear`),
+        // so creating a new scheme while one is already open needs this to select
+        // its title — matching the iPhone flow where each scheme pushes a new view.
+        .onChange(of: autoFocusTitleOnAppear) { _, shouldFocus in
+            guard shouldFocus else { return }
+            DispatchQueue.main.async {
+                controller.focusTitle()
+                onAutoFocusTitleConsumed()
+            }
+        }
         .onChange(of: timeFormat) { _, _ in loadDocument(force: true) }
         .onChange(of: imagePickerItem) { _, item in
             handlePickedImage(item)
@@ -253,8 +260,14 @@ struct IntegratedSchemeEditorPane: View {
         }
         .sheet(item: $dateTarget) { target in
             if let item = model.scheme(id: scheme.id)?.items.first(where: { $0.id == target.itemID }) {
-                ItemDateSheet(schemeID: scheme.id, item: item)
-                    .presentationDetents([.fraction(0.50)])
+                // iPad presents as a centered form sheet; iPhone keeps the
+                // half-height bottom sheet.
+                if isPadLayout {
+                    ItemDateSheet(schemeID: scheme.id, item: item)
+                } else {
+                    ItemDateSheet(schemeID: scheme.id, item: item)
+                        .presentationDetents([.fraction(0.50)])
+                }
             }
         }
         .archiveConfirmation(target: $pendingArchive) { _ in
@@ -265,25 +278,37 @@ struct IntegratedSchemeEditorPane: View {
     private func editorNavigationBar(showsDivider: Bool) -> some View {
         HStack(spacing: 8) {
             if let onBack {
-                Button(action: {
-                    commitDocument()
-                    onBack()
-                }) {
-                    Image(systemName: "chevron.left")
+                if isPadLayout {
+                    SchemeEditorGlassSurface(theme: theme, minWidth: 38) {
+                        Button(action: {
+                            commitDocument()
+                            onBack()
+                        }) {
+                            Image(systemName: "chevron.left")
+                                .font(.system(size: 15, weight: .semibold))
+                                .foregroundStyle(theme.textPrimary)
+                                .frame(width: 38, height: 38)
+                        }
+                        .buttonStyle(SchemeTopLipIconButton(theme: theme))
+                        .accessibilityLabel("Back")
+                    }
+                } else {
+                    SchemeEditorGlassSurface(theme: theme, minWidth: 38) {
+                        Button(action: {
+                            commitDocument()
+                            onBack()
+                        }) {
+                            Image(systemName: "chevron.left")
+                        }
+                        .buttonStyle(SchemeTopLipIconButton(theme: theme))
+                        .accessibilityLabel("Back")
+                    }
                 }
-                .buttonStyle(SchemeTopLipIconButton(theme: theme))
             }
 
             Spacer()
 
-            HStack(spacing: 4) {
-                SchemeColorPickerButton(scheme: scheme, theme: theme, accent: accent)
-                if !scheme.isDailyQueue {
-                    SchemeArchiveButton(theme: theme) {
-                        pendingArchive = .scheme(scheme)
-                    }
-                }
-            }
+            editorTrailingControls
         }
         .padding(.horizontal, 12)
         .frame(height: 54)
@@ -295,6 +320,59 @@ struct IntegratedSchemeEditorPane: View {
                 Rectangle()
                     .fill(theme.dividerSoft)
                     .frame(height: 1)
+            }
+        }
+    }
+
+    private var usesEmbeddedNavigationBar: Bool {
+        showsEditorNavigation
+            && !transparentOverlayNavigation
+            && !showsOverlayNavigation
+            && (!usesNativeNavigation || isPadLayout)
+    }
+
+    private var isPadLayout: Bool {
+        UIDevice.current.userInterfaceIdiom == .pad
+    }
+
+    private var isIpadNativeNavigation: Bool {
+        isPadLayout && usesNativeNavigation
+    }
+
+    private var hideSystemNavigationBar: Bool {
+        transparentOverlayNavigation || (isIpadNativeNavigation && showsEditorNavigation)
+    }
+
+    private var editorTrailingControls: some View {
+        Group {
+            if isPadLayout {
+                SchemeEditorGlassSurface(
+                    theme: theme,
+                    minWidth: 74,
+                    horizontalPadding: 2
+                ) {
+                    trailingControlItems
+                }
+            } else {
+                SchemeEditorGlassSurface(
+                    theme: theme,
+                    minWidth: 74,
+                    horizontalPadding: 2
+                ) {
+                    trailingControlItems
+                }
+            }
+        }
+    }
+
+    private var trailingControlItems: some View {
+        HStack(spacing: isPadLayout ? 0 : 1) {
+            SchemeColorPickerButton(scheme: scheme, theme: theme, accent: accent)
+            if !scheme.isDailyQueue {
+                SchemeToolbarDivider(theme: theme)
+                SchemeArchiveButton(theme: theme) {
+                    pendingArchive = .scheme(scheme)
+                }
             }
         }
     }
@@ -549,6 +627,88 @@ private struct SchemeEditorTransparentNavigationBar: UIViewControllerRepresentab
     }
 }
 
+private struct SchemeEditorGlassSurface<Content: View>: View {
+    let theme: KnotQTheme
+    var minWidth: CGFloat?
+    var horizontalPadding: CGFloat
+    let content: Content
+
+    init(
+        theme: KnotQTheme,
+        minWidth: CGFloat? = nil,
+        horizontalPadding: CGFloat = 0,
+        @ViewBuilder content: () -> Content
+    ) {
+        self.theme = theme
+        self.minWidth = minWidth
+        self.horizontalPadding = horizontalPadding
+        self.content = content()
+    }
+
+    var body: some View {
+        let shape = Capsule(style: .continuous)
+        if #available(iOS 26.0, *), UIDevice.current.userInterfaceIdiom != .pad {
+            content
+                .padding(.horizontal, horizontalPadding)
+                .frame(height: 38)
+                .frame(minWidth: minWidth)
+                .glassEffect(.regular.tint(glassTint).interactive(), in: shape)
+                .overlay {
+                    shape.strokeBorder(glassBorder, lineWidth: 0.7)
+                }
+        } else if UIDevice.current.userInterfaceIdiom == .pad {
+            content
+                .padding(.horizontal, horizontalPadding)
+                .frame(height: 38)
+                .frame(minWidth: minWidth)
+                .background {
+                    shape.fill(padSurface)
+                }
+                .overlay {
+                    shape.strokeBorder(padBorder, lineWidth: 0.7)
+                }
+        } else {
+            content
+                .padding(.horizontal, horizontalPadding)
+                .frame(height: 38)
+                .frame(minWidth: minWidth)
+                .background {
+                    shape.fill(.ultraThinMaterial)
+                    shape.fill(fallbackTint)
+                }
+                .overlay {
+                    shape.strokeBorder(glassBorder, lineWidth: 0.8)
+                }
+                .shadow(
+                    color: .black.opacity(theme.isDark ? 0.24 : 0.08),
+                    radius: theme.isDark ? 12 : 5,
+                    x: 0,
+                    y: theme.isDark ? 5 : 2
+                )
+        }
+    }
+
+    private var glassTint: Color {
+        theme.isDark ? Color.white.opacity(0.06) : Color.white.opacity(0.20)
+    }
+
+    private var fallbackTint: Color {
+        theme.isDark ? Color.white.opacity(0.08) : Color.white.opacity(0.24)
+    }
+
+    private var padSurface: Color {
+        theme.buttonBg
+    }
+
+    private var padBorder: Color {
+        theme.isDark ? Color.white.opacity(0.16) : theme.borderOverlay.opacity(0.75)
+    }
+
+    private var glassBorder: Color {
+        theme.isDark ? Color.white.opacity(0.15) : theme.borderOverlay.opacity(0.72)
+    }
+}
+
 private struct SchemeTopLipIconButton: ButtonStyle {
     let theme: KnotQTheme
 
@@ -566,6 +726,16 @@ private struct SchemeTopLipIconButton: ButtonStyle {
             )
             .contentShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
             .scaleEffect(configuration.isPressed ? 0.96 : 1)
+    }
+}
+
+private struct SchemeToolbarDivider: View {
+    let theme: KnotQTheme
+
+    var body: some View {
+        Rectangle()
+            .fill(theme.dividerSoft)
+            .frame(width: 1, height: 20)
     }
 }
 
@@ -594,20 +764,36 @@ private struct SchemeColorPickerButton: View {
     @State private var showingPicker = false
 
     private let colorOrder: [Int32] = [0, 1, 5, 2, 3, 4]
+    private var isPadLayout: Bool {
+        UIDevice.current.userInterfaceIdiom == .pad
+    }
 
     var body: some View {
-        Button {
-            showingPicker = true
-        } label: {
-            RoundedRectangle(cornerRadius: 3, style: .continuous)
-                .fill(accent)
-                .frame(width: 18, height: 18)
-                .overlay {
-                    RoundedRectangle(cornerRadius: 3, style: .continuous)
-                        .stroke(theme.borderOverlay, lineWidth: 1)
-                }
-                .frame(width: 24, height: 34)
-                .contentShape(Rectangle())
+            Button {
+                showingPicker = true
+            } label: {
+                if isPadLayout {
+                RoundedRectangle(cornerRadius: 3, style: .continuous)
+                    .fill(accent)
+                    .frame(width: 18, height: 18)
+                    .overlay {
+                        RoundedRectangle(cornerRadius: 3, style: .continuous)
+                            .stroke(theme.borderOverlay, lineWidth: 1)
+                    }
+                    .frame(width: 18, height: 18)
+                    .frame(width: 38, height: 38)
+                    .contentShape(Capsule(style: .continuous))
+            } else {
+                RoundedRectangle(cornerRadius: 3, style: .continuous)
+                    .fill(accent)
+                    .frame(width: 18, height: 18)
+                    .overlay {
+                        RoundedRectangle(cornerRadius: 3, style: .continuous)
+                            .stroke(theme.borderOverlay, lineWidth: 1)
+                    }
+                    .frame(width: 38, height: 38)
+                    .contentShape(Capsule(style: .continuous))
+            }
         }
         .buttonStyle(.plain)
         .accessibilityLabel("Color")

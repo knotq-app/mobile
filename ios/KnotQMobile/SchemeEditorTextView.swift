@@ -43,19 +43,20 @@ private final class EditorInlineTitleView: UIView, UITextFieldDelegate {
     @available(*, unavailable)
     required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
 
-    func configure(title: String, theme: KnotQTheme, editable: Bool, validator: @escaping (String) -> String?, onCommit: @escaping (String) -> Void) {
+    func configure(title: String, theme: KnotQTheme, visible: Bool, editable: Bool, validator: @escaping (String) -> String?, onCommit: @escaping (String) -> Void) {
         self.validator = validator
         self.onCommit = onCommit
+        isHidden = !visible
         textField.textColor = UIColor(theme.textPrimary)
         normalTintColor = UIColor(theme.accent)
         errorTintColor = UIColor(theme.danger)
         errorLabel.textColor = errorTintColor
-        textField.isUserInteractionEnabled = editable
+        textField.isUserInteractionEnabled = visible && editable
         if !textField.isFirstResponder {
             committedTitle = title
             textField.text = title
         }
-        if !editable, textField.isFirstResponder {
+        if (!visible || !editable), textField.isFirstResponder {
             textField.resignFirstResponder()
         }
         updateError()
@@ -185,8 +186,8 @@ final class EditorTextView: UITextView {
         return false
     }
 
-    func configureTitle(title: String, theme: KnotQTheme, editable: Bool, validator: @escaping (String) -> String?, onCommit: @escaping (String) -> Void) {
-        inlineTitleView.configure(title: title, theme: theme, editable: editable, validator: validator, onCommit: onCommit)
+    func configureTitle(title: String, theme: KnotQTheme, visible: Bool, editable: Bool, validator: @escaping (String) -> String?, onCommit: @escaping (String) -> Void) {
+        inlineTitleView.configure(title: title, theme: theme, visible: visible, editable: editable, validator: validator, onCommit: onCommit)
         setNeedsLayout()
     }
 
