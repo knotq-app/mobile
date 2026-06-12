@@ -31,7 +31,7 @@ final class AppModel: ObservableObject {
     @Published private(set) var dailyHistoryLoadAnchorDate: String?
 
     // App Store Connect product id(s) for the sync subscription.
-    static let syncProductIDs: Set<String> = ["com.knotq.sync.monthly"]
+    static let syncProductIDs: Set<String> = ["com.enigmadux.knotq.sync.monthly"]
     private static let minimumDailyHistoryDays = 3
     private static let dailyHistoryPageDays = 31
     private static let maxDailyHistoryDays = 3650

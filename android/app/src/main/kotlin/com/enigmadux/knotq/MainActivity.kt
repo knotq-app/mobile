@@ -296,6 +296,8 @@ class MainActivity : Activity() {
     // Folders the user collapsed in the scheme navigator (new folders default
     // to expanded, like iOS).
     private val collapsedFolderIds = HashSet<String>()
+    // Settings sub-page showing the hierarchical archive (iOS "Archived Items").
+    private var settingsShowingArchive = false
     // Daily feed paging + scroll anchoring, mirroring the iOS bottom-pinned
     // feed: history grows by a month each time the user scrolls to the top.
     private var dailyHistoryDays = 3
@@ -418,6 +420,11 @@ class MainActivity : Activity() {
 
     @Suppress("DEPRECATION", "OVERRIDE_DEPRECATION")
     override fun onBackPressed() {
+        if (selectedTab == TAB_SETTINGS && settingsShowingArchive) {
+            settingsShowingArchive = false
+            render()
+            return
+        }
         if (selectedTab == TAB_SEARCH) {
             exitSearch()
             return
@@ -538,6 +545,7 @@ class MainActivity : Activity() {
             dock.addView(dockButton(iconRes, label, selected) {
                 selectedTab = index
                 selectedSchemeId = null
+                settingsShowingArchive = false
                 if (index == TAB_CALENDAR && selectedDate != LocalDate.now()) {
                     selectedDate = LocalDate.now()
                     weekOffset = 0
@@ -4392,6 +4400,7 @@ class MainActivity : Activity() {
     }
 
     private fun renderSettings(): LinearLayout {
+        if (settingsShowingArchive) return renderArchivePage()
         val root = page()
         root.addView(sectionHeader("Settings"))
         root.addView(syncSettingsCard(), spaced())
@@ -4451,7 +4460,10 @@ class MainActivity : Activity() {
         root.addView(settingsSection("Archive"))
         val schemes = archivedSchemes()
         root.addView(settingsGroup(
-            settingsLinkRow("Archived schemes", schemes.length().toString()) { showArchiveSettingsDialog() }
+            settingsLinkRow("Archived items", schemes.length().toString()) {
+                settingsShowingArchive = true
+                render()
+            }
         ))
         return root
     }
@@ -5913,7 +5925,14 @@ class MainActivity : Activity() {
                     }
                     3 -> showReorderDialog(node.optString("id"))
                     4 -> showMoveToFolderDialog("folder", node.optString("id"), excludedFolderId = node.optString("id"))
-                    5 -> mutate(obj("type" to "delete_folder", "folder_id" to node.optString("id")))
+                    5 -> AlertDialog.Builder(this)
+                        .setTitle("Archive \"${node.optString("name")}\"?")
+                        .setMessage("The folder and everything inside it move to the archive.")
+                        .setNegativeButton("Cancel", null)
+                        .setPositiveButton("Archive") { _, _ ->
+                            mutate(obj("type" to "delete_folder", "folder_id" to node.optString("id")))
+                        }
+                        .show()
                 }
             }
             .show()
@@ -5928,29 +5947,121 @@ class MainActivity : Activity() {
             .show()
     }
 
-    private fun showArchiveSettingsDialog() {
-        val schemes = archivedSchemes()
-        if (schemes.length() == 0) {
-            AlertDialog.Builder(this)
-                .setTitle("Archive")
-                .setMessage("No archived schemes")
-                .setPositiveButton("OK", null)
-                .show()
-            return
+    /// iOS `SettingsArchiveList`: the archive tree always expanded (folders by
+    /// icon, schemes by color square), each row restorable inline; deletes are
+    /// permanent and confirmed.
+    private fun renderArchivePage(): LinearLayout {
+        val root = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setBackgroundColor(theme.bgApp)
         }
-        val labels = mutableListOf<String>()
-        schemes.forEachObject { scheme -> labels.add(scheme.optString("display_name")) }
-        labels.add("Empty Archive")
-        AlertDialog.Builder(this)
-            .setTitle("Archive")
-            .setItems(labels.toTypedArray()) { _, which ->
-                if (which < schemes.length()) {
-                    showArchivedSchemeActions(schemes.getJSONObject(which))
-                } else {
-                    mutate(obj("type" to "empty_archive"))
+        root.addView(LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(dp(12), 0, dp(12), 0)
+            background = underline(theme.bgApp)
+            addView(iconChipImage(R.drawable.ic_knotq_chevron_left_24, "Back", iconSize = 20) {
+                settingsShowingArchive = false
+                render()
+            })
+            addView(text("Archive", theme.textPrimary, 16f, true).apply {
+                gravity = Gravity.CENTER
+            }, LinearLayout.LayoutParams(0, -1, 1f))
+            addView(View(this@MainActivity), LinearLayout.LayoutParams(dp(32), dp(28)))
+        }, LinearLayout.LayoutParams(-1, dp(44)))
+
+        val body = page()
+        val nodes = snapshot.optJSONArray("archived_nodes") ?: JSONArray()
+        if (nodes.length() == 0) {
+            body.addView(text("No archived items", theme.textMuted, 14f, false).apply {
+                setPadding(dp(2), dp(10), 0, 0)
+            })
+        } else {
+            fun addRows(array: JSONArray, depth: Int) {
+                array.forEachObject { node ->
+                    body.addView(archiveNodeRow(node, depth), LinearLayout.LayoutParams(-1, dp(40)))
+                    if (node.optString("kind") == "folder") {
+                        node.optJSONArray("children")?.let { addRows(it, depth + 1) }
+                    }
                 }
             }
-            .show()
+            addRows(nodes, 0)
+            body.addView(text("Empty Archive", theme.danger, 14f, true).apply {
+                setPadding(dp(2), dp(16), dp(8), dp(10))
+                setOnClickListener {
+                    AlertDialog.Builder(this@MainActivity)
+                        .setTitle("Empty archive?")
+                        .setMessage("Permanently deletes every archived item. This can't be undone.")
+                        .setNegativeButton("Cancel", null)
+                        .setPositiveButton("Delete All") { _, _ -> mutate(obj("type" to "empty_archive")) }
+                        .show()
+                }
+            })
+        }
+        root.addView(scroll(body), LinearLayout.LayoutParams(-1, 0, 1f))
+        return root
+    }
+
+    private fun archiveNodeRow(node: JSONObject, depth: Int): View {
+        val isFolder = node.optString("kind") == "folder"
+        val id = node.optString("id")
+        val name = node.optString("name").ifEmpty { if (isFolder) "Folder" else "Untitled" }
+        fun restore() {
+            mutate(obj(
+                "type" to if (isFolder) "restore_folder" else "restore_scheme",
+                (if (isFolder) "folder_id" else "scheme_id") to id
+            ))
+        }
+        fun confirmPermanentDelete() {
+            AlertDialog.Builder(this)
+                .setTitle("Delete \"$name\" permanently?")
+                .setMessage(if (isFolder) "Deletes the folder and everything inside it. This can't be undone." else "This can't be undone.")
+                .setNegativeButton("Cancel", null)
+                .setPositiveButton("Delete") { _, _ ->
+                    mutate(obj(
+                        "type" to if (isFolder) "permanently_delete_folder" else "permanently_delete_scheme",
+                        (if (isFolder) "folder_id" else "scheme_id") to id
+                    ))
+                }
+                .show()
+        }
+        return LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(dp(2 + depth * 16), 0, 0, 0)
+            addView(FrameLayout(this@MainActivity).apply {
+                if (isFolder) {
+                    addView(
+                        iconImage(R.drawable.ic_knotq_folder_24, theme.textMuted),
+                        FrameLayout.LayoutParams(dp(13), dp(13), Gravity.CENTER)
+                    )
+                } else {
+                    addView(View(this@MainActivity).apply {
+                        background = rounded(adjustAlpha(schemeColor(node.optInt("color_index")), 0.72f), dp(2))
+                    }, FrameLayout.LayoutParams(dp(11), dp(11), Gravity.CENTER))
+                }
+            }, LinearLayout.LayoutParams(dp(18), dp(18)))
+            addView(text(name, theme.textPrimary, 14f, false).apply {
+                maxLines = 1
+                ellipsize = TextUtils.TruncateAt.END
+            }, LinearLayout.LayoutParams(0, -2, 1f).apply { setMargins(dp(8), 0, dp(8), 0) })
+            addView(text("Restore", theme.accent, 13f, true).apply {
+                setPadding(dp(8), dp(8), dp(8), dp(8))
+                setOnClickListener { restore() }
+            }, LinearLayout.LayoutParams(-2, -2))
+            setOnLongClickListener {
+                AlertDialog.Builder(this@MainActivity)
+                    .setTitle(name)
+                    .setItems(arrayOf("Restore", "Delete Permanently")) { _, which ->
+                        when (which) {
+                            0 -> restore()
+                            1 -> confirmPermanentDelete()
+                        }
+                    }
+                    .show()
+                true
+            }
+        }
     }
 
     private fun showArchivedSchemeActions(scheme: JSONObject) {

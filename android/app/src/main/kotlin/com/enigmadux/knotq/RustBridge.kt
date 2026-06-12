@@ -68,6 +68,8 @@ internal class RustBridge(context: Context) : AutoCloseable {
             "delete_scheme" -> core.deleteScheme(body.getString("scheme_id"))
             "restore_scheme" -> core.restoreScheme(body.getString("scheme_id"))
             "permanently_delete_scheme" -> core.permanentlyDeleteScheme(body.getString("scheme_id"))
+            "restore_folder" -> core.restoreFolder(body.getString("folder_id"))
+            "permanently_delete_folder" -> core.permanentlyDeleteFolder(body.getString("folder_id"))
             "empty_archive" -> core.emptyArchive()
             "move_node" -> core.moveNode(
                 body.getString("kind"),
@@ -229,6 +231,7 @@ internal class RustBridge(context: Context) : AutoCloseable {
         .put("root", root.toJson())
         .put("schemes", schemes.toJsonArray { it.toJson() })
         .put("archived_schemes", archivedSchemes.toJsonArray { it.toJson() })
+        .put("archived_nodes", archivedNodes.toJsonArray { it.toJson() })
         .put("daily", daily.toJsonArray { it.toJson() })
         .put("calendar", calendar.toJson())
         .put("settings", settings.toJson())
