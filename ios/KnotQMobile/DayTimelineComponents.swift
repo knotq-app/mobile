@@ -46,11 +46,19 @@ struct DayTimelineCreateDraft: Equatable {
 }
 
 struct DayTimelineLaidOccurrence {
+    /// The representative occurrence used for the block's styling, tap target,
+    /// and drag. When several occurrences share the exact same kind/start/end
+    /// (duplicates, or distinct events at the same time) they are merged into a
+    /// single block — mirroring the desktop calendar's `equal_groups` — and
+    /// `mergedOccurrences` holds every member (always includes `occurrence`).
     let occurrence: MobileOccurrence
+    let mergedOccurrences: [MobileOccurrence]
     let dayIndex: Int
     let frame: CGRect
     let startMinute: CGFloat
     let endMinute: CGFloat
+
+    var mergedCount: Int { mergedOccurrences.count }
 }
 
 struct DayTimelineMoveTarget: Equatable {
@@ -158,7 +166,7 @@ final class DayTimelineDayCell: UIControl {
 
 final class DayTimelineEventBlockView: UIControl {
     let timeLabel = UILabel()
-    let titleLabel = UILabel()
+    private var titleLabels: [UILabel] = []
     let borderLine = UIView()
     var laid: DayTimelineLaidOccurrence?
     var onTap: ((MobileOccurrence) -> Void)?
@@ -170,14 +178,10 @@ final class DayTimelineEventBlockView: UIControl {
         super.init(frame: frame)
         clipsToBounds = true
         addSubview(timeLabel)
-        addSubview(titleLabel)
         addSubview(borderLine)
         timeLabel.textAlignment = .center
-        timeLabel.font = .monospacedDigitSystemFont(ofSize: 9, weight: .regular)
+        timeLabel.font = .monospacedDigitSystemFont(ofSize: 10, weight: .regular)
         timeLabel.lineBreakMode = .byTruncatingTail
-        titleLabel.textAlignment = .center
-        titleLabel.font = .systemFont(ofSize: 11, weight: .bold)
-        titleLabel.lineBreakMode = .byTruncatingTail
         addTarget(self, action: #selector(tapped), for: .touchUpInside)
     }
 
@@ -191,11 +195,20 @@ final class DayTimelineEventBlockView: UIControl {
         self.occurrence = laid.occurrence
         self.theme = theme
         self.timeFormat = timeFormat
-        alpha = laid.occurrence.done ? 0.55 : 1
-        let title = laid.occurrence.title.trimmingCharacters(in: .whitespacesAndNewlines)
-        titleLabel.text = title.isEmpty ? laid.occurrence.kind.capitalized : title
+        // Dim the whole block only when every merged item is done, mirroring the
+        // desktop calendar block (`any_done`).
+        alpha = laid.mergedOccurrences.allSatisfy(\.done) ? 0.55 : 1
+        // One title row per merged occurrence: same-time items (duplicates, or
+        // distinct events/tasks booked together) stack as their own rows under a
+        // single shared time header — mirroring the desktop calendar's
+        // `equal_groups` block — instead of collapsing into a "+N" badge.
+        rebuildTitleLabels(count: laid.mergedOccurrences.count)
+        for (label, member) in zip(titleLabels, laid.mergedOccurrences) {
+            let title = member.title.trimmingCharacters(in: .whitespacesAndNewlines)
+            label.text = title.isEmpty ? member.kind.capitalized : title
+            label.textColor = Self.itemTextColor(for: member, done: member.done, dark: theme.isDark)
+        }
         timeLabel.text = MobileDate.compactOccurrenceLabel(laid.occurrence, timeFormat: timeFormat)
-        titleLabel.textColor = Self.itemTextColor(for: laid.occurrence, done: laid.occurrence.done, dark: theme.isDark)
         timeLabel.textColor = Self.timeColor(for: laid.occurrence, theme: theme)
         let isPill = laid.occurrence.kind == "reminder" || laid.occurrence.kind == "assignment"
         backgroundColor = theme.isDark
@@ -219,16 +232,53 @@ final class DayTimelineEventBlockView: UIControl {
         borderLine.frame = isReminder
             ? CGRect(x: 0, y: 0, width: bounds.width, height: 2)
             : CGRect(x: 0, y: bounds.height - 2, width: bounds.width, height: 2)
-        if hideTime || timeLabel.text?.isEmpty == true {
-            timeLabel.isHidden = true
-            titleLabel.font = .systemFont(ofSize: 10, weight: .bold)
-            titleLabel.frame = CGRect(x: 6, y: topPadding, width: max(0, bounds.width - 12), height: 14)
-        } else {
+        let showTime = !hideTime && !(timeLabel.text?.isEmpty ?? true)
+        let titleHeight: CGFloat = showTime ? 16 : 15
+        let titleFont: UIFont = .systemFont(ofSize: showTime ? 12 : 11, weight: .bold)
+        let labelWidth = max(0, bounds.width - 12)
+        var y = topPadding
+        if showTime {
             timeLabel.isHidden = false
-            titleLabel.font = .systemFont(ofSize: 11, weight: .bold)
-            timeLabel.frame = CGRect(x: 6, y: topPadding, width: max(0, bounds.width - 12), height: 11)
-            titleLabel.frame = CGRect(x: 6, y: topPadding + 11, width: max(0, bounds.width - 12), height: 15)
+            timeLabel.frame = CGRect(x: 6, y: y, width: labelWidth, height: 12)
+            y += 12
+        } else {
+            timeLabel.isHidden = true
         }
+        for label in titleLabels {
+            label.font = titleFont
+            label.frame = CGRect(x: 6, y: y, width: labelWidth, height: titleHeight)
+            y += titleHeight
+        }
+    }
+
+    /// Grows or shrinks the pool of stacked title rows to match the merged count.
+    private func rebuildTitleLabels(count: Int) {
+        let target = max(1, count)
+        while titleLabels.count < target {
+            let label = UILabel()
+            label.textAlignment = .center
+            label.lineBreakMode = .byTruncatingTail
+            addSubview(label)
+            titleLabels.append(label)
+        }
+        while titleLabels.count > target {
+            titleLabels.removeLast().removeFromSuperview()
+        }
+    }
+
+    /// Height needed to show the time header (when present) plus one title row
+    /// per merged occurrence, so a block holding several same-time items grows
+    /// to fit every row instead of clipping them.
+    static func contentHeight(for occurrence: MobileOccurrence, mergedCount: Int, timeFormat: String) -> CGFloat {
+        let hideTime = hideTime(for: occurrence)
+        let isReminder = occurrence.kind == "reminder"
+        let isAssignment = occurrence.kind == "assignment"
+        let topPadding: CGFloat = isReminder ? 6 : (isAssignment ? 3 : (hideTime ? 1 : 3))
+        let timeText = MobileDate.compactOccurrenceLabel(occurrence, timeFormat: timeFormat)
+        let showTime = !hideTime && !timeText.isEmpty
+        let titleHeight: CGFloat = showTime ? 16 : 15
+        let rows = CGFloat(max(1, mergedCount))
+        return topPadding + (showTime ? 12 : 0) + titleHeight * rows + 3
     }
 
     @objc private func tapped() {

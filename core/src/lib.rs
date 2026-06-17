@@ -26,7 +26,8 @@ use knotq_notifications::{
 };
 use knotq_state::{
     daily_queue_initial_start, daily_queue_scheme_name, make_default_workspace,
-    CalendarOccurrenceKey, RetainedCompletedItems,
+    mark_past_event_completion_keys_done, past_event_completion_keys, CalendarOccurrenceKey,
+    RetainedCompletedItems,
 };
 use knotq_storage_json::{
     load_app_settings, load_crdt_state, load_daily_queue_scheme,
@@ -670,6 +671,55 @@ impl MobileCore {
             .map_err(Into::into)
     }
 
+    /// Transfer an item to a different scheme, preserving its identity and every
+    /// attribute (text, dates, recurrence, completion, media). Mirrors the
+    /// desktop event popup's scheme switch: delete from the source and re-insert
+    /// the same item at the end of the target. A no-op when the two ids match.
+    pub fn move_item_to_scheme(
+        &self,
+        source_scheme_id: String,
+        target_scheme_id: String,
+        item_id: String,
+    ) -> Result<(), MobileError> {
+        let source: SchemeId = parse_id(&source_scheme_id)?;
+        let target: SchemeId = parse_id(&target_scheme_id)?;
+        let item_id: ItemId = parse_id(&item_id)?;
+        let mut inner = self.lock()?;
+        if source == target {
+            return Ok(());
+        }
+        if inner.workspace.is_scheme_read_only(source) || inner.workspace.is_scheme_read_only(target)
+        {
+            return Err(anyhow!("cannot move items to or from a read-only scheme").into());
+        }
+        let Some(item) = inner
+            .workspace
+            .scheme(source)
+            .and_then(|scheme| scheme.item(item_id))
+            .cloned()
+        else {
+            return Err(anyhow!("item not found in source scheme").into());
+        };
+        let position = inner
+            .workspace
+            .scheme(target)
+            .map(|scheme| scheme.items.len())
+            .ok_or_else(|| anyhow!("target scheme not found"))?;
+        inner
+            .apply(Command::Batch(vec![
+                Command::DeleteItem {
+                    scheme: source,
+                    item: item_id,
+                },
+                Command::InsertItem {
+                    scheme: target,
+                    position,
+                    item,
+                },
+            ]))
+            .map_err(Into::into)
+    }
+
     pub fn delete_event_occurrence(
         &self,
         scheme_id: String,
@@ -830,9 +880,16 @@ impl MobileCore {
     }
 
     fn lock(&self) -> Result<MutexGuard<'_, MobileCoreInner>, MobileError> {
-        self.inner.lock().map_err(|_| MobileError::Core {
-            reason: "mobile core lock was poisoned".to_string(),
-        })
+        // A panic while the lock is held poisons the mutex. Without recovery,
+        // every later call — and every resync — would fail forever with "lock
+        // was poisoned" until the app is killed, which is exactly the wedge users
+        // hit. The workspace state is still readable, and any partial mutation is
+        // reconciled from disk/CRDT on the next save or sync, so recover the guard
+        // and carry on rather than stay stuck.
+        Ok(self.inner.lock().unwrap_or_else(|poisoned| {
+            eprintln!("knotq: recovered mobile core lock after a poisoning panic");
+            poisoned.into_inner()
+        }))
     }
 }
 
@@ -855,7 +912,20 @@ struct MobileCoreInner {
     // place) until they're un-completed or the app reloads — mirroring desktop's
     // `retained_completed_calendar_items`.
     retained_completed: RetainedCompletedItems,
+    // Monotonic time of the last remote sync that actually ran. Used to coalesce
+    // wake-storms (silent-push/poll triggers that arrive in bursts) so a device
+    // can't barrage the backend — see `sync_once`.
+    last_remote_sync_at: Option<std::time::Instant>,
 }
+
+/// Minimum spacing between remote syncs that have nothing local to push. Silent
+/// pushes wake every device on each push, so two devices that each re-push on every
+/// sync (e.g. a stale build whose normalization keeps re-canonicalizing the other's
+/// workspace) form a feedback loop that hammers the backend. Coalescing
+/// nothing-to-push syncs to this interval breaks that loop. Kept well under the
+/// shells' poll interval (~30s) so the periodic pull is unaffected, and bypassed
+/// whenever there are local edits queued so user changes never wait on it.
+const MIN_REMOTE_SYNC_INTERVAL: std::time::Duration = std::time::Duration::from_secs(10);
 
 impl MobileCoreInner {
     fn open(app_dir: PathBuf) -> Result<Self> {
@@ -929,6 +999,7 @@ impl MobileCoreInner {
             push_environment: None,
             registered_push_token: None,
             retained_completed: RetainedCompletedItems::default(),
+            last_remote_sync_at: None,
         })
     }
 
@@ -966,6 +1037,28 @@ impl MobileCoreInner {
         self.workspace.normalize_item_markers();
         self.record_crdt_changes(crdt_changes)?;
         self.save_workspace()
+    }
+
+    /// Mark elapsed event occurrences complete in the background, mirroring the
+    /// desktop's periodic sweep (`complete_past_event_occurrences`). Records CRDT
+    /// changes for the touched schemes so the completion converges across
+    /// devices, then persists. Returns the number of occurrences completed.
+    fn complete_past_events(&mut self, now: DateTime<Utc>) -> Result<usize> {
+        let keys = past_event_completion_keys(&self.workspace, now);
+        if keys.is_empty() {
+            return Ok(0);
+        }
+        let changed = mark_past_event_completion_keys_done(&mut self.workspace, &keys, now);
+        if changed == 0 {
+            return Ok(0);
+        }
+        let mut changeset = WorkspaceCrdtChangeSet::default();
+        for key in &keys {
+            changeset.schemes.insert(key.scheme_id);
+        }
+        self.record_crdt_changes(changeset)?;
+        self.save_workspace()?;
+        Ok(changed)
     }
 
     fn save_workspace(&self) -> Result<()> {
@@ -1264,7 +1357,32 @@ impl MobileCoreInner {
         }
     }
 
+    /// Whether to coalesce (skip) a remote sync that was just triggered. We skip
+    /// only when there is nothing local to push AND we synced within
+    /// `MIN_REMOTE_SYNC_INTERVAL`, so wake-storms are throttled while user edits
+    /// (non-empty pending queue) and the periodic poll (interval > the throttle)
+    /// are never held back.
+    fn should_coalesce_idle_sync(&self, has_local_pending: bool) -> bool {
+        if has_local_pending {
+            return false;
+        }
+        self.last_remote_sync_at
+            .is_some_and(|last| last.elapsed() < MIN_REMOTE_SYNC_INTERVAL)
+    }
+
     fn sync_once(&mut self, api_base: &str, bearer_token: &str) -> Result<bool> {
+        // Coalesce wake-storms: a silent push wakes every device on each push, so two
+        // devices that re-push on every sync form a feedback loop that barrages the
+        // backend. Skip the round-trip when nothing local is queued and we synced
+        // moments ago — see `should_coalesce_idle_sync`.
+        let has_local_pending = load_local_sync_state(&self.workspace_path)
+            .map(|state| !state.pending.is_empty())
+            .unwrap_or(false);
+        if self.should_coalesce_idle_sync(has_local_pending) {
+            return Ok(false);
+        }
+        self.last_remote_sync_at = Some(std::time::Instant::now());
+
         let client = MobileSyncHttpClient {
             api_base: normalize_sync_api_base(api_base)?,
             bearer_token: bearer_token.to_string(),
@@ -1716,6 +1834,12 @@ impl MobileCoreInner {
         week_offset: i32,
         daily_history_days: i64,
     ) -> Result<MobileSnapshot> {
+        // Mark elapsed event occurrences complete before reading, mirroring the
+        // desktop's background sweep. Uses the real current instant (not `today`)
+        // and is best-effort: a transient save failure must not block rendering.
+        if let Err(error) = self.complete_past_events(Utc::now()) {
+            eprintln!("knotq: deferring past-event completion: {error:#}");
+        }
         let daily_start = today - Duration::days(daily_history_days);
         let daily_end = today + Duration::days(MOBILE_DAILY_LOOKAHEAD_DAYS);
         self.load_daily_queue_date_range(daily_start, daily_end)?;
@@ -3945,6 +4069,26 @@ mod tests {
     }
 
     #[test]
+    fn idle_remote_syncs_are_coalesced_but_pending_edits_bypass_the_throttle() {
+        let dir = std::env::temp_dir().join(format!("knotq-mobile-test-{}", uuid::Uuid::new_v4()));
+        let mut inner = MobileCoreInner::open(dir.clone()).expect("open mobile core");
+
+        // Never synced yet -> a sync must always run (no throttle on the first one).
+        assert!(!inner.should_coalesce_idle_sync(false));
+
+        // Just synced with nothing queued -> a fresh wake-up is coalesced. This is
+        // what stops the silent-push feedback loop from barraging the backend.
+        inner.last_remote_sync_at = Some(std::time::Instant::now());
+        assert!(inner.should_coalesce_idle_sync(false));
+
+        // Just synced but local edits are queued -> never coalesce, so user changes
+        // are pushed promptly rather than waiting out the throttle window.
+        assert!(!inner.should_coalesce_idle_sync(true));
+
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
     fn google_calendar_sync_deletes_duplicate_imported_schemes_after_first() {
         let dir = std::env::temp_dir().join(format!("knotq-mobile-test-{}", uuid::Uuid::new_v4()));
         let mut inner = MobileCoreInner::open(dir.clone()).expect("open mobile core");
@@ -4222,6 +4366,125 @@ mod tests {
         );
         assert_eq!(scheme.items[1].marker, "bullet");
         assert_eq!(scheme.items[1].indent, 2);
+
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn move_item_to_scheme_transfers_item_preserving_identity() {
+        let dir = std::env::temp_dir().join(format!("knotq-mobile-test-{}", uuid::Uuid::new_v4()));
+        let core = MobileCore::new(dir.display().to_string()).expect("open mobile core");
+
+        core.create_scheme(None, "Source".to_string(), Some(1), None)
+            .expect("create source");
+        core.create_scheme(None, "Target".to_string(), Some(2), None)
+            .expect("create target");
+        let snapshot = core
+            .snapshot(Some("2026-05-26".to_string()), 0)
+            .expect("snapshot");
+        let source_id = snapshot
+            .schemes
+            .iter()
+            .find(|s| s.display_name == "Source")
+            .expect("source scheme")
+            .id
+            .clone();
+        let target_id = snapshot
+            .schemes
+            .iter()
+            .find(|s| s.display_name == "Target")
+            .expect("target scheme")
+            .id
+            .clone();
+
+        core.add_item(
+            source_id.clone(),
+            "Move me".to_string(),
+            Some("checkbox".to_string()),
+            None,
+            None,
+        )
+        .expect("add item");
+        let item_id = core
+            .snapshot(Some("2026-05-26".to_string()), 0)
+            .expect("snapshot")
+            .schemes
+            .into_iter()
+            .find(|s| s.id == source_id)
+            .expect("source scheme")
+            .items
+            .into_iter()
+            .find(|i| i.text == "Move me")
+            .expect("added item")
+            .id;
+
+        core.move_item_to_scheme(source_id.clone(), target_id.clone(), item_id.clone())
+            .expect("move item");
+
+        let snapshot = core
+            .snapshot(Some("2026-05-26".to_string()), 0)
+            .expect("snapshot");
+        let source = snapshot
+            .schemes
+            .iter()
+            .find(|s| s.id == source_id)
+            .expect("source scheme");
+        let target = snapshot
+            .schemes
+            .iter()
+            .find(|s| s.id == target_id)
+            .expect("target scheme");
+        assert!(
+            !source.items.iter().any(|i| i.id == item_id),
+            "item left the source scheme"
+        );
+        let moved = target
+            .items
+            .iter()
+            .find(|i| i.id == item_id)
+            .expect("item present in target scheme");
+        assert_eq!(moved.text, "Move me", "text preserved");
+        assert_eq!(moved.marker, "checkbox", "marker preserved");
+
+        // A same-scheme move is a no-op rather than an error or a duplicate.
+        core.move_item_to_scheme(target_id.clone(), target_id.clone(), item_id.clone())
+            .expect("no-op move");
+        let target_count = core
+            .snapshot(Some("2026-05-26".to_string()), 0)
+            .expect("snapshot")
+            .schemes
+            .into_iter()
+            .find(|s| s.id == target_id)
+            .expect("target scheme")
+            .items
+            .iter()
+            .filter(|i| i.id == item_id)
+            .count();
+        assert_eq!(target_count, 1, "no duplicate after same-scheme move");
+
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn lock_recovers_after_a_poisoning_panic() {
+        let dir = std::env::temp_dir().join(format!("knotq-mobile-test-{}", uuid::Uuid::new_v4()));
+        let core = MobileCore::new(dir.display().to_string()).expect("open mobile core");
+
+        // Poison the mutex by panicking while the lock is held, the way a panic
+        // mid-sync would. catch_unwind keeps the test from aborting.
+        let panicked = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            let _guard = core.lock().expect("lock");
+            panic!("boom while holding the core lock");
+        }));
+        assert!(panicked.is_err(), "the closure panicked as set up");
+
+        // Before the fix this returned Err("mobile core lock was poisoned"); now
+        // the core recovers and keeps working.
+        let snapshot = core.snapshot(Some("2026-05-26".to_string()), 0);
+        assert!(
+            snapshot.is_ok(),
+            "core recovers after a poisoning panic instead of wedging"
+        );
 
         let _ = std::fs::remove_dir_all(dir);
     }

@@ -4,7 +4,6 @@ import SwiftUI
 struct SettingsScreen: View {
     @EnvironmentObject private var model: AppModel
     @Environment(\.colorScheme) private var systemScheme
-    @State private var showingSyncSignIn = false
     @State private var showingCancelConfirm = false
 
     private var theme: KnotQTheme {
@@ -16,7 +15,6 @@ struct SettingsScreen: View {
             Section {
                 SyncSettingsCard(
                     theme: theme,
-                    showingSyncSignIn: $showingSyncSignIn,
                     showingCancelConfirm: $showingCancelConfirm
                 )
             }
@@ -61,11 +59,6 @@ struct SettingsScreen: View {
             if let session = model.syncSession, !session.supportsSync {
                 await model.loadSyncProducts()
             }
-        }
-        .sheet(isPresented: $showingSyncSignIn) {
-            SyncSignInSheet(theme: theme)
-                .environmentObject(model)
-                .presentationDetents([.medium])
         }
         .confirmationDialog(
             "Cancel sync subscription?",

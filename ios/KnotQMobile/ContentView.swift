@@ -89,8 +89,14 @@ struct ContentView: View {
     @State private var timelineResetToken = 0
     @State private var appliedScreenshotRoute = false
     @AppStorage("knotq.mobile.onboardingCompleted.v1") private var onboardingCompleted = false
-    @State private var onboardingPhase: OnboardingPhase = .account
+    // Start with the short tutorial; the sign-in / stay-local prompt follows it
+    // (see `OnboardingOverlay`). Already-signed-in users skip the prompt entirely.
+    @State private var onboardingPhase: OnboardingPhase = .guide
     @State private var onboardingStep = 0
+    // Last-open screen, restored on the next launch (see restoreLastScreenIfNeeded).
+    @AppStorage("knotq.mobile.lastPane.v1") private var storedPaneRaw = ""
+    @AppStorage("knotq.mobile.lastSchemeID.v1") private var storedSchemeID = ""
+    @State private var didRestoreLastScreen = false
 
     private var theme: KnotQTheme {
         KnotQTheme.resolve(mode: model.snapshot?.settings.themeMode, systemScheme: systemScheme)
@@ -281,6 +287,19 @@ struct ContentView: View {
             #if DEBUG
             applyScreenshotInitialRouteIfNeeded()
             #endif
+        }
+        // Restore the last-open screen once the workspace is available (so a saved
+        // scheme can be validated), then persist navigation as it changes.
+        .onChange(of: model.snapshot != nil, initial: true) { _, hasSnapshot in
+            if hasSnapshot { restoreLastScreenIfNeeded() }
+        }
+        .onChange(of: pane) { _, newValue in
+            guard didRestoreLastScreen else { return }
+            storedPaneRaw = newValue.rawValue
+        }
+        .onChange(of: selectedSchemeID) { _, newValue in
+            guard didRestoreLastScreen else { return }
+            storedSchemeID = newValue ?? ""
         }
     }
 
@@ -719,6 +738,40 @@ struct ContentView: View {
     private func returnHome() {
         selectedSchemeID = nil
         pane = defaultHomePane
+    }
+
+    /// Re-open the screen the user last had open. Runs once after the workspace
+    /// loads so a saved scheme can be validated; if that scheme was deleted in
+    /// the meantime we fall back to the home screen. First-launch onboarding and
+    /// the screenshot harness drive their own routes, so we don't override them.
+    private func restoreLastScreenIfNeeded() {
+        guard !didRestoreLastScreen, let snapshot = model.snapshot else { return }
+        didRestoreLastScreen = true
+
+        guard onboardingCompleted else { return }
+        #if DEBUG
+        if AppModel.screenshotFixtureRequested { return }
+        #endif
+
+        guard let restored = MobilePane(rawValue: storedPaneRaw) else { return }
+        switch restored {
+        case .scheme:
+            if !storedSchemeID.isEmpty,
+               snapshot.schemes.contains(where: { $0.id == storedSchemeID }) {
+                selectScheme(storedSchemeID)
+            } else {
+                returnHome()
+            }
+        case .daily:
+            openDaily()
+        case .search:
+            // Search is a transient pane; land on home instead of restoring it.
+            pane = defaultHomePane
+        case .home, .calendar, .settings:
+            selectedSchemeID = nil
+            // `.home` isn't a destination in the iPad layout; use its default.
+            pane = (isPadLayout && restored == .home) ? .calendar : restored
+        }
     }
 
     private func quickCreateSchemeID() async -> String? {

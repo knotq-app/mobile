@@ -293,13 +293,22 @@ struct DailyDayEditorSection: View {
             showsEditorNavigation: false,
             editorScrollEnabled: false,
             editorInsets: UIEdgeInsets(top: 3, left: 14, bottom: 5, right: 14),
-            showsInlineTitle: !isEmpty,
-            autoFocusOnAppear: selected && autoFocusOnAppear && !isEmpty
+            // Always show the day's title on the selected day, even when it's
+            // empty — a freshly created daily queue has no content yet, and
+            // hiding the title there leaves the section looking like it never got
+            // created. Non-selected empty days stay collapsed.
+            showsInlineTitle: !isEmpty || selected,
+            // Focus the selected (last/today) day on open even when it's empty —
+            // a fresh daily queue has no items, and we still want the caret + the
+            // keyboard up at the end of that section so the user can type right
+            // away. `autoFocusSelectedDay` is the real opt-in (off on iPad/screenshots).
+            autoFocusOnAppear: selected && autoFocusOnAppear
         )
-        // Non-empty days self-size from the editor's TextKit measurement
-        // (SchemeTextView.sizeThatFits); only the empty selected day gets a
-        // fixed compact tap target.
-        .frame(height: isEmpty ? (selected ? 44 : 0) : nil, alignment: .top)
+        // Self-size from the editor's TextKit measurement (SchemeTextView
+        // .sizeThatFits) for every day that renders content — including the
+        // selected empty day, which now shows its title plus a blank editable
+        // line. Only collapse non-selected empty days to nothing.
+        .frame(height: isEmpty && !selected ? 0 : nil, alignment: .top)
         .clipped()
         .background(selected ? theme.rowSelected.opacity(0.42) : Color.clear)
         .clipShape(RoundedRectangle(cornerRadius: 7))

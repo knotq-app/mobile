@@ -110,6 +110,10 @@ private const val SYNC_AUTH_STATE_PREF = "knotq.syncBrowserAuth.state"
 private const val SYNC_AUTH_VERIFIER_PREF = "knotq.syncBrowserAuth.verifier"
 // The Google Play subscription product id for hosted sync (Play Console).
 private const val SYNC_SUBSCRIPTION_PRODUCT_ID = "knotq.sync.monthly"
+// Where store-managed subscriptions are re-enabled (auto-renew turned back on);
+// neither the app nor our backend can flip that for Google/Apple.
+private const val PLAY_SUBSCRIPTIONS_URL = "https://play.google.com/store/account/subscriptions"
+private const val APPLE_SUBSCRIPTIONS_URL = "https://apps.apple.com/account/subscriptions"
 private const val GOOGLE_CLIENT_ID = "419826075228-gn6gj1l20nltil67odvf00u3i7n8a2ld.apps.googleusercontent.com"
 private const val GOOGLE_REDIRECT_SCHEME = "com.googleusercontent.apps.419826075228-gn6gj1l20nltil67odvf00u3i7n8a2ld"
 private const val GOOGLE_REDIRECT_URI = "$GOOGLE_REDIRECT_SCHEME:/oauth2redirect"
@@ -318,6 +322,11 @@ class MainActivity : Activity() {
     private var syncAuthInProgress = false
     private var syncAccountActionInProgress = false
     private var syncInProgress = false
+    // From /v1/auth/account/status: the subscription is cancelled (won't renew) but
+    // still entitling, so Settings offers to re-enable instead of cancel. The
+    // provider routes re-enable to the store (Google/Apple) or our backend (web).
+    private var syncSubscriptionCancelled = false
+    private var syncSubscriptionProvider: String? = null
     private var syncFailureNotified = false
     private var safeAreaTop = 0
     private var safeAreaBottom = 0
@@ -383,6 +392,12 @@ class MainActivity : Activity() {
         // Pick up credentials the background worker may have rotated (or a
         // session it invalidated) while the app was backgrounded.
         syncSession = loadSyncSession()
+        // Re-check the entitlement + subscription lifecycle before resuming the poll
+        // so a subscription bought (or changed) while the app was closed — the common
+        // "subscribe, reopen the app, see it" flow — shows up without waiting for the
+        // access token to expire. Runs first so it claims the in-progress guard ahead
+        // of the poll's first sync (which then no-ops until it returns).
+        refreshSubscriptionStatus()
         startSyncPolling()
         configureGoogleSyncPolling()
     }
@@ -3435,8 +3450,10 @@ class MainActivity : Activity() {
             val session = syncSession ?: return
             // Lead with the action that matters for the current state: syncing when
             // it is on, subscribing when it is off. Destructive actions stay last.
+            val subscriptionAction =
+                if (syncSubscriptionCancelled) "Re-enable subscription" else "Cancel subscription"
             val actions = if (session.supportsSync) {
-                mutableListOf("Sync now", "Cancel subscription", "Sign out", "Delete account on website")
+                mutableListOf("Sync now", subscriptionAction, "Sign out", "Delete account on website")
             } else {
                 mutableListOf(
                     "Subscribe with Google Play",
@@ -3445,10 +3462,11 @@ class MainActivity : Activity() {
                     "Delete account on website"
                 )
             }
-            val stateLine = if (session.supportsSync) {
-                "Sync is on for this account."
-            } else {
-                "Sync is off — subscribe to turn it on."
+            val stateLine = when {
+                session.supportsSync && syncSubscriptionCancelled ->
+                    "Cancelled — sync stays active until the billing period ends."
+                session.supportsSync -> "Sync is on for this account."
+                else -> "Sync is off — subscribe to turn it on."
             }
             AlertDialog.Builder(this)
                 .setTitle("Sync account")
@@ -3458,13 +3476,16 @@ class MainActivity : Activity() {
                         "Sync now" -> syncOnce()
                         "Subscribe with Google Play" -> startGooglePlaySubscribe()
                         "Restore purchases" -> restoreGooglePlayPurchases()
-                        "Cancel subscription" -> confirmCancelSyncSubscription()
+                        "Cancel subscription" -> cancelSubscriptionAction()
+                        "Re-enable subscription" -> reEnableSyncSubscription()
                         "Sign out" -> signOutSync()
                         "Delete account on website" -> openSyncAccountPage()
                     }
                 }
                 .setNegativeButton("Close", null)
                 .show()
+            // Re-check the lifecycle so a cancellation made elsewhere is reflected.
+            refreshAccountStatus()
             return
         }
 
@@ -3747,6 +3768,7 @@ class MainActivity : Activity() {
         startSyncPolling()
         scheduleBackgroundSyncWork()
         render()
+        if (session.supportsSync) refreshAccountStatus()
         // Signing in during the onboarding account step advances to the tour.
         if (onboardingActive && onboardingPhase == ONBOARDING_ACCOUNT) {
             startOnboardingGuide()
@@ -3756,11 +3778,147 @@ class MainActivity : Activity() {
     private fun signOutSync() {
         syncSession = null
         syncLoginChallenge = null
+        syncSubscriptionCancelled = false
+        syncSubscriptionProvider = null
         saveSyncSession(null)
         syncPollHandler.removeCallbacks(syncPollRunnable)
         syncPollHandler.removeCallbacks(syncEditRunnable)
         cancelBackgroundSyncWork()
         render()
+    }
+
+    /// Read the authoritative subscription lifecycle so Settings can reflect a
+    /// cancelled-but-active subscription and offer to re-enable it.
+    private fun refreshAccountStatus() {
+        val session = syncSession ?: return
+        Thread {
+            val result = runCatching {
+                val active = refreshSyncSessionIfNeeded(session) ?: return@runCatching null
+                httpJson(
+                    "${active.apiBase}/v1/auth/account/status",
+                    "GET",
+                    JSONObject(),
+                    bearerToken = active.bearerToken
+                )
+            }.getOrNull()
+            runOnUiThread {
+                if (result == null) return@runOnUiThread
+                syncSubscriptionProvider = result.optString("subscription_provider").ifEmpty { null }
+                syncSubscriptionCancelled =
+                    result.optBoolean("supports_sync", true) &&
+                        result.optString("subscription_state").equals("cancelled", ignoreCase = true)
+                render()
+            }
+        }.start()
+    }
+
+    /// Re-check the sync entitlement + subscription lifecycle from the backend so a
+    /// subscription bought (or changed) while the app was closed — the common
+    /// "subscribe, reopen the app, see it" flow — shows up without waiting for the
+    /// access token to expire. One forced token refresh re-reads supports_sync; the
+    /// status read then runs on the rotated token, all on a single thread, so the
+    /// single-use refresh token is never replayed concurrently. Guarded by the poll
+    /// loop's in-progress flag for the same reason.
+    private fun refreshSubscriptionStatus() {
+        if (syncInProgress) return
+        val session = syncSession ?: return
+        if (session.refreshToken.isEmpty()) return
+        syncInProgress = true
+        Thread {
+            val active = refreshSyncSessionIfNeeded(session, force = true)
+            val status = active?.let {
+                runCatching {
+                    httpJson(
+                        "${it.apiBase}/v1/auth/account/status",
+                        "GET",
+                        JSONObject(),
+                        bearerToken = it.bearerToken
+                    )
+                }.getOrNull()
+            }
+            runOnUiThread {
+                syncInProgress = false
+                if (active == null) {
+                    // Refresh token revoked/expired: drop the session like the poll loop.
+                    syncSession = null
+                    saveSyncSession(null)
+                    syncPollHandler.removeCallbacks(syncPollRunnable)
+                    showError("Sync session expired", "Please sign in again.")
+                    render()
+                    return@runOnUiThread
+                }
+                if (active !== session) {
+                    syncSession = active
+                    saveSyncSession(active)
+                    scheduleBackgroundSyncWork()
+                    // A just-granted entitlement: pull the workspace promptly instead
+                    // of waiting on the 30s poll.
+                    if (active.supportsSync) requestSyncSoon()
+                }
+                if (status != null) {
+                    syncSubscriptionProvider = status.optString("subscription_provider").ifEmpty { null }
+                    syncSubscriptionCancelled =
+                        status.optBoolean("supports_sync", true) &&
+                            status.optString("subscription_state").equals("cancelled", ignoreCase = true)
+                }
+                render()
+            }
+        }.start()
+    }
+
+    /// Undo a pending cancellation so the subscription renews again. Web
+    /// subscriptions un-cancel through our backend; Google/Apple renewals can only be
+    /// turned back on in their stores, so for those we open the store's
+    /// manage-subscriptions page. On Android the subscription is normally a Google
+    /// Play one, so an unknown provider routes to Google Play.
+    private fun reEnableSyncSubscription() {
+        when ((syncSubscriptionProvider ?: "").lowercase()) {
+            "apple" -> {
+                openSubscriptionStorePage(APPLE_SUBSCRIPTIONS_URL)
+                return
+            }
+            "web" -> {}
+            else -> {
+                openSubscriptionStorePage(PLAY_SUBSCRIPTIONS_URL)
+                return
+            }
+        }
+        val session = syncSession ?: return
+        if (syncAccountActionInProgress) return
+        syncAccountActionInProgress = true
+        Thread {
+            val result = runCatching {
+                val active = refreshSyncSessionIfNeeded(session)
+                    ?: throw RuntimeException(accountActionErrorMessage("unauthorized"))
+                parseSyncSession(
+                    httpJson(
+                        "${active.apiBase}/v1/auth/subscription/resume",
+                        "POST",
+                        JSONObject(),
+                        bearerToken = active.bearerToken,
+                        accountAction = true
+                    ),
+                    active.apiBase
+                )
+            }
+            runOnUiThread {
+                syncAccountActionInProgress = false
+                result.onSuccess { updated ->
+                    installSyncSession(updated)
+                    showError("Subscription re-enabled", "Your subscription will renew again.")
+                }.onFailure { error ->
+                    showError("Could not update account", error.message)
+                }
+            }
+        }.start()
+    }
+
+    private fun openSubscriptionStorePage(url: String) {
+        try {
+            startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
+        } catch (error: ActivityNotFoundException) {
+            showError("Could not open subscriptions", error.message)
+        }
     }
 
     private fun openSyncAccountPage() {
@@ -3769,6 +3927,17 @@ class MainActivity : Activity() {
             Toast.makeText(this, "Continue on knotq.com.", Toast.LENGTH_SHORT).show()
         } catch (error: ActivityNotFoundException) {
             showError("Could not open account page", error.message)
+        }
+    }
+
+    /// Store-managed (Apple/Google) subscriptions can't be cancelled server-side —
+    /// Apple has no cancel API — so open the store's manage page directly instead of
+    /// a backend call that fails. Web subscriptions cancel through the backend.
+    private fun cancelSubscriptionAction() {
+        when ((syncSubscriptionProvider ?: "").lowercase()) {
+            "apple" -> openSubscriptionStorePage(APPLE_SUBSCRIPTIONS_URL)
+            "google" -> openSubscriptionStorePage(PLAY_SUBSCRIPTIONS_URL)
+            else -> confirmCancelSyncSubscription()
         }
     }
 
@@ -3808,6 +3977,7 @@ class MainActivity : Activity() {
                     } else {
                         showError("Sync turned off", "Your local workspace stays on this device, and you can sign in again later to re-enable sync.")
                     }
+                    refreshAccountStatus()
                 }.onFailure { error ->
                     showError("Could not update account", error.message)
                 }
@@ -4072,10 +4242,10 @@ class MainActivity : Activity() {
     // gone (refresh token dead) and the caller should sign out; otherwise the
     // session to use — the original (no refresh needed / transient failure) or a
     // copy carrying the rotated credentials.
-    private fun refreshSyncSessionIfNeeded(session: SyncSession): SyncSession? {
+    private fun refreshSyncSessionIfNeeded(session: SyncSession, force: Boolean = false): SyncSession? {
         val refreshToken = session.refreshToken
         if (refreshToken.isEmpty()) return null
-        if (!tokenNeedsRefresh(session.expiresAt)) return session
+        if (!force && !tokenNeedsRefresh(session.expiresAt)) return session
         try {
             val connection =
                 (URL("${session.apiBase}/v1/auth/refresh").openConnection() as HttpURLConnection).apply {
@@ -4253,6 +4423,10 @@ class MainActivity : Activity() {
         "delete_confirmation_mismatch" -> "Could not confirm the account. Please try again."
         "billing_api_not_configured" -> "Subscription cancellation is not configured yet."
         "cancel_in_app_store" -> "Manage this App Store subscription from your account subscriptions."
+        "cancel_in_play_store" -> "Manage this subscription from your Google Play subscriptions."
+        "resume_in_app_store" -> "Re-enable this subscription from your Apple account subscriptions."
+        "resume_in_play_store" -> "Re-enable this subscription from your Google Play subscriptions."
+        "no_active_subscription" -> "There's no active web subscription to change."
         else -> "The request to the sync API failed."
     }
 
@@ -4472,22 +4646,30 @@ class MainActivity : Activity() {
 
     private fun syncSettingsCard(): View {
         val session = syncSession
+        // Cancelled (won't renew) but still entitling: amber "Cancelled" badge, like
+        // the not-yet-subscribed state, with a re-enable action below.
+        val cancelled = session?.supportsSync == true && syncSubscriptionCancelled
         val badge = when {
+            cancelled -> "Cancelled"
             session?.supportsSync == true -> "Enabled"
             session != null -> "Upgrade"
             else -> "Available"
         }
         val badgeFg = when {
-            session?.supportsSync == true -> if (theme.isDark) rgb(0x9af0b6) else rgb(0x176b38)
-            session != null -> if (theme.isDark) rgb(0xf8d38d) else rgb(0x9a4b00)
+            !cancelled && session?.supportsSync == true -> if (theme.isDark) rgb(0x9af0b6) else rgb(0x176b38)
+            cancelled || session != null -> if (theme.isDark) rgb(0xf8d38d) else rgb(0x9a4b00)
             else -> if (theme.isDark) rgb(0x9bc2ff) else rgb(0x235ebe)
         }
         val badgeBg = when {
-            session?.supportsSync == true -> adjustAlpha(if (theme.isDark) rgb(0x30d158) else rgb(0x1f8f4d), if (theme.isDark) 0.15f else 0.09f)
-            session != null -> adjustAlpha(if (theme.isDark) rgb(0xf59e0b) else rgb(0xd97706), if (theme.isDark) 0.16f else 0.10f)
+            !cancelled && session?.supportsSync == true -> adjustAlpha(if (theme.isDark) rgb(0x30d158) else rgb(0x1f8f4d), if (theme.isDark) 0.15f else 0.09f)
+            cancelled || session != null -> adjustAlpha(if (theme.isDark) rgb(0xf59e0b) else rgb(0xd97706), if (theme.isDark) 0.16f else 0.10f)
             else -> adjustAlpha(if (theme.isDark) rgb(0x3b82f6) else rgb(0x2f67cf), if (theme.isDark) 0.16f else 0.09f)
         }
-        val detail = session?.email ?: "Sign in to keep this workspace available across devices."
+        val detail = when {
+            cancelled -> "Sync stays active until your billing period ends."
+            session != null -> session.email
+            else -> "Sign in to keep this workspace available across devices."
+        }
         return LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(12), dp(12), dp(12), dp(12))
@@ -4523,9 +4705,14 @@ class MainActivity : Activity() {
                 if (session == null) {
                     addView(syncCardButton("Sign in", primary = true) { showSyncAccountDialog() }, LinearLayout.LayoutParams(0, dp(32), 1f))
                 } else {
-                    addView(syncCardButton(if (syncInProgress) "Checking..." else if (session.supportsSync) "Check status" else "I've subscribed", primary = !session.supportsSync) {
-                        if (session.supportsSync) syncOnce() else restoreGooglePlayPurchases()
-                    }, LinearLayout.LayoutParams(0, dp(32), 1f).apply { setMargins(0, 0, dp(8), 0) })
+                    if (cancelled) {
+                        addView(syncCardButton("Re-enable", primary = true) { reEnableSyncSubscription() },
+                            LinearLayout.LayoutParams(0, dp(32), 1f).apply { setMargins(0, 0, dp(8), 0) })
+                    } else {
+                        addView(syncCardButton(if (syncInProgress) "Checking..." else if (session.supportsSync) "Check status" else "I've subscribed", primary = !session.supportsSync) {
+                            if (session.supportsSync) syncOnce() else restoreGooglePlayPurchases()
+                        }, LinearLayout.LayoutParams(0, dp(32), 1f).apply { setMargins(0, 0, dp(8), 0) })
+                    }
                     addView(syncCardButton("Sign out") { signOutSync() }, LinearLayout.LayoutParams(-2, dp(32)))
                 }
             }, LinearLayout.LayoutParams(-1, dp(32)).apply {

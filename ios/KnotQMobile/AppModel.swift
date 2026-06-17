@@ -21,6 +21,12 @@ final class AppModel: ObservableObject {
     // True while a destructive account action, such as cancelling a subscription,
     // is in flight, so Settings can disable its buttons.
     @Published var syncAccountActionInProgress = false
+    // Set from /v1/auth/account/status: the subscription is cancelled (won't renew)
+    // but sync stays active until the period ends, so Settings offers to re-enable.
+    @Published var subscriptionCancelled = false
+    // The provider backing the current subscription ("apple"/"google"/"web"), used to
+    // route the re-enable action to the store or our backend.
+    @Published var subscriptionProvider: String?
     @Published var syncInProgress = false
     @Published var googleAuthInProgress = false
     @Published var googleSyncInProgress = false
@@ -143,8 +149,30 @@ final class AppModel: ObservableObject {
         self.snapshot = snapshot
         KnotQWidgetSnapshotStore.publish(snapshot: snapshot)
         MobileNotificationScheduler.shared.reschedule(pendingNotifications)
+        MobileNotificationScheduler.shared.updateBadgeCount(Self.overdueBadgeCount(for: snapshot))
         configureGoogleSyncPolling(accountCount: snapshot.settings.googleAccountCount)
         BackgroundSyncCoordinator.shared.scheduleIfEligible(backgroundRefreshEligible)
+    }
+
+    /// Number of overdue items shown on the app icon badge. Completed-but-retained
+    /// occurrences (kept faded on the upcoming panel) are excluded so the badge
+    /// only counts things that still need attention.
+    static func overdueBadgeCount(for snapshot: MobileSnapshot) -> Int {
+        snapshot.calendar.overdue.filter { !$0.done }.count
+    }
+
+    /// Recompute the overdue badge from a fresh snapshot. Used by background
+    /// maintenance so the badge keeps up with time passing even when no remote
+    /// change arrives to drive a normal `refresh()`.
+    func refreshOverdueBadge() async {
+        guard let bridge else { return }
+        let today = Self.dateOnly(selectedDate)
+        let week = weekOffset
+        guard let snapshot = try? await bridge.perform({ try $0.snapshot(today: today, weekOffset: week) })
+        else {
+            return
+        }
+        MobileNotificationScheduler.shared.updateBadgeCount(Self.overdueBadgeCount(for: snapshot))
     }
 
     func search(_ query: String) {
@@ -403,6 +431,20 @@ final class AppModel: ObservableObject {
 
     func deleteItem(schemeID: String, itemID: String) {
         mutate { try $0.deleteItem(schemeID: schemeID, itemID: itemID) }
+    }
+
+    /// Transfer an item to another scheme, preserving its identity and
+    /// attributes (the mobile equivalent of the desktop event popup's scheme
+    /// switch). A no-op when source and target match.
+    func moveItemToScheme(sourceSchemeID: String, targetSchemeID: String, itemID: String) {
+        guard sourceSchemeID != targetSchemeID else { return }
+        mutate {
+            try $0.moveItemToScheme(
+                sourceSchemeID: sourceSchemeID,
+                targetSchemeID: targetSchemeID,
+                itemID: itemID
+            )
+        }
     }
 
     func deleteEventOccurrence(_ occurrence: MobileOccurrence, scope: EventOccurrenceScope) {
@@ -769,6 +811,25 @@ final class AppModel: ObservableObject {
         }
     }
 
+    /// Open Apple's Manage Subscriptions sheet. An auto-renewable subscription
+    /// bought through the App Store can only be cancelled there — neither the app
+    /// nor our backend is allowed to cancel it — so this is where an iOS user goes.
+    func openManageAppleSubscription() async {
+        let scene = UIApplication.shared.connectedScenes
+            .compactMap { $0 as? UIWindowScene }
+            .first { $0.activationState == .foregroundActive }
+            ?? UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first
+        guard let scene else {
+            errorMessage = "Open Settings → Apple Account → Subscriptions to manage your subscription."
+            return
+        }
+        do {
+            try await AppStore.showManageSubscriptions(in: scene)
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
     /// Turn off the sync entitlement for this account while keeping the account and
     /// the local workspace intact (the in-app "cancel subscription" action). The
     /// backend rotates the session, so we install the credentials it returns.
@@ -793,8 +854,16 @@ final class AppModel: ObservableObject {
                 throw SyncAuthError.message("Sync backend returned an invalid response.")
             }
             guard (200..<300).contains(http.statusCode) else {
-                let code = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
-                throw SyncAuthError.message(Self.accountActionErrorMessage(code?["code"] as? String))
+                let body = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
+                let code = body?["code"] as? String
+                // App Store / Play Store subscriptions can't be cancelled
+                // server-side; send the user to Apple's manage-subscriptions
+                // sheet, which is where the cancel actually happens on iOS.
+                if code == "cancel_in_app_store" {
+                    await openManageAppleSubscription()
+                    return
+                }
+                throw SyncAuthError.message(Self.accountActionErrorMessage(code))
             }
             let payload = try JSONDecoder().decode(SyncLoginResponse.self, from: data)
             installSyncSession(payload, apiBase: session.apiBase)
@@ -803,9 +872,110 @@ final class AppModel: ObservableObject {
             } else {
                 errorMessage = "Sync has been turned off for this account. Your local workspace stays on this device, and you can sign in again later to re-enable sync."
             }
+            await refreshAccountStatus()
         } catch {
             errorMessage = error.localizedDescription
         }
+    }
+
+    /// Undo a pending cancellation so the subscription renews again. Web
+    /// subscriptions un-cancel through our backend; Apple/Google renewals can only be
+    /// turned back on in their stores, so for those we open the store's
+    /// manage-subscriptions screen. On iOS the subscription is normally a StoreKit
+    /// (Apple) one, so an unknown provider routes to the App Store.
+    func reEnableSyncSubscription() async {
+        let provider = (subscriptionProvider ?? "").lowercased()
+        if provider == "google" {
+            openManagePlaySubscription()
+            return
+        }
+        if provider != "web" {
+            await openManageAppleSubscription()
+            return
+        }
+        guard syncSession != nil else { return }
+        syncAccountActionInProgress = true
+        defer { syncAccountActionInProgress = false }
+        guard await refreshSyncSessionIfNeeded(),
+              let session = syncSession,
+              let url = URL(string: "\(session.apiBase)/v1/auth/subscription/resume") else {
+            return
+        }
+        do {
+            var request = URLRequest(url: url)
+            request.httpMethod = "POST"
+            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            request.setValue("Bearer \(session.bearerToken)", forHTTPHeaderField: "Authorization")
+            request.httpBody = try JSONSerialization.data(withJSONObject: [:] as [String: Any])
+            let (data, response) = try await URLSession.shared.data(for: request)
+            guard let http = response as? HTTPURLResponse else {
+                throw SyncAuthError.message("Sync backend returned an invalid response.")
+            }
+            guard (200..<300).contains(http.statusCode) else {
+                let body = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
+                let code = body?["code"] as? String
+                if code == "resume_in_app_store" {
+                    await openManageAppleSubscription()
+                    return
+                }
+                if code == "resume_in_play_store" {
+                    openManagePlaySubscription()
+                    return
+                }
+                throw SyncAuthError.message(Self.accountActionErrorMessage(code))
+            }
+            let payload = try JSONDecoder().decode(SyncLoginResponse.self, from: data)
+            installSyncSession(payload, apiBase: session.apiBase)
+            errorMessage = "Your subscription will renew again."
+            await refreshAccountStatus()
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    /// Open Google Play's manage-subscriptions page (for the rare case an account's
+    /// sync subscription is a Play one being managed from an iOS device).
+    func openManagePlaySubscription() {
+        guard let url = URL(string: "https://play.google.com/store/account/subscriptions") else { return }
+        UIApplication.shared.open(url)
+    }
+
+    /// Read the authoritative subscription lifecycle from the backend so Settings can
+    /// reflect a cancelled-but-active subscription and offer to re-enable it.
+    func refreshAccountStatus() async {
+        guard let session = syncSession,
+              let url = URL(string: "\(session.apiBase)/v1/auth/account/status") else {
+            subscriptionCancelled = false
+            subscriptionProvider = nil
+            return
+        }
+        do {
+            var request = URLRequest(url: url)
+            request.httpMethod = "GET"
+            request.setValue("Bearer \(session.bearerToken)", forHTTPHeaderField: "Authorization")
+            let (data, response) = try await URLSession.shared.data(for: request)
+            guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
+                return
+            }
+            let status = try JSONDecoder().decode(AccountStatusPayload.self, from: data)
+            subscriptionProvider = status.subscriptionProvider
+            subscriptionCancelled =
+                status.supportsSync && (status.subscriptionState?.lowercased() == "cancelled")
+        } catch {
+            // Leave the last known state; the user can retry from Settings.
+        }
+    }
+
+    /// Re-check the sync entitlement and subscription lifecycle from the backend.
+    /// Called when the app is (re)opened so a subscription bought (or changed) while
+    /// it was closed — the common "subscribe, reopen the app, see it" flow — shows up
+    /// without waiting for the access token to expire. The forced refresh runs first
+    /// and rotates the session; the status read then uses the fresh token, so the two
+    /// never replay the single-use refresh token concurrently.
+    func refreshSubscriptionStatus() async {
+        guard syncSession != nil else { return }
+        await refreshEntitlement()
+        await refreshAccountStatus()
     }
 
     // MARK: - Subscriptions (StoreKit)
@@ -1026,6 +1196,9 @@ final class AppModel: ObservableObject {
     func runBackgroundMaintenance() async -> Bool {
         let remoteChanged = await runBackgroundSync()
         let googleSynced = await runBackgroundGoogleCalendarSyncIfDue()
+        // Refresh the badge before the task finishes (and the app may suspend)
+        // so the overdue count stays current even when nothing synced.
+        await refreshOverdueBadge()
         return remoteChanged || googleSynced
     }
 
@@ -1199,6 +1372,10 @@ final class AppModel: ObservableObject {
         syncPollTask?.cancel()
         guard syncSession != nil else { return }
         syncPollTask = Task { [weak self] in
+            // Pick up an entitlement change (a subscription bought on another device
+            // or the web) on launch/sign-in before the first sync, so it shows up
+            // without waiting for the access token to expire.
+            await self?.refreshSubscriptionStatus()
             await self?.syncOnce()
             while !Task.isCancelled {
                 try? await Task.sleep(nanoseconds: 30_000_000_000)
@@ -1271,6 +1448,14 @@ final class AppModel: ObservableObject {
             return "Subscription cancellation is not configured yet."
         case "cancel_in_app_store":
             return "Manage this App Store subscription from your Apple account subscriptions."
+        case "cancel_in_play_store":
+            return "Manage this subscription from your Google Play account subscriptions."
+        case "resume_in_app_store":
+            return "Re-enable this subscription from your Apple account subscriptions."
+        case "resume_in_play_store":
+            return "Re-enable this subscription from your Google Play account subscriptions."
+        case "no_active_subscription":
+            return "There's no active paid subscription on this account to change."
         default:
             return "The request to the sync API failed."
         }
@@ -1684,6 +1869,27 @@ private struct SyncLoginResponse: Decodable {
         expiresAt = try container.decode(String.self, forKey: .expiresAt)
         refreshToken = try container.decode(String.self, forKey: .refreshToken)
         refreshExpiresAt = try container.decodeIfPresent(String.self, forKey: .refreshExpiresAt)
+    }
+}
+
+/// The subset of /v1/auth/account/status the app needs to reflect a cancelled
+/// subscription. `subscription_state` is optional so older backends still decode.
+private struct AccountStatusPayload: Decodable {
+    let supportsSync: Bool
+    let subscriptionState: String?
+    let subscriptionProvider: String?
+
+    enum CodingKeys: String, CodingKey {
+        case supportsSync = "supports_sync"
+        case subscriptionState = "subscription_state"
+        case subscriptionProvider = "subscription_provider"
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        supportsSync = try container.decodeIfPresent(Bool.self, forKey: .supportsSync) ?? true
+        subscriptionState = try container.decodeIfPresent(String.self, forKey: .subscriptionState)
+        subscriptionProvider = try container.decodeIfPresent(String.self, forKey: .subscriptionProvider)
     }
 }
 

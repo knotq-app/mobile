@@ -282,6 +282,9 @@ interface MobileCore {
   void delete_item(string scheme_id, string item_id);
 
   [Throws=MobileError]
+  void move_item_to_scheme(string source_scheme_id, string target_scheme_id, string item_id);
+
+  [Throws=MobileError]
   void delete_event_occurrence(string scheme_id, string item_id, string occurrence_json, i32 occurrence_index, string scope);
 
   [Throws=MobileError]

@@ -236,6 +236,27 @@ struct EventEditorSheet: View {
                     }
                 }
 
+                // When editing, the scheme lives lower — below the schedule
+                // fields — so seeing or changing where a task lives is a
+                // deliberate, separate action from editing its details. Shown
+                // (disabled) for read-only events too, so the scheme is at least
+                // visible there.
+                if isEditing, let currentSchemeID = editingSchemeID {
+                    Section {
+                        EventSchemeTransferPicker(
+                            selection: $schemeID,
+                            currentSchemeID: currentSchemeID,
+                            currentSchemeName: editingOccurrence?.schemeName ?? "Scheme",
+                            theme: theme
+                        )
+                        .disabled(readOnly)
+                    } footer: {
+                        if !readOnly {
+                            Text("Move this task to a different scheme.")
+                        }
+                    }
+                }
+
                 if isEditing && !readOnly {
                     Section {
                         Button(role: .destructive) { requestDelete() } label: {
@@ -445,6 +466,15 @@ struct EventEditorSheet: View {
                 done: completed,
                 scope: scope
             )
+            // Apply the scheme transfer after the edits land, so the moved item
+            // carries them. No-op when the scheme was left unchanged.
+            if !readOnly, let target = schemeID, target != occurrence.schemeId {
+                model.moveItemToScheme(
+                    sourceSchemeID: occurrence.schemeId,
+                    targetSchemeID: target,
+                    itemID: occurrence.itemId
+                )
+            }
         } else {
             let anchorDay = startValue ?? endValue ?? start
             let schemeID = schemeID

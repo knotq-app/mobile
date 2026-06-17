@@ -49,6 +49,14 @@ final class MobileNotificationScheduler: NSObject, UNUserNotificationCenterDeleg
             .prefix(64)
         let desiredByID = Dictionary(uniqueKeysWithValues: desired.map { ($0.id, $0) })
 
+        // Reconcile only *pending* (not-yet-fired) requests. Delivered
+        // notifications are intentionally left in Notification Center so they
+        // persist until the user dismisses them or picks an action (Mark Done /
+        // Snooze) — iOS clears a delivered notification automatically when an
+        // action is chosen. Previously we also removed any delivered
+        // notification that wasn't in the desired set, but `desired` only ever
+        // contains *future* requests, so every notification that had already
+        // fired was treated as stale and wiped on the next refresh.
         center.getPendingNotificationRequests { [center, desiredByID] pending in
             let managedPending = pending
                 .map(\.identifier)
@@ -57,19 +65,16 @@ final class MobileNotificationScheduler: NSObject, UNUserNotificationCenterDeleg
                 center.removePendingNotificationRequests(withIdentifiers: managedPending)
             }
 
-            center.getDeliveredNotifications { [center, desiredByID] delivered in
-                let staleDelivered = delivered
-                    .map(\.request.identifier)
-                    .filter { $0.hasPrefix("knotq-") && desiredByID[$0] == nil }
-                if !staleDelivered.isEmpty {
-                    center.removeDeliveredNotifications(withIdentifiers: staleDelivered)
-                }
-
-                for request in desiredByID.values.sorted(by: { $0.fireAt < $1.fireAt }) {
-                    center.add(request.notificationRequest)
-                }
+            for request in desiredByID.values.sorted(by: { $0.fireAt < $1.fireAt }) {
+                center.add(request.notificationRequest)
             }
         }
+    }
+
+    /// Set the app icon badge to the current overdue count. `0` clears it.
+    @MainActor
+    func updateBadgeCount(_ count: Int) {
+        center.setBadgeCount(max(0, count)) { _ in }
     }
 
     private func notificationRequest(_ request: MobileNotificationRequest) -> PendingMobileNotification? {
@@ -129,7 +134,11 @@ final class MobileNotificationScheduler: NSObject, UNUserNotificationCenterDeleg
         willPresent notification: UNNotification,
         withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void
     ) {
-        completionHandler([.banner, .sound])
+        // Include `.list` so a notification that fires while the app is in the
+        // foreground is also added to Notification Center and persists there,
+        // matching how it behaves when delivered in the background. Without it
+        // foreground notifications only flash a banner and leave no trace.
+        completionHandler([.banner, .sound, .list])
     }
 
     nonisolated func userNotificationCenter(

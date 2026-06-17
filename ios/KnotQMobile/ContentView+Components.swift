@@ -116,12 +116,13 @@ struct OnboardingOverlay: View {
         .tint(theme.accent)
     }
 
-    /// Sign-in happens in the browser; advance to the guide once a session lands.
+    /// Sign-in happens in the browser; the account prompt is the last onboarding
+    /// step, so a landed session completes onboarding.
     private func authenticate(mode: SyncAuthMode) {
         Task {
             await model.beginBrowserSignIn(mode: mode)
             if model.syncSession != nil {
-                beginGuide()
+                onComplete()
             }
         }
     }
@@ -151,9 +152,9 @@ struct OnboardingOverlay: View {
                 .shadow(color: .black.opacity(0.18), radius: 8, y: 4)
 
             VStack(spacing: 6) {
-                Text("KnotQ")
+                Text("You're all set")
                     .font(.system(size: 30, weight: .bold))
-                Text("Local-first planning with optional sync.")
+                Text("One last step — choose how this workspace should sync.")
                     .font(.system(size: 15, weight: .medium))
                     .foregroundStyle(theme.textSoft)
                     .multilineTextAlignment(.center)
@@ -177,7 +178,7 @@ struct OnboardingOverlay: View {
                 }
 
                 Button {
-                    beginGuide()
+                    onComplete()
                 } label: {
                     Label("Local for Now", systemImage: "internaldrive")
                         .font(.system(size: 15, weight: .semibold))
@@ -190,7 +191,7 @@ struct OnboardingOverlay: View {
 
             Text("You can add or remove sync later from Settings.")
                 .font(.footnote)
-                .foregroundStyle(theme.textMuted)
+                .foregroundStyle(theme.textSoft)
                 .multilineTextAlignment(.center)
         }
         .padding(20)
@@ -221,7 +222,7 @@ struct OnboardingOverlay: View {
                         .foregroundStyle(theme.textPrimary)
                     Text(detail)
                         .font(.system(size: 12, weight: .medium))
-                        .foregroundStyle(theme.textMuted)
+                        .foregroundStyle(theme.textSoft)
                 }
 
                 Spacer()
@@ -342,18 +343,18 @@ struct OnboardingOverlay: View {
                 }
 
                 Button("Skip") {
-                    onComplete()
+                    finishTutorial()
                 }
                 .font(.system(size: 14, weight: .medium))
                 .buttonStyle(.plain)
-                .foregroundStyle(theme.textMuted)
+                .foregroundStyle(theme.textSoft)
 
                 Spacer(minLength: 0)
 
                 Button {
                     advance()
                 } label: {
-                    Text(isLast ? "Done" : "Next")
+                    Text(isLast ? (model.syncSession == nil ? "Continue" : "Done") : "Next")
                         .font(.system(size: 15, weight: .semibold))
                         .padding(.horizontal, 18)
                         .frame(height: 40)
@@ -373,17 +374,21 @@ struct OnboardingOverlay: View {
 
     // MARK: Navigation
 
-    private func beginGuide() {
-        onFocus(onboardingSteps[0].focusPane)
-        withAnimation(.snappy(duration: 0.24)) {
-            step = 0
-            phase = .guide
+    /// After the tutorial (Done / Skip): surface the sign-in / stay-local prompt,
+    /// unless the user is already signed in, in which case onboarding is complete.
+    private func finishTutorial() {
+        if model.syncSession != nil {
+            onComplete()
+        } else {
+            withAnimation(.snappy(duration: 0.24)) {
+                phase = .account
+            }
         }
     }
 
     private func advance() {
         if step >= onboardingSteps.count - 1 {
-            onComplete()
+            finishTutorial()
             return
         }
         let next = step + 1
@@ -394,12 +399,7 @@ struct OnboardingOverlay: View {
     }
 
     private func goBack() {
-        guard step > 0 else {
-            withAnimation(.snappy(duration: 0.22)) {
-                phase = .account
-            }
-            return
-        }
+        guard step > 0 else { return }
         let previous = step - 1
         onFocus(onboardingSteps[previous].focusPane)
         withAnimation(.snappy(duration: 0.22)) {

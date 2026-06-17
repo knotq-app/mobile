@@ -24,13 +24,20 @@ private struct SyncPanelState {
 struct SyncSettingsCard: View {
     @EnvironmentObject private var model: AppModel
     let theme: KnotQTheme
-    @Binding var showingSyncSignIn: Bool
     @Binding var showingCancelConfirm: Bool
 
     private var state: SyncPanelState {
+        if model.syncSession?.supportsSync == true && model.subscriptionCancelled {
+            return SyncPanelState(
+                badge: "Cancelled",
+                detail: "Sync stays active until your billing period ends. Re-enable to keep it.",
+                badgeBackground: theme.isDark ? Color(hex: 0xf59e0b).opacity(0.16) : Color(hex: 0xd97706).opacity(0.10),
+                badgeForeground: theme.isDark ? Color(hex: 0xf8d38d) : Color(hex: 0x9a4b00)
+            )
+        }
         if model.syncSession?.supportsSync == true {
             return SyncPanelState(
-                badge: "Enabled",
+                badge: "Subscribed",
                 detail: "Workspace sync is active for this account.",
                 badgeBackground: theme.isDark ? Color(hex: 0x30d158).opacity(0.15) : Color(hex: 0x1f8f4d).opacity(0.09),
                 badgeForeground: theme.isDark ? Color(hex: 0x9af0b6) : Color(hex: 0x176b38)
@@ -38,7 +45,7 @@ struct SyncSettingsCard: View {
         }
         if model.syncSession != nil {
             return SyncPanelState(
-                badge: "Upgrade",
+                badge: "Not Subscribed",
                 detail: "Subscribe to keep this workspace available across devices.",
                 badgeBackground: theme.isDark ? Color(hex: 0xf59e0b).opacity(0.16) : Color(hex: 0xd97706).opacity(0.10),
                 badgeForeground: theme.isDark ? Color(hex: 0xf8d38d) : Color(hex: 0x9a4b00)
@@ -117,35 +124,52 @@ struct SyncSettingsCard: View {
                 upgradeActions
             }
         } else {
+            // Straight to the browser in create-account mode — the hosted page
+            // handles "already have an account? sign in", so there's no need for
+            // an in-app chooser sheet first.
             Button("Sign in") {
-                showingSyncSignIn = true
+                Task { await model.beginBrowserSignIn(mode: .createAccount) }
             }
             .buttonStyle(SyncCardButtonStyle(theme: theme, prominence: .primary))
             .frame(maxWidth: .infinity)
+            .disabled(model.syncAuthInProgress)
         }
     }
 
     private var enabledActions: some View {
         HStack(spacing: 8) {
-            checkStatusButton
+            if model.subscriptionCancelled {
+                Button {
+                    Task { await model.reEnableSyncSubscription() }
+                } label: {
+                    Text("Re-enable")
+                        .lineLimit(1)
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(SyncCardButtonStyle(theme: theme, prominence: .primary))
+                .disabled(model.syncAccountActionInProgress)
+            } else {
+                checkStatusButton
+            }
             Spacer(minLength: 8)
             manageAccountMenu
         }
     }
 
     private var upgradeActions: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        HStack(spacing: 8) {
             if model.syncProducts.isEmpty {
                 Text("Loading subscription options…")
                     .font(.system(size: 11))
                     .foregroundStyle(theme.textMuted)
+                    .frame(maxWidth: .infinity, alignment: .leading)
             } else {
                 ForEach(model.syncProducts, id: \.id) { product in
                     Button {
                         Task { await model.purchaseSync(product) }
                     } label: {
                         HStack(spacing: 8) {
-                            Text(model.syncProducts.count == 1 ? "Subscribe to enable sync" : product.displayName)
+                            Text(model.syncProducts.count == 1 ? "Subscribe" : product.displayName)
                                 .lineLimit(1)
                             Spacer(minLength: 8)
                             Text(product.displayPrice)
@@ -157,22 +181,7 @@ struct SyncSettingsCard: View {
                 }
             }
 
-            ViewThatFits(in: .horizontal) {
-                HStack(spacing: 8) {
-                    restorePurchasesButton
-                    checkStatusButton
-                    Spacer(minLength: 8)
-                    manageAccountMenu
-                }
-                VStack(alignment: .leading, spacing: 8) {
-                    restorePurchasesButton
-                    HStack(spacing: 8) {
-                        checkStatusButton
-                        Spacer(minLength: 8)
-                        manageAccountMenu
-                    }
-                }
-            }
+            manageAccountMenu
         }
     }
 
@@ -180,15 +189,31 @@ struct SyncSettingsCard: View {
     /// menu so destructive options are reachable without dominating the card.
     private var manageAccountMenu: some View {
         Menu {
-            if model.syncSession?.supportsSync == true {
-                Button("Cancel Subscription") {
-                    showingCancelConfirm = true
+            // Restore only matters when this device shows no active subscription
+            // (new device / reinstall). AppStore.sync() forces an Apple Account
+            // auth prompt, so keep it out of the way until it's actually needed.
+            if model.syncSession?.supportsSync != true {
+                Button("Restore Purchases") {
+                    Task { await model.restorePurchases() }
                 }
+                .disabled(model.purchaseInProgress)
             }
             Button("Sign Out") {
                 model.signOutSync()
             }
-            Button("Delete Account on Website") {
+            if model.syncSession?.supportsSync == true {
+                if model.subscriptionCancelled {
+                    Button("Re-enable Subscription") {
+                        Task { await model.reEnableSyncSubscription() }
+                    }
+                    .disabled(model.syncAccountActionInProgress)
+                } else {
+                    Button("Cancel Subscription", role: .destructive) {
+                        showingCancelConfirm = true
+                    }
+                }
+            }
+            Button("Delete Account", role: .destructive) {
                 model.openOnlineAccountManagement()
             }
         } label: {
@@ -225,16 +250,6 @@ struct SyncSettingsCard: View {
         .disabled(model.syncInProgress || model.syncAccountActionInProgress)
     }
 
-    private var restorePurchasesButton: some View {
-        Button {
-            Task { await model.restorePurchases() }
-        } label: {
-            Text(model.purchaseInProgress ? "Restoring..." : "Restore purchases")
-        }
-        .buttonStyle(SyncCardButtonStyle(theme: theme))
-        .disabled(model.purchaseInProgress)
-    }
-
     private var syncPanelBackground: Color {
         theme.isDark ? Color(hex: 0x3b82f6).opacity(0.086) : Color(hex: 0xeaf2ff)
     }
@@ -244,8 +259,14 @@ struct SyncSettingsCard: View {
     }
 
     private func loadProductsIfNeeded() async {
-        guard let session = model.syncSession, !session.supportsSync else { return }
-        await model.loadSyncProducts()
+        guard let session = model.syncSession else { return }
+        // Refresh the subscription lifecycle so a cancelled-but-active subscription
+        // surfaces its re-enable affordance; load paywall products when not entitled.
+        if session.supportsSync {
+            await model.refreshAccountStatus()
+        } else {
+            await model.loadSyncProducts()
+        }
     }
 }
 
@@ -372,7 +393,6 @@ struct DesktopSettingsPane: View {
 struct SettingsForm: View {
     @EnvironmentObject private var model: AppModel
     let theme: KnotQTheme
-    @State private var showingSyncSignIn = false
     @State private var showingCancelConfirm = false
 
     var body: some View {
@@ -380,7 +400,6 @@ struct SettingsForm: View {
             Section {
                 SyncSettingsCard(
                     theme: theme,
-                    showingSyncSignIn: $showingSyncSignIn,
                     showingCancelConfirm: $showingCancelConfirm
                 )
             }
@@ -423,11 +442,6 @@ struct SettingsForm: View {
         .tint(theme.accent)
         .safeAreaInset(edge: .bottom) {
             Color.clear.frame(height: 96)
-        }
-        .sheet(isPresented: $showingSyncSignIn) {
-            SyncSignInSheet(theme: theme)
-                .environmentObject(model)
-                .presentationDetents([.medium])
         }
         .confirmationDialog(
             "Cancel sync subscription?",

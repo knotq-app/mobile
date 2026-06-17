@@ -165,10 +165,10 @@ final class DayTimelineUIKitView: UIView, UIGestureRecognizerDelegate, UIScrollV
         draftView.addSubview(draftTimeLabel)
         draftView.addSubview(draftTitleLabel)
         draftTimeLabel.textAlignment = .center
-        draftTimeLabel.font = .monospacedDigitSystemFont(ofSize: 9, weight: .regular)
+        draftTimeLabel.font = .monospacedDigitSystemFont(ofSize: 10, weight: .regular)
         draftTitleLabel.text = "New"
         draftTitleLabel.textAlignment = .center
-        draftTitleLabel.font = .systemFont(ofSize: 11, weight: .bold)
+        draftTitleLabel.font = .systemFont(ofSize: 12, weight: .bold)
         hideStickyIndicators()
 
         let pan = UIPanGestureRecognizer(target: self, action: #selector(handleDayPan(_:)))
@@ -291,6 +291,24 @@ final class DayTimelineUIKitView: UIView, UIGestureRecognizerDelegate, UIScrollV
         renderedBoundsSize = bounds.size
         layoutTitleButton()
         updateStickyIndicators()
+    }
+
+    override func didMoveToWindow() {
+        super.didMoveToWindow()
+        guard window != nil else { return }
+        // SwiftUI can drive the first `configure`/`layoutSubviews` before this
+        // view is in a window, which leaves the CALayer-drawn grid/events
+        // uncommitted until the next interaction — the "Daily opens fully black
+        // until you tap" bug. Worse, the stale layout leaves `currentGeometry()`
+        // wrong, so scheduling/drag hit-testing misfires until then. Once we're
+        // actually on screen, force a fresh render on the next runloop turn so
+        // the timeline paints (and its geometry settles) immediately.
+        needsFullRender = true
+        setNeedsLayout()
+        DispatchQueue.main.async { [weak self] in
+            guard let self, self.window != nil else { return }
+            self.renderAllIfReady(force: true)
+        }
     }
 
     private func layoutTitleButton() {
@@ -559,7 +577,7 @@ final class DayTimelineUIKitView: UIView, UIGestureRecognizerDelegate, UIScrollV
             // The very bottom of the timeline is the next midnight (00:00 / 12 AM).
             label.text = hourLabel(hour % Self.hoursInDay)
             label.textAlignment = .right
-            label.font = .systemFont(ofSize: 10, weight: .medium)
+            label.font = .systemFont(ofSize: 11, weight: .medium)
             label.textColor = UIColor(theme.textMuted)
             timeGutter.addSubview(label)
         }
@@ -657,6 +675,7 @@ final class DayTimelineUIKitView: UIView, UIGestureRecognizerDelegate, UIScrollV
     private func laidEvents(forDayIndex dayIndex: Int, geometry: DayTimelineGeometry) -> [DayTimelineLaidOccurrence] {
         struct Slot {
             let occurrence: MobileOccurrence
+            let occurrences: [MobileOccurrence]
             let startMinute: CGFloat
             let endMinute: CGFloat
         }
@@ -702,12 +721,41 @@ final class DayTimelineUIKitView: UIView, UIGestureRecognizerDelegate, UIScrollV
             component.removeAll(keepingCapacity: true)
         }
 
-        var slots: [Slot] = []
+        // Merge occurrences that share the exact same kind/start/end into one
+        // slot, mirroring the desktop calendar's exact-time `equal_groups`
+        // partition (see calendar/layout.rs). This keeps duplicates — or
+        // distinct events booked at the same time — in a single full-width
+        // block instead of splitting the column into thin slivers.
+        var groupOrder: [String] = []
+        var groups: [String: [MobileOccurrence]] = [:]
         for occurrence in occurrences(forDayIndex: dayIndex) {
-            guard let startMinute = minuteOfDay(occurrence.start) ?? minuteOfDay(occurrence.end) else { continue }
-            let minimumDuration: CGFloat = occurrence.kind == "event" ? 30 : 45
-            let endMinute = max(startMinute + minimumDuration, minuteOfDay(occurrence.end) ?? startMinute + minimumDuration)
-            slots.append(Slot(occurrence: occurrence, startMinute: startMinute, endMinute: endMinute))
+            guard (minuteOfDay(occurrence.start) ?? minuteOfDay(occurrence.end)) != nil else { continue }
+            let key = "\(occurrence.kind)|\(occurrence.start ?? "")|\(occurrence.end ?? "")"
+            if groups[key] == nil {
+                groups[key] = []
+                groupOrder.append(key)
+            }
+            groups[key]?.append(occurrence)
+        }
+
+        var slots: [Slot] = []
+        for key in groupOrder {
+            guard let members = groups[key], let primary = members.first,
+                  let startMinute = minuteOfDay(primary.start) ?? minuteOfDay(primary.end) else { continue }
+            let minimumDuration: CGFloat = primary.kind == "event" ? 30 : 45
+            var endMinute = max(startMinute + minimumDuration, minuteOfDay(primary.end) ?? startMinute + minimumDuration)
+            // When several same-time items share the block, reserve enough of the
+            // timeline span to fit every stacked row, so neighbouring blocks lane
+            // out around it instead of being overdrawn by the taller block.
+            if members.count > 1 {
+                let contentHeight = DayTimelineEventBlockView.contentHeight(
+                    for: primary,
+                    mergedCount: members.count,
+                    timeFormat: timeFormat
+                )
+                endMinute = max(endMinute, startMinute + contentHeight / Self.hourHeight * 60)
+            }
+            slots.append(Slot(occurrence: primary, occurrences: members, startMinute: startMinute, endMinute: endMinute))
         }
         slots.sort {
             if $0.startMinute == $1.startMinute {
@@ -747,7 +795,14 @@ final class DayTimelineUIKitView: UIView, UIGestureRecognizerDelegate, UIScrollV
             let subWidth = geometry.columnWidth / CGFloat(max(1, placement.laneCount))
             let y = Self.timeYOffset + slot.startMinute / 60 * Self.hourHeight
             let minimumHeight: CGFloat = slot.occurrence.kind == "event" ? 20 : 34
-            let height = max(minimumHeight, (slot.endMinute - slot.startMinute) / 60 * Self.hourHeight - 2)
+            var height = max(minimumHeight, (slot.endMinute - slot.startMinute) / 60 * Self.hourHeight - 2)
+            if slot.occurrences.count > 1 {
+                height = max(height, DayTimelineEventBlockView.contentHeight(
+                    for: slot.occurrence,
+                    mergedCount: slot.occurrences.count,
+                    timeFormat: timeFormat
+                ))
+            }
             let frame = CGRect(
                 x: columnX + CGFloat(placement.lane) * subWidth + 1,
                 y: y,
@@ -756,6 +811,7 @@ final class DayTimelineUIKitView: UIView, UIGestureRecognizerDelegate, UIScrollV
             )
             return DayTimelineLaidOccurrence(
                 occurrence: slot.occurrence,
+                mergedOccurrences: slot.occurrences,
                 dayIndex: dayIndex,
                 frame: frame,
                 startMinute: slot.startMinute,
@@ -779,7 +835,7 @@ final class DayTimelineUIKitView: UIView, UIGestureRecognizerDelegate, UIScrollV
         draftTimeLabel.textColor = textColor
         draftTitleLabel.textColor = textColor
         draftTimeLabel.frame = CGRect(x: 4, y: 3, width: draftView.bounds.width - 8, height: 12)
-        draftTitleLabel.frame = CGRect(x: 4, y: 15, width: draftView.bounds.width - 8, height: 15)
+        draftTitleLabel.frame = CGRect(x: 4, y: 15, width: draftView.bounds.width - 8, height: 16)
         draftView.isHidden = false
     }
 

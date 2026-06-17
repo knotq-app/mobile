@@ -12,9 +12,10 @@ extension NSAttributedString.Key {
 
 /// Inline markdown rendering constants shared across the editor.
 enum EditorMarkdownStyle {
-    /// Lavender highlight fill with white text, matching the desktop editor.
-    static let highlightBackground = UIColor(hex: 0x9B7FD4)
-    static let highlightForeground = UIColor.white
+    /// Translucent gold highlight fill (Obsidian-style), matching the desktop
+    /// editor. Kept semi-opaque so it tints the line without recoloring the
+    /// text — highlighted text keeps its normal color on light and dark themes.
+    static let highlightBackground = UIColor(hex: 0xFFD000).withAlphaComponent(0.4)
 }
 
 let editorRichClipboardType = "com.enigmadux.knotq.scheme-items.v1"
@@ -553,8 +554,9 @@ private func applyInlineStyle(_ style: InlineStyle, over range: NSRange, storage
         storage.addAttribute(.font, value: font, range: range)
     }
     if style.highlight {
+        // Only the translucent background is applied; the text keeps its base
+        // color (Obsidian-style), so it stays readable on light and dark themes.
         storage.addAttribute(.backgroundColor, value: EditorMarkdownStyle.highlightBackground, range: range)
-        storage.addAttribute(.foregroundColor, value: EditorMarkdownStyle.highlightForeground, range: range)
     }
 }
 

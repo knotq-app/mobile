@@ -552,6 +552,8 @@ public protocol MobileCoreProtocol: AnyObject, Sendable {
     
     func monthDays(year: Int32, month: UInt32) throws  -> [MobileCalendarDay]
     
+    func moveItemToScheme(sourceSchemeId: String, targetSchemeId: String, itemId: String) throws 
+    
     func moveNode(kind: String, id: String, folderId: String, position: Int32) throws 
     
     func pendingNotifications(now: String?, horizonDays: Int32) throws  -> [MobileNotificationRequest]
@@ -861,6 +863,16 @@ open func monthDays(year: Int32, month: UInt32)throws  -> [MobileCalendarDay]  {
         FfiConverterUInt32.lower(month),$0
     )
 })
+}
+    
+open func moveItemToScheme(sourceSchemeId: String, targetSchemeId: String, itemId: String)throws   {try rustCallWithError(FfiConverterTypeMobileError_lift) {
+    uniffi_knotq_mobile_core_fn_method_mobilecore_move_item_to_scheme(
+            self.uniffiCloneHandle(),
+        FfiConverterString.lower(sourceSchemeId),
+        FfiConverterString.lower(targetSchemeId),
+        FfiConverterString.lower(itemId),$0
+    )
+}
 }
     
 open func moveNode(kind: String, id: String, folderId: String, position: Int32)throws   {try rustCallWithError(FfiConverterTypeMobileError_lift) {
@@ -2851,6 +2863,9 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_knotq_mobile_core_checksum_method_mobilecore_month_days() != 13384) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_knotq_mobile_core_checksum_method_mobilecore_move_item_to_scheme() != 57475) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_knotq_mobile_core_checksum_method_mobilecore_move_node() != 12044) {

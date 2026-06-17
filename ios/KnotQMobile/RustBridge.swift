@@ -210,6 +210,10 @@ final class RustBridge: @unchecked Sendable {
         try core.deleteItem(schemeId: schemeID, itemId: itemID)
     }
 
+    func moveItemToScheme(sourceSchemeID: String, targetSchemeID: String, itemID: String) throws {
+        try core.moveItemToScheme(sourceSchemeId: sourceSchemeID, targetSchemeId: targetSchemeID, itemId: itemID)
+    }
+
     func deleteEventOccurrence(_ occurrence: MobileOccurrence, scope: EventOccurrenceScope) throws {
         try core.deleteEventOccurrence(
             schemeId: occurrence.schemeId,

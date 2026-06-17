@@ -63,6 +63,56 @@ struct CalendarSchemePicker: View {
     }
 }
 
+/// Edit-mode scheme control: transfers an existing event to another scheme.
+/// Unlike `CalendarSchemePicker` (create flow, where `nil` means today's daily),
+/// this binds to a real scheme id so the current scheme always shows as the
+/// selection — even a past daily or a read-only source that isn't in the
+/// movable list.
+struct EventSchemeTransferPicker: View {
+    @EnvironmentObject private var model: AppModel
+    @Binding var selection: String?
+    let currentSchemeID: String
+    let currentSchemeName: String
+    let theme: KnotQTheme
+
+    private var movableSchemes: [MobileScheme] {
+        model.snapshot?.schemes.filter { !$0.isDailyQueue && !$0.isReadOnly } ?? []
+    }
+
+    private var listIncludesCurrent: Bool {
+        model.todayDailySchemeID() == currentSchemeID
+            || movableSchemes.contains { $0.id == currentSchemeID }
+    }
+
+    private var currentSchemeColor: Color {
+        let scheme = model.scheme(id: currentSchemeID)
+        if scheme?.isDailyQueue ?? false {
+            return dailyQueueColor(dark: theme.isDark)
+        }
+        return schemeColor(scheme?.colorIndex ?? 0, dark: theme.isDark)
+    }
+
+    var body: some View {
+        Picker("Scheme", selection: $selection) {
+            if let dailyID = model.todayDailySchemeID() {
+                calendarSchemeRow(name: "Daily", color: dailyQueueColor(dark: theme.isDark))
+                    .tag(String?.some(dailyID))
+            }
+            ForEach(movableSchemes) { scheme in
+                calendarSchemeRow(name: scheme.displayName, color: schemeColor(scheme.colorIndex, dark: theme.isDark))
+                    .tag(String?.some(scheme.id))
+            }
+            // Keep the event's current scheme selectable even when it's filtered
+            // out of the movable list (a past daily, or a read-only source).
+            if !listIncludesCurrent {
+                calendarSchemeRow(name: currentSchemeName, color: currentSchemeColor)
+                    .tag(String?.some(currentSchemeID))
+            }
+        }
+        .pickerStyle(.navigationLink)
+    }
+}
+
 struct ScheduledDateFields: View {
     @Binding var kind: CalendarKind
     @Binding var hasStart: Bool
