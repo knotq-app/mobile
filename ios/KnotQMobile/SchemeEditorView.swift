@@ -5,6 +5,16 @@ import UIKit
 
 extension NSAttributedString.Key {
     static let knotqLine = NSAttributedString.Key("knotqLine")
+    /// Marks markdown marker characters (`*`, `**`, `==`, the leading `#`) so the
+    /// layout manager can collapse them on lines that don't contain the caret.
+    static let knotqMarker = NSAttributedString.Key("knotqMarker")
+}
+
+/// Inline markdown rendering constants shared across the editor.
+enum EditorMarkdownStyle {
+    /// Lavender highlight fill with white text, matching the desktop editor.
+    static let highlightBackground = UIColor(hex: 0x9B7FD4)
+    static let highlightForeground = UIColor.white
 }
 
 let editorRichClipboardType = "com.enigmadux.knotq.scheme-items.v1"
@@ -364,6 +374,8 @@ func setLineMeta(
     let attrs = EditorAttributes.bodyAttributes(meta: meta, theme: theme)
     storage.removeAttribute(.font, range: paragraphRange)
     storage.removeAttribute(.foregroundColor, range: paragraphRange)
+    storage.removeAttribute(.backgroundColor, range: paragraphRange)
+    storage.removeAttribute(.knotqMarker, range: paragraphRange)
     storage.removeAttribute(.paragraphStyle, range: paragraphRange)
     storage.removeAttribute(.strikethroughStyle, range: paragraphRange)
     storage.removeAttribute(.strikethroughColor, range: paragraphRange)
@@ -376,9 +388,10 @@ func setLineMeta(
     applyInlineMarkdownStyling(body: body, bodyRange: bodyRange, in: storage)
 }
 
-/// Applies heading enlargement or `*…*`/`_…_` emphasis over a paragraph body.
-/// Shared by `setLineMeta` and `buildAttributedString` so styling is identical
-/// whether a line is edited or freshly loaded.
+/// Applies heading enlargement or `**…**`/`*…*`/`==…==` emphasis over a paragraph
+/// body. Shared by `setLineMeta` and `buildAttributedString` so styling is
+/// identical whether a line is edited or freshly loaded. Marker characters are
+/// tagged `.knotqMarker` so the layout manager can collapse them off the caret.
 func applyInlineMarkdownStyling(body: String, bodyRange: NSRange, in storage: NSMutableAttributedString) {
     guard bodyRange.length > 0 else { return }
     if isMarkdownHeading(body) {
@@ -387,29 +400,151 @@ func applyInlineMarkdownStyling(body: String, bodyRange: NSRange, in storage: NS
             value: UIFont.systemFont(ofSize: DesktopEditorMetrics.headingFontSize, weight: .bold),
             range: bodyRange
         )
+        if let markerLen = headingMarkerLength(body), markerLen > 0 {
+            storage.addAttribute(
+                .knotqMarker,
+                value: true,
+                range: NSRange(location: bodyRange.location, length: min(markerLen, bodyRange.length))
+            )
+        }
     } else {
         applyEmphasis(body: body, lineLocation: bodyRange.location, storage: storage)
     }
 }
 
-/// Standard emphasis pass: `*…*` → bold, `_…_` → italic.
+/// UTF-16 length of a heading's leading `#`/`## ` marker (including one trailing
+/// space), or nil when `body` is not a heading.
+private func headingMarkerLength(_ body: String) -> Int? {
+    let ns = body as NSString
+    let hash = UInt16(UInt8(ascii: "#"))
+    var i = 0
+    func isWhitespace(_ unit: unichar) -> Bool {
+        Unicode.Scalar(unit).map { CharacterSet.whitespaces.contains($0) } ?? false
+    }
+    while i < ns.length, isWhitespace(ns.character(at: i)) { i += 1 }
+    var hashes = 0
+    while i < ns.length, ns.character(at: i) == hash { i += 1; hashes += 1 }
+    guard hashes > 0 else { return nil }
+    if i < ns.length, isWhitespace(ns.character(at: i)) { i += 1 }
+    return i
+}
+
+private struct InlineStyle {
+    var bold = false
+    var italic = false
+    var highlight = false
+}
+
+private enum InlineEmphasis {
+    case bold, italic, highlight
+    func apply(to style: inout InlineStyle) {
+        switch self {
+        case .bold: style.bold = true
+        case .italic: style.italic = true
+        case .highlight: style.highlight = true
+        }
+    }
+}
+
+/// The markdown delimiter starting at `index`, matched longest-first so `**`
+/// wins over `*`. Mirrors the desktop parser: `**`/`__` bold, `*`/`_` italic,
+/// `==` highlight.
+private func openDelimiter(_ ns: NSString, at index: Int, limit: Int) -> (token: String, emphasis: InlineEmphasis)? {
+    let candidates: [(String, InlineEmphasis)] = [
+        ("**", .bold), ("__", .bold), ("==", .highlight), ("*", .italic), ("_", .italic),
+    ]
+    for (token, emphasis) in candidates where matchesToken(ns, token, at: index, limit: limit) {
+        return (token, emphasis)
+    }
+    return nil
+}
+
+/// Emphasis pass matching the desktop parser. Delimiters are tagged
+/// `.knotqMarker`; wrapped content is styled (and nesting parses recursively).
 func applyEmphasis(body: String, lineLocation: Int, storage: NSMutableAttributedString) {
     let ns = body as NSString
-    var i = 0
-    while i < ns.length {
-        let ch = ns.substring(with: NSRange(location: i, length: 1))
-        if ch != "*" && ch != "_" { i += 1; continue }
-        let searchRange = NSRange(location: i + 1, length: ns.length - i - 1)
-        let close = ns.range(of: ch, options: [], range: searchRange)
-        if close.location == NSNotFound { i += 1; continue }
-        if close.location > i + 1 {
-            let range = NSRange(location: lineLocation + i + 1, length: close.location - i - 1)
-            let font: UIFont = ch == "*"
-                ? .systemFont(ofSize: DesktopEditorMetrics.textFontSize, weight: .bold)
-                : .italicSystemFont(ofSize: DesktopEditorMetrics.textFontSize)
-            storage.addAttribute(.font, value: font, range: range)
+    parseInlineEmphasis(
+        ns: ns,
+        range: NSRange(location: 0, length: ns.length),
+        style: InlineStyle(),
+        lineLocation: lineLocation,
+        storage: storage
+    )
+}
+
+private func parseInlineEmphasis(
+    ns: NSString,
+    range: NSRange,
+    style: InlineStyle,
+    lineLocation: Int,
+    storage: NSMutableAttributedString
+) {
+    let end = NSMaxRange(range)
+    var i = range.location
+    var plainStart = i
+
+    func flushPlain(upTo: Int) {
+        if upTo > plainStart {
+            applyInlineStyle(
+                style,
+                over: NSRange(location: lineLocation + plainStart, length: upTo - plainStart),
+                storage: storage
+            )
         }
-        i = close.location + 1
+    }
+
+    while i < end {
+        if let match = openDelimiter(ns, at: i, limit: end) {
+            let tokenLen = (match.token as NSString).length
+            let innerStart = i + tokenLen
+            let searchLen = end - innerStart
+            let close = searchLen > 0
+                ? ns.range(of: match.token, options: [], range: NSRange(location: innerStart, length: searchLen))
+                : NSRange(location: NSNotFound, length: 0)
+            if close.location != NSNotFound {
+                flushPlain(upTo: i)
+                storage.addAttribute(.knotqMarker, value: true, range: NSRange(location: lineLocation + i, length: tokenLen))
+                storage.addAttribute(.knotqMarker, value: true, range: NSRange(location: lineLocation + close.location, length: tokenLen))
+                if close.location > innerStart {
+                    var inner = style
+                    match.emphasis.apply(to: &inner)
+                    parseInlineEmphasis(
+                        ns: ns,
+                        range: NSRange(location: innerStart, length: close.location - innerStart),
+                        style: inner,
+                        lineLocation: lineLocation,
+                        storage: storage
+                    )
+                }
+                i = close.location + tokenLen
+                plainStart = i
+                continue
+            }
+        }
+        i += 1
+    }
+    flushPlain(upTo: end)
+}
+
+private func matchesToken(_ ns: NSString, _ token: String, at index: Int, limit: Int) -> Bool {
+    let t = token as NSString
+    guard index + t.length <= limit else { return false }
+    return ns.substring(with: NSRange(location: index, length: t.length)) == token
+}
+
+private func applyInlineStyle(_ style: InlineStyle, over range: NSRange, storage: NSMutableAttributedString) {
+    if style.bold || style.italic {
+        var traits: UIFontDescriptor.SymbolicTraits = []
+        if style.bold { traits.insert(.traitBold) }
+        if style.italic { traits.insert(.traitItalic) }
+        let base = UIFont.systemFont(ofSize: DesktopEditorMetrics.textFontSize)
+        let font = base.fontDescriptor.withSymbolicTraits(traits)
+            .map { UIFont(descriptor: $0, size: DesktopEditorMetrics.textFontSize) } ?? base
+        storage.addAttribute(.font, value: font, range: range)
+    }
+    if style.highlight {
+        storage.addAttribute(.backgroundColor, value: EditorMarkdownStyle.highlightBackground, range: range)
+        storage.addAttribute(.foregroundColor, value: EditorMarkdownStyle.highlightForeground, range: range)
     }
 }
 

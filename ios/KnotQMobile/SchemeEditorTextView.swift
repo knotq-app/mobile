@@ -164,8 +164,60 @@ final class EditorTextView: UITextView {
         let became = super.becomeFirstResponder()
         if became {
             coordinator?.refreshToolbarActiveMarker(in: self)
+            refreshMarkerVisibility(force: true)
         }
         return became
+    }
+
+    override func resignFirstResponder() -> Bool {
+        let resigned = super.resignFirstResponder()
+        if resigned {
+            // Collapse every marker once editing ends for a clean preview.
+            refreshMarkerVisibility(force: true)
+        }
+        return resigned
+    }
+
+    /// Reveals markdown markers on the caret's line(s) and collapses them
+    /// elsewhere (all markers when not editing). Re-generates only the glyphs of
+    /// the lines whose visibility changed unless `force` is set.
+    func refreshMarkerVisibility(force: Bool = false) {
+        let length = textStorage.length
+        guard length > 0 else { return }
+        let revealed: NSRange
+        if isFirstResponder {
+            let ns = textStorage.string as NSString
+            let sel = selectedRange
+            let startLoc = clampedCaret(sel.location, in: textStorage)
+            let endProbe = NSMaxRange(sel) > sel.location ? NSMaxRange(sel) - 1 : sel.location
+            let endLoc = clampedCaret(endProbe, in: textStorage)
+            let startPara = editableParagraphRange(in: ns, at: startLoc)
+            let endPara = editableParagraphRange(in: ns, at: endLoc)
+            revealed = NSUnionRange(startPara, endPara)
+        } else {
+            revealed = NSRange(location: 0, length: 0)
+        }
+
+        let previous = editorLayoutManager.revealedRange
+        guard force || !NSEqualRanges(previous, revealed) else { return }
+        editorLayoutManager.revealedRange = revealed
+
+        let invalidation = force
+            ? NSRange(location: 0, length: length)
+            : clampedRangeUnion(previous, revealed, length: length)
+        editorLayoutManager.invalidateGlyphs(
+            forCharacterRange: invalidation,
+            changeInLength: 0,
+            actualCharacterRange: nil
+        )
+        editorLayoutManager.ensureLayout(for: textContainer)
+        setNeedsDisplay()
+    }
+
+    private func clampedRangeUnion(_ a: NSRange, _ b: NSRange, length: Int) -> NSRange {
+        let lower = max(0, min(a.location, b.location))
+        let upper = min(length, max(NSMaxRange(a), NSMaxRange(b)))
+        return NSRange(location: lower, length: max(0, upper - lower))
     }
 
     override func layoutSubviews() {
@@ -261,6 +313,7 @@ final class EditorTextView: UITextView {
             theme: theme
         )
         layoutManager.ensureLayout(for: textContainer)
+        refreshMarkerVisibility(force: true)
         if placeCursorAtEnd {
             scrollRangeToVisible(NSRange(location: targetLocation, length: 0))
             // On first open the text view often has no real bounds yet, so the
@@ -362,6 +415,16 @@ final class EditorTextView: UITextView {
             return
         }
         super.paste(sender)
+    }
+
+    override func deleteBackward() {
+        // Backspace at column 0 of the first line: UITextView won't fire
+        // shouldChangeTextIn here (nothing precedes the caret), so clear the
+        // first line's marker directly instead of silently doing nothing.
+        if coordinator?.handleClearMarkerAtDocumentStart(in: self) == true {
+            return
+        }
+        super.deleteBackward()
     }
 
     func setCurrentMarker(_ marker: Marker, theme: KnotQTheme) {
@@ -989,10 +1052,21 @@ extension EditorCoordinator {
 
 private final class EditorLayoutManager: NSLayoutManager {
     weak var editorTextView: EditorTextView?
+    /// Character range whose markdown markers are revealed (the caret's line(s));
+    /// markers elsewhere collapse to zero width for an Obsidian-style preview.
+    var revealedRange = NSRange(location: 0, length: 0)
 
     override init() {
         super.init()
         delegate = self
+    }
+
+    /// A marker character is hidden when it is tagged `.knotqMarker` and falls
+    /// outside the revealed range.
+    func isHiddenMarker(at charIndex: Int) -> Bool {
+        guard let storage = textStorage, charIndex < storage.length else { return false }
+        guard !NSLocationInRange(charIndex, revealedRange) else { return false }
+        return storage.attribute(.knotqMarker, at: charIndex, effectiveRange: nil) != nil
     }
 
     @available(*, unavailable)
@@ -1008,6 +1082,44 @@ private final class EditorLayoutManager: NSLayoutManager {
 }
 
 extension EditorLayoutManager: NSLayoutManagerDelegate {
+    /// Flag hidden marker glyphs as control characters so the zero-advancement
+    /// action below collapses them without removing the characters from storage.
+    func layoutManager(
+        _ layoutManager: NSLayoutManager,
+        shouldGenerateGlyphs glyphs: UnsafePointer<CGGlyph>,
+        properties props: UnsafePointer<NSLayoutManager.GlyphProperty>,
+        characterIndexes charIndexes: UnsafePointer<Int>,
+        font aFont: UIFont,
+        forGlyphRange glyphRange: NSRange
+    ) -> Int {
+        var properties = [NSLayoutManager.GlyphProperty](repeating: [], count: glyphRange.length)
+        var changed = false
+        for i in 0..<glyphRange.length {
+            properties[i] = props[i]
+            if isHiddenMarker(at: charIndexes[i]) {
+                properties[i] = .controlCharacter
+                changed = true
+            }
+        }
+        guard changed else { return 0 }
+        layoutManager.setGlyphs(
+            glyphs,
+            properties: &properties,
+            characterIndexes: charIndexes,
+            font: aFont,
+            forGlyphRange: glyphRange
+        )
+        return glyphRange.length
+    }
+
+    func layoutManager(
+        _ layoutManager: NSLayoutManager,
+        shouldUse action: NSLayoutManager.ControlCharacterAction,
+        forControlCharacterAt charIndex: Int
+    ) -> NSLayoutManager.ControlCharacterAction {
+        isHiddenMarker(at: charIndex) ? .zeroAdvancement : action
+    }
+
     func layoutManager(_ layoutManager: NSLayoutManager, lineSpacingAfterGlyphAt glyphIndex: Int, withProposedLineFragmentRect rect: CGRect) -> CGFloat {
         0
     }

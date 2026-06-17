@@ -206,6 +206,8 @@ final class EditorCoordinator: NSObject, UITextViewDelegate, @preconcurrency NST
             }
         }
         refreshToolbarActiveMarker(in: textView)
+        // Reveal markers on the line the caret just moved to, hide the rest.
+        (textView as? EditorTextView)?.refreshMarkerVisibility()
     }
 
     /// Highlights the toolbar marker button matching the caret's line.
@@ -267,6 +269,42 @@ final class EditorCoordinator: NSObject, UITextViewDelegate, @preconcurrency NST
         let para = editableParagraphRange(in: ns, at: caret)
         guard caret == para.location, para.location > 0 else { return false }
         let meta = lineMeta(at: para.location, in: storage)
+        guard meta.marker != .blank else { return false }
+        let cleared = LineMeta(
+            marker: .blank,
+            indent: meta.indent,
+            done: false,
+            itemID: meta.itemID,
+            annotation: nil,
+            media: meta.media
+        )
+        suppress {
+            storage.beginEditing()
+            setLineMeta(cleared, onParagraph: para, in: storage, theme: theme)
+            storage.endEditing()
+        }
+        view.typingAttributes = EditorAttributes.bodyAttributes(meta: cleared, theme: theme)
+        autoBulletUndo = nil
+        markDirty()
+        refreshEmpty()
+        return true
+    }
+
+    /// Backspace at the very start of the document (column 0 of the first line).
+    /// UITextView delivers no `shouldChangeTextIn` there — there is no prior
+    /// character to delete — so `handleClearMarkerBackspace` never sees it and the
+    /// first line's marker can't be cleared the way every other line's can. The
+    /// `EditorTextView.deleteBackward` override routes that keystroke here so the
+    /// first line clears its marker too, matching desktop and the rest of the doc.
+    /// Returns true when it consumed the backspace (marker cleared).
+    func handleClearMarkerAtDocumentStart(in view: EditorTextView) -> Bool {
+        guard !readOnly else { return false }
+        let selection = view.selectedRange
+        guard selection.location == 0, selection.length == 0 else { return false }
+        let storage = view.textStorage
+        let para = editableParagraphRange(in: storage.string as NSString, at: 0)
+        guard para.location == 0 else { return false }
+        let meta = lineMeta(at: 0, in: storage)
         guard meta.marker != .blank else { return false }
         let cleared = LineMeta(
             marker: .blank,
