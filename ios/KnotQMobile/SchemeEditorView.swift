@@ -392,12 +392,22 @@ func setLineMeta(
 /// body. Shared by `setLineMeta` and `buildAttributedString` so styling is
 /// identical whether a line is edited or freshly loaded. Marker characters are
 /// tagged `.knotqMarker` so the layout manager can collapse them off the caret.
-func applyInlineMarkdownStyling(body: String, bodyRange: NSRange, in storage: NSMutableAttributedString) {
+func applyInlineMarkdownStyling(
+    body: String,
+    bodyRange: NSRange,
+    in storage: NSMutableAttributedString,
+    enlargeHeadings: Bool = true
+) {
     guard bodyRange.length > 0 else { return }
     if isMarkdownHeading(body) {
+        // The compact daily preview keeps headings at body size (bold) so a
+        // larger font doesn't overflow its fixed row height.
+        let headingSize = enlargeHeadings
+            ? DesktopEditorMetrics.headingFontSize
+            : DesktopEditorMetrics.textFontSize
         storage.addAttribute(
             .font,
-            value: UIFont.systemFont(ofSize: DesktopEditorMetrics.headingFontSize, weight: .bold),
+            value: UIFont.systemFont(ofSize: headingSize, weight: .bold),
             range: bodyRange
         )
         if let markerLen = headingMarkerLength(body), markerLen > 0 {

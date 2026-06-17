@@ -422,12 +422,10 @@ final class HomeDailyPreviewRendererView: UIView {
     }
 
     private func textHeight(for item: MobileItem, width: CGFloat) -> CGFloat {
-        let text = item.text.isEmpty ? item.kind.capitalized : item.text
         let availableWidth = max(1, width - Metrics.trailingInset)
-        let bounds = (text as NSString).boundingRect(
+        let bounds = displayAttributedText(for: item).boundingRect(
             with: CGSize(width: availableWidth, height: .greatestFiniteMagnitude),
             options: [.usesLineFragmentOrigin, .usesFontLeading],
-            attributes: textAttributes(for: item),
             context: nil
         )
         let lines = min(Metrics.maxTextLines, max(1, ceil(bounds.height / Metrics.textLineHeight)))
@@ -454,13 +452,33 @@ final class HomeDailyPreviewRendererView: UIView {
         return attrs
     }
 
+    /// The item body styled like the editor's collapsed (no-caret) preview:
+    /// `**bold**`/`*italic*`/`==highlight==` rendered, with the markers removed.
+    private func displayAttributedText(for item: MobileItem) -> NSAttributedString {
+        let text = item.text.isEmpty ? item.kind.capitalized : item.text
+        let result = NSMutableAttributedString(string: text, attributes: textAttributes(for: item))
+        applyInlineMarkdownStyling(
+            body: text,
+            bodyRange: NSRange(location: 0, length: (text as NSString).length),
+            in: result,
+            enlargeHeadings: false
+        )
+        var markers: [NSRange] = []
+        result.enumerateAttribute(.knotqMarker, in: NSRange(location: 0, length: result.length)) { value, range, _ in
+            if value != nil { markers.append(range) }
+        }
+        // Delete from the back so earlier ranges keep their offsets.
+        for range in markers.sorted(by: { $0.location > $1.location }) {
+            result.deleteCharacters(in: range)
+        }
+        return result
+    }
+
     private func drawText(_ row: LayoutRow, width: CGFloat) {
-        let text = row.row.item.text.isEmpty ? row.row.item.kind.capitalized : row.row.item.text
         let rect = CGRect(x: 0, y: row.y, width: max(1, width - Metrics.trailingInset), height: row.textHeight)
-        (text as NSString).draw(
+        displayAttributedText(for: row.row.item).draw(
             with: rect,
             options: [.usesLineFragmentOrigin, .usesFontLeading, .truncatesLastVisibleLine],
-            attributes: textAttributes(for: row.row.item),
             context: nil
         )
     }
