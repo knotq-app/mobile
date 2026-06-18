@@ -743,7 +743,7 @@ final class EditorCoordinator: NSObject, UITextViewDelegate, @preconcurrency NST
     /// equality of the .knotqLine value and resets identity on those.
     private func normalizeAffectedParagraphs(in storage: NSTextStorage, around editedRange: NSRange) {
         let ns = storage.string as NSString
-        let editParaRange = ns.paragraphRange(for: editedRange)
+        let editParaRange = paragraphRangeCovering(editedRange, in: ns)
         for paragraph in paragraphRanges(in: ns, intersecting: editParaRange) {
             let fullRange = paragraph.fullRange
             guard fullRange.length > 0 else { continue }

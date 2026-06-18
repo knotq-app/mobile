@@ -2117,8 +2117,8 @@ final class EditorTextView: UITextView {
 
     private func paragraphGeometry(for paragraph: EditorParagraphRange, origin: CGPoint) -> (glyphRange: NSRange, fragments: [CGRect], bounds: CGRect)? {
         let characterRange = paragraph.lineRange.length > 0 ? paragraph.lineRange : paragraph.fullRange
-        guard characterRange.length > 0 else { return nil }
-        let glyphRange = layoutManager.glyphRange(forCharacterRange: characterRange, actualCharacterRange: nil)
+        guard let safeCharacterRange = nonEmptyTextRange(characterRange, length: textStorage.length) else { return nil }
+        let glyphRange = layoutManager.glyphRange(forCharacterRange: safeCharacterRange, actualCharacterRange: nil)
         guard layoutManager.numberOfGlyphs > 0, glyphRange.location < layoutManager.numberOfGlyphs else { return nil }
         var fragments: [CGRect] = []
         layoutManager.enumerateLineFragments(forGlyphRange: glyphRange) { _, usedRect, _, fragmentGlyphRange, _ in
@@ -2173,14 +2173,21 @@ final class EditorLayoutManager: NSLayoutManager {
             revealedRange = range
             return false
         }
-        let previous = revealedRange
-        guard force || !NSEqualRanges(previous, range) else { return false }
+        let length = storage.length
+        let range = clampedTextRange(range, length: length)
+        let previous = clampedTextRange(revealedRange, length: length)
+        guard force || !NSEqualRanges(previous, range) else {
+            revealedRange = range
+            return false
+        }
         revealedRange = range
 
-        let length = storage.length
         let invalidation = force
             ? NSRange(location: 0, length: length)
             : rangeUnion(previous, range, length: length)
+        guard invalidation.length > 0, invalidation.location < length else {
+            return true
+        }
         invalidateGlyphs(forCharacterRange: invalidation, changeInLength: 0, actualCharacterRange: nil)
         invalidateLayout(forCharacterRange: invalidation, actualCharacterRange: nil)
         if let container = textContainers.first {
@@ -2198,7 +2205,7 @@ final class EditorLayoutManager: NSLayoutManager {
     /// A marker character is hidden when it is tagged `.knotqMarker` and falls
     /// outside the revealed range.
     func isHiddenMarker(at charIndex: Int) -> Bool {
-        guard let storage = textStorage, charIndex < storage.length else { return false }
+        guard let storage = textStorage, charIndex >= 0, charIndex < storage.length else { return false }
         guard !NSLocationInRange(charIndex, revealedRange) else { return false }
         return storage.attribute(.knotqMarker, at: charIndex, effectiveRange: nil) != nil
     }

@@ -160,6 +160,21 @@ final class MarkerConcealmentTests: XCTestCase {
         XCTAssertTrue(layoutManager.setRevealedRange(range, force: true), "force overrides the no-op guard")
     }
 
+    func testSetRevealedRangeClampsEndOfDocumentRangesAfterTextShortens() {
+        let (storage, layoutManager, container) = makeStack("**bold** tail\n")
+        XCTAssertTrue(layoutManager.setRevealedRange(NSRange(location: storage.length, length: 0), force: false))
+        layoutManager.ensureLayout(for: container)
+
+        storage.setAttributedString(NSAttributedString(
+            string: "\n",
+            attributes: [.font: UIFont.systemFont(ofSize: 17)]
+        ))
+
+        XCTAssertFalse(layoutManager.setRevealedRange(NSRange(location: storage.length, length: 0), force: false))
+        layoutManager.ensureLayout(for: container)
+        XCTAssertLessThanOrEqual(layoutManager.revealedRange.location, storage.length)
+    }
+
     /// Collapsing markers is purely visual — the characters stay in storage so
     /// edits and persistence still see the literal `**…**`.
     func testHidingMarkersDoesNotMutateText() {

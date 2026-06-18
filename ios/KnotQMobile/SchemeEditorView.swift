@@ -491,11 +491,12 @@ func paragraphMeta(of fullRange: NSRange, in storage: NSAttributedString) -> Lin
 /// Returns the body text of `paragraphRange` (without trailing newline).
 func bodyText(paragraphRange: NSRange, in storage: NSAttributedString) -> String {
     let ns = storage.string as NSString
-    let bodyLen = paragraphRange.length > 0 && ns.character(at: NSMaxRange(paragraphRange) - 1) == 10
-        ? paragraphRange.length - 1
-        : paragraphRange.length
+    guard let safeRange = nonEmptyTextRange(paragraphRange, length: ns.length) else { return "" }
+    let bodyLen = safeRange.length > 0 && ns.character(at: NSMaxRange(safeRange) - 1) == 10
+        ? safeRange.length - 1
+        : safeRange.length
     guard bodyLen > 0 else { return "" }
-    return ns.substring(with: NSRange(location: paragraphRange.location, length: bodyLen))
+    return ns.substring(with: NSRange(location: safeRange.location, length: bodyLen))
 }
 
 /// Sets `meta` uniformly across `paragraphRange` (body + trailing newline) and
@@ -507,20 +508,20 @@ func setLineMeta(
     in storage: NSTextStorage,
     theme: KnotQTheme
 ) {
-    guard paragraphRange.length > 0 else { return }
-    let body = bodyText(paragraphRange: paragraphRange, in: storage)
+    guard let safeRange = nonEmptyTextRange(paragraphRange, length: storage.length) else { return }
+    let body = bodyText(paragraphRange: safeRange, in: storage)
     let collapse = shouldCollapseTextBand(body: body, meta: meta)
     let attrs = EditorAttributes.bodyAttributes(meta: meta, theme: theme, collapseTextBand: collapse)
-    storage.removeAttribute(.font, range: paragraphRange)
-    storage.removeAttribute(.foregroundColor, range: paragraphRange)
-    storage.removeAttribute(.backgroundColor, range: paragraphRange)
-    storage.removeAttribute(.knotqMarker, range: paragraphRange)
-    storage.removeAttribute(.paragraphStyle, range: paragraphRange)
-    storage.removeAttribute(.strikethroughStyle, range: paragraphRange)
-    storage.removeAttribute(.strikethroughColor, range: paragraphRange)
-    storage.addAttributes(attrs, range: paragraphRange)
+    storage.removeAttribute(.font, range: safeRange)
+    storage.removeAttribute(.foregroundColor, range: safeRange)
+    storage.removeAttribute(.backgroundColor, range: safeRange)
+    storage.removeAttribute(.knotqMarker, range: safeRange)
+    storage.removeAttribute(.paragraphStyle, range: safeRange)
+    storage.removeAttribute(.strikethroughStyle, range: safeRange)
+    storage.removeAttribute(.strikethroughColor, range: safeRange)
+    storage.addAttributes(attrs, range: safeRange)
     let bodyRange = NSRange(
-        location: paragraphRange.location,
+        location: safeRange.location,
         length: (body as NSString).length
     )
     applyInlineMarkdownStyling(body: body, bodyRange: bodyRange, in: storage)
@@ -703,6 +704,37 @@ private func applyInlineStyle(_ style: InlineStyle, over range: NSRange, storage
 func clampedCaret(_ location: Int, in storage: NSAttributedString) -> Int {
     guard storage.length > 0 else { return 0 }
     return min(max(0, location), storage.length - 1)
+}
+
+func clampedTextRange(_ range: NSRange, length: Int) -> NSRange {
+    guard length > 0 else { return NSRange(location: 0, length: 0) }
+    guard range.location != NSNotFound else {
+        return NSRange(location: length, length: 0)
+    }
+    let location = min(max(0, range.location), length)
+    let rawEnd = range.length > 0 ? range.location + range.length : range.location
+    let end = min(max(location, rawEnd), length)
+    return NSRange(location: location, length: end - location)
+}
+
+func nonEmptyTextRange(_ range: NSRange, length: Int) -> NSRange? {
+    let safeRange = clampedTextRange(range, length: length)
+    guard safeRange.length > 0, safeRange.location < length else { return nil }
+    return safeRange
+}
+
+func paragraphRangeCovering(_ range: NSRange, in ns: NSString) -> NSRange {
+    guard ns.length > 0 else { return NSRange(location: 0, length: 0) }
+    let safeRange = clampedTextRange(range, length: ns.length)
+    let startProbe = min(safeRange.location, ns.length - 1)
+    let endProbe = min(
+        safeRange.length > 0 ? NSMaxRange(safeRange) - 1 : safeRange.location,
+        ns.length - 1
+    )
+    return NSUnionRange(
+        ns.paragraphRange(for: NSRange(location: startProbe, length: 0)),
+        ns.paragraphRange(for: NSRange(location: endProbe, length: 0))
+    )
 }
 
 func extractEdits(from storage: NSAttributedString) -> [MobileItemEdit] {
@@ -950,11 +982,12 @@ func editableParagraphRange(in ns: NSString, at location: Int) -> NSRange {
 }
 
 func lineRange(from paragraphRange: NSRange, in ns: NSString) -> NSRange {
-    var length = paragraphRange.length
-    if length > 0 && ns.character(at: NSMaxRange(paragraphRange) - 1) == 10 {
+    let safeRange = clampedTextRange(paragraphRange, length: ns.length)
+    var length = safeRange.length
+    if length > 0 && ns.character(at: NSMaxRange(safeRange) - 1) == 10 {
         length -= 1
     }
-    return NSRange(location: paragraphRange.location, length: length)
+    return NSRange(location: safeRange.location, length: length)
 }
 
 func rangesOverlapOrTouch(_ a: NSRange, _ b: NSRange) -> Bool {
