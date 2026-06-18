@@ -1683,7 +1683,7 @@ final class EditorTextView: UITextView {
             theme: theme
         )
         if !isFirstResponder {
-            becomeFirstResponder()
+            _ = becomeFirstResponder()
         }
         refreshMarkerVisibility(force: true)
         scrollRangeToVisible(NSRange(location: clampedTarget, length: 0))
