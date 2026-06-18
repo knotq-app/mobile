@@ -612,7 +612,7 @@ impl MobileCore {
         self.lock()?
             .mutate_table(parse_id(&scheme_id)?, parse_id(&item_id)?, |table| {
                 let row = position_from_i32(row)?;
-                table.insert_row((row + 1).min(table.row_count()));
+                table.insert_row(row.min(table.row_count()));
                 Ok(())
             })
             .map_err(Into::into)
@@ -641,7 +641,7 @@ impl MobileCore {
         self.lock()?
             .mutate_table(parse_id(&scheme_id)?, parse_id(&item_id)?, |table| {
                 let column = position_from_i32(column)?;
-                let at = (column + 1).min(table.column_count());
+                let at = column.min(table.column_count());
                 table.insert_column(at, format!("Column {}", at + 1));
                 Ok(())
             })
@@ -4812,9 +4812,9 @@ mod tests {
             "Q1".to_string(),
         )
         .expect("edit cell");
-        core.insert_table_row(scheme_id.clone(), table_item.id.clone(), 0)
+        core.insert_table_row(scheme_id.clone(), table_item.id.clone(), 1)
             .expect("insert row");
-        core.insert_table_column(scheme_id.clone(), table_item.id.clone(), 1)
+        core.insert_table_column(scheme_id.clone(), table_item.id.clone(), 2)
             .expect("insert column");
         core.set_table_column_name(
             scheme_id.clone(),

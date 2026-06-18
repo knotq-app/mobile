@@ -94,7 +94,8 @@ enum EditorCellCommitReason {
 
 /// Table structure ops reachable from the cell editor's accessory bar.
 enum EditorCellStructureAction {
-    case insertRow, deleteRow, insertColumn, deleteColumn
+    case insertRowAbove, insertRowBelow, deleteRow
+    case insertColumnLeft, insertColumnRight, deleteColumn
 }
 
 /// A single-line editable field overlaid exactly on a drawn table cell. Replaces
@@ -124,7 +125,6 @@ final class EditorTableCellEditor: UIView, UITextFieldDelegate {
     private var committedText: String
     private var didCommit = false
     private let theme: KnotQTheme
-    private weak var contextLabel: UILabel?
     private weak var rowMenuButton: UIButton?
 
     init(hit: EditorTableCellHit, theme: KnotQTheme) {
@@ -153,9 +153,8 @@ final class EditorTableCellEditor: UIView, UITextFieldDelegate {
         addSubview(field)
     }
 
-    /// Bar above the keyboard for the in-place cell editor. It keeps frequent
-    /// actions direct (done / previous / next) and moves row/column structure ops
-    /// into menus so destructive actions are less cramped and less accidental.
+    /// Bar above the keyboard for the in-place cell editor. Keep it tight:
+    /// dismiss keyboard plus row/column structure menus.
     private func makeAccessory() -> UIView {
         let height: CGFloat = UIDevice.current.userInterfaceIdiom == .phone ? 56 : 50
         let container = EditorTableInputAccessoryView(height: height)
@@ -192,23 +191,12 @@ final class EditorTableCellEditor: UIView, UITextFieldDelegate {
             self?.onRequestEnd?()
         }
 
-        let context = UILabel()
-        context.font = .systemFont(ofSize: 12, weight: .semibold)
-        context.textColor = UIColor(theme.textDim)
-        context.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
-        contextLabel = context
-
-        let previousButton = accessoryIconButton("chevron.left", label: "Previous cell") { [weak self] in
-            self?.commit(reason: .movePrevious)
-        }
-        let nextButton = accessoryIconButton("chevron.right", label: "Next cell") { [weak self] in
-            self?.commit(reason: .moveNext)
-        }
         let rowMenu = structureMenuButton(
             title: "Rows",
             systemImage: "tablecells",
             actions: [
-                (title: "Insert Row Below", systemImage: "plus", action: .insertRow, destructive: false),
+                (title: "Insert Row Above", systemImage: "arrow.up.to.line", action: .insertRowAbove, destructive: false),
+                (title: "Insert Row Below", systemImage: "arrow.down.to.line", action: .insertRowBelow, destructive: false),
                 (title: "Delete Row", systemImage: "trash", action: .deleteRow, destructive: true)
             ]
         )
@@ -216,7 +204,8 @@ final class EditorTableCellEditor: UIView, UITextFieldDelegate {
             title: "Columns",
             systemImage: "tablecells",
             actions: [
-                (title: "Insert Column Right", systemImage: "plus", action: .insertColumn, destructive: false),
+                (title: "Insert Column Left", systemImage: "arrow.left.to.line", action: .insertColumnLeft, destructive: false),
+                (title: "Insert Column Right", systemImage: "arrow.right.to.line", action: .insertColumnRight, destructive: false),
                 (title: "Delete Column", systemImage: "trash", action: .deleteColumn, destructive: true)
             ]
         )
@@ -226,9 +215,7 @@ final class EditorTableCellEditor: UIView, UITextFieldDelegate {
         spacer.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
 
         stack.addArrangedSubview(dismissButton)
-        stack.addArrangedSubview(context)
         stack.addArrangedSubview(spacer)
-        stack.addArrangedSubview(buttonGroup([previousButton, nextButton]))
         stack.addArrangedSubview(rowMenu)
         stack.addArrangedSubview(columnMenu)
 
@@ -289,26 +276,7 @@ final class EditorTableCellEditor: UIView, UITextFieldDelegate {
         return button
     }
 
-    private func buttonGroup(_ buttons: [UIButton]) -> UIStackView {
-        let group = UIStackView(arrangedSubviews: buttons)
-        group.axis = .horizontal
-        group.alignment = .center
-        group.spacing = 0
-        group.backgroundColor = UIColor(theme.buttonBg).withAlphaComponent(theme.isDark ? 0.48 : 0.62)
-        group.layer.cornerRadius = 8
-        group.layer.cornerCurve = .continuous
-        group.isLayoutMarginsRelativeArrangement = true
-        group.layoutMargins = UIEdgeInsets(top: 0, left: 1, bottom: 0, right: 1)
-        return group
-    }
-
-    private func contextText(for hit: EditorTableCellHit) -> String {
-        hit.isHeader ? "Header C\(hit.column + 1)" : "Cell R\(hit.row + 1) C\(hit.column + 1)"
-    }
-
     private func updateAccessoryState() {
-        contextLabel?.text = contextText(for: hit)
-        contextLabel?.sizeToFit()
         let rowsEditable = !hit.isHeader
         rowMenuButton?.isEnabled = rowsEditable
         rowMenuButton?.alpha = rowsEditable ? 1 : 0.35
@@ -317,9 +285,9 @@ final class EditorTableCellEditor: UIView, UITextFieldDelegate {
     private func runStructure(_ action: EditorCellStructureAction) {
         if hit.isHeader {
             switch action {
-            case .insertRow, .deleteRow:
+            case .insertRowAbove, .insertRowBelow, .deleteRow:
                 return
-            case .insertColumn, .deleteColumn:
+            case .insertColumnLeft, .insertColumnRight, .deleteColumn:
                 break
             }
         }
@@ -530,9 +498,9 @@ final class EditorTextView: UITextView {
     var onTableCellCommit: ((EditorTableCellHit, String) -> Void)?
     /// Table structure ops invoked from the cell editor's keyboard accessory
     /// (row/column at the edited cell). Each takes the active cell hit.
-    var onTableInsertRow: ((EditorTableCellHit) -> Void)?
+    var onTableInsertRow: ((EditorTableCellHit, Int) -> Void)?
     var onTableDeleteRow: ((EditorTableCellHit) -> Void)?
-    var onTableInsertColumn: ((EditorTableCellHit) -> Void)?
+    var onTableInsertColumn: ((EditorTableCellHit, Int) -> Void)?
     var onTableDeleteColumn: ((EditorTableCellHit) -> Void)?
 
     init() {
@@ -1782,8 +1750,6 @@ final class EditorTextView: UITextView {
                 in: NSRange(location: insertionLocation, length: 0),
                 with: NSAttributedString(string: "\n", attributes: attrs)
             )
-            let paragraph = editableParagraphRange(in: self.textStorage.string as NSString, at: insertionLocation)
-            setLineMeta(blankMeta, onParagraph: paragraph, in: self.textStorage, theme: theme)
             self.textStorage.endEditing()
         }
         if let coordinator {
@@ -1950,9 +1916,15 @@ final class EditorTextView: UITextView {
         // so the keyboard never collapses between structural edits.
         pendingCellFocus = structureFocusTarget(for: hit, action: action)
         switch action {
-        case .insertRow: onTableInsertRow?(hit)
+        case .insertRowAbove:
+            onTableInsertRow?(hit, hit.row)
+        case .insertRowBelow:
+            onTableInsertRow?(hit, hit.row + 1)
         case .deleteRow: onTableDeleteRow?(hit)
-        case .insertColumn: onTableInsertColumn?(hit)
+        case .insertColumnLeft:
+            onTableInsertColumn?(hit, hit.column)
+        case .insertColumnRight:
+            onTableInsertColumn?(hit, hit.column + 1)
         case .deleteColumn: onTableDeleteColumn?(hit)
         }
     }
@@ -1964,10 +1936,18 @@ final class EditorTextView: UITextView {
     /// resolves to nil and ends editing gracefully.
     private func structureFocusTarget(for hit: EditorTableCellHit, action: EditorCellStructureAction) -> (itemID: String, tableIndex: Int, row: Int, column: Int) {
         switch action {
-        case .insertRow:    return (hit.itemID, hit.tableIndex, hit.row + 1, hit.column)
-        case .insertColumn: return (hit.itemID, hit.tableIndex, hit.row, hit.column + 1)
-        case .deleteRow:    return (hit.itemID, hit.tableIndex, hit.row, hit.column)
-        case .deleteColumn: return (hit.itemID, hit.tableIndex, hit.row, hit.column)
+        case .insertRowAbove:
+            return (hit.itemID, hit.tableIndex, hit.row, hit.column)
+        case .insertRowBelow:
+            return (hit.itemID, hit.tableIndex, hit.row + 1, hit.column)
+        case .insertColumnLeft:
+            return (hit.itemID, hit.tableIndex, hit.row, hit.column)
+        case .insertColumnRight:
+            return (hit.itemID, hit.tableIndex, hit.row, hit.column + 1)
+        case .deleteRow:
+            return (hit.itemID, hit.tableIndex, hit.row, hit.column)
+        case .deleteColumn:
+            return (hit.itemID, hit.tableIndex, hit.row, hit.column)
         }
     }
 

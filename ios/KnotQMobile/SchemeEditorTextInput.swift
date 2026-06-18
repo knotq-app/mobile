@@ -59,9 +59,9 @@ struct SchemeTextView: UIViewRepresentable {
     /// Persists an in-place cell edit (cell hit + new first-line text).
     let onTableCellCommit: (EditorTableCellHit, String) -> Void
     /// Row/column structure ops from the cell editor's accessory bar.
-    let onTableInsertRow: (EditorTableCellHit) -> Void
+    let onTableInsertRow: (EditorTableCellHit, Int) -> Void
     let onTableDeleteRow: (EditorTableCellHit) -> Void
-    let onTableInsertColumn: (EditorTableCellHit) -> Void
+    let onTableInsertColumn: (EditorTableCellHit, Int) -> Void
     let onTableDeleteColumn: (EditorTableCellHit) -> Void
     let readOnly: Bool
 

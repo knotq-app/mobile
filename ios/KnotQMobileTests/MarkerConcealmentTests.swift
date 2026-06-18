@@ -173,14 +173,17 @@ final class MarkerConcealmentTests: XCTestCase {
     // MARK: - Table boundaries
 
     func testTableBoundaryBeforeCreatesBlankLineBeforeTableOnlyParagraph() {
-        let view = EditorTextView()
+        let fixture = makeEditorView()
+        let view = fixture.0
         view.loadItems([tableOnlyItem(indent: 1)], theme: .dark, timeFormat: "twelve_hour", placeCursorAtEnd: false)
 
-        let hit = EditorTableBoundaryHit(paragraphRange: NSRange(location: 0, length: 1), side: .before)
+        let tableParagraph = paragraphRanges(in: view.textStorage.string as NSString)[0].fullRange
+        let hit = EditorTableBoundaryHit(paragraphRange: tableParagraph, side: .before)
         XCTAssertTrue(view.placeCaretAtTableBoundary(hit, theme: .dark))
 
         let edits = view.extractItemEdits()
         XCTAssertEqual(edits.count, 2)
+        guard edits.count == 2 else { return }
         XCTAssertNil(edits[0].id)
         XCTAssertEqual(edits[0].text, "")
         XCTAssertEqual(edits[0].marker, "blank")
@@ -190,14 +193,17 @@ final class MarkerConcealmentTests: XCTestCase {
     }
 
     func testTableBoundaryAfterCreatesBlankLineAfterTableOnlyParagraph() {
-        let view = EditorTextView()
+        let fixture = makeEditorView()
+        let view = fixture.0
         view.loadItems([tableOnlyItem(indent: 2)], theme: .dark, timeFormat: "twelve_hour", placeCursorAtEnd: false)
 
-        let hit = EditorTableBoundaryHit(paragraphRange: NSRange(location: 0, length: 1), side: .after)
+        let tableParagraph = paragraphRanges(in: view.textStorage.string as NSString)[0].fullRange
+        let hit = EditorTableBoundaryHit(paragraphRange: tableParagraph, side: .after)
         XCTAssertTrue(view.placeCaretAtTableBoundary(hit, theme: .dark))
 
         let edits = view.extractItemEdits()
         XCTAssertEqual(edits.count, 2)
+        guard edits.count == 2 else { return }
         XCTAssertEqual(edits[0].id, "table-item")
         XCTAssertNil(edits[1].id)
         XCTAssertEqual(edits[1].text, "")
@@ -232,6 +238,14 @@ final class MarkerConcealmentTests: XCTestCase {
         let storage = NSTextStorage(string: body, attributes: [.font: UIFont.systemFont(ofSize: 17)])
         applyEmphasis(body: body, lineLocation: 0, storage: storage)
         return markerRanges(storage)
+    }
+
+    private func makeEditorView() -> (EditorTextView, EditorCoordinator) {
+        let view = EditorTextView()
+        let coordinator = EditorCoordinator()
+        coordinator.view = view
+        view.coordinator = coordinator
+        return (view, coordinator)
     }
 
     private func tableOnlyItem(indent: Int32) -> MobileItem {

@@ -193,16 +193,16 @@ struct IntegratedSchemeEditorPane: View {
                         },
                         onInsertTable: insertTableFromToolbar,
                         onTableCellCommit: commitTableCell,
-                        onTableInsertRow: { hit in
+                        onTableInsertRow: { hit, row in
                             guard !hit.isHeader else { return }
-                            model.insertTableRow(schemeID: scheme.id, itemID: hit.itemID, row: Int32(hit.row))
+                            model.insertTableRow(schemeID: scheme.id, itemID: hit.itemID, row: Int32(row))
                         },
                         onTableDeleteRow: { hit in
                             guard !hit.isHeader else { return }
                             model.deleteTableRow(schemeID: scheme.id, itemID: hit.itemID, row: Int32(hit.row))
                         },
-                        onTableInsertColumn: { hit in
-                            model.insertTableColumn(schemeID: scheme.id, itemID: hit.itemID, column: Int32(hit.column))
+                        onTableInsertColumn: { hit, column in
+                            model.insertTableColumn(schemeID: scheme.id, itemID: hit.itemID, column: Int32(column))
                         },
                         onTableDeleteColumn: { hit in
                             model.deleteTableColumn(schemeID: scheme.id, itemID: hit.itemID, column: Int32(hit.column))
