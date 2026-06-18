@@ -835,6 +835,9 @@ final class EditorTextView: UITextView {
         if coordinator?.handleClearMarkerAtDocumentStart(in: self) == true {
             return
         }
+        if coordinator?.handleDeleteEmptyTableBoundaryAtDocumentStart(in: self) == true {
+            return
+        }
         super.deleteBackward()
     }
 

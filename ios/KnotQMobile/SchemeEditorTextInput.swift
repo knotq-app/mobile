@@ -369,6 +369,21 @@ final class EditorCoordinator: NSObject, UITextViewDelegate, @preconcurrency NST
         return true
     }
 
+    func handleDeleteEmptyTableBoundaryAtDocumentStart(in view: EditorTextView) -> Bool {
+        guard !readOnly else { return false }
+        let selection = view.selectedRange
+        guard selection.location == 0, selection.length == 0 else { return false }
+        let storage = view.textStorage
+        let paragraphs = paragraphRanges(in: storage.string as NSString)
+        guard paragraphs.count > 1,
+              isEmptyTableBoundaryLine(at: 0, paragraphs: paragraphs, storage: storage) else {
+            return false
+        }
+
+        deleteEmptyTableBoundaryLine(at: 0, paragraphs: paragraphs, in: view)
+        return true
+    }
+
     /// Backspace on an empty boundary line next to a table removes that blank
     /// line first. This mirrors normal text editing: delete the separator
     /// newline, leaving the table in place for a subsequent backspace if desired.
@@ -377,14 +392,27 @@ final class EditorCoordinator: NSObject, UITextViewDelegate, @preconcurrency NST
         let ns = storage.string as NSString
         guard deletionRange.length == 1,
               deletionRange.location < ns.length,
-              ns.character(at: deletionRange.location) == 10,
-              deletionRange.location < ns.length - 1 else { return false }
+              ns.character(at: deletionRange.location) == 10 else { return false }
 
-        let caret = deletionRange.location + 1
         let paragraphs = paragraphRanges(in: ns)
-        guard let currentIndex = paragraphs.firstIndex(where: { $0.fullRange.location == caret }) else {
-            return false
+        var candidateIndexes: [Int] = []
+        if let lowerIndex = paragraphs.firstIndex(where: { $0.fullRange.location == deletionRange.location + 1 }) {
+            candidateIndexes.append(lowerIndex)
         }
+        if let endingIndex = paragraphs.firstIndex(where: { NSMaxRange($0.fullRange) == deletionRange.location + 1 }),
+           !candidateIndexes.contains(endingIndex) {
+            candidateIndexes.append(endingIndex)
+        }
+        guard let currentIndex = candidateIndexes.first(where: {
+            isEmptyTableBoundaryLine(at: $0, paragraphs: paragraphs, storage: storage)
+        }) else { return false }
+
+        deleteEmptyTableBoundaryLine(at: currentIndex, paragraphs: paragraphs, in: view)
+        return true
+    }
+
+    private func isEmptyTableBoundaryLine(at currentIndex: Int, paragraphs: [EditorParagraphRange], storage: NSTextStorage) -> Bool {
+        guard paragraphs.indices.contains(currentIndex) else { return false }
         let current = paragraphs[currentIndex]
         let currentMeta = lineMeta(at: current.fullRange.location, in: storage)
         guard bodyText(paragraphRange: current.fullRange, in: storage).isEmpty,
@@ -392,7 +420,6 @@ final class EditorCoordinator: NSObject, UITextViewDelegate, @preconcurrency NST
               currentMeta.annotation == nil,
               currentMeta.media.isEmpty,
               currentMeta.tables.isEmpty else { return false }
-
         let touchesTable = [currentIndex - 1, currentIndex + 1].contains { index in
             guard paragraphs.indices.contains(index) else { return false }
             let paragraph = paragraphs[index]
@@ -400,8 +427,12 @@ final class EditorCoordinator: NSObject, UITextViewDelegate, @preconcurrency NST
             return !meta.tables.isEmpty
                 && bodyText(paragraphRange: paragraph.fullRange, in: storage).isEmpty
         }
-        guard touchesTable else { return false }
+        return touchesTable
+    }
 
+    private func deleteEmptyTableBoundaryLine(at currentIndex: Int, paragraphs: [EditorParagraphRange], in view: EditorTextView) {
+        let storage = view.textStorage
+        let current = paragraphs[currentIndex]
         suppress {
             storage.beginEditing()
             storage.replaceCharacters(in: current.fullRange, with: NSAttributedString(string: ""))
@@ -418,7 +449,6 @@ final class EditorCoordinator: NSObject, UITextViewDelegate, @preconcurrency NST
         markDirty()
         refreshEmpty()
         view.invalidateEmbeddedBlockDisplay(reflow: true)
-        return true
     }
 
     /// Backspace at the start of the line after a table-only item removes the

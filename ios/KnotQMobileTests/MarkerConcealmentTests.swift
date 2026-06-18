@@ -212,24 +212,24 @@ final class MarkerConcealmentTests: XCTestCase {
         XCTAssertEqual(view.selectedRange.location, 1)
     }
 
-    func testBackspaceOnEmptyTableBoundaryLineDeletesOnlyBoundaryLine() {
+    func testTableBoundaryDeletes() {
+        assertAfterTableBoundaryDelete(deletionRange: NSRange(location: 0, length: 1))
+        assertAfterTableBoundaryDelete { view in
+            NSRange(location: view.selectedRange.location, length: 1)
+        }
+
         let fixture = makeEditorView()
         let view = fixture.0
-        let coordinator = fixture.1
-        coordinator.theme = .dark
-        view.loadItems([tableOnlyItem(indent: 2)], theme: .dark, timeFormat: "twelve_hour", placeCursorAtEnd: false)
+        fixture.1.theme = .dark
+        view.loadItems([tableOnlyItem(indent: 1)], theme: .dark, timeFormat: "twelve_hour", placeCursorAtEnd: false)
 
         let tableParagraph = paragraphRanges(in: view.textStorage.string as NSString)[0].fullRange
-        let hit = EditorTableBoundaryHit(paragraphRange: tableParagraph, side: .after)
+        let hit = EditorTableBoundaryHit(paragraphRange: tableParagraph, side: .before)
         XCTAssertTrue(view.placeCaretAtTableBoundary(hit, theme: .dark))
+        XCTAssertEqual(view.selectedRange.location, 0)
 
-        let shouldAllowUIKitDelete = coordinator.textView(
-            view,
-            shouldChangeTextIn: NSRange(location: 0, length: 1),
-            replacementText: ""
-        )
+        view.deleteBackward()
 
-        XCTAssertFalse(shouldAllowUIKitDelete)
         let edits = view.extractItemEdits()
         XCTAssertEqual(edits.count, 1)
         XCTAssertEqual(edits.first?.id, "table-item")
@@ -262,6 +262,34 @@ final class MarkerConcealmentTests: XCTestCase {
         let storage = NSTextStorage(string: body, attributes: [.font: UIFont.systemFont(ofSize: 17)])
         applyEmphasis(body: body, lineLocation: 0, storage: storage)
         return markerRanges(storage)
+    }
+
+    private func assertAfterTableBoundaryDelete(deletionRange: NSRange, file: StaticString = #filePath, line: UInt = #line) {
+        assertAfterTableBoundaryDelete({ _ in deletionRange }, file: file, line: line)
+    }
+
+    private func assertAfterTableBoundaryDelete(_ deletionRange: (EditorTextView) -> NSRange, file: StaticString = #filePath, line: UInt = #line) {
+        let fixture = makeEditorView()
+        let view = fixture.0
+        let coordinator = fixture.1
+        coordinator.theme = .dark
+        view.loadItems([tableOnlyItem(indent: 2)], theme: .dark, timeFormat: "twelve_hour", placeCursorAtEnd: false)
+
+        let tableParagraph = paragraphRanges(in: view.textStorage.string as NSString)[0].fullRange
+        let hit = EditorTableBoundaryHit(paragraphRange: tableParagraph, side: .after)
+        XCTAssertTrue(view.placeCaretAtTableBoundary(hit, theme: .dark), file: file, line: line)
+
+        let shouldAllowUIKitDelete = coordinator.textView(
+            view,
+            shouldChangeTextIn: deletionRange(view),
+            replacementText: ""
+        )
+
+        XCTAssertFalse(shouldAllowUIKitDelete, file: file, line: line)
+        let edits = view.extractItemEdits()
+        XCTAssertEqual(edits.count, 1, file: file, line: line)
+        XCTAssertEqual(edits.first?.id, "table-item", file: file, line: line)
+        XCTAssertEqual(view.selectedRange.location, 0, file: file, line: line)
     }
 
     private func makeEditorView() -> (EditorTextView, EditorCoordinator) {
