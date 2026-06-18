@@ -208,30 +208,29 @@ final class EditorTableCellEditor: UIView, UITextFieldDelegate {
             title: "Rows",
             systemImage: "tablecells",
             actions: [
-                ("Insert Row Below", "plus", .insertRow, false),
-                ("Delete Row", "trash", .deleteRow, true)
+                (title: "Insert Row Below", systemImage: "plus", action: .insertRow, destructive: false),
+                (title: "Delete Row", systemImage: "trash", action: .deleteRow, destructive: true)
             ]
         )
         let columnMenu = structureMenuButton(
             title: "Columns",
             systemImage: "tablecells",
             actions: [
-                ("Insert Column Right", "plus", .insertColumn, false),
-                ("Delete Column", "trash", .deleteColumn, true)
+                (title: "Insert Column Right", systemImage: "plus", action: .insertColumn, destructive: false),
+                (title: "Delete Column", systemImage: "trash", action: .deleteColumn, destructive: true)
             ]
         )
         rowMenuButton = rowMenu
+        let spacer = UIView()
+        spacer.setContentHuggingPriority(.defaultLow, for: .horizontal)
+        spacer.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
 
         stack.addArrangedSubview(dismissButton)
         stack.addArrangedSubview(context)
-        stack.addArrangedSubview(UIView())
+        stack.addArrangedSubview(spacer)
         stack.addArrangedSubview(buttonGroup([previousButton, nextButton]))
         stack.addArrangedSubview(rowMenu)
         stack.addArrangedSubview(columnMenu)
-
-        if let spacer = stack.arrangedSubviews.first(where: { $0 !== dismissButton && $0 !== context && $0 !== rowMenu && $0 !== columnMenu && !($0 is UIStackView) }) {
-            spacer.setContentHuggingPriority(.defaultLow, for: .horizontal)
-        }
 
         NSLayoutConstraint.activate([
             backdrop.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 8),

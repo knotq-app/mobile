@@ -246,6 +246,10 @@ final class EditorCoordinator: NSObject, UITextViewDelegate, @preconcurrency NST
         guard !readOnly else { return }
         guard recognizer.state == .ended, let view else { return }
         let point = recognizer.location(in: view)
+        if let boundary = view.tableBoundaryHit(at: point) {
+            view.placeCaretAtTableBoundary(boundary, theme: theme)
+            return
+        }
         if let hit = view.tableCellHit(at: point) {
             // Edit the cell in place rather than opening a modal sheet.
             view.beginEditingTableCell(hit)
