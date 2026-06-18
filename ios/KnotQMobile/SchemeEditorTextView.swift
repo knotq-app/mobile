@@ -618,6 +618,22 @@ final class EditorTextView: UITextView {
         setNeedsDisplay()
     }
 
+    func invalidateEmbeddedBlockDisplay(reflow: Bool = false) {
+        cachedFitSize = CGSize(width: -1, height: -1)
+        renderedTableCellHits.removeAll()
+        renderedTableBlockHits.removeAll()
+        guard textStorage.length > 0 else {
+            setNeedsDisplay(bounds)
+            return
+        }
+        let range = NSRange(location: 0, length: textStorage.length)
+        if reflow {
+            layoutManager.invalidateLayout(forCharacterRange: range, actualCharacterRange: nil)
+        }
+        layoutManager.invalidateDisplay(forCharacterRange: range)
+        setNeedsDisplay(bounds)
+    }
+
     override var intrinsicContentSize: CGSize {
         guard !isScrollEnabled else { return super.intrinsicContentSize }
         let width = bounds.width > 0 ? bounds.width : UIScreen.main.bounds.width
@@ -1083,7 +1099,7 @@ final class EditorTextView: UITextView {
         typingAttributes = EditorAttributes.bodyAttributes(meta: meta, theme: theme)
         coordinator?.markDirty()
         coordinator?.refreshToolbarActiveMarker(in: self)
-        setNeedsDisplay()
+        invalidateEmbeddedBlockDisplay(reflow: true)
     }
 
     @discardableResult
@@ -1690,7 +1706,7 @@ final class EditorTextView: UITextView {
         if inserted {
             coordinator?.markDirty()
             coordinator?.refreshEmpty()
-            invalidateIntrinsicContentSize()
+            invalidateEmbeddedBlockDisplay(reflow: true)
         }
         setNeedsDisplay()
         return true

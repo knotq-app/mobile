@@ -280,6 +280,9 @@ final class EditorCoordinator: NSObject, UITextViewDelegate, @preconcurrency NST
             if handleClearMarkerBackspace(in: view, deletionRange: range) {
                 return false
             }
+            if handleDeleteEmptyTableBoundaryLine(in: view, deletionRange: range) {
+                return false
+            }
             if handleDeletePreviousTableBlock(in: view, deletionRange: range) {
                 return false
             }
@@ -366,6 +369,58 @@ final class EditorCoordinator: NSObject, UITextViewDelegate, @preconcurrency NST
         return true
     }
 
+    /// Backspace on an empty boundary line next to a table removes that blank
+    /// line first. This mirrors normal text editing: delete the separator
+    /// newline, leaving the table in place for a subsequent backspace if desired.
+    private func handleDeleteEmptyTableBoundaryLine(in view: EditorTextView, deletionRange: NSRange) -> Bool {
+        let storage = view.textStorage
+        let ns = storage.string as NSString
+        guard deletionRange.length == 1,
+              deletionRange.location < ns.length,
+              ns.character(at: deletionRange.location) == 10,
+              deletionRange.location < ns.length - 1 else { return false }
+
+        let caret = deletionRange.location + 1
+        let paragraphs = paragraphRanges(in: ns)
+        guard let currentIndex = paragraphs.firstIndex(where: { $0.fullRange.location == caret }) else {
+            return false
+        }
+        let current = paragraphs[currentIndex]
+        let currentMeta = lineMeta(at: current.fullRange.location, in: storage)
+        guard bodyText(paragraphRange: current.fullRange, in: storage).isEmpty,
+              currentMeta.marker == .blank,
+              currentMeta.annotation == nil,
+              currentMeta.media.isEmpty,
+              currentMeta.tables.isEmpty else { return false }
+
+        let touchesTable = [currentIndex - 1, currentIndex + 1].contains { index in
+            guard paragraphs.indices.contains(index) else { return false }
+            let paragraph = paragraphs[index]
+            let meta = lineMeta(at: paragraph.fullRange.location, in: storage)
+            return !meta.tables.isEmpty
+                && bodyText(paragraphRange: paragraph.fullRange, in: storage).isEmpty
+        }
+        guard touchesTable else { return false }
+
+        suppress {
+            storage.beginEditing()
+            storage.replaceCharacters(in: current.fullRange, with: NSAttributedString(string: ""))
+            ensureWellFormed(storage, theme: theme)
+            storage.endEditing()
+        }
+        let newCaret = clampedCaret(current.fullRange.location, in: storage)
+        view.selectedRange = NSRange(location: newCaret, length: 0)
+        view.typingAttributes = EditorAttributes.bodyAttributes(
+            meta: lineMeta(at: newCaret, in: storage),
+            theme: theme
+        )
+        autoBulletUndo = nil
+        markDirty()
+        refreshEmpty()
+        view.invalidateEmbeddedBlockDisplay(reflow: true)
+        return true
+    }
+
     /// Backspace at the start of the line after a table-only item removes the
     /// table line. Letting UITextView delete the newline would merge the lower
     /// line into the table item and preserve the table, which feels like the key
@@ -398,7 +453,7 @@ final class EditorCoordinator: NSObject, UITextViewDelegate, @preconcurrency NST
         autoBulletUndo = nil
         markDirty()
         refreshEmpty()
-        view.setNeedsDisplay()
+        view.invalidateEmbeddedBlockDisplay(reflow: true)
         return true
     }
 
@@ -439,6 +494,7 @@ final class EditorCoordinator: NSObject, UITextViewDelegate, @preconcurrency NST
         autoBulletUndo = nil
         markDirty()
         refreshEmpty()
+        view.invalidateEmbeddedBlockDisplay(reflow: true)
         return true
     }
 
@@ -539,6 +595,7 @@ final class EditorCoordinator: NSObject, UITextViewDelegate, @preconcurrency NST
             normalizeAffectedParagraphs(in: storage, around: editedRange)
             storage.endEditing()
         }
+        view?.invalidateEmbeddedBlockDisplay()
 
         if !autoBulletizePending {
             autoBulletizePending = true

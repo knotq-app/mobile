@@ -212,6 +212,30 @@ final class MarkerConcealmentTests: XCTestCase {
         XCTAssertEqual(view.selectedRange.location, 1)
     }
 
+    func testBackspaceOnEmptyTableBoundaryLineDeletesOnlyBoundaryLine() {
+        let fixture = makeEditorView()
+        let view = fixture.0
+        let coordinator = fixture.1
+        coordinator.theme = .dark
+        view.loadItems([tableOnlyItem(indent: 2)], theme: .dark, timeFormat: "twelve_hour", placeCursorAtEnd: false)
+
+        let tableParagraph = paragraphRanges(in: view.textStorage.string as NSString)[0].fullRange
+        let hit = EditorTableBoundaryHit(paragraphRange: tableParagraph, side: .after)
+        XCTAssertTrue(view.placeCaretAtTableBoundary(hit, theme: .dark))
+
+        let shouldAllowUIKitDelete = coordinator.textView(
+            view,
+            shouldChangeTextIn: NSRange(location: 0, length: 1),
+            replacementText: ""
+        )
+
+        XCTAssertFalse(shouldAllowUIKitDelete)
+        let edits = view.extractItemEdits()
+        XCTAssertEqual(edits.count, 1)
+        XCTAssertEqual(edits.first?.id, "table-item")
+        XCTAssertEqual(view.selectedRange.location, 0)
+    }
+
     // MARK: - Tagging (so future delimiter changes keep the markers concealable)
 
     func testEmphasisTagsEveryDelimiterStyle() {
