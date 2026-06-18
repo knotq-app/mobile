@@ -210,18 +210,15 @@ final class EditorTableCellEditor: UIView, UITextFieldDelegate {
             ]
         )
         rowMenuButton = rowMenu
-        let spacer = UIView()
-        spacer.setContentHuggingPriority(.defaultLow, for: .horizontal)
-        spacer.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
 
         stack.addArrangedSubview(dismissButton)
-        stack.addArrangedSubview(spacer)
         stack.addArrangedSubview(rowMenu)
         stack.addArrangedSubview(columnMenu)
 
         NSLayoutConstraint.activate([
-            backdrop.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 8),
-            backdrop.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -8),
+            backdrop.centerXAnchor.constraint(equalTo: container.centerXAnchor),
+            backdrop.leadingAnchor.constraint(greaterThanOrEqualTo: container.leadingAnchor, constant: 8),
+            backdrop.trailingAnchor.constraint(lessThanOrEqualTo: container.trailingAnchor, constant: -8),
             backdrop.topAnchor.constraint(equalTo: container.topAnchor, constant: 4),
             backdrop.bottomAnchor.constraint(equalTo: container.bottomAnchor, constant: UIDevice.current.userInterfaceIdiom == .phone ? -10 : -6),
             stack.leadingAnchor.constraint(equalTo: backdrop.contentView.leadingAnchor),
