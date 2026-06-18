@@ -306,6 +306,9 @@ interface MobileCore {
   void set_table_cell_text(string scheme_id, string item_id, i32 row, i32 column, string text);
 
   [Throws=MobileError]
+  void set_table_column_name(string scheme_id, string item_id, i32 column, string name);
+
+  [Throws=MobileError]
   void set_table_cell_line_text(string scheme_id, string item_id, i32 row, i32 column, i32 line_index, string text);
 
   [Throws=MobileError]

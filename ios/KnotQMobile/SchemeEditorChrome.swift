@@ -194,9 +194,11 @@ struct IntegratedSchemeEditorPane: View {
                         onInsertTable: insertTableFromToolbar,
                         onTableCellCommit: commitTableCell,
                         onTableInsertRow: { hit in
+                            guard !hit.isHeader else { return }
                             model.insertTableRow(schemeID: scheme.id, itemID: hit.itemID, row: Int32(hit.row))
                         },
                         onTableDeleteRow: { hit in
+                            guard !hit.isHeader else { return }
                             model.deleteTableRow(schemeID: scheme.id, itemID: hit.itemID, row: Int32(hit.row))
                         },
                         onTableInsertColumn: { hit in
@@ -545,6 +547,15 @@ struct IntegratedSchemeEditorPane: View {
     /// marker / dates / images / extra lines are preserved by the core.
     private func commitTableCell(_ hit: EditorTableCellHit, text: String) {
         guard !scheme.isReadOnly else { return }
+        if hit.isHeader {
+            model.setTableColumnName(
+                schemeID: scheme.id,
+                itemID: hit.itemID,
+                column: Int32(hit.column),
+                name: text
+            )
+            return
+        }
         model.setTableCellLineText(
             schemeID: scheme.id,
             itemID: hit.itemID,

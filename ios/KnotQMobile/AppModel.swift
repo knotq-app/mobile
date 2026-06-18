@@ -352,6 +352,17 @@ final class AppModel: ObservableObject {
         }
     }
 
+    func setTableColumnName(schemeID: String, itemID: String, column: Int32, name: String) {
+        mutate {
+            try $0.setTableColumnName(
+                schemeID: schemeID,
+                itemID: itemID,
+                column: column,
+                name: name
+            )
+        }
+    }
+
     func setTableCellLineText(schemeID: String, itemID: String, row: Int32, column: Int32, lineIndex: Int32, text: String) {
         mutate {
             try $0.setTableCellLineText(

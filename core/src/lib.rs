@@ -501,6 +501,26 @@ impl MobileCore {
             .map_err(Into::into)
     }
 
+    pub fn set_table_column_name(
+        &self,
+        scheme_id: String,
+        item_id: String,
+        column: i32,
+        name: String,
+    ) -> Result<(), MobileError> {
+        self.lock()?
+            .mutate_table(parse_id(&scheme_id)?, parse_id(&item_id)?, |table| {
+                let column = position_from_i32(column)?;
+                let table_column = table
+                    .columns
+                    .get_mut(column)
+                    .ok_or_else(|| anyhow!("table column {column} is missing"))?;
+                table_column.name = name;
+                Ok(())
+            })
+            .map_err(Into::into)
+    }
+
     /// Set the text of a single line within a cell (the cell sub-document line at
     /// `line_index`). Preserves the line's marker, dates, completion, and images.
     pub fn set_table_cell_line_text(
@@ -3391,9 +3411,7 @@ impl MobileItem {
                 .content
                 .iter()
                 .filter_map(|inline| match inline {
-                    Inline::Table(table) => {
-                        Some(MobileTable::from_table(table, image_assets_dir))
-                    }
+                    Inline::Table(table) => Some(MobileTable::from_table(table, image_assets_dir)),
                     _ => None,
                 })
                 .collect(),
@@ -4798,6 +4816,13 @@ mod tests {
             .expect("insert row");
         core.insert_table_column(scheme_id.clone(), table_item.id.clone(), 1)
             .expect("insert column");
+        core.set_table_column_name(
+            scheme_id.clone(),
+            table_item.id.clone(),
+            1,
+            "Quarter".to_string(),
+        )
+        .expect("rename column");
 
         let item = core
             .snapshot(Some("2026-05-26".to_string()), 0)
@@ -4813,6 +4838,7 @@ mod tests {
         assert_eq!(item.tables[0].rows[0].cells[1].text, "Q1");
         assert_eq!(item.tables[0].rows.len(), 3);
         assert_eq!(item.tables[0].columns.len(), 3);
+        assert_eq!(item.tables[0].columns[1].name, "Quarter");
 
         core.replace_scheme_items(
             scheme_id.clone(),
@@ -4846,6 +4872,7 @@ mod tests {
         assert_eq!(item.tables[0].rows[0].cells[1].text, "Q1");
         assert_eq!(item.tables[0].rows.len(), 3);
         assert_eq!(item.tables[0].columns.len(), 3);
+        assert_eq!(item.tables[0].columns[1].name, "Quarter");
 
         core.delete_table_row(scheme_id.clone(), table_item.id.clone(), 1)
             .expect("delete row");

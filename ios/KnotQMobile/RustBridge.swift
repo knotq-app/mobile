@@ -137,6 +137,10 @@ final class RustBridge: @unchecked Sendable {
         try core.setTableCellText(schemeId: schemeID, itemId: itemID, row: row, column: column, text: text)
     }
 
+    func setTableColumnName(schemeID: String, itemID: String, column: Int32, name: String) throws {
+        try core.setTableColumnName(schemeId: schemeID, itemId: itemID, column: column, name: name)
+    }
+
     func setTableCellLineText(schemeID: String, itemID: String, row: Int32, column: Int32, lineIndex: Int32, text: String) throws {
         try core.setTableCellLineText(schemeId: schemeID, itemId: itemID, row: row, column: column, lineIndex: lineIndex, text: text)
     }

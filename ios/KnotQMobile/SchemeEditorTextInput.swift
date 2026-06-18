@@ -275,6 +275,9 @@ final class EditorCoordinator: NSObject, UITextViewDelegate, @preconcurrency NST
             if handleClearMarkerBackspace(in: view, deletionRange: range) {
                 return false
             }
+            if handleDeletePreviousTableBlock(in: view, deletionRange: range) {
+                return false
+            }
             if handleMergeParagraphs(in: view, deletionRange: range) {
                 return false
             }
@@ -355,6 +358,42 @@ final class EditorCoordinator: NSObject, UITextViewDelegate, @preconcurrency NST
         autoBulletUndo = nil
         markDirty()
         refreshEmpty()
+        return true
+    }
+
+    /// Backspace at the start of the line after a table-only item removes the
+    /// table line. Letting UITextView delete the newline would merge the lower
+    /// line into the table item and preserve the table, which feels like the key
+    /// did nothing useful.
+    private func handleDeletePreviousTableBlock(in view: EditorTextView, deletionRange: NSRange) -> Bool {
+        let storage = view.textStorage
+        let ns = storage.string as NSString
+        guard deletionRange.length == 1,
+              deletionRange.location < ns.length,
+              ns.character(at: deletionRange.location) == 10,
+              deletionRange.location < ns.length - 1 else { return false }
+
+        let upperPara = editableParagraphRange(in: ns, at: deletionRange.location)
+        let upperMeta = lineMeta(at: upperPara.location, in: storage)
+        guard !upperMeta.tables.isEmpty,
+              bodyText(paragraphRange: upperPara, in: storage).isEmpty else { return false }
+
+        suppress {
+            storage.beginEditing()
+            storage.replaceCharacters(in: upperPara, with: NSAttributedString(string: ""))
+            ensureWellFormed(storage, theme: theme)
+            storage.endEditing()
+        }
+        let caret = min(deletionRange.location, max(0, storage.length - 1))
+        view.selectedRange = NSRange(location: caret, length: 0)
+        view.typingAttributes = EditorAttributes.bodyAttributes(
+            meta: lineMeta(at: caret, in: storage),
+            theme: theme
+        )
+        autoBulletUndo = nil
+        markDirty()
+        refreshEmpty()
+        view.setNeedsDisplay()
         return true
     }
 

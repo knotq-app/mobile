@@ -18,6 +18,8 @@ struct EditorTableCellHit {
     /// The cell's drawn frame in the text view's content coordinate space, used
     /// to position the in-place cell editor exactly over the tapped cell.
     let frame: CGRect
+
+    var isHeader: Bool { row < 0 }
 }
 
 private struct EditorTableCellHitRect {
@@ -60,6 +62,8 @@ final class EditorTableCellEditor: UIView, UITextFieldDelegate {
     private var committedText: String
     private var didCommit = false
     private let theme: KnotQTheme
+    private weak var insertRowItem: UIBarButtonItem?
+    private weak var deleteRowItem: UIBarButtonItem?
 
     init(hit: EditorTableCellHit, theme: KnotQTheme) {
         self.hit = hit
@@ -105,18 +109,36 @@ final class EditorTableCellEditor: UIView, UITextFieldDelegate {
             self?.commit(reason: .resign)
             self?.field.resignFirstResponder()
         })
+        let insertRow = item("+Row", .insertRow)
+        let deleteRow = item("−Row", .deleteRow)
+        insertRowItem = insertRow
+        deleteRowItem = deleteRow
         bar.items = [
-            item("+Row", .insertRow),
-            item("−Row", .deleteRow),
+            insertRow,
+            deleteRow,
             item("+Col", .insertColumn),
             item("−Col", .deleteColumn),
             flex,
             done,
         ]
+        updateAccessoryState()
         return bar
     }
 
+    private func updateAccessoryState() {
+        insertRowItem?.isEnabled = !hit.isHeader
+        deleteRowItem?.isEnabled = !hit.isHeader
+    }
+
     private func runStructure(_ action: EditorCellStructureAction) {
+        if hit.isHeader {
+            switch action {
+            case .insertRow, .deleteRow:
+                return
+            case .insertColumn, .deleteColumn:
+                break
+            }
+        }
         // Persist any in-progress text first so the structural change keeps it,
         // then hand off to the owner (which mutates the model + reloads).
         let text = field.text ?? ""
@@ -146,6 +168,7 @@ final class EditorTableCellEditor: UIView, UITextFieldDelegate {
         didCommit = false
         frame = hit.frame
         field.text = hit.text
+        updateAccessoryState()
         field.selectedTextRange = field.textRange(from: field.endOfDocument, to: field.endOfDocument)
     }
 
@@ -1301,6 +1324,19 @@ final class EditorTextView: UITextView {
             )
             let title = column < table.columns.count ? table.columns[column].name : "Column \(column + 1)"
             drawTableText(title, in: cellRect, attributes: headerAttributes)
+            if let itemID {
+                renderedTableCellHits.append(EditorTableCellHitRect(
+                    rect: cellRect,
+                    hit: EditorTableCellHit(
+                        itemID: itemID,
+                        tableIndex: tableIndex,
+                        row: -1,
+                        column: column,
+                        text: title,
+                        frame: cellRect
+                    )
+                ))
+            }
         }
 
         for row in 0..<max(1, table.rows.count) {
@@ -1447,6 +1483,24 @@ final class EditorTextView: UITextView {
                 case let .table(table):
                     let columnCount = tableColumnCount(table)
                     let colWidth = maxWidth / CGFloat(columnCount)
+                    for column in 0..<columnCount {
+                        let rect = CGRect(
+                            x: textLeft + CGFloat(column) * colWidth,
+                            y: y,
+                            width: colWidth,
+                            height: DesktopEditorMetrics.tableHeaderHeight
+                        )
+                        let title = column < table.columns.count ? table.columns[column].name : "Column \(column + 1)"
+                        let hit = EditorTableCellHit(
+                            itemID: itemID,
+                            tableIndex: tableIndex,
+                            row: -1,
+                            column: column,
+                            text: title,
+                            frame: rect
+                        )
+                        if let result = match(hit) { return result }
+                    }
                     let bodyY = y + DesktopEditorMetrics.tableHeaderHeight
                     for row in 0..<table.rows.count {
                         for column in 0..<columnCount {
@@ -1559,19 +1613,19 @@ final class EditorTextView: UITextView {
         var column = hit.column
         if columnDelta != 0 {
             // Tab / Shift-Tab: advance linearly across the grid, wrapping rows.
-            var linear = row * dims.columns + column + columnDelta
-            let total = dims.rows * dims.columns
+            var linear = (row + 1) * dims.columns + column + columnDelta
+            let total = (dims.rows + 1) * dims.columns
             if linear < 0 || linear >= total {
                 // Past either end — stop editing rather than wrap out of bounds.
                 endTableCellEditing(commit: false)
                 return
             }
             linear = max(0, min(total - 1, linear))
-            row = linear / dims.columns
+            row = linear / dims.columns - 1
             column = linear % dims.columns
         } else {
             row += rowDelta
-            if row < 0 || row >= dims.rows {
+            if row < -1 || row >= dims.rows {
                 endTableCellEditing(commit: false)
                 return
             }
