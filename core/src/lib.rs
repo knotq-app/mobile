@@ -18,7 +18,7 @@ use knotq_model::{
     daily_queue_scheme_id, daily_queue_sync_metadata, AppSettings, CalendarProvider, DocumentId,
     FolderId, GoogleOAuthAccount, ImageAssetFormat, ImageInline, ImportedCalendarSource, Inline,
     Item, ItemId, ItemKind, ItemMarker, NodeRef, NotificationDefaults, OccurrenceId, OperationId,
-    Recurrence, Scheme, SchemeId, SchemeSource, ThemeMode, TimeFormat, Workspace,
+    Recurrence, Scheme, SchemeId, SchemeSource, Table, ThemeMode, TimeFormat, Workspace,
     DAILY_QUEUE_COLOR_INDEX,
 };
 use knotq_notifications::{
@@ -456,6 +456,188 @@ impl MobileCore {
                 scheme: parse_id(&scheme_id)?,
                 item: parse_id(&item_id)?,
                 text,
+            })
+            .map_err(Into::into)
+    }
+
+    pub fn insert_table(
+        &self,
+        scheme_id: String,
+        after_item_id: Option<String>,
+    ) -> Result<(), MobileError> {
+        let scheme_id = parse_id(&scheme_id)?;
+        let after_item_id = after_item_id
+            .as_deref()
+            .map(parse_id::<ItemId>)
+            .transpose()?;
+        self.lock()?
+            .insert_table(scheme_id, after_item_id)
+            .map_err(Into::into)
+    }
+
+    pub fn set_table_cell_text(
+        &self,
+        scheme_id: String,
+        item_id: String,
+        row: i32,
+        column: i32,
+        text: String,
+    ) -> Result<(), MobileError> {
+        self.lock()?
+            .mutate_table(parse_id(&scheme_id)?, parse_id(&item_id)?, |table| {
+                let row = position_from_i32(row)?;
+                let column = position_from_i32(column)?;
+                let cell = table
+                    .cell_mut(row, column)
+                    .ok_or_else(|| anyhow!("table cell {row},{column} is missing"))?;
+                if let Some(first) = cell.items.first_mut() {
+                    first.set_text(text);
+                    cell.items.truncate(1);
+                } else {
+                    cell.items.push(Item::new(text));
+                }
+                Ok(())
+            })
+            .map_err(Into::into)
+    }
+
+    /// Set the text of a single line within a cell (the cell sub-document line at
+    /// `line_index`). Preserves the line's marker, dates, completion, and images.
+    pub fn set_table_cell_line_text(
+        &self,
+        scheme_id: String,
+        item_id: String,
+        row: i32,
+        column: i32,
+        line_index: i32,
+        text: String,
+    ) -> Result<(), MobileError> {
+        self.lock()?
+            .mutate_table(parse_id(&scheme_id)?, parse_id(&item_id)?, |table| {
+                let row = position_from_i32(row)?;
+                let column = position_from_i32(column)?;
+                let line_index = position_from_i32(line_index)?;
+                let cell = table
+                    .cell_mut(row, column)
+                    .ok_or_else(|| anyhow!("table cell {row},{column} is missing"))?;
+                let line = cell
+                    .items
+                    .get_mut(line_index)
+                    .ok_or_else(|| anyhow!("cell line {line_index} is missing"))?;
+                line.set_text(text);
+                Ok(())
+            })
+            .map_err(Into::into)
+    }
+
+    /// Insert a new blank line into a cell at `line_index` (clamped to the cell's
+    /// length), seeded with `text`. Used for Enter-within-a-cell / multi-line cells.
+    pub fn add_table_cell_line(
+        &self,
+        scheme_id: String,
+        item_id: String,
+        row: i32,
+        column: i32,
+        line_index: i32,
+        text: String,
+    ) -> Result<(), MobileError> {
+        self.lock()?
+            .mutate_table(parse_id(&scheme_id)?, parse_id(&item_id)?, |table| {
+                let row = position_from_i32(row)?;
+                let column = position_from_i32(column)?;
+                let line_index = position_from_i32(line_index)?;
+                let cell = table
+                    .cell_mut(row, column)
+                    .ok_or_else(|| anyhow!("table cell {row},{column} is missing"))?;
+                let at = line_index.min(cell.items.len());
+                cell.items.insert(at, Item::new(text));
+                Ok(())
+            })
+            .map_err(Into::into)
+    }
+
+    /// Remove the line at `line_index` from a cell. A no-op floor is enforced by
+    /// `Table::normalize` (a cell always keeps at least one line), so removing the
+    /// last line leaves a single empty line.
+    pub fn remove_table_cell_line(
+        &self,
+        scheme_id: String,
+        item_id: String,
+        row: i32,
+        column: i32,
+        line_index: i32,
+    ) -> Result<(), MobileError> {
+        self.lock()?
+            .mutate_table(parse_id(&scheme_id)?, parse_id(&item_id)?, |table| {
+                let row = position_from_i32(row)?;
+                let column = position_from_i32(column)?;
+                let line_index = position_from_i32(line_index)?;
+                let cell = table
+                    .cell_mut(row, column)
+                    .ok_or_else(|| anyhow!("table cell {row},{column} is missing"))?;
+                if line_index < cell.items.len() {
+                    cell.items.remove(line_index);
+                }
+                Ok(())
+            })
+            .map_err(Into::into)
+    }
+
+    pub fn insert_table_row(
+        &self,
+        scheme_id: String,
+        item_id: String,
+        row: i32,
+    ) -> Result<(), MobileError> {
+        self.lock()?
+            .mutate_table(parse_id(&scheme_id)?, parse_id(&item_id)?, |table| {
+                let row = position_from_i32(row)?;
+                table.insert_row((row + 1).min(table.row_count()));
+                Ok(())
+            })
+            .map_err(Into::into)
+    }
+
+    pub fn delete_table_row(
+        &self,
+        scheme_id: String,
+        item_id: String,
+        row: i32,
+    ) -> Result<(), MobileError> {
+        self.lock()?
+            .mutate_table(parse_id(&scheme_id)?, parse_id(&item_id)?, |table| {
+                table.remove_row(position_from_i32(row)?);
+                Ok(())
+            })
+            .map_err(Into::into)
+    }
+
+    pub fn insert_table_column(
+        &self,
+        scheme_id: String,
+        item_id: String,
+        column: i32,
+    ) -> Result<(), MobileError> {
+        self.lock()?
+            .mutate_table(parse_id(&scheme_id)?, parse_id(&item_id)?, |table| {
+                let column = position_from_i32(column)?;
+                let at = (column + 1).min(table.column_count());
+                table.insert_column(at, format!("Column {}", at + 1));
+                Ok(())
+            })
+            .map_err(Into::into)
+    }
+
+    pub fn delete_table_column(
+        &self,
+        scheme_id: String,
+        item_id: String,
+        column: i32,
+    ) -> Result<(), MobileError> {
+        self.lock()?
+            .mutate_table(parse_id(&scheme_id)?, parse_id(&item_id)?, |table| {
+                table.remove_column(position_from_i32(column)?);
+                Ok(())
             })
             .map_err(Into::into)
     }
@@ -2326,6 +2508,57 @@ impl MobileCoreInner {
                 .is_node_in_deleted_folder_subtree(NodeRef::Folder(folder))
     }
 
+    fn insert_table(&mut self, scheme_id: SchemeId, after_item_id: Option<ItemId>) -> Result<()> {
+        if self.workspace.is_scheme_read_only(scheme_id) {
+            return Err(anyhow!("scheme is read-only"));
+        }
+
+        let position = {
+            let scheme = self
+                .workspace
+                .scheme(scheme_id)
+                .ok_or_else(|| anyhow!("scheme {scheme_id} is missing"))?;
+            after_item_id
+                .and_then(|item_id| scheme.item_index(item_id).map(|index| index + 1))
+                .unwrap_or(scheme.items.len())
+        };
+
+        let mut item = Item::new("");
+        item.content.push(Inline::Table(Table::new(2, 2)));
+        self.apply(Command::InsertItem {
+            scheme: scheme_id,
+            position,
+            item,
+        })
+    }
+
+    fn mutate_table(
+        &mut self,
+        scheme_id: SchemeId,
+        item_id: ItemId,
+        mutate: impl FnOnce(&mut Table) -> Result<()>,
+    ) -> Result<()> {
+        if self.workspace.is_scheme_read_only(scheme_id) {
+            return Err(anyhow!("scheme is read-only"));
+        }
+
+        let mut item = self
+            .workspace
+            .scheme(scheme_id)
+            .and_then(|scheme| scheme.items.iter().find(|item| item.id == item_id))
+            .cloned()
+            .ok_or_else(|| anyhow!("item {item_id} is missing in scheme {scheme_id}"))?;
+        let table = item
+            .table_mut()
+            .ok_or_else(|| anyhow!("item {item_id} does not contain a table"))?;
+        mutate(table)?;
+        table.normalize();
+        self.apply(Command::ReplaceItem {
+            scheme: scheme_id,
+            item,
+        })
+    }
+
     fn seed_editor_image_fixture(&mut self) -> Result<()> {
         if self.workspace.iter_schemes().any(|scheme| {
             scheme
@@ -3062,6 +3295,16 @@ pub struct MobileItem {
     pub notification_offset_secs: Option<i32>,
     pub repeat_rule: Option<String>,
     pub media: Vec<MobileItemMedia>,
+    pub tables: Vec<MobileTable>,
+    pub content: Vec<MobileInline>,
+}
+
+/// One piece of a line's content, in document order. Mirrors `knotq_model::Inline`.
+#[derive(Clone, Debug)]
+pub enum MobileInline {
+    Text { text: String },
+    Image { media: MobileItemMedia },
+    Table { table: MobileTable },
 }
 
 #[derive(Clone, Debug)]
@@ -3071,6 +3314,43 @@ pub struct MobileItemMedia {
     pub format: String,
     pub width: Option<i32>,
     pub height: Option<i32>,
+}
+
+#[derive(Clone, Debug)]
+pub struct MobileTable {
+    pub columns: Vec<MobileTableColumn>,
+    pub rows: Vec<MobileTableRow>,
+}
+
+#[derive(Clone, Debug)]
+pub struct MobileTableColumn {
+    pub id: String,
+    pub name: String,
+}
+
+#[derive(Clone, Debug)]
+pub struct MobileTableRow {
+    pub id: String,
+    pub cells: Vec<MobileTableCell>,
+}
+
+#[derive(Clone, Debug)]
+pub struct MobileTableCell {
+    pub text: String,
+    pub lines: Vec<MobileCellLine>,
+}
+
+/// A single line within a table cell. Flat / non-recursive: it does not embed
+/// `MobileItem`/`MobileInline` (those would make UniFFI records recursive).
+#[derive(Clone, Debug)]
+pub struct MobileCellLine {
+    pub id: String,
+    pub text: String,
+    pub marker: String,
+    pub done: bool,
+    pub start: Option<String>,
+    pub end: Option<String>,
+    pub media: Vec<MobileItemMedia>,
 }
 
 #[derive(Clone, Debug)]
@@ -3107,6 +3387,37 @@ impl MobileItem {
                 .iter()
                 .filter_map(|media| MobileItemMedia::from_media(media, image_assets_dir))
                 .collect(),
+            tables: item
+                .content
+                .iter()
+                .filter_map(|inline| match inline {
+                    Inline::Table(table) => {
+                        Some(MobileTable::from_table(table, image_assets_dir))
+                    }
+                    _ => None,
+                })
+                .collect(),
+            content: item
+                .content
+                .iter()
+                .filter_map(|inline| MobileInline::from_inline(inline, image_assets_dir))
+                .collect(),
+        }
+    }
+}
+
+impl MobileInline {
+    /// Maps a domain `Inline` to its mobile representation. Returns `None` for an
+    /// image whose asset cannot be resolved on disk (matching the flat `media`
+    /// path, which also drops unresolved assets).
+    fn from_inline(inline: &Inline, image_assets_dir: &Path) -> Option<Self> {
+        match inline {
+            Inline::Text { text } => Some(MobileInline::Text { text: text.clone() }),
+            Inline::Image(image) => MobileItemMedia::from_media(image, image_assets_dir)
+                .map(|media| MobileInline::Image { media }),
+            Inline::Table(table) => Some(MobileInline::Table {
+                table: MobileTable::from_table(table, image_assets_dir),
+            }),
         }
     }
 }
@@ -3130,6 +3441,57 @@ impl MobileItemMedia {
             width: media.width.and_then(|value| i32::try_from(value).ok()),
             height: media.height.and_then(|value| i32::try_from(value).ok()),
         })
+    }
+}
+
+impl MobileTable {
+    fn from_table(table: &Table, image_assets_dir: &Path) -> Self {
+        Self {
+            columns: table
+                .columns
+                .iter()
+                .map(|column| MobileTableColumn {
+                    id: column.id.to_string(),
+                    name: column.name.clone(),
+                })
+                .collect(),
+            rows: table
+                .rows
+                .iter()
+                .map(|row| MobileTableRow {
+                    id: row.id.to_string(),
+                    cells: row
+                        .cells
+                        .iter()
+                        .map(|cell| MobileTableCell {
+                            text: cell.summary_text(),
+                            lines: cell
+                                .items
+                                .iter()
+                                .map(|item| MobileCellLine::from_item(item, image_assets_dir))
+                                .collect(),
+                        })
+                        .collect(),
+                })
+                .collect(),
+        }
+    }
+}
+
+impl MobileCellLine {
+    fn from_item(item: &Item, image_assets_dir: &Path) -> Self {
+        Self {
+            id: item.id.to_string(),
+            text: item.text(),
+            marker: marker_str(item.marker).to_string(),
+            done: item.single_state().is_done(),
+            start: item.start.map(format_datetime),
+            end: item.end.map(format_datetime),
+            media: item
+                .images()
+                .filter_map(|media| MobileItemMedia::from_media(media, image_assets_dir))
+                .collect(),
+        }
     }
 }
 
@@ -4388,6 +4750,179 @@ mod tests {
         );
         assert_eq!(scheme.items[1].marker, "bullet");
         assert_eq!(scheme.items[1].indent, 2);
+
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn mobile_tables_are_visible_editable_and_preserved_by_document_saves() {
+        let dir = std::env::temp_dir().join(format!("knotq-mobile-test-{}", uuid::Uuid::new_v4()));
+        let core = MobileCore::new(dir.display().to_string()).expect("open mobile core");
+
+        core.create_scheme(None, "Tables".to_string(), Some(2), None)
+            .expect("create scheme");
+        let scheme_id = core
+            .snapshot(Some("2026-05-26".to_string()), 0)
+            .expect("snapshot")
+            .schemes
+            .into_iter()
+            .find(|scheme| scheme.display_name == "Tables")
+            .expect("created scheme")
+            .id;
+
+        core.insert_table(scheme_id.clone(), None)
+            .expect("insert table");
+        let table_item = core
+            .snapshot(Some("2026-05-26".to_string()), 0)
+            .expect("snapshot")
+            .schemes
+            .into_iter()
+            .find(|scheme| scheme.id == scheme_id)
+            .expect("scheme")
+            .items
+            .into_iter()
+            .find(|item| !item.tables.is_empty())
+            .expect("table item");
+        assert_eq!(table_item.tables[0].columns.len(), 2);
+        assert_eq!(table_item.tables[0].rows.len(), 2);
+
+        core.set_table_cell_text(
+            scheme_id.clone(),
+            table_item.id.clone(),
+            0,
+            1,
+            "Q1".to_string(),
+        )
+        .expect("edit cell");
+        core.insert_table_row(scheme_id.clone(), table_item.id.clone(), 0)
+            .expect("insert row");
+        core.insert_table_column(scheme_id.clone(), table_item.id.clone(), 1)
+            .expect("insert column");
+
+        let item = core
+            .snapshot(Some("2026-05-26".to_string()), 0)
+            .expect("snapshot")
+            .schemes
+            .into_iter()
+            .find(|scheme| scheme.id == scheme_id)
+            .expect("scheme")
+            .items
+            .into_iter()
+            .find(|item| item.id == table_item.id)
+            .expect("table item");
+        assert_eq!(item.tables[0].rows[0].cells[1].text, "Q1");
+        assert_eq!(item.tables[0].rows.len(), 3);
+        assert_eq!(item.tables[0].columns.len(), 3);
+
+        core.replace_scheme_items(
+            scheme_id.clone(),
+            vec![MobileItemEdit {
+                id: Some(table_item.id.clone()),
+                text: "Budget".to_string(),
+                marker: "blank".to_string(),
+                indent: 0,
+                done: false,
+                start: None,
+                end: None,
+                notification_offset_secs: None,
+                repeat_rule: None,
+                media: Vec::new(),
+            }],
+        )
+        .expect("replace items");
+
+        let item = core
+            .snapshot(Some("2026-05-26".to_string()), 0)
+            .expect("snapshot")
+            .schemes
+            .into_iter()
+            .find(|scheme| scheme.id == scheme_id)
+            .expect("scheme")
+            .items
+            .into_iter()
+            .find(|item| item.id == table_item.id)
+            .expect("table item");
+        assert_eq!(item.text, "Budget");
+        assert_eq!(item.tables[0].rows[0].cells[1].text, "Q1");
+        assert_eq!(item.tables[0].rows.len(), 3);
+        assert_eq!(item.tables[0].columns.len(), 3);
+
+        core.delete_table_row(scheme_id.clone(), table_item.id.clone(), 1)
+            .expect("delete row");
+        core.delete_table_column(scheme_id.clone(), table_item.id.clone(), 1)
+            .expect("delete column");
+        let item = core
+            .snapshot(Some("2026-05-26".to_string()), 0)
+            .expect("snapshot")
+            .schemes
+            .into_iter()
+            .find(|scheme| scheme.id == scheme_id)
+            .expect("scheme")
+            .items
+            .into_iter()
+            .find(|item| item.id == table_item.id)
+            .expect("table item");
+        assert_eq!(item.tables[0].rows.len(), 2);
+        assert_eq!(item.tables[0].columns.len(), 2);
+
+        // Ordered inline content carries the table in document order, and each
+        // cell exposes editable lines (not just a flat summary string).
+        assert!(matches!(
+            item.content.last(),
+            Some(MobileInline::Table { .. })
+        ));
+        assert_eq!(item.tables[0].rows[0].cells[0].lines.len(), 1);
+        assert_eq!(item.tables[0].rows[0].cells[0].lines[0].marker, "blank");
+
+        // Granular cell-line editing: set, add a second line, then remove it.
+        core.set_table_cell_line_text(
+            scheme_id.clone(),
+            table_item.id.clone(),
+            0,
+            1,
+            0,
+            "Updated".to_string(),
+        )
+        .expect("set cell line text");
+        core.add_table_cell_line(
+            scheme_id.clone(),
+            table_item.id.clone(),
+            0,
+            1,
+            1,
+            "Second".to_string(),
+        )
+        .expect("add cell line");
+
+        let cell = || {
+            core.snapshot(Some("2026-05-26".to_string()), 0)
+                .expect("snapshot")
+                .schemes
+                .into_iter()
+                .find(|scheme| scheme.id == scheme_id)
+                .expect("scheme")
+                .items
+                .into_iter()
+                .find(|item| item.id == table_item.id)
+                .expect("table item")
+                .tables
+                .into_iter()
+                .next()
+                .expect("table")
+                .rows[0]
+                .cells[1]
+                .clone()
+        };
+        let edited = cell();
+        assert_eq!(edited.lines.len(), 2);
+        assert_eq!(edited.lines[0].text, "Updated");
+        assert_eq!(edited.lines[1].text, "Second");
+
+        core.remove_table_cell_line(scheme_id.clone(), table_item.id.clone(), 0, 1, 1)
+            .expect("remove cell line");
+        let trimmed = cell();
+        assert_eq!(trimmed.lines.len(), 1);
+        assert_eq!(trimmed.lines[0].text, "Updated");
 
         let _ = std::fs::remove_dir_all(dir);
     }

@@ -55,7 +55,9 @@ internal class BackgroundSyncWorker(
                     return Result.success()
                 }
                 RefreshOutcome.Transient -> {
-                    // Keep the current token; it may still be accepted.
+                    // Keep the session intact. The access token is near expiry, so
+                    // avoid syncing with it and retry when refresh succeeds.
+                    return Result.retry()
                 }
             }
         }

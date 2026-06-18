@@ -157,6 +157,7 @@ struct ContentView: View {
         withAnimation(.easeOut(duration: 0.2)) {
             onboardingCompleted = true
         }
+        MobileNotificationScheduler.shared.requestAuthorizationIfNeeded()
     }
 
     private var title: String {

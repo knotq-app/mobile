@@ -48,6 +48,15 @@ private const val EDITOR_IMAGE_STACK_GAP_DP = 7
 private const val EDITOR_IMAGE_MAX_HEIGHT_DP = 300
 private const val EDITOR_IMAGE_FALLBACK_WIDTH_DP = 320
 private const val EDITOR_IMAGE_FALLBACK_HEIGHT_DP = 180
+private const val EDITOR_TABLE_TOP_GAP_DP = 8
+private const val EDITOR_TABLE_ROW_HEIGHT_DP = 34
+private const val EDITOR_TABLE_HEADER_HEIGHT_DP = 30
+private const val EDITOR_TABLE_MIN_COL_WIDTH_DP = 64
+private const val EDITOR_TABLE_CELL_PAD_DP = 8
+private const val EDITOR_TABLE_CTRL_DP = 20
+// How much vertical space a collapsed block-only text line gives back. Roughly
+// one text line so the block draws in place rather than below a blank row.
+private const val EDITOR_COLLAPSE_TEXT_HEIGHT_DP = 22
 private class FixedHeightCursorDrawable(
     color: Int,
     private val maxHeightPx: Int,
@@ -131,6 +140,15 @@ internal class SchemeEditText(context: android.content.Context) : EditText(conte
         }
     var markerTapHandler: ((Int) -> Unit)? = null
     var selectionChangedHandler: (() -> Unit)? = null
+    // Inline table interactions. `tableCellTapHandler` is invoked with the
+    // logical line (item), the cell's row/column, and the cell's on-screen rect
+    // so the host can float an editable field over it. `tableControlTapHandler`
+    // is invoked for the compact +/- row/column controls.
+    var tableCellTapHandler: ((TableCellHit) -> Unit)? = null
+    var tableControlTapHandler: ((TableControlHit) -> Unit)? = null
+    // Populated on every draw pass; consumed by touch hit-testing.
+    private val tableCellHits = ArrayList<TableCellHit>()
+    private val tableControlHits = ArrayList<TableControlHit>()
 
     override fun onSelectionChanged(selStart: Int, selEnd: Int) {
         super.onSelectionChanged(selStart, selEnd)
@@ -253,6 +271,16 @@ internal class SchemeEditText(context: android.content.Context) : EditText(conte
 
     override fun onTouchEvent(event: MotionEvent): Boolean {
         if (event.action == MotionEvent.ACTION_UP) {
+            // Table chrome is hit-tested first: a tap on a +/- control or a cell
+            // takes priority over caret placement / marker toggles.
+            tableControlHits.firstOrNull { it.rect.contains(event.x, event.y) }?.let { hit ->
+                tableControlTapHandler?.invoke(hit)
+                return true
+            }
+            tableCellHits.firstOrNull { it.rect.contains(event.x, event.y) }?.let { hit ->
+                tableCellTapHandler?.invoke(hit)
+                return true
+            }
             markerLineAt(event.x, event.y)?.let { line ->
                 markerTapHandler?.invoke(line)
                 return true
@@ -260,6 +288,11 @@ internal class SchemeEditText(context: android.content.Context) : EditText(conte
         }
         return super.onTouchEvent(event)
     }
+
+    /// Looks up the on-screen rect of a table cell recorded in the last draw
+    /// pass, used to re-open the inline editor on Tab/next navigation.
+    fun cellRectFor(tableIndex: Int, row: Int, column: Int): RectF? =
+        tableCellHits.firstOrNull { it.tableIndex == tableIndex && it.row == row && it.column == column }?.let { RectF(it.rect) }
 
     private fun markerLineAt(x: Float, y: Float): Int? {
         // iOS `checkboxLineRange`: only checkbox markers respond to taps (a
@@ -272,10 +305,13 @@ internal class SchemeEditText(context: android.content.Context) : EditText(conte
             if (lineStart > 0 && value.getOrNull(lineStart - 1) != '\n') continue
             val logicalLine = value.substring(0, lineStart).count { it == '\n' }
             val lineEnd = value.indexOf('\n', lineStart).let { if (it < 0) value.length else it }
-            val parsed = parseChromeLine(value.substring(lineStart, lineEnd))
+            val raw = value.substring(lineStart, lineEnd)
+            val parsed = parseChromeLine(raw)
             if (parsed.marker != "checkbox") continue
             val prefixWidth = prefixVisualWidth(parsed, parsed.marker)
-            val extraHeight = extraHeightFor(lineAdornments.getOrNull(logicalLine), prefixWidth)
+            val adornment = lineAdornments.getOrNull(logicalLine)
+            val body = raw.drop(chromePrefixLength(raw).coerceAtMost(raw.length))
+            val extraHeight = extraHeightFor(adornment, prefixWidth, collapsesText(body, adornment?.blocks.orEmpty()))
             val rect = markerRect(
                 parsed.indent,
                 totalPaddingTop + layout.getLineTop(visualLine) - scrollY,
@@ -329,6 +365,7 @@ internal class SchemeEditText(context: android.content.Context) : EditText(conte
             val bodyStart = (start + prefix).coerceAtMost(end)
             val body = raw.drop(prefix.coerceAtMost(raw.length))
             val heading = isMarkdownHeading(body)
+            val collapse = collapsesText(body, adornment?.blocks.orEmpty())
             val spanEnd = when {
                 end > start -> end
                 end < value.length -> end + 1
@@ -339,7 +376,8 @@ internal class SchemeEditText(context: android.content.Context) : EditText(conte
                     EditorChromeSpan(
                         lineTextEnd = end,
                         heading = heading,
-                        extraHeight = extraHeightFor(adornment, prefixWidth),
+                        extraHeight = extraHeightFor(adornment, prefixWidth, collapse),
+                        collapseText = collapse,
                         density = resources.displayMetrics.density
                     ),
                     start,
@@ -474,6 +512,8 @@ internal class SchemeEditText(context: android.content.Context) : EditText(conte
     private fun drawEditorChrome(canvas: Canvas) {
         val layout = layout ?: return
         val value = text?.toString().orEmpty()
+        tableCellHits.clear()
+        tableControlHits.clear()
         val lines = chromeDrawLines(value)
         lines.forEachIndexed { index, line ->
             if (value.isEmpty()) return@forEachIndexed
@@ -503,7 +543,11 @@ internal class SchemeEditText(context: android.content.Context) : EditText(conte
                 )
                 drawAnnotation(canvas, annotation, markerRect, contentBottom)
             }
-            drawMediaStack(canvas, line.media, line.prefixWidth, contentBottom + if (line.annotation == null) 0 else dp(EDITOR_ANNOTATION_HEIGHT_DP))
+            // Block-only lines collapse: their text line carries no glyphs, so
+            // blocks start at the line top instead of below a blank text row.
+            val blockTop = if (line.collapseText) firstTop else
+                contentBottom + if (line.annotation == null) 0 else dp(EDITOR_ANNOTATION_HEIGHT_DP)
+            drawBlockStack(canvas, line.blocks, line.prefixWidth, blockTop, index)
         }
     }
 
@@ -520,6 +564,7 @@ internal class SchemeEditText(context: android.content.Context) : EditText(conte
             val prefixWidth = prefixVisualWidth(parsed, marker)
             val body = raw.drop(chromePrefixLength(raw).coerceAtMost(raw.length))
             val adornment = lineAdornments.getOrNull(lineIndex)
+            val blocks = adornment?.blocks.orEmpty()
             out.add(
                 ChromeDrawLine(
                     start = start,
@@ -528,10 +573,11 @@ internal class SchemeEditText(context: android.content.Context) : EditText(conte
                     marker = marker,
                     done = parsed.done,
                     annotation = adornment?.annotation,
-                    media = adornment?.media.orEmpty(),
+                    blocks = blocks,
                     prefixWidth = prefixWidth,
                     heading = isMarkdownHeading(body),
-                    extraHeight = extraHeightFor(adornment, prefixWidth)
+                    extraHeight = extraHeightFor(adornment, prefixWidth, collapseText = collapsesText(body, blocks)),
+                    collapseText = collapsesText(body, blocks)
                 )
             )
             lineIndex++
@@ -625,21 +671,167 @@ internal class SchemeEditText(context: android.content.Context) : EditText(conte
         chromePaint.typeface = Typeface.DEFAULT
     }
 
-    private fun drawMediaStack(canvas: Canvas, media: List<EditorLineMedia>, prefixWidth: Int, yStart: Int) {
-        if (media.isEmpty()) return
+    /// Draws this line's image/table blocks in document order, stacked from
+    /// `yStart`. Records table cell + control hit rects for touch handling.
+    private fun drawBlockStack(canvas: Canvas, blocks: List<EditorBlock>, prefixWidth: Int, yStart: Int, lineIndex: Int) {
+        if (blocks.isEmpty()) return
+        val left = totalPaddingLeft + prefixWidth.toFloat()
         val maxWidth = editorImageMaxWidth(prefixWidth)
-        var y = yStart + dp(EDITOR_IMAGE_TOP_GAP_DP)
+        var y = yStart.toFloat()
         var drewImage = false
-        media.filter { it.kind == "image" }.forEach { item ->
-            val size = mediaDisplaySize(item, maxWidth)
-            if (size.first <= 0f || size.second <= 0f) return@forEach
-            if (drewImage) y += dp(EDITOR_IMAGE_STACK_GAP_DP)
-            val rect = RectF(totalPaddingLeft + prefixWidth.toFloat(), y.toFloat(), totalPaddingLeft + prefixWidth + size.first, y + size.second)
-            drawImageMedia(canvas, item, rect)
-            y += size.second.roundToInt()
-            drewImage = true
+        var tableIndex = 0
+        blocks.forEach { block ->
+            when (block) {
+                is EditorBlock.Image -> {
+                    if (block.media.kind != "image") return@forEach
+                    val size = mediaDisplaySize(block.media, maxWidth)
+                    if (size.first <= 0f || size.second <= 0f) return@forEach
+                    y += if (drewImage) dp(EDITOR_IMAGE_STACK_GAP_DP) else dp(EDITOR_IMAGE_TOP_GAP_DP)
+                    val rect = RectF(left, y, left + size.first, y + size.second)
+                    drawImageMedia(canvas, block.media, rect)
+                    y += size.second
+                    drewImage = true
+                }
+                is EditorBlock.Table -> {
+                    y += dp(EDITOR_TABLE_TOP_GAP_DP)
+                    y = drawTable(canvas, block.table, left, y, maxWidth, lineIndex, tableIndex)
+                    tableIndex++
+                    drewImage = false
+                }
+            }
         }
     }
+
+    /// Renders a table grid on the canvas and registers per-cell and +/- control
+    /// hit rects. Returns the y just below the table.
+    private fun drawTable(canvas: Canvas, table: EditorTable, left: Float, top: Float, maxWidth: Int, lineIndex: Int, tableIndex: Int): Float {
+        val columnCount = max(table.columns.size, table.rows.maxOfOrNull { it.size } ?: 0)
+        if (columnCount <= 0) return top
+        val ctrl = dp(EDITOR_TABLE_CTRL_DP).toFloat()
+        // Reserve a thin gutter on the right/bottom for the add controls.
+        val gridWidth = (maxWidth - dp(EDITOR_TABLE_CTRL_DP) - dp(4)).coerceAtLeast(dp(EDITOR_TABLE_MIN_COL_WIDTH_DP) * 1)
+        val colWidth = max(dp(EDITOR_TABLE_MIN_COL_WIDTH_DP).toFloat(), gridWidth.toFloat() / columnCount)
+        val headerHeight = dp(EDITOR_TABLE_HEADER_HEIGHT_DP).toFloat()
+        val rowHeight = dp(EDITOR_TABLE_ROW_HEIGHT_DP).toFloat()
+        val gridRight = left + colWidth * columnCount
+
+        // Header row.
+        var y = top
+        val headerRect = RectF(left, y, gridRight, y + headerHeight)
+        chromePaint.style = Paint.Style.FILL
+        chromePaint.color = editorTheme.buttonBg
+        canvas.drawRect(headerRect, chromePaint)
+        for (col in 0 until columnCount) {
+            val name = table.columns.getOrNull(col)?.name.orEmpty()
+            drawTableText(canvas, name, left + col * colWidth, y, colWidth, headerHeight, editorTheme.textDim, bold = true)
+        }
+        y += headerHeight
+
+        // Body rows.
+        table.rows.forEachIndexed { rowIndex, row ->
+            val rowTop = y
+            for (col in 0 until columnCount) {
+                val cellLeft = left + col * colWidth
+                val cellRect = RectF(cellLeft, rowTop, cellLeft + colWidth, rowTop + rowHeight)
+                val cell = row.getOrNull(col)
+                drawTableText(canvas, cell?.display.orEmpty(), cellLeft, rowTop, colWidth, rowHeight, editorTheme.textPrimary, bold = false)
+                tableCellHits.add(
+                    TableCellHit(
+                        lineIndex = lineIndex,
+                        tableIndex = tableIndex,
+                        row = rowIndex,
+                        column = col,
+                        text = cell?.display.orEmpty(),
+                        rect = RectF(cellRect)
+                    )
+                )
+                // Row delete control sits in the left header column on hover-less
+                // mobile we surface it as a tiny "-" at the row's right edge end.
+            }
+            y += rowHeight
+        }
+
+        // Grid lines.
+        chromePaint.style = Paint.Style.STROKE
+        chromePaint.strokeWidth = dp(1f)
+        chromePaint.color = editorTheme.divider
+        val gridBottom = y
+        for (col in 0..columnCount) {
+            val x = left + col * colWidth
+            canvas.drawLine(x, top, x, gridBottom, chromePaint)
+        }
+        var lineY = top
+        canvas.drawLine(left, lineY, gridRight, lineY, chromePaint)
+        lineY += headerHeight
+        canvas.drawLine(left, lineY, gridRight, lineY, chromePaint)
+        table.rows.indices.forEach {
+            lineY += rowHeight
+            canvas.drawLine(left, lineY, gridRight, lineY, chromePaint)
+        }
+
+        // Compact inline controls: "+" to add a column (right of header) and "+"
+        // to add a row (below the last row). Row/column delete reuse the same
+        // control rects via a long-press path handled by the host.
+        val addColRect = RectF(gridRight + dp(4f), top, gridRight + dp(4f) + ctrl, top + headerHeight)
+        drawTableControl(canvas, addColRect, "+")
+        tableControlHits.add(TableControlHit(lineIndex, tableIndex, TableControlKind.ADD_COLUMN, table.rows.size, columnCount, RectF(addColRect)))
+
+        val addRowRect = RectF(left, gridBottom + dp(4f), left + ctrl, gridBottom + dp(4f) + ctrl)
+        drawTableControl(canvas, addRowRect, "+")
+        tableControlHits.add(TableControlHit(lineIndex, tableIndex, TableControlKind.ADD_ROW, table.rows.size, columnCount, RectF(addRowRect)))
+
+        chromePaint.style = Paint.Style.FILL
+        return gridBottom + dp(EDITOR_TABLE_CTRL_DP) + dp(8)
+    }
+
+    private fun drawTableText(canvas: Canvas, value: String, left: Float, top: Float, cellWidth: Float, cellHeight: Float, color: Int, bold: Boolean) {
+        if (value.isEmpty()) return
+        chromePaint.style = Paint.Style.FILL
+        chromePaint.color = color
+        chromePaint.textAlign = Paint.Align.LEFT
+        chromePaint.typeface = if (bold) Typeface.create("sans-serif-medium", Typeface.NORMAL) else Typeface.DEFAULT
+        chromePaint.textSize = dp(13f)
+        val pad = dp(EDITOR_TABLE_CELL_PAD_DP).toFloat()
+        // First line only on the canvas summary; the inline editor shows all lines.
+        val firstLine = value.substringBefore('\n')
+        val clipped = ellipsizeToWidth(firstLine, cellWidth - pad * 2)
+        val baseline = top + cellHeight / 2f - (chromePaint.ascent() + chromePaint.descent()) / 2f
+        canvas.drawText(clipped, left + pad, baseline, chromePaint)
+        chromePaint.typeface = Typeface.DEFAULT
+    }
+
+    private fun ellipsizeToWidth(value: String, maxWidth: Float): String {
+        if (maxWidth <= 0f) return ""
+        if (chromePaint.measureText(value) <= maxWidth) return value
+        val ellipsis = "…"
+        var end = value.length
+        while (end > 0 && chromePaint.measureText(value.substring(0, end) + ellipsis) > maxWidth) end--
+        return value.substring(0, end) + ellipsis
+    }
+
+    private fun drawTableControl(canvas: Canvas, rect: RectF, glyph: String) {
+        chromePaint.style = Paint.Style.FILL
+        chromePaint.color = editorTheme.buttonBg
+        canvas.drawRoundRect(rect, dp(4f), dp(4f), chromePaint)
+        chromePaint.style = Paint.Style.STROKE
+        chromePaint.strokeWidth = dp(1f)
+        chromePaint.color = editorTheme.divider
+        canvas.drawRoundRect(rect, dp(4f), dp(4f), chromePaint)
+        chromePaint.style = Paint.Style.FILL
+        chromePaint.color = accentColor
+        chromePaint.textAlign = Paint.Align.CENTER
+        chromePaint.textSize = dp(15f)
+        chromePaint.typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
+        val baseline = rect.centerY() - (chromePaint.ascent() + chromePaint.descent()) / 2f
+        canvas.drawText(glyph, rect.centerX(), baseline, chromePaint)
+        chromePaint.textAlign = Paint.Align.LEFT
+        chromePaint.typeface = Typeface.DEFAULT
+    }
+
+    /// A block-only line (empty body text but with image/table blocks) collapses
+    /// its text row so the block renders in place instead of below a blank line.
+    private fun collapsesText(body: String, blocks: List<EditorBlock>): Boolean =
+        body.isEmpty() && blocks.isNotEmpty()
 
     private fun drawImageMedia(canvas: Canvas, media: EditorLineMedia, rect: RectF) {
         chromePaint.style = Paint.Style.FILL
@@ -691,23 +883,42 @@ internal class SchemeEditText(context: android.content.Context) : EditText(conte
         return decoded
     }
 
-    private fun extraHeightFor(adornment: EditorLineAdornment?, prefixWidth: Int): Int {
+    private fun extraHeightFor(adornment: EditorLineAdornment?, prefixWidth: Int, collapseText: Boolean): Int {
         var extra = if (adornment?.annotation == null) 0 else dp(EDITOR_ANNOTATION_HEIGHT_DP)
-        extra += mediaStackHeight(adornment?.media.orEmpty(), editorImageMaxWidth(prefixWidth))
+        extra += blockStackHeight(adornment?.blocks.orEmpty(), editorImageMaxWidth(prefixWidth))
+        // A collapsed line reclaims its own text-row height (added by the chrome
+        // span shrink) so the total reserved space still fits the blocks.
+        if (collapseText) extra += dp(EDITOR_COLLAPSE_TEXT_HEIGHT_DP)
         return extra
     }
 
-    private fun mediaStackHeight(media: List<EditorLineMedia>, maxWidth: Int): Int {
+    private fun blockStackHeight(blocks: List<EditorBlock>, maxWidth: Int): Int {
         var height = 0
-        var count = 0
-        media.filter { it.kind == "image" }.forEach { item ->
-            val size = mediaDisplaySize(item, maxWidth)
-            if (size.second <= 0f) return@forEach
-            height += if (count == 0) dp(EDITOR_IMAGE_TOP_GAP_DP) else dp(EDITOR_IMAGE_STACK_GAP_DP)
-            height += size.second.roundToInt()
-            count++
+        var drewImage = false
+        blocks.forEach { block ->
+            when (block) {
+                is EditorBlock.Image -> {
+                    if (block.media.kind != "image") return@forEach
+                    val size = mediaDisplaySize(block.media, maxWidth)
+                    if (size.second <= 0f) return@forEach
+                    height += if (drewImage) dp(EDITOR_IMAGE_STACK_GAP_DP) else dp(EDITOR_IMAGE_TOP_GAP_DP)
+                    height += size.second.roundToInt()
+                    drewImage = true
+                }
+                is EditorBlock.Table -> {
+                    height += dp(EDITOR_TABLE_TOP_GAP_DP)
+                    height += tableHeight(block.table)
+                    drewImage = false
+                }
+            }
         }
         return height
+    }
+
+    private fun tableHeight(table: EditorTable): Int {
+        val rows = table.rows.size
+        return dp(EDITOR_TABLE_HEADER_HEIGHT_DP) + rows * dp(EDITOR_TABLE_ROW_HEIGHT_DP) +
+            dp(EDITOR_TABLE_CTRL_DP) + dp(8)
     }
 
     private fun mediaDisplaySize(media: EditorLineMedia, maxWidth: Int): Pair<Float, Float> {
@@ -782,6 +993,7 @@ private class EditorChromeSpan(
     private val lineTextEnd: Int,
     private val heading: Boolean,
     private val extraHeight: Int,
+    private val collapseText: Boolean,
     private val density: Float,
 ) : LineBackgroundSpan, LineHeightSpan {
 
@@ -821,6 +1033,13 @@ private class EditorChromeSpan(
         if (extraHeight > 0 && end >= lineTextEnd) {
             fm.descent += extraHeight
             fm.bottom += extraHeight
+        }
+        // Collapse the (empty) text row of a block-only line so the block draws
+        // in place. The shrink is bounded so we never produce a negative line.
+        if (collapseText) {
+            val shrink = min(dp(EDITOR_COLLAPSE_TEXT_HEIGHT_DP.toFloat()).roundToInt(), max(0, (fm.descent - fm.ascent) - dp(2f).roundToInt()))
+            fm.descent -= shrink
+            fm.bottom -= shrink
         }
     }
 
@@ -881,14 +1100,66 @@ internal data class EditorLineAdornment(
     val marker: String,
     val done: Boolean,
     val annotation: String?,
-    val media: List<EditorLineMedia>,
+    // Image/table blocks in document order. Pure text inlines are not blocks;
+    // they stay in the editor's text line. A block-only item (empty body text)
+    // collapses its text line so the block renders in place, not below a blank.
+    val blocks: List<EditorBlock>,
 )
+
+internal sealed class EditorBlock {
+    data class Image(val media: EditorLineMedia) : EditorBlock()
+    data class Table(val table: EditorTable) : EditorBlock()
+}
 
 internal data class EditorLineMedia(
     val kind: String,
     val path: String?,
     val width: Int?,
     val height: Int?,
+)
+
+internal data class EditorTable(
+    val columns: List<EditorTableColumn>,
+    val rows: List<List<EditorCell>>,
+)
+
+internal data class EditorTableColumn(
+    val id: String,
+    val name: String,
+)
+
+internal data class EditorCell(
+    val text: String,
+    val lines: List<String>,
+) {
+    /// The cell's display text: prefer the structured per-line text (joined),
+    /// falling back to the flat summary the core also provides.
+    val display: String get() = if (lines.isNotEmpty()) lines.joinToString("\n") else text
+}
+
+/// A tapped table cell: the logical line (item index), which table within that
+/// item, the cell's row/column, its current text, and the on-screen rect the
+/// host floats the inline editor over.
+internal data class TableCellHit(
+    val lineIndex: Int,
+    val tableIndex: Int,
+    val row: Int,
+    val column: Int,
+    val text: String,
+    val rect: RectF,
+)
+
+internal enum class TableControlKind { ADD_ROW, ADD_COLUMN }
+
+/// A tapped +/- table control. `rowCount`/`columnCount` describe the table at
+/// draw time so the host can target the trailing row/column.
+internal data class TableControlHit(
+    val lineIndex: Int,
+    val tableIndex: Int,
+    val kind: TableControlKind,
+    val rowCount: Int,
+    val columnCount: Int,
+    val rect: RectF,
 )
 
 private data class ChromeDrawLine(
@@ -898,10 +1169,11 @@ private data class ChromeDrawLine(
     val marker: String,
     val done: Boolean,
     val annotation: String?,
-    val media: List<EditorLineMedia>,
+    val blocks: List<EditorBlock>,
     val prefixWidth: Int,
     val heading: Boolean,
     val extraHeight: Int,
+    val collapseText: Boolean,
 )
 
 internal data class ChromeLine(
@@ -1007,27 +1279,62 @@ internal fun editorLineAdornments(scheme: JSONObject, timeFormat24: Boolean): Li
         val start = item.optString("start").takeIf { it.isNotEmpty() && it != "null" }
         val end = item.optString("end").takeIf { it.isNotEmpty() && it != "null" }
         val annotation = MobileDateFormatting.annotationLabel(start, end, timeFormat24)
-        val media = ArrayList<EditorLineMedia>()
-        item.optJSONArray("media")?.forEachObject { rawMedia ->
-            media.add(
-                EditorLineMedia(
-                    kind = rawMedia.optString("kind"),
-                    path = rawMedia.optionalString("path"),
-                    width = rawMedia.takeUnless { it.isNull("width") }?.optInt("width"),
-                    height = rawMedia.takeUnless { it.isNull("height") }?.optInt("height")
-                )
-            )
-        }
         out.add(
             EditorLineAdornment(
                 marker = item.optString("marker", "blank"),
                 done = item.optBoolean("done", false),
                 annotation = annotation,
-                media = media
+                blocks = editorBlocksForItem(item)
             )
         )
     }
     return out
+}
+
+/// Builds the ordered image/table blocks for one item. When the core supplies
+/// `content` (inlines in document order) those drive the order; otherwise we
+/// fall back to the flat `media` + `tables` lists for backward compatibility.
+private fun editorBlocksForItem(item: JSONObject): List<EditorBlock> {
+    val content = item.optJSONArray("content")
+    val blocks = ArrayList<EditorBlock>()
+    if (content != null && content.length() > 0) {
+        content.forEachObject { inline ->
+            when (inline.optString("kind")) {
+                "image" -> inline.optJSONObject("media")?.let { blocks.add(EditorBlock.Image(parseEditorMedia(it))) }
+                "table" -> inline.optJSONObject("table")?.let { blocks.add(EditorBlock.Table(parseEditorTable(it))) }
+                // "text" inlines stay in the editor's text line; nothing to draw.
+            }
+        }
+        return blocks
+    }
+    item.optJSONArray("media")?.forEachObject { blocks.add(EditorBlock.Image(parseEditorMedia(it))) }
+    item.optJSONArray("tables")?.forEachObject { blocks.add(EditorBlock.Table(parseEditorTable(it))) }
+    return blocks
+}
+
+private fun parseEditorMedia(raw: JSONObject): EditorLineMedia = EditorLineMedia(
+    kind = raw.optString("kind"),
+    path = raw.optionalString("path"),
+    width = raw.takeUnless { it.isNull("width") }?.optInt("width"),
+    height = raw.takeUnless { it.isNull("height") }?.optInt("height")
+)
+
+private fun parseEditorTable(raw: JSONObject): EditorTable {
+    val columns = ArrayList<EditorTableColumn>()
+    raw.optJSONArray("columns")?.forEachObject { col ->
+        columns.add(EditorTableColumn(id = col.optString("id"), name = col.optString("name")))
+    }
+    val rows = ArrayList<List<EditorCell>>()
+    raw.optJSONArray("rows")?.forEachObject { row ->
+        val cells = ArrayList<EditorCell>()
+        row.optJSONArray("cells")?.forEachObject { cell ->
+            val lines = ArrayList<String>()
+            cell.optJSONArray("lines")?.forEachObject { line -> lines.add(line.optString("text")) }
+            cells.add(EditorCell(text = cell.optString("text"), lines = lines))
+        }
+        rows.add(cells)
+    }
+    return EditorTable(columns = columns, rows = rows)
 }
 
 internal fun parseEditorDocument(text: String, preserveBlankDocument: Boolean): List<SchemeEditorLine> {
@@ -1161,26 +1468,30 @@ internal data class UiTheme(
             danger = rgb(0xff453a),
         )
 
+        // Clean, near-white light theme matching knotq.com: an off-white canvas,
+        // soft gray-green surfaces, near-black ink, and a rose accent. Translucent
+        // rows/dividers tint with a slate-green so they read as the site's --line
+        // colors over the light canvas.
         val light = UiTheme(
             isDark = false,
-            bgApp = rgb(0xe8e2d8),
-            bgSidebar = rgb(0xe0d8cc),
-            bgToolbar = rgb(0xe3dcd2),
-            bgModal = rgb(0xece6dd),
-            rowAlt = rgba(0x5a4635, 14),
-            rowSelected = rgba(0xe66f1f, 30),
-            buttonBg = rgba(0x5a4635, 22),
-            divider = rgba(0x5a4635, 36),
-            dividerSoft = rgba(0x5a4635, 24),
-            dividerTiny = rgba(0x5a4635, 13),
-            borderOverlay = rgba(0x3d2a18, 48),
-            textPrimary = rgb(0x2c2420),
-            textDim = rgba(0x302520, 224),
-            textMuted = rgba(0x5a4a3c, 192),
-            textSoft = rgba(0x382c22, 190),
-            textToday = rgb(0xd04e1a),
-            accent = rgb(0xc04510),
-            danger = rgb(0xc72f24),
+            bgApp = rgb(0xfafbf9),
+            bgSidebar = rgb(0xf2f5f2),
+            bgToolbar = rgb(0xf2f5f2),
+            bgModal = rgb(0xffffff),
+            rowAlt = rgba(0x3a443d, 10),
+            rowSelected = rgba(0xc7375d, 31),
+            buttonBg = rgba(0x3a443d, 20),
+            divider = rgba(0x3a443d, 41),
+            dividerSoft = rgba(0x3a443d, 28),
+            dividerTiny = rgba(0x3a443d, 13),
+            borderOverlay = rgba(0x3a443d, 51),
+            textPrimary = rgb(0x171717),
+            textDim = rgba(0x393f39, 230),
+            textMuted = rgba(0x6d746d, 204),
+            textSoft = rgba(0x393f39, 217),
+            textToday = rgb(0xc7375d),
+            accent = rgb(0xc7375d),
+            danger = rgb(0xb84433),
         )
     }
 }

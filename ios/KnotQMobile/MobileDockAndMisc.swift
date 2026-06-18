@@ -27,6 +27,14 @@ struct SyncSettingsCard: View {
     @Binding var showingCancelConfirm: Bool
 
     private var state: SyncPanelState {
+        if model.syncSession != nil && model.syncOffline {
+            return SyncPanelState(
+                badge: "Offline",
+                detail: "Sync will retry when your connection is back.",
+                badgeBackground: theme.isDark ? Color(hex: 0xf59e0b).opacity(0.16) : Color(hex: 0xd97706).opacity(0.10),
+                badgeForeground: theme.isDark ? Color(hex: 0xf8d38d) : Color(hex: 0x9a4b00)
+            )
+        }
         if model.syncSession?.supportsSync == true && model.subscriptionCancelled {
             return SyncPanelState(
                 badge: "Cancelled",
@@ -60,7 +68,10 @@ struct SyncSettingsCard: View {
     }
 
     private var detail: String {
-        model.syncSession?.email ?? state.detail
+        if model.syncSession != nil && model.syncOffline {
+            return state.detail
+        }
+        return model.syncSession?.email ?? state.detail
     }
 
     var body: some View {
@@ -436,6 +447,8 @@ struct SettingsForm: View {
 
             GoogleCalendarSettingsSection(theme: theme)
 
+            SettingsHelpSection(theme: theme)
+
         }
         .scrollContentBackground(.hidden)
         .background(theme.bgApp)
@@ -459,7 +472,7 @@ struct SettingsForm: View {
 
     private var themeBinding: Binding<String> {
         Binding(
-            get: { model.snapshot?.settings.themeMode ?? "dark" },
+            get: { model.snapshot?.settings.themeMode ?? "system" },
             set: { model.setThemeMode($0) }
         )
     }
@@ -469,6 +482,42 @@ struct SettingsForm: View {
             get: { model.snapshot?.settings.timeFormat ?? "twelve_hour" },
             set: { model.setTimeFormat($0) }
         )
+    }
+}
+
+struct SettingsHelpSection: View {
+    let theme: KnotQTheme
+
+    private let discordURL = URL(string: "https://discord.gg/zyeHB77scg")!
+
+    var body: some View {
+        Section {
+            Link(destination: discordURL) {
+                HStack(spacing: 12) {
+                    Image(systemName: "bubble.left.and.bubble.right.fill")
+                        .font(.system(size: 18, weight: .semibold))
+                        .foregroundStyle(theme.accent)
+                        .frame(width: 28, height: 28)
+
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Need help with anything?")
+                            .font(.system(size: 15, weight: .semibold))
+                            .foregroundStyle(theme.textPrimary)
+                        Text("Join the KnotQ Discord")
+                            .font(.system(size: 12))
+                            .foregroundStyle(theme.textSoft)
+                    }
+
+                    Spacer(minLength: 12)
+
+                    Image(systemName: "arrow.up.forward")
+                        .font(.system(size: 12, weight: .bold))
+                        .foregroundStyle(theme.textDim)
+                }
+                .padding(.vertical, 2)
+            }
+        }
+        .listRowBackground(theme.bgModal)
     }
 }
 

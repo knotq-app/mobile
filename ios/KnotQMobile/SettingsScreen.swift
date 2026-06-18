@@ -24,7 +24,7 @@ struct SettingsScreen: View {
 
             Section("Appearance") {
                 Picker("Theme", selection: Binding(
-                    get: { model.snapshot?.settings.themeMode ?? "dark" },
+                    get: { model.snapshot?.settings.themeMode ?? "system" },
                     set: { model.setThemeMode($0) }
                 )) {
                     Text("Dark").tag("dark")
@@ -49,6 +49,8 @@ struct SettingsScreen: View {
             NotificationDefaultsSettingsSection(theme: theme)
 
             GoogleCalendarSettingsSection(theme: theme)
+
+            SettingsHelpSection(theme: theme)
         }
         .scrollContentBackground(.hidden)
         .background(theme.bgApp)

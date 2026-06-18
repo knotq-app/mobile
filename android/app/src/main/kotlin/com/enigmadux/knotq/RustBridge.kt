@@ -8,6 +8,8 @@ import com.enigmadux.knotq.ffi.MobileDailyEntry
 import com.enigmadux.knotq.ffi.MobileGoogleAccount
 import com.enigmadux.knotq.ffi.MobileGoogleAuthRequest
 import com.enigmadux.knotq.ffi.MobileGoogleSyncResult
+import com.enigmadux.knotq.ffi.MobileCellLine
+import com.enigmadux.knotq.ffi.MobileInline
 import com.enigmadux.knotq.ffi.MobileItem
 import com.enigmadux.knotq.ffi.MobileItemEdit
 import com.enigmadux.knotq.ffi.MobileItemMedia
@@ -18,6 +20,10 @@ import com.enigmadux.knotq.ffi.MobileScheme
 import com.enigmadux.knotq.ffi.MobileSearchHit
 import com.enigmadux.knotq.ffi.MobileSettings
 import com.enigmadux.knotq.ffi.MobileSnapshot
+import com.enigmadux.knotq.ffi.MobileTable
+import com.enigmadux.knotq.ffi.MobileTableCell
+import com.enigmadux.knotq.ffi.MobileTableColumn
+import com.enigmadux.knotq.ffi.MobileTableRow
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
@@ -227,6 +233,33 @@ internal class RustBridge(context: Context) : AutoCloseable {
         core.close()
     }
 
+    // Thin table-cell wrappers mirroring the existing typed FFI calls. The
+    // editor edits cells line-by-line (each cell holds a list of `lines`), so
+    // these are the per-line variants plus the row/column structural edits.
+    fun setTableCellLineText(schemeId: String, itemId: String, row: Int, column: Int, lineIndex: Int, text: String) =
+        core.setTableCellLineText(schemeId, itemId, row, column, lineIndex, text)
+
+    fun addTableCellLine(schemeId: String, itemId: String, row: Int, column: Int, lineIndex: Int, text: String) =
+        core.addTableCellLine(schemeId, itemId, row, column, lineIndex, text)
+
+    fun removeTableCellLine(schemeId: String, itemId: String, row: Int, column: Int, lineIndex: Int) =
+        core.removeTableCellLine(schemeId, itemId, row, column, lineIndex)
+
+    fun setTableCellText(schemeId: String, itemId: String, row: Int, column: Int, text: String) =
+        core.setTableCellText(schemeId, itemId, row, column, text)
+
+    fun insertTableRow(schemeId: String, itemId: String, row: Int) =
+        core.insertTableRow(schemeId, itemId, row)
+
+    fun deleteTableRow(schemeId: String, itemId: String, row: Int) =
+        core.deleteTableRow(schemeId, itemId, row)
+
+    fun insertTableColumn(schemeId: String, itemId: String, column: Int) =
+        core.insertTableColumn(schemeId, itemId, column)
+
+    fun deleteTableColumn(schemeId: String, itemId: String, column: Int) =
+        core.deleteTableColumn(schemeId, itemId, column)
+
     private fun MobileSnapshot.toJson(): JSONObject = JSONObject()
         .put("root", root.toJson())
         .put("schemes", schemes.toJsonArray { it.toJson() })
@@ -268,6 +301,16 @@ internal class RustBridge(context: Context) : AutoCloseable {
         .put("notification_offset_secs", notificationOffsetSecs ?: JSONObject.NULL)
         .put("repeat_rule", repeatRule ?: JSONObject.NULL)
         .put("media", media.toJsonArray { it.toJson() })
+        .put("tables", tables.toJsonArray { it.toJson() })
+        .put("content", content.toJsonArray { it.toJson() })
+
+    // Inlines in document order: text runs, images, and tables. The editor uses
+    // this to render blocks in place rather than the flat media/tables lists.
+    private fun MobileInline.toJson(): JSONObject = when (this) {
+        is MobileInline.Text -> JSONObject().put("kind", "text").put("text", text)
+        is MobileInline.Image -> JSONObject().put("kind", "image").put("media", media.toJson())
+        is MobileInline.Table -> JSONObject().put("kind", "table").put("table", table.toJson())
+    }
 
     private fun MobileItemMedia.toJson(): JSONObject = JSONObject()
         .put("kind", kind)
@@ -275,6 +318,31 @@ internal class RustBridge(context: Context) : AutoCloseable {
         .put("format", format)
         .put("width", width ?: JSONObject.NULL)
         .put("height", height ?: JSONObject.NULL)
+
+    private fun MobileTable.toJson(): JSONObject = JSONObject()
+        .put("columns", columns.toJsonArray { it.toJson() })
+        .put("rows", rows.toJsonArray { it.toJson() })
+
+    private fun MobileTableColumn.toJson(): JSONObject = JSONObject()
+        .put("id", id)
+        .put("name", name)
+
+    private fun MobileTableRow.toJson(): JSONObject = JSONObject()
+        .put("id", id)
+        .put("cells", cells.toJsonArray { it.toJson() })
+
+    private fun MobileTableCell.toJson(): JSONObject = JSONObject()
+        .put("text", text)
+        .put("lines", lines.toJsonArray { it.toJson() })
+
+    private fun MobileCellLine.toJson(): JSONObject = JSONObject()
+        .put("id", id)
+        .put("text", text)
+        .put("marker", marker)
+        .put("done", done)
+        .put("start", start ?: JSONObject.NULL)
+        .put("end", end ?: JSONObject.NULL)
+        .put("media", media.toJsonArray { it.toJson() })
 
     private fun MobileDailyEntry.toJson(): JSONObject = JSONObject()
         .put("date", date)

@@ -9,6 +9,191 @@ private extension KnotQTheme {
     }
 }
 
+struct EditorTableCellHit {
+    let itemID: String
+    let tableIndex: Int
+    let row: Int
+    let column: Int
+    let text: String
+    /// The cell's drawn frame in the text view's content coordinate space, used
+    /// to position the in-place cell editor exactly over the tapped cell.
+    let frame: CGRect
+}
+
+private struct EditorTableCellHitRect {
+    let rect: CGRect
+    let hit: EditorTableCellHit
+}
+
+/// How an in-place cell edit resolved, so the owning text view knows where to
+/// move the caret next.
+enum EditorCellCommitReason {
+    /// Field resigned (tap elsewhere / keyboard dismissed): stop editing.
+    case resign
+    /// Return pressed: commit and move to the cell directly below.
+    case moveDown
+    /// Tab pressed: commit and move to the next cell (left→right, wrapping rows).
+    case moveNext
+    /// Shift-Tab pressed: commit and move to the previous cell.
+    case movePrevious
+}
+
+/// Table structure ops reachable from the cell editor's accessory bar.
+enum EditorCellStructureAction {
+    case insertRow, deleteRow, insertColumn, deleteColumn
+}
+
+/// A single-line editable field overlaid exactly on a drawn table cell. Replaces
+/// the old full-screen `TableCellEditSheet` so cell text is edited in place. The
+/// owning `EditorTextView` positions it over the cell's frame, prefills it from
+/// the cell's first line, and drives Tab / Return navigation. Commits route back
+/// to the core via the view's `onCellCommit` closure.
+final class EditorTableCellEditor: UIView, UITextFieldDelegate {
+    let field = UITextField()
+    private(set) var hit: EditorTableCellHit
+    /// Called with the committed text and how the edit ended. The owner persists
+    /// the text and, for the move reasons, focuses the resolved neighbor cell.
+    var onCommit: ((EditorTableCellHit, String, EditorCellCommitReason) -> Void)?
+    /// Row/column structure ops from the accessory bar. The owner flushes the
+    /// current text, runs the op, then tears the editor down (the grid changes).
+    var onStructureAction: ((EditorTableCellHit, EditorCellStructureAction) -> Void)?
+    private var committedText: String
+    private var didCommit = false
+    private let theme: KnotQTheme
+
+    init(hit: EditorTableCellHit, theme: KnotQTheme) {
+        self.hit = hit
+        self.committedText = hit.text
+        self.theme = theme
+        super.init(frame: hit.frame)
+        backgroundColor = UIColor(theme.bgModal)
+        layer.borderWidth = 1.5
+        layer.borderColor = UIColor(theme.accent).cgColor
+        layer.cornerRadius = 3
+
+        field.text = hit.text
+        field.font = .systemFont(ofSize: 13)
+        field.textColor = UIColor(theme.textPrimary)
+        field.tintColor = UIColor(theme.accent)
+        field.borderStyle = .none
+        field.autocorrectionType = .no
+        field.autocapitalizationType = .sentences
+        field.smartDashesType = .no
+        field.smartQuotesType = .no
+        field.clearButtonMode = .never
+        field.returnKeyType = .next
+        field.delegate = self
+        field.inputAccessoryView = makeAccessory()
+        addSubview(field)
+    }
+
+    /// Compact bar above the keyboard with row/column add-delete and a Done
+    /// button — keeps table structure editing reachable without a modal sheet.
+    private func makeAccessory() -> UIView {
+        let bar = UIToolbar(frame: CGRect(x: 0, y: 0, width: UIScreen.main.bounds.width, height: 44))
+        bar.barTintColor = UIColor(theme.bgModal)
+        bar.tintColor = UIColor(theme.accent)
+        bar.isTranslucent = false
+
+        func item(_ title: String, _ action: EditorCellStructureAction) -> UIBarButtonItem {
+            UIBarButtonItem(title: title, primaryAction: UIAction { [weak self] _ in
+                self?.runStructure(action)
+            })
+        }
+        let flex = UIBarButtonItem(systemItem: .flexibleSpace)
+        let done = UIBarButtonItem(systemItem: .done, primaryAction: UIAction { [weak self] _ in
+            self?.commit(reason: .resign)
+            self?.field.resignFirstResponder()
+        })
+        bar.items = [
+            item("+Row", .insertRow),
+            item("−Row", .deleteRow),
+            item("+Col", .insertColumn),
+            item("−Col", .deleteColumn),
+            flex,
+            done,
+        ]
+        return bar
+    }
+
+    private func runStructure(_ action: EditorCellStructureAction) {
+        // Persist any in-progress text first so the structural change keeps it,
+        // then hand off to the owner (which mutates the model + reloads).
+        let text = field.text ?? ""
+        if text != committedText {
+            committedText = text
+            didCommit = true
+            onCommit?(hit, text, .resign)
+        }
+        onStructureAction?(hit, action)
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
+
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        // Match `drawTableText`'s 7pt inset so the text sits where it rendered.
+        field.frame = bounds.insetBy(dx: 7, dy: 7)
+    }
+
+    /// Reposition the field over a (possibly new) cell without tearing down the
+    /// first responder — used when navigating Tab / Return to the next cell.
+    func retarget(to hit: EditorTableCellHit) {
+        commit(reason: nil)
+        self.hit = hit
+        committedText = hit.text
+        didCommit = false
+        frame = hit.frame
+        field.text = hit.text
+        field.selectedTextRange = field.textRange(from: field.endOfDocument, to: field.endOfDocument)
+    }
+
+    func focus() {
+        field.becomeFirstResponder()
+        field.selectedTextRange = field.textRange(from: field.endOfDocument, to: field.endOfDocument)
+    }
+
+    /// Persists the current text if it changed. `reason` nil means "flush only"
+    /// (no navigation); callers pass an explicit reason to also move.
+    func commit(reason: EditorCellCommitReason?) {
+        let text = field.text ?? ""
+        if text != committedText {
+            committedText = text
+            didCommit = true
+            onCommit?(hit, text, reason ?? .resign)
+        } else if let reason, reason != .resign {
+            // No text change but the user asked to move — let the owner navigate.
+            onCommit?(hit, text, reason)
+        }
+    }
+
+    // MARK: UITextFieldDelegate
+
+    func textFieldShouldReturn(_ textField: UITextField) -> Bool {
+        commit(reason: .moveDown)
+        return false
+    }
+
+    func textFieldDidEndEditing(_ textField: UITextField) {
+        // Only treat as a plain resign if no explicit navigation already fired.
+        if !didCommit {
+            commit(reason: .resign)
+        }
+        didCommit = false
+    }
+
+    // Hardware-keyboard Tab / Shift-Tab navigation between cells.
+    override var keyCommands: [UIKeyCommand]? {
+        [
+            UIKeyCommand(input: "\t", modifierFlags: [], action: #selector(handleTab)),
+            UIKeyCommand(input: "\t", modifierFlags: .shift, action: #selector(handleShiftTab)),
+        ]
+    }
+
+    @objc private func handleTab() { commit(reason: .moveNext) }
+    @objc private func handleShiftTab() { commit(reason: .movePrevious) }
+}
 
 private final class EditorInlineTitleView: UIView, UITextFieldDelegate {
     private let textField = UITextField()
@@ -114,6 +299,18 @@ final class EditorTextView: UITextView {
     private let inlineTitleView = EditorInlineTitleView()
     private let editorLayoutManager: EditorLayoutManager
     private var imageCache: [String: UIImage] = [:]
+    private var renderedTableCellHits: [EditorTableCellHitRect] = []
+    /// The in-place table cell editor, present only while a cell is being edited.
+    private var activeCellEditor: EditorTableCellEditor?
+    /// Persists a committed cell-line edit (wired by the coordinator to the
+    /// model's `setTableCellLineText`).
+    var onTableCellCommit: ((EditorTableCellHit, String) -> Void)?
+    /// Table structure ops invoked from the cell editor's keyboard accessory
+    /// (row/column at the edited cell). Each takes the active cell hit.
+    var onTableInsertRow: ((EditorTableCellHit) -> Void)?
+    var onTableDeleteRow: ((EditorTableCellHit) -> Void)?
+    var onTableInsertColumn: ((EditorTableCellHit) -> Void)?
+    var onTableDeleteColumn: ((EditorTableCellHit) -> Void)?
 
     init() {
         let textStorage = NSTextStorage()
@@ -179,11 +376,10 @@ final class EditorTextView: UITextView {
     }
 
     /// Reveals markdown markers on the caret's line(s) and collapses them
-    /// elsewhere (all markers when not editing). Re-generates only the glyphs of
-    /// the lines whose visibility changed unless `force` is set.
+    /// elsewhere (all markers when not editing). Re-renders only the lines whose
+    /// visibility changed unless `force` is set.
     func refreshMarkerVisibility(force: Bool = false) {
-        let length = textStorage.length
-        guard length > 0 else { return }
+        guard textStorage.length > 0 else { return }
         let revealed: NSRange
         if isFirstResponder {
             let ns = textStorage.string as NSString
@@ -197,27 +393,9 @@ final class EditorTextView: UITextView {
         } else {
             revealed = NSRange(location: 0, length: 0)
         }
-
-        let previous = editorLayoutManager.revealedRange
-        guard force || !NSEqualRanges(previous, revealed) else { return }
-        editorLayoutManager.revealedRange = revealed
-
-        let invalidation = force
-            ? NSRange(location: 0, length: length)
-            : clampedRangeUnion(previous, revealed, length: length)
-        editorLayoutManager.invalidateGlyphs(
-            forCharacterRange: invalidation,
-            changeInLength: 0,
-            actualCharacterRange: nil
-        )
-        editorLayoutManager.ensureLayout(for: textContainer)
-        setNeedsDisplay()
-    }
-
-    private func clampedRangeUnion(_ a: NSRange, _ b: NSRange, length: Int) -> NSRange {
-        let lower = max(0, min(a.location, b.location))
-        let upper = min(length, max(NSMaxRange(a), NSMaxRange(b)))
-        return NSRange(location: lower, length: max(0, upper - lower))
+        if editorLayoutManager.setRevealedRange(revealed, force: force) {
+            setNeedsDisplay()
+        }
     }
 
     override func layoutSubviews() {
@@ -346,7 +524,12 @@ final class EditorTextView: UITextView {
         guard let only = paragraphs.first else { return true }
         let body = bodyText(paragraphRange: only.fullRange, in: textStorage)
         let m = lineMeta(at: only.fullRange.location, in: textStorage)
-        return body.isEmpty && m.marker == .blank && m.indent == 0 && m.annotation == nil && m.media.isEmpty
+        return body.isEmpty
+            && m.marker == .blank
+            && m.indent == 0
+            && m.annotation == nil
+            && m.media.isEmpty
+            && m.tables.isEmpty
     }
 
     func appendTaskLine(theme: KnotQTheme) {
@@ -441,7 +624,8 @@ final class EditorTextView: UITextView {
             end: marker == .checkbox ? old.end : nil,
             notificationOffsetSecs: marker == .checkbox ? old.notificationOffsetSecs : nil,
             repeatRule: marker == .checkbox ? old.repeatRule : nil,
-            media: old.media
+            media: old.media,
+            tables: old.tables
         )
         applyMeta(new, paragraphRange: para, theme: theme)
     }
@@ -721,6 +905,7 @@ final class EditorTextView: UITextView {
 
     fileprivate func drawChrome(forGlyphRange glyphsToShow: NSRange, at origin: CGPoint) {
         guard let context = UIGraphicsGetCurrentContext() else { return }
+        renderedTableCellHits.removeAll()
         let storage = textStorage
         let ns = storage.string as NSString
         let paragraphs = paragraphRanges(in: ns)
@@ -737,8 +922,10 @@ final class EditorTextView: UITextView {
             let nextMeta = index + 1 < metas.count ? metas[index + 1] : nil
             let previousAnnotated = previousMeta?.annotation != nil
             let nextAnnotated = nextMeta?.annotation != nil
-            let mediaExtraHeight = mediaStackHeight(meta.media, maxWidth: editorImageMaxWidth(textLeft: firstFragment.minX))
-            let rowExtraHeight = (meta.annotation == nil ? CGFloat(0) : DesktopEditorMetrics.annotationHeight) + mediaExtraHeight
+            let contentMaxWidth = editorInlineBlockMaxWidth(textLeft: firstFragment.minX)
+            let blockExtraHeight = orderedBlockStackHeight(for: meta, maxWidth: contentMaxWidth)
+            let annotationHeight = meta.annotation == nil ? CGFloat(0) : DesktopEditorMetrics.annotationHeight
+            let rowExtraHeight = annotationHeight + blockExtraHeight
             let ordinal = meta.marker == .numbered ? numberedOrdinal(at: index, in: metas) : 1
             drawIndentGuides(
                 meta: meta, previousMeta: previousMeta, nextMeta: nextMeta,
@@ -750,9 +937,16 @@ final class EditorTextView: UITextView {
                 drawAnnotationBar(meta: meta, firstFragment: firstFragment, visualBounds: visualBounds, rowExtraHeight: rowExtraHeight, connectsToPrevious: previousAnnotated, connectsToNext: nextAnnotated, context: context)
                 drawAnnotation(annotation, meta: meta, visualBounds: visualBounds, context: context)
             }
-            if !meta.media.isEmpty {
-                drawMediaStack(meta.media, meta: meta, firstFragment: firstFragment, visualBounds: visualBounds, context: context)
-            }
+            // Images + tables render below the (possibly collapsed) text band in
+            // document order. With a block-only line the band is ~2px, so the
+            // block effectively sits in place at the paragraph top.
+            drawOrderedBlockStack(
+                for: meta,
+                itemID: meta.itemID,
+                textLeft: firstFragment.minX,
+                top: visualBounds.maxY + annotationHeight,
+                context: context
+            )
         }
     }
 
@@ -854,22 +1048,119 @@ final class EditorTextView: UITextView {
         (annotation as NSString).draw(at: CGPoint(x: x, y: y), withAttributes: attrs)
     }
 
-    private func drawMediaStack(_ media: [MobileItemMedia], meta: LineMeta, firstFragment: CGRect, visualBounds: CGRect, context: CGContext) {
-        guard !media.isEmpty else { return }
-        let maxWidth = editorImageMaxWidth(textLeft: firstFragment.minX)
-        let annotationHeight = meta.annotation == nil ? CGFloat(0) : DesktopEditorMetrics.annotationHeight
-        var y = visualBounds.maxY + annotationHeight + DesktopEditorMetrics.imageTopGap
-        var drewImage = false
-        for item in media where item.kind == "image" {
-            let size = mediaDisplaySize(item, maxWidth: maxWidth)
-            guard size.width > 0, size.height > 0 else { continue }
-            if drewImage {
-                y += DesktopEditorMetrics.imageStackGap
+    // MARK: - Ordered inline blocks
+    //
+    // A line's images and tables render below its text band in document order.
+    // `orderedBlocks(for:)` is the single source of truth for that order: it
+    // walks `meta.content` (text/image/table) so an image typed before a table
+    // draws above it, and a block that leads the content sits in the collapsed
+    // text band's place. When `content` is empty (clipboard- or edit-built metas
+    // that predate inline content) it falls back to the legacy media-then-tables
+    // ordering so nothing regresses.
+
+    private enum EditorBlock {
+        case image(MobileItemMedia)
+        case table(MobileTable)
+    }
+
+    private func orderedBlocks(for meta: LineMeta) -> [EditorBlock] {
+        if !meta.content.isEmpty {
+            return meta.content.compactMap { inline in
+                switch inline {
+                case let .image(media): return .image(media)
+                case let .table(table): return .table(table)
+                case .text: return nil
+                }
             }
-            let rect = CGRect(x: firstFragment.minX, y: y, width: size.width, height: size.height)
-            drawImageMedia(item, in: rect, context: context)
-            y += size.height
-            drewImage = true
+        }
+        // Legacy fallback: all images first, then all tables.
+        return meta.media.filter { $0.kind == "image" }.map(EditorBlock.image)
+            + meta.tables.map(EditorBlock.table)
+    }
+
+    /// Total height of a line's ordered block stack (images + tables, in order),
+    /// including the leading gap before the first block. Used both to reserve
+    /// space below the paragraph and to position later blocks.
+    private func orderedBlockStackHeight(for meta: LineMeta, maxWidth: CGFloat) -> CGFloat {
+        let blocks = orderedBlocks(for: meta)
+        guard !blocks.isEmpty, maxWidth > 0 else { return 0 }
+        var height: CGFloat = 0
+        var previous: EditorBlock?
+        for block in blocks {
+            height += blockLeadingGap(block, previous: previous)
+            height += blockHeight(block, maxWidth: maxWidth)
+            previous = block
+        }
+        return height
+    }
+
+    /// Gap above `block` given the block that precedes it (nil for the first).
+    /// Mirrors the per-kind gaps the legacy stacks used so spacing is unchanged
+    /// for media-only / table-only lines.
+    private func blockLeadingGap(_ block: EditorBlock, previous: EditorBlock?) -> CGFloat {
+        switch block {
+        case .image:
+            // First block: top gap. Image after another image: tight stack gap.
+            // Image after a table: use the table stack gap so kinds don't crowd.
+            switch previous {
+            case .none: return DesktopEditorMetrics.imageTopGap
+            case .image: return DesktopEditorMetrics.imageStackGap
+            case .table: return DesktopEditorMetrics.tableStackGap
+            }
+        case .table:
+            switch previous {
+            case .none: return DesktopEditorMetrics.tableTopGap
+            default: return DesktopEditorMetrics.tableStackGap
+            }
+        }
+    }
+
+    private func blockHeight(_ block: EditorBlock, maxWidth: CGFloat) -> CGFloat {
+        switch block {
+        case let .image(media):
+            return mediaDisplaySize(media, maxWidth: maxWidth).height
+        case let .table(table):
+            return tableHeight(table)
+        }
+    }
+
+    /// Draws a line's ordered block stack starting at `top`, recording table
+    /// cell hit rects for `itemID`. `tableIndex` is assigned per table so cell
+    /// edits address the correct table on the line.
+    private func drawOrderedBlockStack(
+        for meta: LineMeta,
+        itemID: String?,
+        textLeft: CGFloat,
+        top: CGFloat,
+        context: CGContext
+    ) {
+        let maxWidth = editorInlineBlockMaxWidth(textLeft: textLeft)
+        guard maxWidth > 0 else { return }
+        var y = top
+        var previous: EditorBlock?
+        var tableIndex = 0
+        for block in orderedBlocks(for: meta) {
+            y += blockLeadingGap(block, previous: previous)
+            switch block {
+            case let .image(media):
+                let size = mediaDisplaySize(media, maxWidth: maxWidth)
+                if size.width > 0, size.height > 0 {
+                    drawImageMedia(media, in: CGRect(x: textLeft, y: y, width: size.width, height: size.height), context: context)
+                }
+                y += size.height
+            case let .table(table):
+                let height = tableHeight(table)
+                drawTable(
+                    table,
+                    itemID: itemID,
+                    tableIndex: tableIndex,
+                    in: CGRect(x: textLeft, y: y, width: maxWidth, height: height),
+                    context: context
+                )
+                y += height
+                tableIndex += 1
+            }
+            previous = block
         }
     }
 
@@ -942,19 +1233,6 @@ final class EditorTextView: UITextView {
         )
     }
 
-    private func mediaStackHeight(_ media: [MobileItemMedia], maxWidth: CGFloat) -> CGFloat {
-        var height: CGFloat = 0
-        var count = 0
-        for item in media where item.kind == "image" {
-            let size = mediaDisplaySize(item, maxWidth: maxWidth)
-            guard size.height > 0 else { continue }
-            height += count == 0 ? DesktopEditorMetrics.imageTopGap : DesktopEditorMetrics.imageStackGap
-            height += size.height
-            count += 1
-        }
-        return height
-    }
-
     private func mediaDisplaySize(_ media: MobileItemMedia, maxWidth: CGFloat) -> CGSize {
         let rawWidth = media.width.map(CGFloat.init) ?? DesktopEditorMetrics.imageFallbackWidth
         let rawHeight = media.height.map(CGFloat.init) ?? DesktopEditorMetrics.imageFallbackHeight
@@ -974,7 +1252,7 @@ final class EditorTextView: UITextView {
         return image
     }
 
-    private func editorImageMaxWidth(textLeft: CGFloat) -> CGFloat {
+    private func editorInlineBlockMaxWidth(textLeft: CGFloat) -> CGFloat {
         let referenceWidth = measurementWidth ?? bounds.width
         return max(120, referenceWidth - textLeft - textContainerInset.right - 8)
     }
@@ -983,7 +1261,340 @@ final class EditorTextView: UITextView {
         let textLeft = textContainerInset.left
             + CGFloat(meta.indent) * DesktopEditorMetrics.indentWidth
             + (meta.marker == .blank ? 0 : DesktopEditorMetrics.markerSlot)
-        return editorImageMaxWidth(textLeft: textLeft)
+        return editorInlineBlockMaxWidth(textLeft: textLeft)
+    }
+
+    private func tableHeight(_ table: MobileTable) -> CGFloat {
+        let rowCount = max(1, table.rows.count)
+        return DesktopEditorMetrics.tableHeaderHeight + CGFloat(rowCount) * DesktopEditorMetrics.tableCellHeight
+    }
+
+    private func drawTable(_ table: MobileTable, itemID: String?, tableIndex: Int, in rect: CGRect, context: CGContext) {
+        let columnCount = tableColumnCount(table)
+        guard columnCount > 0, rect.width > 0, rect.height > 0 else { return }
+
+        context.saveGState()
+        defer { context.restoreGState() }
+
+        let path = UIBezierPath(roundedRect: rect, cornerRadius: 6)
+        UIColor(theme.buttonBg).setFill()
+        path.fill()
+        UIColor(theme.divider).setStroke()
+        path.lineWidth = 1
+        path.stroke()
+        path.addClip()
+
+        let headerRect = CGRect(x: rect.minX, y: rect.minY, width: rect.width, height: DesktopEditorMetrics.tableHeaderHeight)
+        UIColor(theme.bgModal).setFill()
+        UIBezierPath(rect: headerRect).fill()
+
+        let colWidth = rect.width / CGFloat(columnCount)
+        let headerAttributes = tableTextAttributes(weight: .semibold, color: UIColor(theme.textDim))
+        let bodyAttributes = tableTextAttributes(weight: .regular, color: UIColor(theme.textPrimary))
+
+        for column in 0..<columnCount {
+            let cellRect = CGRect(
+                x: rect.minX + CGFloat(column) * colWidth,
+                y: rect.minY,
+                width: colWidth,
+                height: DesktopEditorMetrics.tableHeaderHeight
+            )
+            let title = column < table.columns.count ? table.columns[column].name : "Column \(column + 1)"
+            drawTableText(title, in: cellRect, attributes: headerAttributes)
+        }
+
+        for row in 0..<max(1, table.rows.count) {
+            let rowData = row < table.rows.count ? table.rows[row] : nil
+            for column in 0..<columnCount {
+                let cellRect = CGRect(
+                    x: rect.minX + CGFloat(column) * colWidth,
+                    y: rect.minY + DesktopEditorMetrics.tableHeaderHeight + CGFloat(row) * DesktopEditorMetrics.tableCellHeight,
+                    width: colWidth,
+                    height: DesktopEditorMetrics.tableCellHeight
+                )
+                let cell = rowData.flatMap { column < $0.cells.count ? $0.cells[column] : nil }
+                let text = cell?.text ?? ""
+                drawTableText(text, in: cellRect, attributes: bodyAttributes)
+                if let itemID, row < table.rows.count {
+                    // The in-place editor edits the cell's first line; prefill
+                    // from it (not the multi-line summary `cell.text`).
+                    let editText = cell?.lines.first?.text ?? text
+                    renderedTableCellHits.append(EditorTableCellHitRect(
+                        rect: cellRect,
+                        hit: EditorTableCellHit(
+                            itemID: itemID,
+                            tableIndex: tableIndex,
+                            row: row,
+                            column: column,
+                            text: editText,
+                            frame: cellRect
+                        )
+                    ))
+                }
+            }
+        }
+
+        UIColor(theme.divider).setStroke()
+        context.setLineWidth(1)
+        for column in 1..<columnCount {
+            let x = rect.minX + CGFloat(column) * colWidth
+            context.move(to: CGPoint(x: x, y: rect.minY))
+            context.addLine(to: CGPoint(x: x, y: rect.maxY))
+        }
+        let rowLines = max(1, table.rows.count)
+        for row in 0...rowLines {
+            let y = rect.minY + DesktopEditorMetrics.tableHeaderHeight + CGFloat(row) * DesktopEditorMetrics.tableCellHeight
+            context.move(to: CGPoint(x: rect.minX, y: y))
+            context.addLine(to: CGPoint(x: rect.maxX, y: y))
+        }
+        context.strokePath()
+    }
+
+    private func tableTextAttributes(weight: UIFont.Weight, color: UIColor) -> [NSAttributedString.Key: Any] {
+        let paragraph = NSMutableParagraphStyle()
+        paragraph.lineBreakMode = .byTruncatingTail
+        return [
+            .font: UIFont.systemFont(ofSize: 13, weight: weight),
+            .foregroundColor: color,
+            .paragraphStyle: paragraph
+        ]
+    }
+
+    private func drawTableText(_ text: String, in rect: CGRect, attributes: [NSAttributedString.Key: Any]) {
+        let inset = rect.insetBy(dx: 7, dy: 7)
+        let value = (text.isEmpty ? " " : text) as NSString
+        value.draw(in: inset, withAttributes: attributes)
+    }
+
+    private func tableColumnCount(_ table: MobileTable) -> Int {
+        max(1, max(table.columns.count, table.rows.map { $0.cells.count }.max() ?? 0))
+    }
+
+    /// Row/column counts for the table identified by `itemID`/`tableIndex`,
+    /// used to clamp Tab / arrow navigation to the grid.
+    func tableDimensions(itemID: String, tableIndex: Int) -> (rows: Int, columns: Int)? {
+        let meta = metaForItem(itemID)
+        var index = 0
+        for block in orderedBlocks(for: meta ?? LineMeta()) {
+            if case let .table(table) = block {
+                if index == tableIndex {
+                    return (table.rows.count, tableColumnCount(table))
+                }
+                index += 1
+            }
+        }
+        return nil
+    }
+
+    private func metaForItem(_ itemID: String) -> LineMeta? {
+        let ns = textStorage.string as NSString
+        for paragraph in paragraphRanges(in: ns) {
+            let meta = lineMeta(at: paragraph.fullRange.location, in: textStorage)
+            if meta.itemID == itemID { return meta }
+        }
+        return nil
+    }
+
+    func tableCellHit(at point: CGPoint) -> EditorTableCellHit? {
+        if let recorded = renderedTableCellHits.last(where: { $0.rect.insetBy(dx: -4, dy: -4).contains(point) }) {
+            return recorded.hit
+        }
+        // Fallback: recompute geometry in document order when the cell hasn't
+        // been drawn yet (e.g. off-screen). Mirrors `drawOrderedBlockStack`.
+        return enumerateTableCells { hit in
+            hit.frame.insetBy(dx: -4, dy: -4).contains(point) ? hit : nil
+        }
+    }
+
+    /// Looks up a specific cell's current hit (with its frame) for Tab / arrow
+    /// navigation. Prefers a recorded rect; recomputes geometry otherwise.
+    func tableCellHit(itemID: String, tableIndex: Int, row: Int, column: Int) -> EditorTableCellHit? {
+        if let recorded = renderedTableCellHits.last(where: {
+            $0.hit.itemID == itemID && $0.hit.tableIndex == tableIndex && $0.hit.row == row && $0.hit.column == column
+        }) {
+            return recorded.hit
+        }
+        return enumerateTableCells { hit in
+            (hit.itemID == itemID && hit.tableIndex == tableIndex && hit.row == row && hit.column == column) ? hit : nil
+        }
+    }
+
+    /// Walks every table cell in document order, invoking `match` with each
+    /// cell's hit (frame in content coordinates); returns the first non-nil
+    /// result. The geometry here is the authoritative fallback that mirrors
+    /// `drawOrderedBlockStack`, so a hit found this way lands on the same rect
+    /// the cell is drawn at.
+    private func enumerateTableCells(_ match: (EditorTableCellHit) -> EditorTableCellHit?) -> EditorTableCellHit? {
+        let ns = textStorage.string as NSString
+        let origin = CGPoint(x: textContainerInset.left, y: textContainerInset.top)
+        for paragraph in paragraphRanges(in: ns) {
+            guard let geometry = paragraphGeometry(for: paragraph, origin: origin) else { continue }
+            let meta = lineMeta(at: paragraph.fullRange.location, in: textStorage)
+            guard let itemID = meta.itemID, !meta.tables.isEmpty else { continue }
+            let firstFragment = geometry.fragments[0]
+            let textLeft = firstFragment.minX
+            let maxWidth = editorInlineBlockMaxWidth(textLeft: textLeft)
+            guard maxWidth > 0 else { continue }
+            let annotationHeight = meta.annotation == nil ? CGFloat(0) : DesktopEditorMetrics.annotationHeight
+            var y = geometry.bounds.maxY + annotationHeight
+            var previous: EditorBlock?
+            var tableIndex = 0
+            for block in orderedBlocks(for: meta) {
+                y += blockLeadingGap(block, previous: previous)
+                switch block {
+                case let .image(media):
+                    y += mediaDisplaySize(media, maxWidth: maxWidth).height
+                case let .table(table):
+                    let columnCount = tableColumnCount(table)
+                    let colWidth = maxWidth / CGFloat(columnCount)
+                    let bodyY = y + DesktopEditorMetrics.tableHeaderHeight
+                    for row in 0..<table.rows.count {
+                        for column in 0..<columnCount {
+                            let rect = CGRect(
+                                x: textLeft + CGFloat(column) * colWidth,
+                                y: bodyY + CGFloat(row) * DesktopEditorMetrics.tableCellHeight,
+                                width: colWidth,
+                                height: DesktopEditorMetrics.tableCellHeight
+                            )
+                            let cell = column < table.rows[row].cells.count ? table.rows[row].cells[column] : nil
+                            let hit = EditorTableCellHit(
+                                itemID: itemID,
+                                tableIndex: tableIndex,
+                                row: row,
+                                column: column,
+                                text: cell?.lines.first?.text ?? cell?.text ?? "",
+                                frame: rect
+                            )
+                            if let result = match(hit) { return result }
+                        }
+                    }
+                    y += tableHeight(table)
+                    tableIndex += 1
+                }
+                previous = block
+            }
+        }
+        return nil
+    }
+
+    // MARK: - In-place table cell editing
+
+    var isEditingTableCell: Bool { activeCellEditor != nil }
+
+    /// Starts (or moves) the in-place editor over `hit`. Resigns the document's
+    /// own keyboard so the cell field owns input, and focuses it.
+    func beginEditingTableCell(_ hit: EditorTableCellHit) {
+        guard isEditable else { return }
+        // The cell field becoming first responder hands input off from the
+        // document automatically; no manual resign needed.
+        if let editor = activeCellEditor {
+            editor.retarget(to: hit)
+            editor.focus()
+            return
+        }
+        let editor = EditorTableCellEditor(hit: hit, theme: theme)
+        editor.onCommit = { [weak self] hit, text, reason in
+            self?.handleCellCommit(hit, text: text, reason: reason)
+        }
+        editor.onStructureAction = { [weak self] hit, action in
+            self?.handleCellStructureAction(hit, action: action)
+        }
+        addSubview(editor)
+        activeCellEditor = editor
+        editor.focus()
+    }
+
+    /// Tears down the active cell editor. Pass `commit: true` to flush its text
+    /// first (used when the document is committed / loses focus).
+    func endTableCellEditing(commit: Bool) {
+        guard let editor = activeCellEditor else { return }
+        if commit {
+            editor.commit(reason: nil)
+        }
+        activeCellEditor = nil
+        editor.field.resignFirstResponder()
+        editor.removeFromSuperview()
+    }
+
+    private func handleCellStructureAction(_ hit: EditorTableCellHit, action: EditorCellStructureAction) {
+        switch action {
+        case .insertRow: onTableInsertRow?(hit)
+        case .deleteRow: onTableDeleteRow?(hit)
+        case .insertColumn: onTableInsertColumn?(hit)
+        case .deleteColumn: onTableDeleteColumn?(hit)
+        }
+        // The grid just changed shape and the document will reload; drop the
+        // editor so we don't point at a stale cell rect.
+        endTableCellEditing(commit: false)
+    }
+
+    private func handleCellCommit(_ hit: EditorTableCellHit, text: String, reason: EditorCellCommitReason) {
+        if text != hit.text {
+            onTableCellCommit?(hit, text)
+        }
+        switch reason {
+        case .resign:
+            // The model write reloads the document; just drop the editor.
+            activeCellEditor?.removeFromSuperview()
+            activeCellEditor = nil
+        case .moveDown:
+            moveCellEditor(from: hit, rowDelta: 1, columnDelta: 0, textChanged: text != hit.text)
+        case .moveNext:
+            moveCellEditor(from: hit, rowDelta: 0, columnDelta: 1, textChanged: text != hit.text)
+        case .movePrevious:
+            moveCellEditor(from: hit, rowDelta: 0, columnDelta: -1, textChanged: text != hit.text)
+        }
+    }
+
+    /// Moves the editor to a neighboring cell, wrapping across rows for Tab and
+    /// clamping at the grid edges. When the text changed, the model write will
+    /// reload the document and recompute geometry; we re-resolve the target hit
+    /// on the next runloop so it lands on the freshly drawn rect.
+    private func moveCellEditor(from hit: EditorTableCellHit, rowDelta: Int, columnDelta: Int, textChanged: Bool) {
+        guard let dims = tableDimensions(itemID: hit.itemID, tableIndex: hit.tableIndex), dims.rows > 0, dims.columns > 0 else {
+            endTableCellEditing(commit: false)
+            return
+        }
+        var row = hit.row
+        var column = hit.column
+        if columnDelta != 0 {
+            // Tab / Shift-Tab: advance linearly across the grid, wrapping rows.
+            var linear = row * dims.columns + column + columnDelta
+            let total = dims.rows * dims.columns
+            if linear < 0 || linear >= total {
+                // Past either end — stop editing rather than wrap out of bounds.
+                endTableCellEditing(commit: false)
+                return
+            }
+            linear = max(0, min(total - 1, linear))
+            row = linear / dims.columns
+            column = linear % dims.columns
+        } else {
+            row += rowDelta
+            if row < 0 || row >= dims.rows {
+                endTableCellEditing(commit: false)
+                return
+            }
+        }
+
+        let targetRow = row
+        let targetColumn = column
+        let focusNeighbor: () -> Void = { [weak self] in
+            guard let self, let editor = self.activeCellEditor else { return }
+            if let next = self.tableCellHit(itemID: hit.itemID, tableIndex: hit.tableIndex, row: targetRow, column: targetColumn) {
+                editor.retarget(to: next)
+                editor.focus()
+            } else {
+                self.endTableCellEditing(commit: false)
+            }
+        }
+
+        if textChanged {
+            // Defer until the model write + reload settle so geometry is current.
+            DispatchQueue.main.async(execute: focusNeighbor)
+        } else {
+            focusNeighbor()
+        }
     }
 
     private func annotationGuideX(marker: CGRect) -> CGFloat {
@@ -1014,7 +1625,8 @@ final class EditorTextView: UITextView {
         if meta.annotation != nil {
             spacing += DesktopEditorMetrics.annotationHeight
         }
-        spacing += mediaStackHeight(meta.media, maxWidth: editorImageMaxWidth(meta: meta))
+        let maxWidth = editorImageMaxWidth(meta: meta)
+        spacing += orderedBlockStackHeight(for: meta, maxWidth: maxWidth)
         guard spacing > 0 else { return 0 }
 
         let lastContentCharacter = line.length > 0 ? NSMaxRange(line) - 1 : paragraphRange.location
@@ -1050,15 +1662,55 @@ extension EditorCoordinator {
 
 // MARK: - NSLayoutManager subclass
 
-private final class EditorLayoutManager: NSLayoutManager {
+final class EditorLayoutManager: NSLayoutManager {
     weak var editorTextView: EditorTextView?
     /// Character range whose markdown markers are revealed (the caret's line(s));
     /// markers elsewhere collapse to zero width for an Obsidian-style preview.
-    var revealedRange = NSRange(location: 0, length: 0)
+    private(set) var revealedRange = NSRange(location: 0, length: 0)
 
     override init() {
         super.init()
         delegate = self
+    }
+
+    /// Reveals the markdown markers inside `range` (collapsing all others) and
+    /// rebuilds every line whose marker visibility changed — the whole document
+    /// when `force` is set, otherwise just the union of the old and new revealed
+    /// ranges. Returns whether anything actually changed.
+    ///
+    /// Both invalidations below are required. Regenerating glyphs re-tags the
+    /// markers as control characters (`shouldGenerateGlyphs`), but collapsing
+    /// them to zero width is a *layout*-time decision (`shouldUse:
+    /// forControlCharacterAt:`). Without also invalidating layout, the cached
+    /// line fragments keep the previous marker widths, so the reveal/collapse
+    /// never takes visual effect as the caret moves between lines — the markers
+    /// appear "stuck" on whichever line first revealed them.
+    @discardableResult
+    func setRevealedRange(_ range: NSRange, force: Bool) -> Bool {
+        guard let storage = textStorage, storage.length > 0 else {
+            revealedRange = range
+            return false
+        }
+        let previous = revealedRange
+        guard force || !NSEqualRanges(previous, range) else { return false }
+        revealedRange = range
+
+        let length = storage.length
+        let invalidation = force
+            ? NSRange(location: 0, length: length)
+            : rangeUnion(previous, range, length: length)
+        invalidateGlyphs(forCharacterRange: invalidation, changeInLength: 0, actualCharacterRange: nil)
+        invalidateLayout(forCharacterRange: invalidation, actualCharacterRange: nil)
+        if let container = textContainers.first {
+            ensureLayout(for: container)
+        }
+        return true
+    }
+
+    private func rangeUnion(_ a: NSRange, _ b: NSRange, length: Int) -> NSRange {
+        let lower = max(0, min(a.location, b.location))
+        let upper = min(length, max(NSMaxRange(a), NSMaxRange(b)))
+        return NSRange(location: lower, length: max(0, upper - lower))
     }
 
     /// A marker character is hidden when it is tagged `.knotqMarker` and falls

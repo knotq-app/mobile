@@ -522,6 +522,8 @@ public protocol MobileCoreProtocol: AnyObject, Sendable {
     
     func addItem(schemeId: String, text: String, marker: String?, position: Int32?, indent: Int32?) throws 
     
+    func addTableCellLine(schemeId: String, itemId: String, row: Int32, column: Int32, lineIndex: Int32, text: String) throws 
+    
     func addTodayDailyItem(today: String, text: String, marker: String?, indent: Int32?) throws 
     
     func applyNotificationAction(actionId: String, schemeId: String, itemId: String, occurrenceJson: String, triggerAt: String) throws  -> Bool
@@ -544,11 +546,21 @@ public protocol MobileCoreProtocol: AnyObject, Sendable {
     
     func deleteScheme(schemeId: String) throws 
     
+    func deleteTableColumn(schemeId: String, itemId: String, column: Int32) throws 
+    
+    func deleteTableRow(schemeId: String, itemId: String, row: Int32) throws 
+    
     func emptyArchive() throws 
     
     func ensureDailyQueue(date: String?) throws 
     
     func googleAuthRequest(clientId: String, redirectUri: String) throws  -> MobileGoogleAuthRequest
+    
+    func insertTable(schemeId: String, afterItemId: String?) throws 
+    
+    func insertTableColumn(schemeId: String, itemId: String, column: Int32) throws 
+    
+    func insertTableRow(schemeId: String, itemId: String, row: Int32) throws 
     
     func monthDays(year: Int32, month: UInt32) throws  -> [MobileCalendarDay]
     
@@ -561,6 +573,8 @@ public protocol MobileCoreProtocol: AnyObject, Sendable {
     func permanentlyDeleteFolder(folderId: String) throws 
     
     func permanentlyDeleteScheme(schemeId: String) throws 
+    
+    func removeTableCellLine(schemeId: String, itemId: String, row: Int32, column: Int32, lineIndex: Int32) throws 
     
     func renameFolder(folderId: String, name: String) throws 
     
@@ -595,6 +609,10 @@ public protocol MobileCoreProtocol: AnyObject, Sendable {
     func setPushRegistration(token: String, environment: String) throws 
     
     func setSchemeColor(schemeId: String, colorIndex: Int32) throws 
+    
+    func setTableCellLineText(schemeId: String, itemId: String, row: Int32, column: Int32, lineIndex: Int32, text: String) throws 
+    
+    func setTableCellText(schemeId: String, itemId: String, row: Int32, column: Int32, text: String) throws 
     
     func setThemeMode(themeMode: String) throws 
     
@@ -701,6 +719,19 @@ open func addItem(schemeId: String, text: String, marker: String?, position: Int
         FfiConverterOptionString.lower(marker),
         FfiConverterOptionInt32.lower(position),
         FfiConverterOptionInt32.lower(indent),$0
+    )
+}
+}
+    
+open func addTableCellLine(schemeId: String, itemId: String, row: Int32, column: Int32, lineIndex: Int32, text: String)throws   {try rustCallWithError(FfiConverterTypeMobileError_lift) {
+    uniffi_knotq_mobile_core_fn_method_mobilecore_add_table_cell_line(
+            self.uniffiCloneHandle(),
+        FfiConverterString.lower(schemeId),
+        FfiConverterString.lower(itemId),
+        FfiConverterInt32.lower(row),
+        FfiConverterInt32.lower(column),
+        FfiConverterInt32.lower(lineIndex),
+        FfiConverterString.lower(text),$0
     )
 }
 }
@@ -830,6 +861,26 @@ open func deleteScheme(schemeId: String)throws   {try rustCallWithError(FfiConve
 }
 }
     
+open func deleteTableColumn(schemeId: String, itemId: String, column: Int32)throws   {try rustCallWithError(FfiConverterTypeMobileError_lift) {
+    uniffi_knotq_mobile_core_fn_method_mobilecore_delete_table_column(
+            self.uniffiCloneHandle(),
+        FfiConverterString.lower(schemeId),
+        FfiConverterString.lower(itemId),
+        FfiConverterInt32.lower(column),$0
+    )
+}
+}
+    
+open func deleteTableRow(schemeId: String, itemId: String, row: Int32)throws   {try rustCallWithError(FfiConverterTypeMobileError_lift) {
+    uniffi_knotq_mobile_core_fn_method_mobilecore_delete_table_row(
+            self.uniffiCloneHandle(),
+        FfiConverterString.lower(schemeId),
+        FfiConverterString.lower(itemId),
+        FfiConverterInt32.lower(row),$0
+    )
+}
+}
+    
 open func emptyArchive()throws   {try rustCallWithError(FfiConverterTypeMobileError_lift) {
     uniffi_knotq_mobile_core_fn_method_mobilecore_empty_archive(
             self.uniffiCloneHandle(),$0
@@ -853,6 +904,35 @@ open func googleAuthRequest(clientId: String, redirectUri: String)throws  -> Mob
         FfiConverterString.lower(redirectUri),$0
     )
 })
+}
+    
+open func insertTable(schemeId: String, afterItemId: String?)throws   {try rustCallWithError(FfiConverterTypeMobileError_lift) {
+    uniffi_knotq_mobile_core_fn_method_mobilecore_insert_table(
+            self.uniffiCloneHandle(),
+        FfiConverterString.lower(schemeId),
+        FfiConverterOptionString.lower(afterItemId),$0
+    )
+}
+}
+    
+open func insertTableColumn(schemeId: String, itemId: String, column: Int32)throws   {try rustCallWithError(FfiConverterTypeMobileError_lift) {
+    uniffi_knotq_mobile_core_fn_method_mobilecore_insert_table_column(
+            self.uniffiCloneHandle(),
+        FfiConverterString.lower(schemeId),
+        FfiConverterString.lower(itemId),
+        FfiConverterInt32.lower(column),$0
+    )
+}
+}
+    
+open func insertTableRow(schemeId: String, itemId: String, row: Int32)throws   {try rustCallWithError(FfiConverterTypeMobileError_lift) {
+    uniffi_knotq_mobile_core_fn_method_mobilecore_insert_table_row(
+            self.uniffiCloneHandle(),
+        FfiConverterString.lower(schemeId),
+        FfiConverterString.lower(itemId),
+        FfiConverterInt32.lower(row),$0
+    )
+}
 }
     
 open func monthDays(year: Int32, month: UInt32)throws  -> [MobileCalendarDay]  {
@@ -908,6 +988,18 @@ open func permanentlyDeleteScheme(schemeId: String)throws   {try rustCallWithErr
     uniffi_knotq_mobile_core_fn_method_mobilecore_permanently_delete_scheme(
             self.uniffiCloneHandle(),
         FfiConverterString.lower(schemeId),$0
+    )
+}
+}
+    
+open func removeTableCellLine(schemeId: String, itemId: String, row: Int32, column: Int32, lineIndex: Int32)throws   {try rustCallWithError(FfiConverterTypeMobileError_lift) {
+    uniffi_knotq_mobile_core_fn_method_mobilecore_remove_table_cell_line(
+            self.uniffiCloneHandle(),
+        FfiConverterString.lower(schemeId),
+        FfiConverterString.lower(itemId),
+        FfiConverterInt32.lower(row),
+        FfiConverterInt32.lower(column),
+        FfiConverterInt32.lower(lineIndex),$0
     )
 }
 }
@@ -1063,6 +1155,31 @@ open func setSchemeColor(schemeId: String, colorIndex: Int32)throws   {try rustC
             self.uniffiCloneHandle(),
         FfiConverterString.lower(schemeId),
         FfiConverterInt32.lower(colorIndex),$0
+    )
+}
+}
+    
+open func setTableCellLineText(schemeId: String, itemId: String, row: Int32, column: Int32, lineIndex: Int32, text: String)throws   {try rustCallWithError(FfiConverterTypeMobileError_lift) {
+    uniffi_knotq_mobile_core_fn_method_mobilecore_set_table_cell_line_text(
+            self.uniffiCloneHandle(),
+        FfiConverterString.lower(schemeId),
+        FfiConverterString.lower(itemId),
+        FfiConverterInt32.lower(row),
+        FfiConverterInt32.lower(column),
+        FfiConverterInt32.lower(lineIndex),
+        FfiConverterString.lower(text),$0
+    )
+}
+}
+    
+open func setTableCellText(schemeId: String, itemId: String, row: Int32, column: Int32, text: String)throws   {try rustCallWithError(FfiConverterTypeMobileError_lift) {
+    uniffi_knotq_mobile_core_fn_method_mobilecore_set_table_cell_text(
+            self.uniffiCloneHandle(),
+        FfiConverterString.lower(schemeId),
+        FfiConverterString.lower(itemId),
+        FfiConverterInt32.lower(row),
+        FfiConverterInt32.lower(column),
+        FfiConverterString.lower(text),$0
     )
 }
 }
@@ -1335,6 +1452,80 @@ public func FfiConverterTypeMobileCalendarDay_lower(_ value: MobileCalendarDay) 
 }
 
 
+public struct MobileCellLine: Equatable, Hashable {
+    public var id: String
+    public var text: String
+    public var marker: String
+    public var done: Bool
+    public var start: String?
+    public var end: String?
+    public var media: [MobileItemMedia]
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(id: String, text: String, marker: String, done: Bool, start: String?, end: String?, media: [MobileItemMedia]) {
+        self.id = id
+        self.text = text
+        self.marker = marker
+        self.done = done
+        self.start = start
+        self.end = end
+        self.media = media
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension MobileCellLine: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeMobileCellLine: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> MobileCellLine {
+        return
+            try MobileCellLine(
+                id: FfiConverterString.read(from: &buf), 
+                text: FfiConverterString.read(from: &buf), 
+                marker: FfiConverterString.read(from: &buf), 
+                done: FfiConverterBool.read(from: &buf), 
+                start: FfiConverterOptionString.read(from: &buf), 
+                end: FfiConverterOptionString.read(from: &buf), 
+                media: FfiConverterSequenceTypeMobileItemMedia.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: MobileCellLine, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.id, into: &buf)
+        FfiConverterString.write(value.text, into: &buf)
+        FfiConverterString.write(value.marker, into: &buf)
+        FfiConverterBool.write(value.done, into: &buf)
+        FfiConverterOptionString.write(value.start, into: &buf)
+        FfiConverterOptionString.write(value.end, into: &buf)
+        FfiConverterSequenceTypeMobileItemMedia.write(value.media, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeMobileCellLine_lift(_ buf: RustBuffer) throws -> MobileCellLine {
+    return try FfiConverterTypeMobileCellLine.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeMobileCellLine_lower(_ value: MobileCellLine) -> RustBuffer {
+    return FfiConverterTypeMobileCellLine.lower(value)
+}
+
+
 public struct MobileDailyEntry: Equatable, Hashable {
     public var date: String
     public var scheme: MobileScheme
@@ -1591,10 +1782,12 @@ public struct MobileItem: Equatable, Hashable {
     public var notificationOffsetSecs: Int32?
     public var repeatRule: String?
     public var media: [MobileItemMedia]
+    public var tables: [MobileTable]
+    public var content: [MobileInline]
 
     // Default memberwise initializers are never public by default, so we
     // declare one manually.
-    public init(id: String, text: String, marker: String, indent: Int32, kind: String, done: Bool, start: String?, end: String?, notificationOffsetSecs: Int32?, repeatRule: String?, media: [MobileItemMedia]) {
+    public init(id: String, text: String, marker: String, indent: Int32, kind: String, done: Bool, start: String?, end: String?, notificationOffsetSecs: Int32?, repeatRule: String?, media: [MobileItemMedia], tables: [MobileTable], content: [MobileInline]) {
         self.id = id
         self.text = text
         self.marker = marker
@@ -1606,6 +1799,8 @@ public struct MobileItem: Equatable, Hashable {
         self.notificationOffsetSecs = notificationOffsetSecs
         self.repeatRule = repeatRule
         self.media = media
+        self.tables = tables
+        self.content = content
     }
 
     
@@ -1634,7 +1829,9 @@ public struct FfiConverterTypeMobileItem: FfiConverterRustBuffer {
                 end: FfiConverterOptionString.read(from: &buf), 
                 notificationOffsetSecs: FfiConverterOptionInt32.read(from: &buf), 
                 repeatRule: FfiConverterOptionString.read(from: &buf), 
-                media: FfiConverterSequenceTypeMobileItemMedia.read(from: &buf)
+                media: FfiConverterSequenceTypeMobileItemMedia.read(from: &buf), 
+                tables: FfiConverterSequenceTypeMobileTable.read(from: &buf), 
+                content: FfiConverterSequenceTypeMobileInline.read(from: &buf)
         )
     }
 
@@ -1650,6 +1847,8 @@ public struct FfiConverterTypeMobileItem: FfiConverterRustBuffer {
         FfiConverterOptionInt32.write(value.notificationOffsetSecs, into: &buf)
         FfiConverterOptionString.write(value.repeatRule, into: &buf)
         FfiConverterSequenceTypeMobileItemMedia.write(value.media, into: &buf)
+        FfiConverterSequenceTypeMobileTable.write(value.tables, into: &buf)
+        FfiConverterSequenceTypeMobileInline.write(value.content, into: &buf)
     }
 }
 
@@ -2403,6 +2602,222 @@ public func FfiConverterTypeMobileSnapshot_lower(_ value: MobileSnapshot) -> Rus
 }
 
 
+public struct MobileTable: Equatable, Hashable {
+    public var columns: [MobileTableColumn]
+    public var rows: [MobileTableRow]
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(columns: [MobileTableColumn], rows: [MobileTableRow]) {
+        self.columns = columns
+        self.rows = rows
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension MobileTable: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeMobileTable: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> MobileTable {
+        return
+            try MobileTable(
+                columns: FfiConverterSequenceTypeMobileTableColumn.read(from: &buf), 
+                rows: FfiConverterSequenceTypeMobileTableRow.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: MobileTable, into buf: inout [UInt8]) {
+        FfiConverterSequenceTypeMobileTableColumn.write(value.columns, into: &buf)
+        FfiConverterSequenceTypeMobileTableRow.write(value.rows, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeMobileTable_lift(_ buf: RustBuffer) throws -> MobileTable {
+    return try FfiConverterTypeMobileTable.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeMobileTable_lower(_ value: MobileTable) -> RustBuffer {
+    return FfiConverterTypeMobileTable.lower(value)
+}
+
+
+public struct MobileTableCell: Equatable, Hashable {
+    public var text: String
+    public var lines: [MobileCellLine]
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(text: String, lines: [MobileCellLine]) {
+        self.text = text
+        self.lines = lines
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension MobileTableCell: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeMobileTableCell: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> MobileTableCell {
+        return
+            try MobileTableCell(
+                text: FfiConverterString.read(from: &buf), 
+                lines: FfiConverterSequenceTypeMobileCellLine.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: MobileTableCell, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.text, into: &buf)
+        FfiConverterSequenceTypeMobileCellLine.write(value.lines, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeMobileTableCell_lift(_ buf: RustBuffer) throws -> MobileTableCell {
+    return try FfiConverterTypeMobileTableCell.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeMobileTableCell_lower(_ value: MobileTableCell) -> RustBuffer {
+    return FfiConverterTypeMobileTableCell.lower(value)
+}
+
+
+public struct MobileTableColumn: Equatable, Hashable {
+    public var id: String
+    public var name: String
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(id: String, name: String) {
+        self.id = id
+        self.name = name
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension MobileTableColumn: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeMobileTableColumn: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> MobileTableColumn {
+        return
+            try MobileTableColumn(
+                id: FfiConverterString.read(from: &buf), 
+                name: FfiConverterString.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: MobileTableColumn, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.id, into: &buf)
+        FfiConverterString.write(value.name, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeMobileTableColumn_lift(_ buf: RustBuffer) throws -> MobileTableColumn {
+    return try FfiConverterTypeMobileTableColumn.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeMobileTableColumn_lower(_ value: MobileTableColumn) -> RustBuffer {
+    return FfiConverterTypeMobileTableColumn.lower(value)
+}
+
+
+public struct MobileTableRow: Equatable, Hashable {
+    public var id: String
+    public var cells: [MobileTableCell]
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(id: String, cells: [MobileTableCell]) {
+        self.id = id
+        self.cells = cells
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension MobileTableRow: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeMobileTableRow: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> MobileTableRow {
+        return
+            try MobileTableRow(
+                id: FfiConverterString.read(from: &buf), 
+                cells: FfiConverterSequenceTypeMobileTableCell.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: MobileTableRow, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.id, into: &buf)
+        FfiConverterSequenceTypeMobileTableCell.write(value.cells, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeMobileTableRow_lift(_ buf: RustBuffer) throws -> MobileTableRow {
+    return try FfiConverterTypeMobileTableRow.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeMobileTableRow_lower(_ value: MobileTableRow) -> RustBuffer {
+    return FfiConverterTypeMobileTableRow.lower(value)
+}
+
+
 public enum MobileError: Swift.Error, Equatable, Hashable, Foundation.LocalizedError {
 
     
@@ -2476,6 +2891,89 @@ public func FfiConverterTypeMobileError_lower(_ value: MobileError) -> RustBuffe
     return FfiConverterTypeMobileError.lower(value)
 }
 
+// Note that we don't yet support `indirect` for enums.
+// See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
+
+public enum MobileInline: Equatable, Hashable {
+    
+    case text(text: String
+    )
+    case image(media: MobileItemMedia
+    )
+    case table(table: MobileTable
+    )
+
+
+
+
+
+}
+
+#if compiler(>=6)
+extension MobileInline: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeMobileInline: FfiConverterRustBuffer {
+    typealias SwiftType = MobileInline
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> MobileInline {
+        let variant: Int32 = try readInt(&buf)
+        switch variant {
+        
+        case 1: return .text(text: try FfiConverterString.read(from: &buf)
+        )
+        
+        case 2: return .image(media: try FfiConverterTypeMobileItemMedia.read(from: &buf)
+        )
+        
+        case 3: return .table(table: try FfiConverterTypeMobileTable.read(from: &buf)
+        )
+        
+        default: throw UniffiInternalError.unexpectedEnumCase
+        }
+    }
+
+    public static func write(_ value: MobileInline, into buf: inout [UInt8]) {
+        switch value {
+        
+        
+        case let .text(text):
+            writeInt(&buf, Int32(1))
+            FfiConverterString.write(text, into: &buf)
+            
+        
+        case let .image(media):
+            writeInt(&buf, Int32(2))
+            FfiConverterTypeMobileItemMedia.write(media, into: &buf)
+            
+        
+        case let .table(table):
+            writeInt(&buf, Int32(3))
+            FfiConverterTypeMobileTable.write(table, into: &buf)
+            
+        }
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeMobileInline_lift(_ buf: RustBuffer) throws -> MobileInline {
+    return try FfiConverterTypeMobileInline.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeMobileInline_lower(_ value: MobileInline) -> RustBuffer {
+    return FfiConverterTypeMobileInline.lower(value)
+}
+
+
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
@@ -2544,6 +3042,31 @@ fileprivate struct FfiConverterSequenceTypeMobileCalendarDay: FfiConverterRustBu
         seq.reserveCapacity(Int(len))
         for _ in 0 ..< len {
             seq.append(try FfiConverterTypeMobileCalendarDay.read(from: &buf))
+        }
+        return seq
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterSequenceTypeMobileCellLine: FfiConverterRustBuffer {
+    typealias SwiftType = [MobileCellLine]
+
+    public static func write(_ value: [MobileCellLine], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypeMobileCellLine.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [MobileCellLine] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [MobileCellLine]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterTypeMobileCellLine.read(from: &buf))
         }
         return seq
     }
@@ -2799,6 +3322,131 @@ fileprivate struct FfiConverterSequenceTypeMobileSearchHit: FfiConverterRustBuff
     }
 }
 
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterSequenceTypeMobileTable: FfiConverterRustBuffer {
+    typealias SwiftType = [MobileTable]
+
+    public static func write(_ value: [MobileTable], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypeMobileTable.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [MobileTable] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [MobileTable]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterTypeMobileTable.read(from: &buf))
+        }
+        return seq
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterSequenceTypeMobileTableCell: FfiConverterRustBuffer {
+    typealias SwiftType = [MobileTableCell]
+
+    public static func write(_ value: [MobileTableCell], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypeMobileTableCell.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [MobileTableCell] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [MobileTableCell]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterTypeMobileTableCell.read(from: &buf))
+        }
+        return seq
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterSequenceTypeMobileTableColumn: FfiConverterRustBuffer {
+    typealias SwiftType = [MobileTableColumn]
+
+    public static func write(_ value: [MobileTableColumn], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypeMobileTableColumn.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [MobileTableColumn] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [MobileTableColumn]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterTypeMobileTableColumn.read(from: &buf))
+        }
+        return seq
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterSequenceTypeMobileTableRow: FfiConverterRustBuffer {
+    typealias SwiftType = [MobileTableRow]
+
+    public static func write(_ value: [MobileTableRow], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypeMobileTableRow.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [MobileTableRow] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [MobileTableRow]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterTypeMobileTableRow.read(from: &buf))
+        }
+        return seq
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterSequenceTypeMobileInline: FfiConverterRustBuffer {
+    typealias SwiftType = [MobileInline]
+
+    public static func write(_ value: [MobileInline], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypeMobileInline.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [MobileInline] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [MobileInline]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterTypeMobileInline.read(from: &buf))
+        }
+        return seq
+    }
+}
+
 private enum InitializationResult {
     case ok
     case contractVersionMismatch
@@ -2818,6 +3466,9 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_knotq_mobile_core_checksum_method_mobilecore_add_item() != 57254) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_knotq_mobile_core_checksum_method_mobilecore_add_table_cell_line() != 41519) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_knotq_mobile_core_checksum_method_mobilecore_add_today_daily_item() != 49556) {
@@ -2853,6 +3504,12 @@ private let initializationResult: InitializationResult = {
     if (uniffi_knotq_mobile_core_checksum_method_mobilecore_delete_scheme() != 36083) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_knotq_mobile_core_checksum_method_mobilecore_delete_table_column() != 64635) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_knotq_mobile_core_checksum_method_mobilecore_delete_table_row() != 55975) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_knotq_mobile_core_checksum_method_mobilecore_empty_archive() != 9301) {
         return InitializationResult.apiChecksumMismatch
     }
@@ -2860,6 +3517,15 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_knotq_mobile_core_checksum_method_mobilecore_google_auth_request() != 56614) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_knotq_mobile_core_checksum_method_mobilecore_insert_table() != 56727) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_knotq_mobile_core_checksum_method_mobilecore_insert_table_column() != 25374) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_knotq_mobile_core_checksum_method_mobilecore_insert_table_row() != 60208) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_knotq_mobile_core_checksum_method_mobilecore_month_days() != 13384) {
@@ -2878,6 +3544,9 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_knotq_mobile_core_checksum_method_mobilecore_permanently_delete_scheme() != 55645) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_knotq_mobile_core_checksum_method_mobilecore_remove_table_cell_line() != 25914) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_knotq_mobile_core_checksum_method_mobilecore_rename_folder() != 63233) {
@@ -2929,6 +3598,12 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_knotq_mobile_core_checksum_method_mobilecore_set_scheme_color() != 60612) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_knotq_mobile_core_checksum_method_mobilecore_set_table_cell_line_text() != 33447) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_knotq_mobile_core_checksum_method_mobilecore_set_table_cell_text() != 63326) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_knotq_mobile_core_checksum_method_mobilecore_set_theme_mode() != 11963) {

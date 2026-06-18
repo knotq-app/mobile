@@ -129,6 +129,42 @@ final class RustBridge: @unchecked Sendable {
         try core.updateItemText(schemeId: schemeID, itemId: itemID, text: text)
     }
 
+    func insertTable(schemeID: String, afterItemID: String?) throws {
+        try core.insertTable(schemeId: schemeID, afterItemId: afterItemID)
+    }
+
+    func setTableCellText(schemeID: String, itemID: String, row: Int32, column: Int32, text: String) throws {
+        try core.setTableCellText(schemeId: schemeID, itemId: itemID, row: row, column: column, text: text)
+    }
+
+    func setTableCellLineText(schemeID: String, itemID: String, row: Int32, column: Int32, lineIndex: Int32, text: String) throws {
+        try core.setTableCellLineText(schemeId: schemeID, itemId: itemID, row: row, column: column, lineIndex: lineIndex, text: text)
+    }
+
+    func addTableCellLine(schemeID: String, itemID: String, row: Int32, column: Int32, lineIndex: Int32, text: String) throws {
+        try core.addTableCellLine(schemeId: schemeID, itemId: itemID, row: row, column: column, lineIndex: lineIndex, text: text)
+    }
+
+    func removeTableCellLine(schemeID: String, itemID: String, row: Int32, column: Int32, lineIndex: Int32) throws {
+        try core.removeTableCellLine(schemeId: schemeID, itemId: itemID, row: row, column: column, lineIndex: lineIndex)
+    }
+
+    func insertTableRow(schemeID: String, itemID: String, row: Int32) throws {
+        try core.insertTableRow(schemeId: schemeID, itemId: itemID, row: row)
+    }
+
+    func deleteTableRow(schemeID: String, itemID: String, row: Int32) throws {
+        try core.deleteTableRow(schemeId: schemeID, itemId: itemID, row: row)
+    }
+
+    func insertTableColumn(schemeID: String, itemID: String, column: Int32) throws {
+        try core.insertTableColumn(schemeId: schemeID, itemId: itemID, column: column)
+    }
+
+    func deleteTableColumn(schemeID: String, itemID: String, column: Int32) throws {
+        try core.deleteTableColumn(schemeId: schemeID, itemId: itemID, column: column)
+    }
+
     func setItemMarker(schemeID: String, itemID: String, marker: Marker) throws {
         try core.setItemMarker(schemeId: schemeID, itemId: itemID, marker: marker.rawValue)
     }

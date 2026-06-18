@@ -55,6 +55,7 @@
 		010000000000000000000032 /* FirebaseMessaging in Frameworks */ = {isa = PBXBuildFile; productRef = 0F0000000000000000000003 /* FirebaseMessaging */; };
 		010000000000000000000033 /* MobileDate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 020000000000000000000033 /* MobileDate.swift */; };
 		010000000000000000000034 /* ScheduleFormComponents.swift in Sources */ = {isa = PBXBuildFile; fileRef = 020000000000000000000034 /* ScheduleFormComponents.swift */; };
+		010000000000000000000040 /* MarkerConcealmentTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 020000000000000000000040 /* MarkerConcealmentTests.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -64,6 +65,13 @@
 			proxyType = 1;
 			remoteGlobalIDString = 050000000000000000000002;
 			remoteInfo = KnotQUpcomingWidget;
+		};
+		0D0000000000000000000002 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 080000000000000000000001 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 050000000000000000000001;
+			remoteInfo = KnotQMobile;
 		};
 /* End PBXContainerItemProxy section */
 
@@ -132,6 +140,8 @@
 		020000000000000000000030 /* BackgroundTasks.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = BackgroundTasks.framework; path = System/Library/Frameworks/BackgroundTasks.framework; sourceTree = SDKROOT; };
 		020000000000000000000033 /* MobileDate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MobileDate.swift; sourceTree = "<group>"; };
 		020000000000000000000034 /* ScheduleFormComponents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScheduleFormComponents.swift; sourceTree = "<group>"; };
+		020000000000000000000040 /* MarkerConcealmentTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MarkerConcealmentTests.swift; sourceTree = "<group>"; };
+		020000000000000000000041 /* KnotQMobileTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = KnotQMobileTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -156,6 +166,13 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		030000000000000000000003 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
@@ -164,6 +181,7 @@
 			children = (
 				040000000000000000000002 /* KnotQMobile */,
 				040000000000000000000004 /* KnotQUpcomingWidget */,
+				040000000000000000000005 /* KnotQMobileTests */,
 				040000000000000000000003 /* Products */,
 				B40A20D62FCCE44A00D5456E /* Recovered References */,
 			);
@@ -222,6 +240,7 @@
 			children = (
 				02000000000000000000000F /* KnotQMobile.app */,
 				02000000000000000000001C /* KnotQUpcomingWidget.appex */,
+				020000000000000000000041 /* KnotQMobileTests.xctest */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -234,6 +253,14 @@
 				02000000000000000000001B /* KnotQUpcomingWidget.entitlements */,
 			);
 			path = KnotQUpcomingWidget;
+			sourceTree = "<group>";
+		};
+		040000000000000000000005 /* KnotQMobileTests */ = {
+			isa = PBXGroup;
+			children = (
+				020000000000000000000040 /* MarkerConcealmentTests.swift */,
+			);
+			path = KnotQMobileTests;
 			sourceTree = "<group>";
 		};
 		B40A20D62FCCE44A00D5456E /* Recovered References */ = {
@@ -291,6 +318,24 @@
 			productReference = 02000000000000000000001C /* KnotQUpcomingWidget.appex */;
 			productType = "com.apple.product-type.app-extension";
 		};
+		050000000000000000000003 /* KnotQMobileTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 0B0000000000000000000004 /* Build configuration list for PBXNativeTarget "KnotQMobileTests" */;
+			buildPhases = (
+				060000000000000000000003 /* Sources */,
+				030000000000000000000003 /* Frameworks */,
+				070000000000000000000003 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				0E0000000000000000000002 /* PBXTargetDependency */,
+			);
+			name = KnotQMobileTests;
+			productName = KnotQMobileTests;
+			productReference = 020000000000000000000041 /* KnotQMobileTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
@@ -317,6 +362,11 @@
 						CreatedOnToolsVersion = 26.5;
 						ProvisioningStyle = Automatic;
 					};
+					050000000000000000000003 = {
+						CreatedOnToolsVersion = 26.5;
+						ProvisioningStyle = Automatic;
+						TestTargetID = 050000000000000000000001;
+					};
 				};
 			};
 			buildConfigurationList = 0B0000000000000000000001 /* Build configuration list for PBXProject "KnotQMobile" */;
@@ -338,6 +388,7 @@
 			targets = (
 				050000000000000000000001 /* KnotQMobile */,
 				050000000000000000000002 /* KnotQUpcomingWidget */,
+				050000000000000000000003 /* KnotQMobileTests */,
 			);
 		};
 /* End PBXProject section */
@@ -353,6 +404,13 @@
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 		070000000000000000000002 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		070000000000000000000003 /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -436,6 +494,14 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		060000000000000000000003 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				010000000000000000000040 /* MarkerConcealmentTests.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXSourcesBuildPhase section */
 
 /* Begin PBXTargetDependency section */
@@ -443,6 +509,11 @@
 			isa = PBXTargetDependency;
 			target = 050000000000000000000002 /* KnotQUpcomingWidget */;
 			targetProxy = 0D0000000000000000000001 /* PBXContainerItemProxy */;
+		};
+		0E0000000000000000000002 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 050000000000000000000001 /* KnotQMobile */;
+			targetProxy = 0D0000000000000000000002 /* PBXContainerItemProxy */;
 		};
 /* End PBXTargetDependency section */
 
@@ -691,6 +762,44 @@
 			};
 			name = Release;
 		};
+		0A0000000000000000000007 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = T35KD9JHQ6;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.enigmadux.knotq.tests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SWIFT_VERSION = 6.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/KnotQMobile.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/KnotQMobile";
+			};
+			name = Debug;
+		};
+		0A0000000000000000000008 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = T35KD9JHQ6;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.enigmadux.knotq.tests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SWIFT_VERSION = 6.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/KnotQMobile.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/KnotQMobile";
+			};
+			name = Release;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -717,6 +826,15 @@
 			buildConfigurations = (
 				0A0000000000000000000005 /* Debug */,
 				0A0000000000000000000006 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		0B0000000000000000000004 /* Build configuration list for PBXNativeTarget "KnotQMobileTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				0A0000000000000000000007 /* Debug */,
+				0A0000000000000000000008 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;

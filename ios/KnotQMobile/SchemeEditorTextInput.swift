@@ -55,6 +55,14 @@ struct SchemeTextView: UIViewRepresentable {
     let onRenameTitle: (String) -> Void
     let onDate: () -> Void
     let onImageUpload: () -> Void
+    let onInsertTable: () -> Void
+    /// Persists an in-place cell edit (cell hit + new first-line text).
+    let onTableCellCommit: (EditorTableCellHit, String) -> Void
+    /// Row/column structure ops from the cell editor's accessory bar.
+    let onTableInsertRow: (EditorTableCellHit) -> Void
+    let onTableDeleteRow: (EditorTableCellHit) -> Void
+    let onTableInsertColumn: (EditorTableCellHit) -> Void
+    let onTableDeleteColumn: (EditorTableCellHit) -> Void
     let readOnly: Bool
 
     func makeCoordinator() -> EditorCoordinator {
@@ -70,7 +78,13 @@ struct SchemeTextView: UIViewRepresentable {
         coordinator.accentColor = UIColor(accent)
         coordinator.onDateRequested = onDate
         coordinator.onImageUploadRequested = onImageUpload
+        coordinator.onInsertTableRequested = onInsertTable
         coordinator.readOnly = readOnly
+        view.onTableCellCommit = onTableCellCommit
+        view.onTableInsertRow = onTableInsertRow
+        view.onTableDeleteRow = onTableDeleteRow
+        view.onTableInsertColumn = onTableInsertColumn
+        view.onTableDeleteColumn = onTableDeleteColumn
         view.coordinator = coordinator
         view.theme = theme
         view.accentColor = UIColor(accent)
@@ -117,7 +131,13 @@ struct SchemeTextView: UIViewRepresentable {
         coordinator.accentColor = UIColor(accent)
         coordinator.onDateRequested = onDate
         coordinator.onImageUploadRequested = onImageUpload
+        coordinator.onInsertTableRequested = onInsertTable
         coordinator.readOnly = readOnly
+        uiView.onTableCellCommit = onTableCellCommit
+        uiView.onTableInsertRow = onTableInsertRow
+        uiView.onTableDeleteRow = onTableDeleteRow
+        uiView.onTableInsertColumn = onTableInsertColumn
+        uiView.onTableDeleteColumn = onTableDeleteColumn
         uiView.theme = theme
         uiView.accentColor = UIColor(accent)
         uiView.backgroundColor = UIColor(theme.bgApp)
@@ -154,6 +174,7 @@ final class EditorCoordinator: NSObject, UITextViewDelegate, @preconcurrency NST
     var accentColor: UIColor = .systemBlue
     var onDateRequested: (() -> Void)?
     var onImageUploadRequested: (() -> Void)?
+    var onInsertTableRequested: (() -> Void)?
     var readOnly = false
     weak var checkboxTapRecognizer: UITapGestureRecognizer?
 
@@ -223,13 +244,22 @@ final class EditorCoordinator: NSObject, UITextViewDelegate, @preconcurrency NST
     @objc func handleEditorTap(_ recognizer: UITapGestureRecognizer) {
         guard !readOnly else { return }
         guard recognizer.state == .ended, let view else { return }
-        _ = view.toggleCheckboxAt(point: recognizer.location(in: view))
+        let point = recognizer.location(in: view)
+        if let hit = view.tableCellHit(at: point) {
+            // Edit the cell in place rather than opening a modal sheet.
+            view.beginEditingTableCell(hit)
+            return
+        }
+        // A tap outside any cell ends in-place cell editing (and flushes it).
+        if view.isEditingTableCell {
+            view.endTableCellEditing(commit: true)
+        }
+        _ = view.toggleCheckboxAt(point: point)
     }
 
     func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldReceive touch: UITouch) -> Bool {
         guard gestureRecognizer === checkboxTapRecognizer, !readOnly else { return false }
-        guard let view else { return false }
-        return view.checkboxLineRange(at: touch.location(in: view)) != nil
+        return true
     }
 
     func textView(_ textView: UITextView, shouldChangeTextIn range: NSRange, replacementText text: String) -> Bool {
@@ -276,7 +306,8 @@ final class EditorCoordinator: NSObject, UITextViewDelegate, @preconcurrency NST
             done: false,
             itemID: meta.itemID,
             annotation: nil,
-            media: meta.media
+            media: meta.media,
+            tables: meta.tables
         )
         suppress {
             storage.beginEditing()
@@ -312,7 +343,8 @@ final class EditorCoordinator: NSObject, UITextViewDelegate, @preconcurrency NST
             done: false,
             itemID: meta.itemID,
             annotation: nil,
-            media: meta.media
+            media: meta.media,
+            tables: meta.tables
         )
         suppress {
             storage.beginEditing()
@@ -495,7 +527,8 @@ final class EditorCoordinator: NSObject, UITextViewDelegate, @preconcurrency NST
                         done: false,
                         itemID: nil,
                         annotation: nil,
-                        media: []
+                        media: [],
+                        tables: []
                     )
                 }
             }
@@ -545,7 +578,9 @@ final class EditorCoordinator: NSObject, UITextViewDelegate, @preconcurrency NST
     func makeToolbar(for textView: UITextView) -> UIView {
         markerButtons.removeAll()
         let width = UIScreen.main.bounds.width
-        let container = TransparentInputAccessoryView(frame: CGRect(x: 0, y: 0, width: width, height: 44))
+        let accessoryHeight: CGFloat = UIDevice.current.userInterfaceIdiom == .phone ? 58 : 44
+        let bottomGap: CGFloat = UIDevice.current.userInterfaceIdiom == .phone ? 14 : 6
+        let container = TransparentInputAccessoryView(frame: CGRect(x: 0, y: 0, width: width, height: accessoryHeight))
         container.autoresizingMask = [.flexibleWidth]
         container.backgroundColor = .clear
         container.isOpaque = false
@@ -622,11 +657,14 @@ final class EditorCoordinator: NSObject, UITextViewDelegate, @preconcurrency NST
                 self.controller?.prepareImageUploadTarget()
                 self.onImageUploadRequested?()
             },
+            toolbarButton("tablecells") { [weak self] in
+                self?.onInsertTableRequested?()
+            },
         ].forEach(stack.addArrangedSubview)
 
         var constraints: [NSLayoutConstraint] = [
             backdrop.topAnchor.constraint(equalTo: container.topAnchor, constant: 4),
-            backdrop.bottomAnchor.constraint(equalTo: container.bottomAnchor, constant: -6),
+            backdrop.bottomAnchor.constraint(equalTo: container.bottomAnchor, constant: -bottomGap),
             scroll.leadingAnchor.constraint(equalTo: backdrop.contentView.leadingAnchor),
             scroll.trailingAnchor.constraint(equalTo: backdrop.contentView.trailingAnchor),
             scroll.topAnchor.constraint(equalTo: backdrop.contentView.topAnchor),

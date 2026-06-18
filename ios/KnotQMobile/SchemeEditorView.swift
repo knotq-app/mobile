@@ -100,6 +100,11 @@ enum DesktopEditorMetrics {
     static let markerVerticalNudge: CGFloat = 1
     static let textFontSize: CGFloat = 16
     static let textLineHeight: CGFloat = 22
+    /// Line height for a block-only paragraph (table/image, no text). Collapses
+    /// the empty text band so the block sits in place instead of below a full
+    /// blank line, mirroring desktop's ~2px collapse. Kept non-zero so the line
+    /// still lays out one fragment, stays tappable, and can host the caret.
+    static let blockOnlyLineHeight: CGFloat = 2
     static let headingFontSize: CGFloat = 24
     static let headingLineHeight: CGFloat = 30
     static let annotationFontSize: CGFloat = 11
@@ -112,6 +117,11 @@ enum DesktopEditorMetrics {
     static let imageMaxHeight: CGFloat = 300
     static let imageFallbackWidth: CGFloat = 320
     static let imageFallbackHeight: CGFloat = 180
+    static let tableTopGap: CGFloat = 9
+    static let tableStackGap: CGFloat = 10
+    static let tableHeaderHeight: CGFloat = 30
+    static let tableCellHeight: CGFloat = 36
+    static let tableMinWidth: CGFloat = 170
     static let titleFontSize: CGFloat = 26
     static let titleLineHeight: CGFloat = 34
     static let titleBlockHeight: CGFloat = 44
@@ -130,6 +140,13 @@ enum DesktopEditorMetrics {
     let notificationOffsetSecs: Int32?
     let repeatRule: String?
     let media: [MobileItemMedia]
+    let tables: [MobileTable]
+    /// The line's inlines in document order (text/image/table). Drives in-place
+    /// block rendering so an image/table sits at its position relative to text
+    /// rather than always trailing the paragraph. Empty for lines built outside
+    /// the core (clipboard paste, fresh edits) — those fall back to the flat
+    /// `media`/`tables` ordering.
+    let content: [MobileInline]
 
     init(
         marker: Marker = .blank,
@@ -141,7 +158,9 @@ enum DesktopEditorMetrics {
         end: String? = nil,
         notificationOffsetSecs: Int32? = nil,
         repeatRule: String? = nil,
-        media: [MobileItemMedia] = []
+        media: [MobileItemMedia] = [],
+        tables: [MobileTable] = [],
+        content: [MobileInline] = []
     ) {
         self.marker = marker
         self.indent = indent
@@ -153,6 +172,8 @@ enum DesktopEditorMetrics {
         self.notificationOffsetSecs = notificationOffsetSecs
         self.repeatRule = repeatRule
         self.media = media
+        self.tables = tables
+        self.content = content
         super.init()
     }
 
@@ -167,8 +188,28 @@ enum DesktopEditorMetrics {
             end: item.end,
             notificationOffsetSecs: item.notificationOffsetSecs,
             repeatRule: item.repeatRule,
-            media: item.media
+            media: item.media,
+            tables: item.tables,
+            content: item.content
         )
+    }
+
+    /// True when the line carries a table/image block but no text — its text
+    /// band should collapse so the block sits in place (mirrors desktop). When
+    /// `content` is unavailable (paste/edit-built metas), falls back to "has a
+    /// block and empty text", which the caller resolves against the line body.
+    var hasBlockContent: Bool {
+        !media.isEmpty || !tables.isEmpty
+    }
+
+    /// Whether the document-ordered content begins with a block (image/table)
+    /// rather than text — i.e. there is no leading text band to host the caret
+    /// on the same visual row as the block.
+    var leadingContentIsBlock: Bool {
+        switch content.first {
+        case .image, .table: return true
+        case .text, .none: return false
+        }
     }
 
     func with(
@@ -181,7 +222,9 @@ enum DesktopEditorMetrics {
         end: String?? = nil,
         notificationOffsetSecs: Int32?? = nil,
         repeatRule: String?? = nil,
-        media: [MobileItemMedia]? = nil
+        media: [MobileItemMedia]? = nil,
+        tables: [MobileTable]? = nil,
+        content: [MobileInline]? = nil
     ) -> LineMeta {
         LineMeta(
             marker: marker ?? self.marker,
@@ -193,7 +236,9 @@ enum DesktopEditorMetrics {
             end: end ?? self.end,
             notificationOffsetSecs: notificationOffsetSecs ?? self.notificationOffsetSecs,
             repeatRule: repeatRule ?? self.repeatRule,
-            media: media ?? self.media
+            media: media ?? self.media,
+            tables: tables ?? self.tables,
+            content: content ?? self.content
         )
     }
 
@@ -209,6 +254,8 @@ enum DesktopEditorMetrics {
             && notificationOffsetSecs == o.notificationOffsetSecs
             && repeatRule == o.repeatRule
             && media == o.media
+            && tables == o.tables
+            && content == o.content
     }
 
     override var hash: Int {
@@ -223,6 +270,8 @@ enum DesktopEditorMetrics {
         h.combine(notificationOffsetSecs)
         h.combine(repeatRule)
         h.combine(media)
+        h.combine(tables)
+        h.combine(content)
         return h.finalize()
     }
 
@@ -231,22 +280,32 @@ enum DesktopEditorMetrics {
 // MARK: - Attribute composition
 
 enum EditorAttributes {
-    static func paragraphStyle(meta: LineMeta) -> NSParagraphStyle {
+    /// `collapseTextBand` shrinks the line fragment to ~2px for a block-only
+    /// line (table/image with empty leading text) so the block renders in place
+    /// instead of below a full blank text row.
+    static func paragraphStyle(meta: LineMeta, collapseTextBand: Bool = false) -> NSParagraphStyle {
         let style = NSMutableParagraphStyle()
         let indent = CGFloat(meta.indent) * DesktopEditorMetrics.indentWidth
         let markerOffset = meta.marker == .blank ? CGFloat(0) : DesktopEditorMetrics.markerSlot
         style.firstLineHeadIndent = indent + markerOffset
         style.headIndent = indent
-        style.minimumLineHeight = DesktopEditorMetrics.textLineHeight
+        if collapseTextBand {
+            // Pin both bounds so the empty body lays out a single minimal-height
+            // fragment; the block then sits at the paragraph's top.
+            style.minimumLineHeight = DesktopEditorMetrics.blockOnlyLineHeight
+            style.maximumLineHeight = DesktopEditorMetrics.blockOnlyLineHeight
+        } else {
+            style.minimumLineHeight = DesktopEditorMetrics.textLineHeight
+        }
         style.paragraphSpacing = 0
         return style
     }
 
-    static func bodyAttributes(meta: LineMeta, theme: KnotQTheme) -> [NSAttributedString.Key: Any] {
+    static func bodyAttributes(meta: LineMeta, theme: KnotQTheme, collapseTextBand: Bool = false) -> [NSAttributedString.Key: Any] {
         var attrs: [NSAttributedString.Key: Any] = [
             .font: UIFont.systemFont(ofSize: DesktopEditorMetrics.textFontSize),
             .foregroundColor: UIColor(theme.textPrimary),
-            .paragraphStyle: paragraphStyle(meta: meta),
+            .paragraphStyle: paragraphStyle(meta: meta, collapseTextBand: collapseTextBand),
             .knotqLine: meta
         ]
         if meta.done {
@@ -255,6 +314,15 @@ enum EditorAttributes {
         }
         return attrs
     }
+}
+
+/// Whether a paragraph's text band should collapse to ~2px: it carries a block
+/// (table/image) that leads its content and has no body text to sit beside.
+func shouldCollapseTextBand(body: String, meta: LineMeta) -> Bool {
+    guard body.isEmpty, meta.hasBlockContent else { return false }
+    // Prefer the precise document-ordered answer when content is available;
+    // otherwise (paste/edit-built metas) any block on an empty line collapses.
+    return meta.content.isEmpty ? true : meta.leadingContentIsBlock
 }
 
 // MARK: - Editor invariants
@@ -283,7 +351,8 @@ func buildAttributedString(items: [MobileItem], theme: KnotQTheme, timeFormat: S
     }
     for item in items {
         let meta = LineMeta(item: item, timeFormat: timeFormat)
-        let attrs = EditorAttributes.bodyAttributes(meta: meta, theme: theme)
+        let collapse = shouldCollapseTextBand(body: item.text, meta: meta)
+        let attrs = EditorAttributes.bodyAttributes(meta: meta, theme: theme, collapseTextBand: collapse)
         let bodyLocation = result.length
         result.append(NSAttributedString(string: item.text, attributes: attrs))
         let bodyRange = NSRange(location: bodyLocation, length: (item.text as NSString).length)
@@ -372,7 +441,9 @@ func setLineMeta(
     theme: KnotQTheme
 ) {
     guard paragraphRange.length > 0 else { return }
-    let attrs = EditorAttributes.bodyAttributes(meta: meta, theme: theme)
+    let body = bodyText(paragraphRange: paragraphRange, in: storage)
+    let collapse = shouldCollapseTextBand(body: body, meta: meta)
+    let attrs = EditorAttributes.bodyAttributes(meta: meta, theme: theme, collapseTextBand: collapse)
     storage.removeAttribute(.font, range: paragraphRange)
     storage.removeAttribute(.foregroundColor, range: paragraphRange)
     storage.removeAttribute(.backgroundColor, range: paragraphRange)
@@ -381,7 +452,6 @@ func setLineMeta(
     storage.removeAttribute(.strikethroughStyle, range: paragraphRange)
     storage.removeAttribute(.strikethroughColor, range: paragraphRange)
     storage.addAttributes(attrs, range: paragraphRange)
-    let body = bodyText(paragraphRange: paragraphRange, in: storage)
     let bodyRange = NSRange(
         location: paragraphRange.location,
         length: (body as NSString).length
@@ -572,7 +642,8 @@ func extractEdits(from storage: NSAttributedString) -> [MobileItemEdit] {
     // With invariant I1, paragraphRanges yields one entry per line including
     // an empty trailing paragraph only when the user typed an extra "\n".
     let ns = storage.string as NSString
-    let edits: [MobileItemEdit] = paragraphRanges(in: ns).map { paragraph in
+    let paragraphs = paragraphRanges(in: ns)
+    let edits: [MobileItemEdit] = paragraphs.map { paragraph in
         let meta = lineMeta(at: paragraph.fullRange.location, in: storage)
         let body = paragraph.lineRange.length > 0
             ? ns.substring(with: paragraph.lineRange)
@@ -592,9 +663,18 @@ func extractEdits(from storage: NSAttributedString) -> [MobileItemEdit] {
     }
     // A single blank-marker, empty-text line means "no items" (matches the
     // pre-invariant semantics for an empty document).
-    if edits.count == 1, let only = edits.first,
-       only.text.isEmpty, only.marker == "blank", only.indent == 0, !only.done, only.media.isEmpty {
+    if edits.count == 1,
+       let only = edits.first,
+       let paragraph = paragraphs.first {
+        let meta = lineMeta(at: paragraph.fullRange.location, in: storage)
+        if only.text.isEmpty,
+           only.marker == "blank",
+           only.indent == 0,
+           !only.done,
+           only.media.isEmpty,
+           meta.tables.isEmpty {
         return []
+        }
     }
     return edits
 }

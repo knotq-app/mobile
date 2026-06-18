@@ -37,6 +37,7 @@ import android.util.Base64
 import android.util.TypedValue
 import android.view.ContextThemeWrapper
 import android.view.GestureDetector
+import android.view.KeyEvent
 import android.view.MotionEvent
 import android.view.Gravity
 import android.view.VelocityTracker
@@ -251,6 +252,12 @@ private data class SyncLoginStart(
     val session: SyncSession?
 )
 
+private sealed interface SyncRefreshResult {
+    class Ready(val session: SyncSession) : SyncRefreshResult
+    object Deferred : SyncRefreshResult
+    object SessionDead : SyncRefreshResult
+}
+
 private data class PendingSyncBrowserAuth(
     val apiBase: String,
     val state: String,
@@ -310,6 +317,22 @@ class MainActivity : Activity() {
     private var dailyScrollDate: String? = null
     private var pendingDailyAnchorDate: String? = null
     private val editorSchemeIds = WeakHashMap<EditText, String>()
+    // The FrameLayout wrapping each editor, used to float the inline table-cell
+    // editor over a tapped cell.
+    private val editorHosts = WeakHashMap<EditText, FrameLayout>()
+    // The inline cell editor currently shown (if any), so a second tap commits
+    // the first before moving on.
+    private var activeCellEdit: ActiveCellEdit? = null
+
+    /// The floating inline table-cell editor currently shown, with everything
+    /// needed to commit its per-line diff back to the core.
+    private class ActiveCellEdit(
+        val field: EditText,
+        val schemeId: String,
+        val itemId: String,
+        val hit: TableCellHit,
+        val oldLines: List<String>,
+    )
     // Re-tints the format bar's marker buttons for the caret's line; rebuilt
     // with each rendered format bar and invoked from editor selection changes.
     private var formatBarMarkerRefresh: (() -> Unit)? = null
@@ -328,6 +351,7 @@ class MainActivity : Activity() {
     private var syncSubscriptionCancelled = false
     private var syncSubscriptionProvider: String? = null
     private var syncFailureNotified = false
+    private var syncOffline = false
     private var safeAreaTop = 0
     private var safeAreaBottom = 0
     private var billingClient: BillingClient? = null
@@ -493,6 +517,9 @@ class MainActivity : Activity() {
 
     private fun render() {
         if (!::content.isInitialized) return
+        // The whole view tree (including any floating inline cell editor) is
+        // rebuilt below; drop the stale reference without re-committing.
+        activeCellEdit = null
         applyTheme()
         rootFrame.setBackgroundColor(theme.bgApp)
         shell.setBackgroundColor(theme.bgApp)
@@ -3022,6 +3049,10 @@ class MainActivity : Activity() {
             lineAdornments = editorLineAdornments(scheme, timeFormat24())
             markerTapHandler = { lineIndex -> toggleEditorLineMarker(this, lineIndex) }
             selectionChangedHandler = { formatBarMarkerRefresh?.invoke() }
+            if (!readOnly) {
+                tableCellTapHandler = { hit -> beginInlineCellEdit(schemeId, this, hit) }
+                tableControlTapHandler = { hit -> handleTableControl(schemeId, hit) }
+            }
             isEnabled = !readOnly
             gravity = Gravity.TOP or Gravity.START
             setTextColor(theme.textPrimary)
@@ -3049,13 +3080,20 @@ class MainActivity : Activity() {
                 }
             }
         }
+        // The editor lives inside a host FrameLayout so the inline table-cell
+        // editor can float a real EditField over the tapped cell, on top of the
+        // canvas-drawn editor, without disturbing the single-document model.
+        val editorHost = FrameLayout(this).apply {
+            addView(editor, FrameLayout.LayoutParams(-1, -2))
+        }
+        editorHosts[editor] = editorHost
         val editorBody = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(0, dp(8), 0, 0)
             addView(schemeTitleBlock(scheme), LinearLayout.LayoutParams(-1, -2).apply {
                 setMargins(dp(EDITOR_TEXT_LEFT_PAD_DP), 0, dp(24), dp(1))
             })
-            addView(editor, LinearLayout.LayoutParams(-1, -2))
+            addView(editorHost, LinearLayout.LayoutParams(-1, -2))
         }
         val editorScroll = scroll(editorBody)
         root.addView(editorScroll, LinearLayout.LayoutParams(-1, 0, 1f))
@@ -3290,6 +3328,8 @@ class MainActivity : Activity() {
                 lineAdornments = editorLineAdornments(scheme, timeFormat24())
                 markerTapHandler = { lineIndex -> toggleEditorLineMarker(this, lineIndex) }
                 selectionChangedHandler = { formatBarMarkerRefresh?.invoke() }
+                tableCellTapHandler = { hit -> beginInlineCellEdit(schemeId, this, hit) }
+                tableControlTapHandler = { hit -> handleTableControl(schemeId, hit) }
                 gravity = Gravity.TOP or Gravity.START
                 setTextColor(theme.textPrimary)
                 setHintTextColor(theme.textMuted)
@@ -3330,7 +3370,11 @@ class MainActivity : Activity() {
             } else {
                 editor.post { placeCursorAtDocumentEnd(editor) }
             }
-            addView(editor, LinearLayout.LayoutParams(-1, -2))
+            val editorHost = FrameLayout(this@MainActivity).apply {
+                addView(editor, FrameLayout.LayoutParams(-1, -2))
+            }
+            editorHosts[editor] = editorHost
+            addView(editorHost, LinearLayout.LayoutParams(-1, -2))
         }
     }
 
@@ -3463,10 +3507,11 @@ class MainActivity : Activity() {
                 )
             }
             val stateLine = when {
+                syncOffline -> "Offline - sync will retry when your connection is back."
                 session.supportsSync && syncSubscriptionCancelled ->
-                    "Cancelled — sync stays active until the billing period ends."
+                    "Cancelled - sync stays active until the billing period ends."
                 session.supportsSync -> "Sync is on for this account."
-                else -> "Sync is off — subscribe to turn it on."
+                else -> "Sync is off - subscribe to turn it on."
             }
             AlertDialog.Builder(this)
                 .setTitle("Sync account")
@@ -3764,6 +3809,8 @@ class MainActivity : Activity() {
 
     private fun installSyncSession(session: SyncSession) {
         syncSession = session
+        syncOffline = false
+        syncFailureNotified = false
         saveSyncSession(session)
         startSyncPolling()
         scheduleBackgroundSyncWork()
@@ -3780,6 +3827,8 @@ class MainActivity : Activity() {
         syncLoginChallenge = null
         syncSubscriptionCancelled = false
         syncSubscriptionProvider = null
+        syncOffline = false
+        syncFailureNotified = false
         saveSyncSession(null)
         syncPollHandler.removeCallbacks(syncPollRunnable)
         syncPollHandler.removeCallbacks(syncEditRunnable)
@@ -3790,19 +3839,46 @@ class MainActivity : Activity() {
     /// Read the authoritative subscription lifecycle so Settings can reflect a
     /// cancelled-but-active subscription and offer to re-enable it.
     private fun refreshAccountStatus() {
+        if (syncInProgress) return
         val session = syncSession ?: return
+        syncInProgress = true
         Thread {
-            val result = runCatching {
-                val active = refreshSyncSessionIfNeeded(session) ?: return@runCatching null
+            val statusResult = runCatching {
+                val active = when (val refreshed = refreshSyncSessionIfNeeded(session)) {
+                    is SyncRefreshResult.Ready -> {
+                        persistRotatedSyncSession(session, refreshed.session)
+                        refreshed.session
+                    }
+                    SyncRefreshResult.Deferred -> {
+                        runOnUiThread {
+                            syncOffline = true
+                            render()
+                        }
+                        return@runCatching null
+                    }
+                    SyncRefreshResult.SessionDead -> {
+                        runOnUiThread { expireSyncSession() }
+                        return@runCatching null
+                    }
+                }
                 httpJson(
                     "${active.apiBase}/v1/auth/account/status",
                     "GET",
                     JSONObject(),
                     bearerToken = active.bearerToken
                 )
-            }.getOrNull()
+            }
             runOnUiThread {
-                if (result == null) return@runOnUiThread
+                syncInProgress = false
+                statusResult.exceptionOrNull()?.let { error ->
+                    if (isLikelyNetworkError(error)) {
+                        syncOffline = true
+                        render()
+                    }
+                    return@runOnUiThread
+                }
+                val result = statusResult.getOrNull() ?: return@runOnUiThread
+                syncOffline = false
                 syncSubscriptionProvider = result.optString("subscription_provider").ifEmpty { null }
                 syncSubscriptionCancelled =
                     result.optBoolean("supports_sync", true) &&
@@ -3825,7 +3901,8 @@ class MainActivity : Activity() {
         if (session.refreshToken.isEmpty()) return
         syncInProgress = true
         Thread {
-            val active = refreshSyncSessionIfNeeded(session, force = true)
+            val refresh = refreshSyncSessionIfNeeded(session, force = true)
+            val active = (refresh as? SyncRefreshResult.Ready)?.session
             val status = active?.let {
                 runCatching {
                     httpJson(
@@ -3838,17 +3915,20 @@ class MainActivity : Activity() {
             }
             runOnUiThread {
                 syncInProgress = false
-                if (active == null) {
-                    // Refresh token revoked/expired: drop the session like the poll loop.
-                    syncSession = null
-                    saveSyncSession(null)
-                    syncPollHandler.removeCallbacks(syncPollRunnable)
-                    showError("Sync session expired", "Please sign in again.")
+                if (refresh is SyncRefreshResult.Deferred) {
+                    syncOffline = true
                     render()
                     return@runOnUiThread
                 }
-                if (active !== session) {
+                if (refresh is SyncRefreshResult.SessionDead) {
+                    // Refresh token revoked/expired: drop the session like the poll loop.
+                    expireSyncSession()
+                    return@runOnUiThread
+                }
+                if (active != null && active !== session) {
                     syncSession = active
+                    syncOffline = false
+                    syncFailureNotified = false
                     saveSyncSession(active)
                     scheduleBackgroundSyncWork()
                     // A just-granted entitlement: pull the workspace promptly instead
@@ -3884,12 +3964,12 @@ class MainActivity : Activity() {
             }
         }
         val session = syncSession ?: return
-        if (syncAccountActionInProgress) return
+        if (syncAccountActionInProgress || syncInProgress) return
         syncAccountActionInProgress = true
+        syncInProgress = true
         Thread {
             val result = runCatching {
-                val active = refreshSyncSessionIfNeeded(session)
-                    ?: throw RuntimeException(accountActionErrorMessage("unauthorized"))
+                val active = activeSyncSessionForAccountAction(session)
                 parseSyncSession(
                     httpJson(
                         "${active.apiBase}/v1/auth/subscription/resume",
@@ -3903,6 +3983,7 @@ class MainActivity : Activity() {
             }
             runOnUiThread {
                 syncAccountActionInProgress = false
+                syncInProgress = false
                 result.onSuccess { updated ->
                     installSyncSession(updated)
                     showError("Subscription re-enabled", "Your subscription will renew again.")
@@ -3952,11 +4033,12 @@ class MainActivity : Activity() {
 
     private fun cancelSyncSubscription() {
         val session = syncSession ?: return
-        if (syncAccountActionInProgress) return
+        if (syncAccountActionInProgress || syncInProgress) return
         syncAccountActionInProgress = true
+        syncInProgress = true
         Thread {
             val result = runCatching {
-                val active = refreshSyncSessionIfNeeded(session) ?: throw RuntimeException(accountActionErrorMessage("unauthorized"))
+                val active = activeSyncSessionForAccountAction(session)
                 parseSyncSession(
                     httpJson(
                         "${active.apiBase}/v1/auth/subscription/cancel",
@@ -3970,6 +4052,7 @@ class MainActivity : Activity() {
             }
             runOnUiThread {
                 syncAccountActionInProgress = false
+                syncInProgress = false
                 result.onSuccess { updated ->
                     installSyncSession(updated)
                     if (updated.supportsSync) {
@@ -4104,8 +4187,7 @@ class MainActivity : Activity() {
         }
         Thread {
             val result = runCatching {
-                val active = refreshSyncSessionIfNeeded(session)
-                    ?: throw RuntimeException(accountActionErrorMessage("unauthorized"))
+                val active = activeSyncSessionForAccountAction(session)
                 val productId = purchase.products.firstOrNull() ?: SYNC_SUBSCRIPTION_PRODUCT_ID
                 parseSyncSession(
                     httpJson(
@@ -4183,23 +4265,31 @@ class MainActivity : Activity() {
         syncInProgress = true
         Thread {
             // Refresh the short-lived access token if near expiry (rotating +
-            // persisting the new credentials), or sign out if the refresh token is
-            // dead.
-            val active = refreshSyncSessionIfNeeded(session)
-            if (active == null) {
-                runOnUiThread {
-                    syncInProgress = false
-                    syncSession = null
-                    saveSyncSession(null)
-                    syncPollHandler.removeCallbacks(syncPollRunnable)
-                    showError("Sync session expired", "Please sign in again.")
-                    render()
+            // persisting the new credentials). If refresh is temporarily unavailable,
+            // skip this tick instead of syncing with an expired bearer token.
+            val active = when (val refresh = refreshSyncSessionIfNeeded(session)) {
+                is SyncRefreshResult.Ready -> refresh.session
+                SyncRefreshResult.Deferred -> {
+                    runOnUiThread {
+                        syncInProgress = false
+                        syncOffline = true
+                        render()
+                    }
+                    return@Thread
                 }
-                return@Thread
+                SyncRefreshResult.SessionDead -> {
+                    runOnUiThread {
+                        syncInProgress = false
+                        expireSyncSession()
+                    }
+                    return@Thread
+                }
             }
             if (active !== session) {
                 runOnUiThread {
                     syncSession = active
+                    syncOffline = false
+                    syncFailureNotified = false
                     saveSyncSession(active)
                 }
             }
@@ -4216,6 +4306,7 @@ class MainActivity : Activity() {
                 syncInProgress = false
                 result.onSuccess { response ->
                     syncFailureNotified = false
+                    syncOffline = false
                     val changed = response.optBoolean("changed", false)
                     if (changed) {
                         loadSnapshot()
@@ -4229,6 +4320,11 @@ class MainActivity : Activity() {
                 }.onFailure { error ->
                     // Non-blocking like the iOS banner, and only on the first
                     // failure so an offline session isn't toasted every poll.
+                    if (isLikelyNetworkError(error)) {
+                        syncOffline = true
+                        render()
+                        return@onFailure
+                    }
                     if (!syncFailureNotified) {
                         syncFailureNotified = true
                         toast(error.message ?: "Sync failed")
@@ -4238,14 +4334,54 @@ class MainActivity : Activity() {
         }.start()
     }
 
-    // Runs on a background thread (blocking HTTP). Returns null if the session is
-    // gone (refresh token dead) and the caller should sign out; otherwise the
-    // session to use — the original (no refresh needed / transient failure) or a
-    // copy carrying the rotated credentials.
-    private fun refreshSyncSessionIfNeeded(session: SyncSession, force: Boolean = false): SyncSession? {
+    private fun activeSyncSessionForAccountAction(session: SyncSession): SyncSession {
+        return when (val refresh = refreshSyncSessionIfNeeded(session)) {
+            is SyncRefreshResult.Ready -> {
+                persistRotatedSyncSession(session, refresh.session)
+                refresh.session
+            }
+            SyncRefreshResult.Deferred -> throw RuntimeException("Sync is offline. Try again when your connection is back.")
+            SyncRefreshResult.SessionDead -> {
+                runOnUiThread { expireSyncSession(showMessage = false) }
+                throw RuntimeException(accountActionErrorMessage("unauthorized"))
+            }
+        }
+    }
+
+    private fun persistRotatedSyncSession(previous: SyncSession, active: SyncSession) {
+        if (active === previous || active.refreshToken == previous.refreshToken) return
+        saveSyncSession(active)
+        runOnUiThread {
+            if (syncSession?.refreshToken == previous.refreshToken) {
+                syncSession = active
+                syncOffline = false
+                syncFailureNotified = false
+                scheduleBackgroundSyncWork()
+                render()
+            }
+        }
+    }
+
+    private fun expireSyncSession(showMessage: Boolean = true) {
+        syncSession = null
+        syncOffline = false
+        saveSyncSession(null)
+        syncPollHandler.removeCallbacks(syncPollRunnable)
+        syncPollHandler.removeCallbacks(syncEditRunnable)
+        cancelBackgroundSyncWork()
+        if (showMessage) {
+            showError("Sync session expired", "Please sign in again.")
+        }
+        render()
+    }
+
+    // Runs on a background thread (blocking HTTP). SessionDead is only returned
+    // when the refresh token is rejected by the auth endpoint. Deferred means the
+    // current token may be expired but the refresh could not be completed yet.
+    private fun refreshSyncSessionIfNeeded(session: SyncSession, force: Boolean = false): SyncRefreshResult {
         val refreshToken = session.refreshToken
-        if (refreshToken.isEmpty()) return null
-        if (!force && !tokenNeedsRefresh(session.expiresAt)) return session
+        if (refreshToken.isEmpty()) return SyncRefreshResult.SessionDead
+        if (!force && !tokenNeedsRefresh(session.expiresAt)) return SyncRefreshResult.Ready(session)
         try {
             val connection =
                 (URL("${session.apiBase}/v1/auth/refresh").openConnection() as HttpURLConnection).apply {
@@ -4258,21 +4394,39 @@ class MainActivity : Activity() {
             val body = JSONObject().put("refresh_token", refreshToken).toString().toByteArray(Charsets.UTF_8)
             connection.outputStream.use { it.write(body) }
             val status = connection.responseCode
-            if (status == 401) return null
-            if (status !in 200..299) return session
+            if (status == 401) return SyncRefreshResult.SessionDead
+            if (status !in 200..299) return SyncRefreshResult.Deferred
             val raw = connection.inputStream.bufferedReader().use { it.readText() }
             val json = JSONObject(raw)
-            return session.copy(
+            return SyncRefreshResult.Ready(session.copy(
                 bearerToken = requiredString(json, "bearer_token"),
                 expiresAt = requiredString(json, "expires_at"),
                 refreshToken = requiredString(json, "refresh_token"),
                 refreshExpiresAt = json.optString("refresh_expires_at").ifEmpty { null },
                 supportsSync = json.optBoolean("supports_sync", true)
-            )
+            ))
         } catch (error: Exception) {
             // Network/parse hiccup: keep the current token, retry next tick.
-            return session
+            return SyncRefreshResult.Deferred
         }
+    }
+
+    private fun isLikelyNetworkError(error: Throwable): Boolean {
+        var current: Throwable? = error
+        while (current != null) {
+            if (current is java.io.IOException) return true
+            current = current.cause
+        }
+        val message = error.message.orEmpty().lowercase()
+        return listOf(
+            "network",
+            "request failed",
+            "timeout",
+            "timed out",
+            "unable to resolve",
+            "failed to connect",
+            "no address associated with hostname"
+        ).any(message::contains)
     }
 
     private fun tokenNeedsRefresh(expiresAt: String): Boolean {
@@ -4581,7 +4735,7 @@ class MainActivity : Activity() {
         root.addView(sectionHeader("Settings"))
         root.addView(syncSettingsCard(), spaced())
         val settings = snapshot.optJSONObject("settings")
-        val themeMode = settings?.optString("theme_mode", "dark") ?: "dark"
+        val themeMode = settings?.optString("theme_mode", "system") ?: "system"
         val timeFormat = settings?.optString("time_format", "twelve_hour") ?: "twelve_hour"
         val eventOffset = settings?.optInt("event_notification_offset_secs", DEFAULT_EVENT_NOTIFICATION_OFFSET_SECS)
             ?: DEFAULT_EVENT_NOTIFICATION_OFFSET_SECS
@@ -4650,22 +4804,26 @@ class MainActivity : Activity() {
         // the not-yet-subscribed state, with a re-enable action below.
         val cancelled = session?.supportsSync == true && syncSubscriptionCancelled
         val badge = when {
+            session != null && syncOffline -> "Offline"
             cancelled -> "Cancelled"
             session?.supportsSync == true -> "Enabled"
             session != null -> "Upgrade"
             else -> "Available"
         }
         val badgeFg = when {
+            session != null && syncOffline -> if (theme.isDark) rgb(0xf8d38d) else rgb(0x9a4b00)
             !cancelled && session?.supportsSync == true -> if (theme.isDark) rgb(0x9af0b6) else rgb(0x176b38)
             cancelled || session != null -> if (theme.isDark) rgb(0xf8d38d) else rgb(0x9a4b00)
             else -> if (theme.isDark) rgb(0x9bc2ff) else rgb(0x235ebe)
         }
         val badgeBg = when {
+            session != null && syncOffline -> adjustAlpha(if (theme.isDark) rgb(0xf59e0b) else rgb(0xd97706), if (theme.isDark) 0.16f else 0.10f)
             !cancelled && session?.supportsSync == true -> adjustAlpha(if (theme.isDark) rgb(0x30d158) else rgb(0x1f8f4d), if (theme.isDark) 0.15f else 0.09f)
             cancelled || session != null -> adjustAlpha(if (theme.isDark) rgb(0xf59e0b) else rgb(0xd97706), if (theme.isDark) 0.16f else 0.10f)
             else -> adjustAlpha(if (theme.isDark) rgb(0x3b82f6) else rgb(0x2f67cf), if (theme.isDark) 0.16f else 0.09f)
         }
         val detail = when {
+            session != null && syncOffline -> "Sync will retry when your connection is back."
             cancelled -> "Sync stays active until your billing period ends."
             session != null -> session.email
             else -> "Sign in to keep this workspace available across devices."
@@ -5273,6 +5431,237 @@ class MainActivity : Activity() {
         } catch (error: RuntimeException) {
             toast(error.message)
         }
+    }
+
+    // ---- Inline table cell editing -------------------------------------------------
+
+    /// Resolves the item that owns a logical editor line (each line is one item).
+    private fun itemIdForLine(schemeId: String, lineIndex: Int): String? =
+        findScheme(schemeId)?.optJSONArray("items")?.optJSONObject(lineIndex)?.optString("id")?.takeIf { it.isNotEmpty() }
+
+    /// Returns the live cell texts (one entry per line) for diffing on commit.
+    private fun cellLines(schemeId: String, itemId: String, tableIndex: Int, row: Int, column: Int): List<String> {
+        val item = findItem(schemeId, itemId) ?: return emptyList()
+        // Prefer the ordered `content` tables; fall back to the flat `tables`.
+        val table = tableFromItem(item, tableIndex) ?: return emptyList()
+        val cell = table.optJSONArray("rows")?.optJSONObject(row)?.optJSONArray("cells")?.optJSONObject(column)
+            ?: return emptyList()
+        val lines = ArrayList<String>()
+        cell.optJSONArray("lines")?.forEachObject { lines.add(it.optString("text")) }
+        if (lines.isEmpty()) cell.optString("text").takeIf { it.isNotEmpty() }?.let { lines.add(it) }
+        return lines
+    }
+
+    private fun tableFromItem(item: JSONObject, tableIndex: Int): JSONObject? {
+        val content = item.optJSONArray("content")
+        if (content != null && content.length() > 0) {
+            var seen = 0
+            for (index in 0 until content.length()) {
+                val inline = content.optJSONObject(index) ?: continue
+                if (inline.optString("kind") == "table") {
+                    if (seen == tableIndex) return inline.optJSONObject("table")
+                    seen++
+                }
+            }
+        }
+        return item.optJSONArray("tables")?.optJSONObject(tableIndex)
+    }
+
+    /// Floats a real text field over the tapped cell so it is edited in place.
+    /// Commits the per-line diff through the core's cell-line APIs.
+    private fun beginInlineCellEdit(schemeId: String, editor: SchemeEditText, hit: TableCellHit) {
+        // Commit any field already open before opening a new one. Commit in place
+        // (no full re-render) so this same editor survives to host the new field.
+        commitActiveCellEdit(rerender = false)
+        val host = editorHosts[editor] ?: return
+        val itemId = itemIdForLine(schemeId, hit.lineIndex) ?: return
+        val existingLines = cellLines(schemeId, itemId, hit.tableIndex, hit.row, hit.column)
+        val rect = hit.rect
+        val field = EditText(this).apply {
+            setText(existingLines.joinToString("\n").ifEmpty { hit.text })
+            setTextColor(theme.textPrimary)
+            setHintTextColor(theme.textMuted)
+            background = rounded(theme.bgModal, dp(4), theme.accent, dp(2))
+            setPadding(dp(6), dp(4), dp(6), dp(4))
+            setTextSize(13f)
+            gravity = Gravity.TOP or Gravity.START
+            // Multi-line: Enter adds a cell line; Tab moves to the next cell.
+            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_MULTI_LINE or InputType.TYPE_TEXT_FLAG_CAP_SENTENCES
+            imeOptions = EditorInfo.IME_ACTION_NEXT
+            setHorizontallyScrolling(false)
+        }
+        val state = ActiveCellEdit(field, schemeId, itemId, hit, existingLines)
+        // Tab moves to the next/previous cell; Shift+Tab goes back.
+        field.setOnKeyListener { _, keyCode, event ->
+            if (keyCode == KeyEvent.KEYCODE_TAB && event.action == KeyEvent.ACTION_DOWN) {
+                moveInlineCellEdit(editor, forward = !event.isShiftPressed)
+                true
+            } else {
+                false
+            }
+        }
+        // The IME "Next" action moves down to the cell below (or commits if last).
+        field.setOnEditorActionListener { _, actionId, _ ->
+            if (actionId == EditorInfo.IME_ACTION_NEXT) {
+                moveInlineCellEditVertical(editor)
+                true
+            } else {
+                false
+            }
+        }
+        field.setOnFocusChangeListener { _, hasFocus ->
+            if (!hasFocus && activeCellEdit?.field === field) dismissInlineCellEditor()
+        }
+        // The cell rect already encodes the editor's own scroll (it is drawn
+        // with `- scrollY`); the editor is full-height inside the page scroller,
+        // so its internal scrollY is ~0 and the rect maps directly to the host.
+        val lp = FrameLayout.LayoutParams(
+            max(dp(56), rect.width().roundToInt()),
+            max(dp(32), rect.height().roundToInt())
+        ).apply {
+            leftMargin = rect.left.roundToInt()
+            topMargin = rect.top.roundToInt()
+        }
+        host.addView(field, lp)
+        activeCellEdit = state
+        field.requestFocus()
+        field.setSelection(field.text.length)
+        (getSystemService(INPUT_METHOD_SERVICE) as? InputMethodManager)
+            ?.showSoftInput(field, InputMethodManager.SHOW_IMPLICIT)
+        keyboardActive = true
+    }
+
+    /// Commits the current cell, then opens the next/previous cell to its
+    /// left/right, wrapping across rows.
+    private fun moveInlineCellEdit(editor: SchemeEditText, forward: Boolean) {
+        val state = activeCellEdit ?: return
+        val hit = state.hit
+        val schemeId = state.schemeId
+        commitActiveCellEdit(rerender = false)
+        val item = findItem(schemeId, state.itemId) ?: return
+        val table = tableFromItem(item, hit.tableIndex) ?: return
+        val (rows, columns) = tableDimensions(table)
+        if (rows == 0 || columns == 0) return
+        var row = hit.row
+        var col = hit.column + if (forward) 1 else -1
+        if (col >= columns) { col = 0; row++ }
+        if (col < 0) { col = columns - 1; row-- }
+        if (row < 0 || row >= rows) return
+        openCellAfterLayout(schemeId, editor, hit, row, col)
+    }
+
+    /// Moves to the cell directly below (used for the IME "Next" action).
+    private fun moveInlineCellEditVertical(editor: SchemeEditText) {
+        val state = activeCellEdit ?: return
+        val hit = state.hit
+        val schemeId = state.schemeId
+        commitActiveCellEdit(rerender = false)
+        val item = findItem(schemeId, state.itemId) ?: return
+        val table = tableFromItem(item, hit.tableIndex) ?: return
+        val (rows, _) = tableDimensions(table)
+        val row = hit.row + 1
+        if (row >= rows) return
+        openCellAfterLayout(schemeId, editor, hit, row, hit.column)
+    }
+
+    private fun tableDimensions(table: JSONObject): Pair<Int, Int> {
+        val rows = table.optJSONArray("rows")?.length() ?: 0
+        val columns = max(
+            table.optJSONArray("columns")?.length() ?: 0,
+            table.optJSONArray("rows")?.optJSONObject(0)?.optJSONArray("cells")?.length() ?: 0
+        )
+        return rows to columns
+    }
+
+    /// Re-opens the inline editor on a target cell once the editor has redrawn
+    /// (its cell rects are recomputed on the next draw pass).
+    private fun openCellAfterLayout(schemeId: String, editor: SchemeEditText, hit: TableCellHit, row: Int, col: Int) {
+        editor.post {
+            editor.cellRectFor(hit.tableIndex, row, col)?.let { nextRect ->
+                beginInlineCellEdit(
+                    schemeId,
+                    editor,
+                    hit.copy(row = row, column = col, rect = nextRect, text = "")
+                )
+            }
+        }
+    }
+
+    /// Commits the active inline cell editor (if any), applying the per-line diff
+    /// between its starting lines and the edited text. With `rerender` the whole
+    /// UI is rebuilt; otherwise only the owning editor's adornments are refreshed.
+    private fun commitActiveCellEdit(rerender: Boolean) {
+        val state = activeCellEdit ?: return
+        activeCellEdit = null
+        (state.field.parent as? ViewGroup)?.removeView(state.field)
+        val draft = state.field.text.toString()
+        val oldLines = state.oldLines
+        val newLines = if (draft.isEmpty()) emptyList() else draft.split("\n")
+        if (newLines == oldLines) {
+            if (rerender) { loadSnapshot(); render() }
+            return
+        }
+        val schemeId = state.schemeId
+        val itemId = state.itemId
+        val row = state.hit.row
+        val column = state.hit.column
+        try {
+            // Overwrite existing line slots.
+            val shared = min(oldLines.size, newLines.size)
+            for (i in 0 until shared) {
+                if (oldLines[i] != newLines[i]) {
+                    bridge.setTableCellLineText(schemeId, itemId, row, column, i, newLines[i])
+                }
+            }
+            // Append any new lines beyond the old count.
+            for (i in shared until newLines.size) {
+                bridge.addTableCellLine(schemeId, itemId, row, column, i, newLines[i])
+            }
+            // Remove trailing lines that were deleted (back to front).
+            for (i in oldLines.size - 1 downTo newLines.size) {
+                bridge.removeTableCellLine(schemeId, itemId, row, column, i)
+            }
+            // An entirely emptied cell keeps one blank line so the grid still has
+            // a cell to tap.
+            if (newLines.isEmpty()) {
+                bridge.setTableCellText(schemeId, itemId, row, column, "")
+            }
+            loadSnapshot()
+            requestSyncSoon()
+            if (rerender) {
+                render()
+            } else {
+                // Refresh just the owning editor's table/image adornments in place.
+                val editor = editorForScheme(schemeId)
+                findScheme(schemeId)?.let { scheme -> editor?.lineAdornments = editorLineAdornments(scheme, timeFormat24()) }
+            }
+        } catch (error: RuntimeException) {
+            toast(error.message)
+        }
+    }
+
+    private fun editorForScheme(schemeId: String): SchemeEditText? =
+        editorSchemeIds.entries.firstOrNull { it.value == schemeId }?.key as? SchemeEditText
+
+    /// Handles a tap on an inline +/- table control.
+    private fun handleTableControl(schemeId: String, hit: TableControlHit) {
+        commitActiveCellEdit(rerender = false)
+        val itemId = itemIdForLine(schemeId, hit.lineIndex) ?: return
+        try {
+            when (hit.kind) {
+                TableControlKind.ADD_ROW -> bridge.insertTableRow(schemeId, itemId, hit.rowCount)
+                TableControlKind.ADD_COLUMN -> bridge.insertTableColumn(schemeId, itemId, hit.columnCount)
+            }
+            loadSnapshot()
+            render()
+            requestSyncSoon()
+        } catch (error: RuntimeException) {
+            toast(error.message)
+        }
+    }
+
+    private fun dismissInlineCellEditor() {
+        commitActiveCellEdit(rerender = true)
     }
 
     private fun occurrenceRow(occurrence: JSONObject, striped: Boolean): View {
@@ -6543,7 +6932,7 @@ class MainActivity : Activity() {
     }
 
     private fun applyTheme() {
-        val mode = snapshot.optJSONObject("settings")?.optString("theme_mode", "dark") ?: "dark"
+        val mode = snapshot.optJSONObject("settings")?.optString("theme_mode", "system") ?: "system"
         val darkSystem = (resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK) == Configuration.UI_MODE_NIGHT_YES
         theme = when (mode) {
             "light" -> UiTheme.light
@@ -7367,7 +7756,7 @@ class MainActivity : Activity() {
 
     private fun schemeColor(index: Int): Int {
         val darkPalette = intArrayOf(rgb(0xff453a), rgb(0xff9f0a), rgb(0x30d158), rgb(0x0a84ff), rgb(0xbf5af2), rgb(0xffd60a))
-        val lightPalette = intArrayOf(rgb(0xd4271c), rgb(0xc47400), rgb(0x1e9e40), rgb(0x0064d2), rgb(0x8a3db5), rgb(0xe0a800))
+        val lightPalette = intArrayOf(rgb(0xb84433), rgb(0xc47400), rgb(0x28764f), rgb(0x2563a6), rgb(0x735aa6), rgb(0xe0a800))
         val palette = if (theme.isDark) darkPalette else lightPalette
         return palette[index.floorMod(palette.size)]
     }

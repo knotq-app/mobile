@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 // Component declarations were split into focused files to keep modules small.
 
@@ -65,7 +66,7 @@ private let onboardingSteps: [OnboardingStep] = [
     ),
     OnboardingStep(
         title: "Calendar",
-        body: "Your calendar holds events, assignments, and reminders. Tap to add a reminder, long-press for an assignment, or drag to block out an event.",
+        body: "Your calendar holds events, assignments, and reminders. Long-press to add a task.",
         target: .calendar,
         focusPane: .calendar
     ),
@@ -152,18 +153,18 @@ struct OnboardingOverlay: View {
                 .shadow(color: .black.opacity(0.18), radius: 8, y: 4)
 
             VStack(spacing: 6) {
-                Text("You're all set")
+                Text("Enable Sync?")
                     .font(.system(size: 30, weight: .bold))
-                Text("One last step — choose how this workspace should sync.")
+                Text("Sync is $3.99 a month and lets you share your workspace across devices. Local-only is fully free.")
                     .font(.system(size: 15, weight: .medium))
                     .foregroundStyle(theme.textSoft)
                     .multilineTextAlignment(.center)
+                    .fixedSize(horizontal: false, vertical: true)
             }
 
             VStack(spacing: 10) {
                 onboardingAction(
-                    title: "Create Sync Account",
-                    detail: "Sign up in your browser and sync across devices.",
+                    title: "Sign Up",
                     icon: "person.crop.circle.badge.plus"
                 ) {
                     authenticate(mode: .createAccount)
@@ -171,7 +172,6 @@ struct OnboardingOverlay: View {
 
                 onboardingAction(
                     title: "Sign In",
-                    detail: "Connect an existing KnotQ account in your browser.",
                     icon: "person.crop.circle"
                 ) {
                     authenticate(mode: .signIn)
@@ -180,7 +180,7 @@ struct OnboardingOverlay: View {
                 Button {
                     onComplete()
                 } label: {
-                    Label("Local for Now", systemImage: "internaldrive")
+                    Label("Continue Free", systemImage: "internaldrive")
                         .font(.system(size: 15, weight: .semibold))
                         .frame(maxWidth: .infinity)
                         .frame(height: 46)
@@ -189,7 +189,7 @@ struct OnboardingOverlay: View {
                 .disabled(model.syncAuthInProgress)
             }
 
-            Text("You can add or remove sync later from Settings.")
+            Text("You can subscribe later from Settings.")
                 .font(.footnote)
                 .foregroundStyle(theme.textSoft)
                 .multilineTextAlignment(.center)
@@ -205,7 +205,7 @@ struct OnboardingOverlay: View {
 
     private func onboardingAction(
         title: String,
-        detail: String,
+        detail: String? = nil,
         icon: String,
         action: @escaping () -> Void
     ) -> some View {
@@ -220,9 +220,11 @@ struct OnboardingOverlay: View {
                     Text(title)
                         .font(.system(size: 15, weight: .semibold))
                         .foregroundStyle(theme.textPrimary)
-                    Text(detail)
-                        .font(.system(size: 12, weight: .medium))
-                        .foregroundStyle(theme.textSoft)
+                    if let detail {
+                        Text(detail)
+                            .font(.system(size: 12, weight: .medium))
+                            .foregroundStyle(theme.textSoft)
+                    }
                 }
 
                 Spacer()
@@ -266,7 +268,7 @@ struct OnboardingOverlay: View {
                 }
             }
             .contentShape(Rectangle())
-            .onTapGesture {} // the tour is driven by Back / Next / Skip
+            .onTapGesture {} // the tour is driven by Back / Next
     }
 
     private func highlightRing(_ rect: CGRect) -> some View {
@@ -285,10 +287,17 @@ struct OnboardingOverlay: View {
     @ViewBuilder
     private func tooltip(_ current: OnboardingStep, targetRect: CGRect?) -> some View {
         if let rect = targetRect {
-            if rect.midY < size.height * 0.5 {
+            if rect.height > size.height * 0.62 {
+                VStack(spacing: 0) {
+                    Spacer().frame(height: UIDevice.current.userInterfaceIdiom == .pad ? 32 : 56)
+                    tooltipCard(current)
+                    Spacer(minLength: 0)
+                }
+                .padding(.horizontal, 16)
+            } else if rect.midY < size.height * 0.5 {
                 // Target sits high: drop the card just below it.
                 VStack(spacing: 0) {
-                    Spacer().frame(height: min(rect.maxY + 16, size.height - 200))
+                    Spacer().frame(height: min(max(rect.maxY + 20, 56), size.height - 200))
                     tooltipCard(current)
                     Spacer(minLength: 0)
                 }
@@ -298,7 +307,7 @@ struct OnboardingOverlay: View {
                 VStack(spacing: 0) {
                     Spacer(minLength: 0)
                     tooltipCard(current)
-                    Spacer().frame(height: max(20, size.height - rect.minY + 16))
+                    Spacer().frame(height: max(44, size.height - rect.minY + 28))
                 }
                 .padding(.horizontal, 16)
             }
@@ -342,13 +351,6 @@ struct OnboardingOverlay: View {
                     .buttonStyle(.bordered)
                 }
 
-                Button("Skip") {
-                    finishTutorial()
-                }
-                .font(.system(size: 14, weight: .medium))
-                .buttonStyle(.plain)
-                .foregroundStyle(theme.textSoft)
-
                 Spacer(minLength: 0)
 
                 Button {
@@ -374,7 +376,7 @@ struct OnboardingOverlay: View {
 
     // MARK: Navigation
 
-    /// After the tutorial (Done / Skip): surface the sign-in / stay-local prompt,
+    /// After the tutorial: surface the sign-in / stay-local prompt,
     /// unless the user is already signed in, in which case onboarding is complete.
     private func finishTutorial() {
         if model.syncSession != nil {

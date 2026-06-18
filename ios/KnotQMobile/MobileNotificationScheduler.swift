@@ -36,10 +36,17 @@ final class MobileNotificationScheduler: NSObject, UNUserNotificationCenterDeleg
         self.model = model
         center.delegate = self
         registerCategories()
+    }
+
+    @MainActor
+    func requestAuthorizationIfNeeded() {
         #if DEBUG
         guard !AppModel.screenshotFixtureRequested else { return }
         #endif
-        center.requestAuthorization(options: [.alert, .badge, .sound]) { _, _ in }
+        center.getNotificationSettings { [center] settings in
+            guard settings.authorizationStatus == .notDetermined else { return }
+            center.requestAuthorization(options: [.alert, .badge, .sound]) { _, _ in }
+        }
     }
 
     @MainActor

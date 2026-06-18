@@ -25,6 +25,7 @@ final class EditorController: ObservableObject {
                 && $0.start == nil
                 && $0.end == nil
                 && $0.media.isEmpty
+                && $0.tables.isEmpty
         }
     }
 
@@ -69,6 +70,9 @@ final class EditorController: ObservableObject {
     }
 
     func blur() {
+        // Flush any in-place table cell edit before the document loses focus so
+        // its text isn't dropped.
+        view?.endTableCellEditing(commit: true)
         view?.resignFirstResponder()
     }
 
@@ -186,6 +190,20 @@ struct IntegratedSchemeEditorPane: View {
                         onImageUpload: {
                             controller.prepareImageUploadTarget()
                             showingImagePicker = true
+                        },
+                        onInsertTable: insertTableFromToolbar,
+                        onTableCellCommit: commitTableCell,
+                        onTableInsertRow: { hit in
+                            model.insertTableRow(schemeID: scheme.id, itemID: hit.itemID, row: Int32(hit.row))
+                        },
+                        onTableDeleteRow: { hit in
+                            model.deleteTableRow(schemeID: scheme.id, itemID: hit.itemID, row: Int32(hit.row))
+                        },
+                        onTableInsertColumn: { hit in
+                            model.insertTableColumn(schemeID: scheme.id, itemID: hit.itemID, column: Int32(hit.column))
+                        },
+                        onTableDeleteColumn: { hit in
+                            model.deleteTableColumn(schemeID: scheme.id, itemID: hit.itemID, column: Int32(hit.column))
                         },
                         readOnly: scheme.isReadOnly
                     )
@@ -516,13 +534,43 @@ struct IntegratedSchemeEditorPane: View {
         dateTarget = EditorDateTarget(itemID: itemID)
     }
 
+    private func insertTableFromToolbar() {
+        guard !scheme.isReadOnly else { return }
+        let afterItemID = controller.currentLineItemID()
+        commitDocument()
+        model.insertTable(schemeID: scheme.id, afterItemID: afterItemID)
+    }
+
+    /// Persists an in-place cell edit. Edits the cell's first line so the cell's
+    /// marker / dates / images / extra lines are preserved by the core.
+    private func commitTableCell(_ hit: EditorTableCellHit, text: String) {
+        guard !scheme.isReadOnly else { return }
+        model.setTableCellLineText(
+            schemeID: scheme.id,
+            itemID: hit.itemID,
+            row: Int32(hit.row),
+            column: Int32(hit.column),
+            lineIndex: 0,
+            text: text
+        )
+    }
+
     private func signature(for scheme: MobileScheme) -> String {
         scheme.items
             .map {
                 let media = $0.media
                     .map { "\($0.kind):\($0.path ?? ""):\($0.format):\($0.width ?? -1)x\($0.height ?? -1)" }
                     .joined(separator: ",")
-                return "\($0.id)|\($0.text)|\($0.marker)|\($0.indent)|\($0.done)|\($0.start ?? "")|\($0.end ?? "")|\(media)"
+                let tables = $0.tables
+                    .map { table in
+                        let columns = table.columns.map(\.name).joined(separator: ",")
+                        let rows = table.rows
+                            .map { row in row.cells.map(\.text).joined(separator: "\u{1f}") }
+                            .joined(separator: "\u{1e}")
+                        return "\(columns):\(rows)"
+                    }
+                    .joined(separator: "\u{1d}")
+                return "\($0.id)|\($0.text)|\($0.marker)|\($0.indent)|\($0.done)|\($0.start ?? "")|\($0.end ?? "")|\(media)|\(tables)"
             }
             .joined(separator: "\n")
     }
@@ -536,6 +584,7 @@ struct IntegratedSchemeEditorPane: View {
         return WorkspaceNameValidation.schemeError(name, root: root, folderID: folderID, excludingID: scheme.id)
     }
 }
+
 
 private struct SchemeEditorTransparentNavigationBar: UIViewControllerRepresentable {
     func makeCoordinator() -> Coordinator {

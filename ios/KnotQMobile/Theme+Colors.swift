@@ -27,7 +27,8 @@ struct KnotQTheme {
     static func resolve(mode: String?, systemScheme: ColorScheme) -> KnotQTheme {
         switch mode {
         case "light": .light
-        case "system": systemScheme == .dark ? .dark : .light
+        case "dark": .dark
+        case "system", nil: systemScheme == .dark ? .dark : .light
         default: .dark
         }
     }
@@ -59,27 +60,31 @@ struct KnotQTheme {
         danger: Color(hex: 0xff453a)
     )
 
+    // Clean, near-white light theme matching knotq.com: an off-white canvas,
+    // soft gray-green surfaces, near-black ink, and a rose accent. Translucent
+    // rows/dividers tint with a slate-green so they read as the site's --line
+    // colors over the light canvas.
     static let light = KnotQTheme(
         isDark: false,
-        bgApp: Color(hex: 0xe8e2d8),
-        bgSidebar: Color(hex: 0xe0d8cc),
-        bgToolbar: Color(hex: 0xe3dcd2),
-        bgModal: Color(hex: 0xece6dd),
-        rowAlt: Color(hex: 0x5a4635).opacity(0.047),
-        rowHover: Color(hex: 0x5a4635).opacity(0.094),
-        rowSelected: Color(hex: 0xe66f1f).opacity(0.102),
-        buttonBg: Color(hex: 0x5a4635).opacity(0.094),
-        divider: Color(hex: 0x5a4635).opacity(0.141),
-        dividerSoft: Color(hex: 0x5a4635).opacity(0.094),
-        dividerTiny: Color(hex: 0x5a4635).opacity(0.051),
-        borderOverlay: Color(hex: 0x3d2a18).opacity(0.188),
-        textPrimary: Color(hex: 0x2c2420),
-        textDim: Color(hex: 0x302520).opacity(0.878),
-        textMuted: Color(hex: 0x5a4a3c).opacity(0.753),
-        textSoft: Color(hex: 0x382c22).opacity(0.847),
-        textToday: Color(hex: 0xd04e1a),
-        accent: Color(hex: 0xc04510),
-        danger: Color(hex: 0xc72f24)
+        bgApp: Color(hex: 0xfafbf9),
+        bgSidebar: Color(hex: 0xf2f5f2),
+        bgToolbar: Color(hex: 0xf2f5f2),
+        bgModal: Color(hex: 0xffffff),
+        rowAlt: Color(hex: 0x3a443d).opacity(0.04),
+        rowHover: Color(hex: 0x3a443d).opacity(0.08),
+        rowSelected: Color(hex: 0xc7375d).opacity(0.12),
+        buttonBg: Color(hex: 0x3a443d).opacity(0.08),
+        divider: Color(hex: 0x3a443d).opacity(0.16),
+        dividerSoft: Color(hex: 0x3a443d).opacity(0.11),
+        dividerTiny: Color(hex: 0x3a443d).opacity(0.05),
+        borderOverlay: Color(hex: 0x3a443d).opacity(0.20),
+        textPrimary: Color(hex: 0x171717),
+        textDim: Color(hex: 0x393f39).opacity(0.90),
+        textMuted: Color(hex: 0x6d746d).opacity(0.80),
+        textSoft: Color(hex: 0x393f39).opacity(0.85),
+        textToday: Color(hex: 0xc7375d),
+        accent: Color(hex: 0xc7375d),
+        danger: Color(hex: 0xb84433)
     )
 }
 
@@ -153,7 +158,7 @@ func occurrenceStatusTimeColor(_ occurrence: MobileOccurrence, theme: KnotQTheme
 
 func schemeColor(_ index: Int32, dark: Bool) -> Color {
     let darkPalette: [UInt32] = [0xff453a, 0xff9f0a, 0x30d158, 0x0a84ff, 0xbf5af2, 0xffd60a]
-    let lightPalette: [UInt32] = [0xd4271c, 0xc47400, 0x1e9e40, 0x0064d2, 0x8a3db5, 0xe0a800]
+    let lightPalette: [UInt32] = [0xb84433, 0xc47400, 0x28764f, 0x2563a6, 0x735aa6, 0xe0a800]
     let palette = dark ? darkPalette : lightPalette
     return Color(hex: palette[Int(index) % palette.count])
 }

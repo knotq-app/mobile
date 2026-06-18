@@ -642,6 +642,8 @@ internal object IntegrityCheckingUniffiLib {
     ): Short
     external fun uniffi_knotq_mobile_core_checksum_method_mobilecore_add_item(
     ): Short
+    external fun uniffi_knotq_mobile_core_checksum_method_mobilecore_add_table_cell_line(
+    ): Short
     external fun uniffi_knotq_mobile_core_checksum_method_mobilecore_add_today_daily_item(
     ): Short
     external fun uniffi_knotq_mobile_core_checksum_method_mobilecore_apply_notification_action(
@@ -664,13 +666,25 @@ internal object IntegrityCheckingUniffiLib {
     ): Short
     external fun uniffi_knotq_mobile_core_checksum_method_mobilecore_delete_scheme(
     ): Short
+    external fun uniffi_knotq_mobile_core_checksum_method_mobilecore_delete_table_column(
+    ): Short
+    external fun uniffi_knotq_mobile_core_checksum_method_mobilecore_delete_table_row(
+    ): Short
     external fun uniffi_knotq_mobile_core_checksum_method_mobilecore_empty_archive(
     ): Short
     external fun uniffi_knotq_mobile_core_checksum_method_mobilecore_ensure_daily_queue(
     ): Short
     external fun uniffi_knotq_mobile_core_checksum_method_mobilecore_google_auth_request(
     ): Short
+    external fun uniffi_knotq_mobile_core_checksum_method_mobilecore_insert_table(
+    ): Short
+    external fun uniffi_knotq_mobile_core_checksum_method_mobilecore_insert_table_column(
+    ): Short
+    external fun uniffi_knotq_mobile_core_checksum_method_mobilecore_insert_table_row(
+    ): Short
     external fun uniffi_knotq_mobile_core_checksum_method_mobilecore_month_days(
+    ): Short
+    external fun uniffi_knotq_mobile_core_checksum_method_mobilecore_move_item_to_scheme(
     ): Short
     external fun uniffi_knotq_mobile_core_checksum_method_mobilecore_move_node(
     ): Short
@@ -679,6 +693,8 @@ internal object IntegrityCheckingUniffiLib {
     external fun uniffi_knotq_mobile_core_checksum_method_mobilecore_permanently_delete_folder(
     ): Short
     external fun uniffi_knotq_mobile_core_checksum_method_mobilecore_permanently_delete_scheme(
+    ): Short
+    external fun uniffi_knotq_mobile_core_checksum_method_mobilecore_remove_table_cell_line(
     ): Short
     external fun uniffi_knotq_mobile_core_checksum_method_mobilecore_rename_folder(
     ): Short
@@ -713,6 +729,10 @@ internal object IntegrityCheckingUniffiLib {
     external fun uniffi_knotq_mobile_core_checksum_method_mobilecore_set_push_registration(
     ): Short
     external fun uniffi_knotq_mobile_core_checksum_method_mobilecore_set_scheme_color(
+    ): Short
+    external fun uniffi_knotq_mobile_core_checksum_method_mobilecore_set_table_cell_line_text(
+    ): Short
+    external fun uniffi_knotq_mobile_core_checksum_method_mobilecore_set_table_cell_text(
     ): Short
     external fun uniffi_knotq_mobile_core_checksum_method_mobilecore_set_theme_mode(
     ): Short
@@ -766,6 +786,8 @@ external fun uniffi_knotq_mobile_core_fn_method_mobilecore_add_calendar_item(`pt
 ): Unit
 external fun uniffi_knotq_mobile_core_fn_method_mobilecore_add_item(`ptr`: Long,`schemeId`: RustBuffer.ByValue,`text`: RustBuffer.ByValue,`marker`: RustBuffer.ByValue,`position`: RustBuffer.ByValue,`indent`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
 ): Unit
+external fun uniffi_knotq_mobile_core_fn_method_mobilecore_add_table_cell_line(`ptr`: Long,`schemeId`: RustBuffer.ByValue,`itemId`: RustBuffer.ByValue,`row`: Int,`column`: Int,`lineIndex`: Int,`text`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+): Unit
 external fun uniffi_knotq_mobile_core_fn_method_mobilecore_add_today_daily_item(`ptr`: Long,`today`: RustBuffer.ByValue,`text`: RustBuffer.ByValue,`marker`: RustBuffer.ByValue,`indent`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
 ): Unit
 external fun uniffi_knotq_mobile_core_fn_method_mobilecore_apply_notification_action(`ptr`: Long,`actionId`: RustBuffer.ByValue,`schemeId`: RustBuffer.ByValue,`itemId`: RustBuffer.ByValue,`occurrenceJson`: RustBuffer.ByValue,`triggerAt`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
@@ -788,14 +810,26 @@ external fun uniffi_knotq_mobile_core_fn_method_mobilecore_delete_item(`ptr`: Lo
 ): Unit
 external fun uniffi_knotq_mobile_core_fn_method_mobilecore_delete_scheme(`ptr`: Long,`schemeId`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
 ): Unit
+external fun uniffi_knotq_mobile_core_fn_method_mobilecore_delete_table_column(`ptr`: Long,`schemeId`: RustBuffer.ByValue,`itemId`: RustBuffer.ByValue,`column`: Int,uniffi_out_err: UniffiRustCallStatus, 
+): Unit
+external fun uniffi_knotq_mobile_core_fn_method_mobilecore_delete_table_row(`ptr`: Long,`schemeId`: RustBuffer.ByValue,`itemId`: RustBuffer.ByValue,`row`: Int,uniffi_out_err: UniffiRustCallStatus, 
+): Unit
 external fun uniffi_knotq_mobile_core_fn_method_mobilecore_empty_archive(`ptr`: Long,uniffi_out_err: UniffiRustCallStatus, 
 ): Unit
 external fun uniffi_knotq_mobile_core_fn_method_mobilecore_ensure_daily_queue(`ptr`: Long,`date`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
 ): Unit
 external fun uniffi_knotq_mobile_core_fn_method_mobilecore_google_auth_request(`ptr`: Long,`clientId`: RustBuffer.ByValue,`redirectUri`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
 ): RustBuffer.ByValue
+external fun uniffi_knotq_mobile_core_fn_method_mobilecore_insert_table(`ptr`: Long,`schemeId`: RustBuffer.ByValue,`afterItemId`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+): Unit
+external fun uniffi_knotq_mobile_core_fn_method_mobilecore_insert_table_column(`ptr`: Long,`schemeId`: RustBuffer.ByValue,`itemId`: RustBuffer.ByValue,`column`: Int,uniffi_out_err: UniffiRustCallStatus, 
+): Unit
+external fun uniffi_knotq_mobile_core_fn_method_mobilecore_insert_table_row(`ptr`: Long,`schemeId`: RustBuffer.ByValue,`itemId`: RustBuffer.ByValue,`row`: Int,uniffi_out_err: UniffiRustCallStatus, 
+): Unit
 external fun uniffi_knotq_mobile_core_fn_method_mobilecore_month_days(`ptr`: Long,`year`: Int,`month`: Int,uniffi_out_err: UniffiRustCallStatus, 
 ): RustBuffer.ByValue
+external fun uniffi_knotq_mobile_core_fn_method_mobilecore_move_item_to_scheme(`ptr`: Long,`sourceSchemeId`: RustBuffer.ByValue,`targetSchemeId`: RustBuffer.ByValue,`itemId`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+): Unit
 external fun uniffi_knotq_mobile_core_fn_method_mobilecore_move_node(`ptr`: Long,`kind`: RustBuffer.ByValue,`id`: RustBuffer.ByValue,`folderId`: RustBuffer.ByValue,`position`: Int,uniffi_out_err: UniffiRustCallStatus, 
 ): Unit
 external fun uniffi_knotq_mobile_core_fn_method_mobilecore_pending_notifications(`ptr`: Long,`now`: RustBuffer.ByValue,`horizonDays`: Int,uniffi_out_err: UniffiRustCallStatus, 
@@ -803,6 +837,8 @@ external fun uniffi_knotq_mobile_core_fn_method_mobilecore_pending_notifications
 external fun uniffi_knotq_mobile_core_fn_method_mobilecore_permanently_delete_folder(`ptr`: Long,`folderId`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
 ): Unit
 external fun uniffi_knotq_mobile_core_fn_method_mobilecore_permanently_delete_scheme(`ptr`: Long,`schemeId`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+): Unit
+external fun uniffi_knotq_mobile_core_fn_method_mobilecore_remove_table_cell_line(`ptr`: Long,`schemeId`: RustBuffer.ByValue,`itemId`: RustBuffer.ByValue,`row`: Int,`column`: Int,`lineIndex`: Int,uniffi_out_err: UniffiRustCallStatus, 
 ): Unit
 external fun uniffi_knotq_mobile_core_fn_method_mobilecore_rename_folder(`ptr`: Long,`folderId`: RustBuffer.ByValue,`name`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
 ): Unit
@@ -837,6 +873,10 @@ external fun uniffi_knotq_mobile_core_fn_method_mobilecore_set_occurrence_notifi
 external fun uniffi_knotq_mobile_core_fn_method_mobilecore_set_push_registration(`ptr`: Long,`token`: RustBuffer.ByValue,`environment`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
 ): Unit
 external fun uniffi_knotq_mobile_core_fn_method_mobilecore_set_scheme_color(`ptr`: Long,`schemeId`: RustBuffer.ByValue,`colorIndex`: Int,uniffi_out_err: UniffiRustCallStatus, 
+): Unit
+external fun uniffi_knotq_mobile_core_fn_method_mobilecore_set_table_cell_line_text(`ptr`: Long,`schemeId`: RustBuffer.ByValue,`itemId`: RustBuffer.ByValue,`row`: Int,`column`: Int,`lineIndex`: Int,`text`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+): Unit
+external fun uniffi_knotq_mobile_core_fn_method_mobilecore_set_table_cell_text(`ptr`: Long,`schemeId`: RustBuffer.ByValue,`itemId`: RustBuffer.ByValue,`row`: Int,`column`: Int,`text`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
 ): Unit
 external fun uniffi_knotq_mobile_core_fn_method_mobilecore_set_theme_mode(`ptr`: Long,`themeMode`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
 ): Unit
@@ -985,6 +1025,9 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
     if (lib.uniffi_knotq_mobile_core_checksum_method_mobilecore_add_item() != 57254.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
+    if (lib.uniffi_knotq_mobile_core_checksum_method_mobilecore_add_table_cell_line() != 41519.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
     if (lib.uniffi_knotq_mobile_core_checksum_method_mobilecore_add_today_daily_item() != 49556.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
@@ -1018,6 +1061,12 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
     if (lib.uniffi_knotq_mobile_core_checksum_method_mobilecore_delete_scheme() != 36083.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
+    if (lib.uniffi_knotq_mobile_core_checksum_method_mobilecore_delete_table_column() != 64635.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_knotq_mobile_core_checksum_method_mobilecore_delete_table_row() != 55975.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
     if (lib.uniffi_knotq_mobile_core_checksum_method_mobilecore_empty_archive() != 9301.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
@@ -1027,7 +1076,19 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
     if (lib.uniffi_knotq_mobile_core_checksum_method_mobilecore_google_auth_request() != 56614.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
+    if (lib.uniffi_knotq_mobile_core_checksum_method_mobilecore_insert_table() != 56727.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_knotq_mobile_core_checksum_method_mobilecore_insert_table_column() != 25374.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_knotq_mobile_core_checksum_method_mobilecore_insert_table_row() != 60208.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
     if (lib.uniffi_knotq_mobile_core_checksum_method_mobilecore_month_days() != 13384.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_knotq_mobile_core_checksum_method_mobilecore_move_item_to_scheme() != 57475.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_knotq_mobile_core_checksum_method_mobilecore_move_node() != 12044.toShort()) {
@@ -1040,6 +1101,9 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_knotq_mobile_core_checksum_method_mobilecore_permanently_delete_scheme() != 55645.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_knotq_mobile_core_checksum_method_mobilecore_remove_table_cell_line() != 25914.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_knotq_mobile_core_checksum_method_mobilecore_rename_folder() != 63233.toShort()) {
@@ -1091,6 +1155,12 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_knotq_mobile_core_checksum_method_mobilecore_set_scheme_color() != 60612.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_knotq_mobile_core_checksum_method_mobilecore_set_table_cell_line_text() != 33447.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_knotq_mobile_core_checksum_method_mobilecore_set_table_cell_text() != 63326.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_knotq_mobile_core_checksum_method_mobilecore_set_theme_mode() != 11963.toShort()) {
@@ -1514,6 +1584,8 @@ public interface MobileCoreInterface {
     
     fun `addItem`(`schemeId`: kotlin.String, `text`: kotlin.String, `marker`: kotlin.String?, `position`: kotlin.Int?, `indent`: kotlin.Int?)
     
+    fun `addTableCellLine`(`schemeId`: kotlin.String, `itemId`: kotlin.String, `row`: kotlin.Int, `column`: kotlin.Int, `lineIndex`: kotlin.Int, `text`: kotlin.String)
+    
     fun `addTodayDailyItem`(`today`: kotlin.String, `text`: kotlin.String, `marker`: kotlin.String?, `indent`: kotlin.Int?)
     
     fun `applyNotificationAction`(`actionId`: kotlin.String, `schemeId`: kotlin.String, `itemId`: kotlin.String, `occurrenceJson`: kotlin.String, `triggerAt`: kotlin.String): kotlin.Boolean
@@ -1536,13 +1608,25 @@ public interface MobileCoreInterface {
     
     fun `deleteScheme`(`schemeId`: kotlin.String)
     
+    fun `deleteTableColumn`(`schemeId`: kotlin.String, `itemId`: kotlin.String, `column`: kotlin.Int)
+    
+    fun `deleteTableRow`(`schemeId`: kotlin.String, `itemId`: kotlin.String, `row`: kotlin.Int)
+    
     fun `emptyArchive`()
     
     fun `ensureDailyQueue`(`date`: kotlin.String?)
     
     fun `googleAuthRequest`(`clientId`: kotlin.String, `redirectUri`: kotlin.String): MobileGoogleAuthRequest
     
+    fun `insertTable`(`schemeId`: kotlin.String, `afterItemId`: kotlin.String?)
+    
+    fun `insertTableColumn`(`schemeId`: kotlin.String, `itemId`: kotlin.String, `column`: kotlin.Int)
+    
+    fun `insertTableRow`(`schemeId`: kotlin.String, `itemId`: kotlin.String, `row`: kotlin.Int)
+    
     fun `monthDays`(`year`: kotlin.Int, `month`: kotlin.UInt): List<MobileCalendarDay>
+    
+    fun `moveItemToScheme`(`sourceSchemeId`: kotlin.String, `targetSchemeId`: kotlin.String, `itemId`: kotlin.String)
     
     fun `moveNode`(`kind`: kotlin.String, `id`: kotlin.String, `folderId`: kotlin.String, `position`: kotlin.Int)
     
@@ -1551,6 +1635,8 @@ public interface MobileCoreInterface {
     fun `permanentlyDeleteFolder`(`folderId`: kotlin.String)
     
     fun `permanentlyDeleteScheme`(`schemeId`: kotlin.String)
+    
+    fun `removeTableCellLine`(`schemeId`: kotlin.String, `itemId`: kotlin.String, `row`: kotlin.Int, `column`: kotlin.Int, `lineIndex`: kotlin.Int)
     
     fun `renameFolder`(`folderId`: kotlin.String, `name`: kotlin.String)
     
@@ -1585,6 +1671,10 @@ public interface MobileCoreInterface {
     fun `setPushRegistration`(`token`: kotlin.String, `environment`: kotlin.String)
     
     fun `setSchemeColor`(`schemeId`: kotlin.String, `colorIndex`: kotlin.Int)
+    
+    fun `setTableCellLineText`(`schemeId`: kotlin.String, `itemId`: kotlin.String, `row`: kotlin.Int, `column`: kotlin.Int, `lineIndex`: kotlin.Int, `text`: kotlin.String)
+    
+    fun `setTableCellText`(`schemeId`: kotlin.String, `itemId`: kotlin.String, `row`: kotlin.Int, `column`: kotlin.Int, `text`: kotlin.String)
     
     fun `setThemeMode`(`themeMode`: kotlin.String)
     
@@ -1742,6 +1832,19 @@ open class MobileCore: Disposable, AutoCloseable, MobileCoreInterface
     
 
     
+    @Throws(MobileException::class)override fun `addTableCellLine`(`schemeId`: kotlin.String, `itemId`: kotlin.String, `row`: kotlin.Int, `column`: kotlin.Int, `lineIndex`: kotlin.Int, `text`: kotlin.String)
+        = 
+    callWithHandle {
+    uniffiRustCallWithError(MobileException) { _status ->
+    UniffiLib.uniffi_knotq_mobile_core_fn_method_mobilecore_add_table_cell_line(
+        it,
+        FfiConverterString.lower(`schemeId`),FfiConverterString.lower(`itemId`),FfiConverterInt.lower(`row`),FfiConverterInt.lower(`column`),FfiConverterInt.lower(`lineIndex`),FfiConverterString.lower(`text`),_status)
+}
+    }
+    
+    
+
+    
     @Throws(MobileException::class)override fun `addTodayDailyItem`(`today`: kotlin.String, `text`: kotlin.String, `marker`: kotlin.String?, `indent`: kotlin.Int?)
         = 
     callWithHandle {
@@ -1887,6 +1990,32 @@ open class MobileCore: Disposable, AutoCloseable, MobileCoreInterface
     
 
     
+    @Throws(MobileException::class)override fun `deleteTableColumn`(`schemeId`: kotlin.String, `itemId`: kotlin.String, `column`: kotlin.Int)
+        = 
+    callWithHandle {
+    uniffiRustCallWithError(MobileException) { _status ->
+    UniffiLib.uniffi_knotq_mobile_core_fn_method_mobilecore_delete_table_column(
+        it,
+        FfiConverterString.lower(`schemeId`),FfiConverterString.lower(`itemId`),FfiConverterInt.lower(`column`),_status)
+}
+    }
+    
+    
+
+    
+    @Throws(MobileException::class)override fun `deleteTableRow`(`schemeId`: kotlin.String, `itemId`: kotlin.String, `row`: kotlin.Int)
+        = 
+    callWithHandle {
+    uniffiRustCallWithError(MobileException) { _status ->
+    UniffiLib.uniffi_knotq_mobile_core_fn_method_mobilecore_delete_table_row(
+        it,
+        FfiConverterString.lower(`schemeId`),FfiConverterString.lower(`itemId`),FfiConverterInt.lower(`row`),_status)
+}
+    }
+    
+    
+
+    
     @Throws(MobileException::class)override fun `emptyArchive`()
         = 
     callWithHandle {
@@ -1927,6 +2056,45 @@ open class MobileCore: Disposable, AutoCloseable, MobileCoreInterface
     
 
     
+    @Throws(MobileException::class)override fun `insertTable`(`schemeId`: kotlin.String, `afterItemId`: kotlin.String?)
+        = 
+    callWithHandle {
+    uniffiRustCallWithError(MobileException) { _status ->
+    UniffiLib.uniffi_knotq_mobile_core_fn_method_mobilecore_insert_table(
+        it,
+        FfiConverterString.lower(`schemeId`),FfiConverterOptionalString.lower(`afterItemId`),_status)
+}
+    }
+    
+    
+
+    
+    @Throws(MobileException::class)override fun `insertTableColumn`(`schemeId`: kotlin.String, `itemId`: kotlin.String, `column`: kotlin.Int)
+        = 
+    callWithHandle {
+    uniffiRustCallWithError(MobileException) { _status ->
+    UniffiLib.uniffi_knotq_mobile_core_fn_method_mobilecore_insert_table_column(
+        it,
+        FfiConverterString.lower(`schemeId`),FfiConverterString.lower(`itemId`),FfiConverterInt.lower(`column`),_status)
+}
+    }
+    
+    
+
+    
+    @Throws(MobileException::class)override fun `insertTableRow`(`schemeId`: kotlin.String, `itemId`: kotlin.String, `row`: kotlin.Int)
+        = 
+    callWithHandle {
+    uniffiRustCallWithError(MobileException) { _status ->
+    UniffiLib.uniffi_knotq_mobile_core_fn_method_mobilecore_insert_table_row(
+        it,
+        FfiConverterString.lower(`schemeId`),FfiConverterString.lower(`itemId`),FfiConverterInt.lower(`row`),_status)
+}
+    }
+    
+    
+
+    
     @Throws(MobileException::class)override fun `monthDays`(`year`: kotlin.Int, `month`: kotlin.UInt): List<MobileCalendarDay> {
             return FfiConverterSequenceTypeMobileCalendarDay.lift(
     callWithHandle {
@@ -1938,6 +2106,19 @@ open class MobileCore: Disposable, AutoCloseable, MobileCoreInterface
     }
     )
     }
+    
+
+    
+    @Throws(MobileException::class)override fun `moveItemToScheme`(`sourceSchemeId`: kotlin.String, `targetSchemeId`: kotlin.String, `itemId`: kotlin.String)
+        = 
+    callWithHandle {
+    uniffiRustCallWithError(MobileException) { _status ->
+    UniffiLib.uniffi_knotq_mobile_core_fn_method_mobilecore_move_item_to_scheme(
+        it,
+        FfiConverterString.lower(`sourceSchemeId`),FfiConverterString.lower(`targetSchemeId`),FfiConverterString.lower(`itemId`),_status)
+}
+    }
+    
     
 
     
@@ -1988,6 +2169,19 @@ open class MobileCore: Disposable, AutoCloseable, MobileCoreInterface
     UniffiLib.uniffi_knotq_mobile_core_fn_method_mobilecore_permanently_delete_scheme(
         it,
         FfiConverterString.lower(`schemeId`),_status)
+}
+    }
+    
+    
+
+    
+    @Throws(MobileException::class)override fun `removeTableCellLine`(`schemeId`: kotlin.String, `itemId`: kotlin.String, `row`: kotlin.Int, `column`: kotlin.Int, `lineIndex`: kotlin.Int)
+        = 
+    callWithHandle {
+    uniffiRustCallWithError(MobileException) { _status ->
+    UniffiLib.uniffi_knotq_mobile_core_fn_method_mobilecore_remove_table_cell_line(
+        it,
+        FfiConverterString.lower(`schemeId`),FfiConverterString.lower(`itemId`),FfiConverterInt.lower(`row`),FfiConverterInt.lower(`column`),FfiConverterInt.lower(`lineIndex`),_status)
 }
     }
     
@@ -2210,6 +2404,32 @@ open class MobileCore: Disposable, AutoCloseable, MobileCoreInterface
     UniffiLib.uniffi_knotq_mobile_core_fn_method_mobilecore_set_scheme_color(
         it,
         FfiConverterString.lower(`schemeId`),FfiConverterInt.lower(`colorIndex`),_status)
+}
+    }
+    
+    
+
+    
+    @Throws(MobileException::class)override fun `setTableCellLineText`(`schemeId`: kotlin.String, `itemId`: kotlin.String, `row`: kotlin.Int, `column`: kotlin.Int, `lineIndex`: kotlin.Int, `text`: kotlin.String)
+        = 
+    callWithHandle {
+    uniffiRustCallWithError(MobileException) { _status ->
+    UniffiLib.uniffi_knotq_mobile_core_fn_method_mobilecore_set_table_cell_line_text(
+        it,
+        FfiConverterString.lower(`schemeId`),FfiConverterString.lower(`itemId`),FfiConverterInt.lower(`row`),FfiConverterInt.lower(`column`),FfiConverterInt.lower(`lineIndex`),FfiConverterString.lower(`text`),_status)
+}
+    }
+    
+    
+
+    
+    @Throws(MobileException::class)override fun `setTableCellText`(`schemeId`: kotlin.String, `itemId`: kotlin.String, `row`: kotlin.Int, `column`: kotlin.Int, `text`: kotlin.String)
+        = 
+    callWithHandle {
+    uniffiRustCallWithError(MobileException) { _status ->
+    UniffiLib.uniffi_knotq_mobile_core_fn_method_mobilecore_set_table_cell_text(
+        it,
+        FfiConverterString.lower(`schemeId`),FfiConverterString.lower(`itemId`),FfiConverterInt.lower(`row`),FfiConverterInt.lower(`column`),FfiConverterString.lower(`text`),_status)
 }
     }
     
@@ -2494,6 +2714,69 @@ public object FfiConverterTypeMobileCalendarDay: FfiConverterRustBuffer<MobileCa
 
 
 
+data class MobileCellLine (
+    var `id`: kotlin.String
+    , 
+    var `text`: kotlin.String
+    , 
+    var `marker`: kotlin.String
+    , 
+    var `done`: kotlin.Boolean
+    , 
+    var `start`: kotlin.String?
+    , 
+    var `end`: kotlin.String?
+    , 
+    var `media`: List<MobileItemMedia>
+    
+){
+    
+
+    
+
+    
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeMobileCellLine: FfiConverterRustBuffer<MobileCellLine> {
+    override fun read(buf: ByteBuffer): MobileCellLine {
+        return MobileCellLine(
+            FfiConverterString.read(buf),
+            FfiConverterString.read(buf),
+            FfiConverterString.read(buf),
+            FfiConverterBoolean.read(buf),
+            FfiConverterOptionalString.read(buf),
+            FfiConverterOptionalString.read(buf),
+            FfiConverterSequenceTypeMobileItemMedia.read(buf),
+        )
+    }
+
+    override fun allocationSize(value: MobileCellLine) = (
+            FfiConverterString.allocationSize(value.`id`) +
+            FfiConverterString.allocationSize(value.`text`) +
+            FfiConverterString.allocationSize(value.`marker`) +
+            FfiConverterBoolean.allocationSize(value.`done`) +
+            FfiConverterOptionalString.allocationSize(value.`start`) +
+            FfiConverterOptionalString.allocationSize(value.`end`) +
+            FfiConverterSequenceTypeMobileItemMedia.allocationSize(value.`media`)
+    )
+
+    override fun write(value: MobileCellLine, buf: ByteBuffer) {
+            FfiConverterString.write(value.`id`, buf)
+            FfiConverterString.write(value.`text`, buf)
+            FfiConverterString.write(value.`marker`, buf)
+            FfiConverterBoolean.write(value.`done`, buf)
+            FfiConverterOptionalString.write(value.`start`, buf)
+            FfiConverterOptionalString.write(value.`end`, buf)
+            FfiConverterSequenceTypeMobileItemMedia.write(value.`media`, buf)
+    }
+}
+
+
+
 data class MobileDailyEntry (
     var `date`: kotlin.String
     , 
@@ -2703,6 +2986,10 @@ data class MobileItem (
     var `repeatRule`: kotlin.String?
     , 
     var `media`: List<MobileItemMedia>
+    , 
+    var `tables`: List<MobileTable>
+    , 
+    var `content`: List<MobileInline>
     
 ){
     
@@ -2730,6 +3017,8 @@ public object FfiConverterTypeMobileItem: FfiConverterRustBuffer<MobileItem> {
             FfiConverterOptionalInt.read(buf),
             FfiConverterOptionalString.read(buf),
             FfiConverterSequenceTypeMobileItemMedia.read(buf),
+            FfiConverterSequenceTypeMobileTable.read(buf),
+            FfiConverterSequenceTypeMobileInline.read(buf),
         )
     }
 
@@ -2744,7 +3033,9 @@ public object FfiConverterTypeMobileItem: FfiConverterRustBuffer<MobileItem> {
             FfiConverterOptionalString.allocationSize(value.`end`) +
             FfiConverterOptionalInt.allocationSize(value.`notificationOffsetSecs`) +
             FfiConverterOptionalString.allocationSize(value.`repeatRule`) +
-            FfiConverterSequenceTypeMobileItemMedia.allocationSize(value.`media`)
+            FfiConverterSequenceTypeMobileItemMedia.allocationSize(value.`media`) +
+            FfiConverterSequenceTypeMobileTable.allocationSize(value.`tables`) +
+            FfiConverterSequenceTypeMobileInline.allocationSize(value.`content`)
     )
 
     override fun write(value: MobileItem, buf: ByteBuffer) {
@@ -2759,6 +3050,8 @@ public object FfiConverterTypeMobileItem: FfiConverterRustBuffer<MobileItem> {
             FfiConverterOptionalInt.write(value.`notificationOffsetSecs`, buf)
             FfiConverterOptionalString.write(value.`repeatRule`, buf)
             FfiConverterSequenceTypeMobileItemMedia.write(value.`media`, buf)
+            FfiConverterSequenceTypeMobileTable.write(value.`tables`, buf)
+            FfiConverterSequenceTypeMobileInline.write(value.`content`, buf)
     }
 }
 
@@ -3416,6 +3709,158 @@ public object FfiConverterTypeMobileSnapshot: FfiConverterRustBuffer<MobileSnaps
 
 
 
+data class MobileTable (
+    var `columns`: List<MobileTableColumn>
+    , 
+    var `rows`: List<MobileTableRow>
+    
+){
+    
+
+    
+
+    
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeMobileTable: FfiConverterRustBuffer<MobileTable> {
+    override fun read(buf: ByteBuffer): MobileTable {
+        return MobileTable(
+            FfiConverterSequenceTypeMobileTableColumn.read(buf),
+            FfiConverterSequenceTypeMobileTableRow.read(buf),
+        )
+    }
+
+    override fun allocationSize(value: MobileTable) = (
+            FfiConverterSequenceTypeMobileTableColumn.allocationSize(value.`columns`) +
+            FfiConverterSequenceTypeMobileTableRow.allocationSize(value.`rows`)
+    )
+
+    override fun write(value: MobileTable, buf: ByteBuffer) {
+            FfiConverterSequenceTypeMobileTableColumn.write(value.`columns`, buf)
+            FfiConverterSequenceTypeMobileTableRow.write(value.`rows`, buf)
+    }
+}
+
+
+
+data class MobileTableCell (
+    var `text`: kotlin.String
+    , 
+    var `lines`: List<MobileCellLine>
+    
+){
+    
+
+    
+
+    
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeMobileTableCell: FfiConverterRustBuffer<MobileTableCell> {
+    override fun read(buf: ByteBuffer): MobileTableCell {
+        return MobileTableCell(
+            FfiConverterString.read(buf),
+            FfiConverterSequenceTypeMobileCellLine.read(buf),
+        )
+    }
+
+    override fun allocationSize(value: MobileTableCell) = (
+            FfiConverterString.allocationSize(value.`text`) +
+            FfiConverterSequenceTypeMobileCellLine.allocationSize(value.`lines`)
+    )
+
+    override fun write(value: MobileTableCell, buf: ByteBuffer) {
+            FfiConverterString.write(value.`text`, buf)
+            FfiConverterSequenceTypeMobileCellLine.write(value.`lines`, buf)
+    }
+}
+
+
+
+data class MobileTableColumn (
+    var `id`: kotlin.String
+    , 
+    var `name`: kotlin.String
+    
+){
+    
+
+    
+
+    
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeMobileTableColumn: FfiConverterRustBuffer<MobileTableColumn> {
+    override fun read(buf: ByteBuffer): MobileTableColumn {
+        return MobileTableColumn(
+            FfiConverterString.read(buf),
+            FfiConverterString.read(buf),
+        )
+    }
+
+    override fun allocationSize(value: MobileTableColumn) = (
+            FfiConverterString.allocationSize(value.`id`) +
+            FfiConverterString.allocationSize(value.`name`)
+    )
+
+    override fun write(value: MobileTableColumn, buf: ByteBuffer) {
+            FfiConverterString.write(value.`id`, buf)
+            FfiConverterString.write(value.`name`, buf)
+    }
+}
+
+
+
+data class MobileTableRow (
+    var `id`: kotlin.String
+    , 
+    var `cells`: List<MobileTableCell>
+    
+){
+    
+
+    
+
+    
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeMobileTableRow: FfiConverterRustBuffer<MobileTableRow> {
+    override fun read(buf: ByteBuffer): MobileTableRow {
+        return MobileTableRow(
+            FfiConverterString.read(buf),
+            FfiConverterSequenceTypeMobileTableCell.read(buf),
+        )
+    }
+
+    override fun allocationSize(value: MobileTableRow) = (
+            FfiConverterString.allocationSize(value.`id`) +
+            FfiConverterSequenceTypeMobileTableCell.allocationSize(value.`cells`)
+    )
+
+    override fun write(value: MobileTableRow, buf: ByteBuffer) {
+            FfiConverterString.write(value.`id`, buf)
+            FfiConverterSequenceTypeMobileTableCell.write(value.`cells`, buf)
+    }
+}
+
+
+
 
 
 sealed class MobileException: kotlin.Exception() {
@@ -3475,6 +3920,113 @@ public object FfiConverterTypeMobileError : FfiConverterRustBuffer<MobileExcepti
     }
 
 }
+
+
+
+sealed class MobileInline {
+    
+    data class Text(
+        val `text`: kotlin.String) : MobileInline()
+        
+    {
+        
+
+        companion object
+    }
+    
+    data class Image(
+        val `media`: com.enigmadux.knotq.ffi.MobileItemMedia) : MobileInline()
+        
+    {
+        
+
+        companion object
+    }
+    
+    data class Table(
+        val `table`: com.enigmadux.knotq.ffi.MobileTable) : MobileInline()
+        
+    {
+        
+
+        companion object
+    }
+    
+
+    
+
+    
+    
+
+
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeMobileInline : FfiConverterRustBuffer<MobileInline>{
+    override fun read(buf: ByteBuffer): MobileInline {
+        return when(buf.getInt()) {
+            1 -> MobileInline.Text(
+                FfiConverterString.read(buf),
+                )
+            2 -> MobileInline.Image(
+                FfiConverterTypeMobileItemMedia.read(buf),
+                )
+            3 -> MobileInline.Table(
+                FfiConverterTypeMobileTable.read(buf),
+                )
+            else -> throw RuntimeException("invalid enum value, something is very wrong!!")
+        }
+    }
+
+    override fun allocationSize(value: MobileInline) = when(value) {
+        is MobileInline.Text -> {
+            // Add the size for the Int that specifies the variant plus the size needed for all fields
+            (
+                4UL
+                + FfiConverterString.allocationSize(value.`text`)
+            )
+        }
+        is MobileInline.Image -> {
+            // Add the size for the Int that specifies the variant plus the size needed for all fields
+            (
+                4UL
+                + FfiConverterTypeMobileItemMedia.allocationSize(value.`media`)
+            )
+        }
+        is MobileInline.Table -> {
+            // Add the size for the Int that specifies the variant plus the size needed for all fields
+            (
+                4UL
+                + FfiConverterTypeMobileTable.allocationSize(value.`table`)
+            )
+        }
+    }
+
+    override fun write(value: MobileInline, buf: ByteBuffer) {
+        when(value) {
+            is MobileInline.Text -> {
+                buf.putInt(1)
+                FfiConverterString.write(value.`text`, buf)
+                Unit
+            }
+            is MobileInline.Image -> {
+                buf.putInt(2)
+                FfiConverterTypeMobileItemMedia.write(value.`media`, buf)
+                Unit
+            }
+            is MobileInline.Table -> {
+                buf.putInt(3)
+                FfiConverterTypeMobileTable.write(value.`table`, buf)
+                Unit
+            }
+        }.let { /* this makes the `when` an expression, which ensures it is exhaustive */ }
+    }
+}
+
+
 
 
 
@@ -3564,6 +4116,34 @@ public object FfiConverterSequenceTypeMobileCalendarDay: FfiConverterRustBuffer<
         buf.putInt(value.size)
         value.iterator().forEach {
             FfiConverterTypeMobileCalendarDay.write(it, buf)
+        }
+    }
+}
+
+
+
+
+/**
+ * @suppress
+ */
+public object FfiConverterSequenceTypeMobileCellLine: FfiConverterRustBuffer<List<MobileCellLine>> {
+    override fun read(buf: ByteBuffer): List<MobileCellLine> {
+        val len = buf.getInt()
+        return List<MobileCellLine>(len) {
+            FfiConverterTypeMobileCellLine.read(buf)
+        }
+    }
+
+    override fun allocationSize(value: List<MobileCellLine>): ULong {
+        val sizeForLength = 4UL
+        val sizeForItems = value.map { FfiConverterTypeMobileCellLine.allocationSize(it) }.sum()
+        return sizeForLength + sizeForItems
+    }
+
+    override fun write(value: List<MobileCellLine>, buf: ByteBuffer) {
+        buf.putInt(value.size)
+        value.iterator().forEach {
+            FfiConverterTypeMobileCellLine.write(it, buf)
         }
     }
 }
@@ -3844,6 +4424,146 @@ public object FfiConverterSequenceTypeMobileSearchHit: FfiConverterRustBuffer<Li
         buf.putInt(value.size)
         value.iterator().forEach {
             FfiConverterTypeMobileSearchHit.write(it, buf)
+        }
+    }
+}
+
+
+
+
+/**
+ * @suppress
+ */
+public object FfiConverterSequenceTypeMobileTable: FfiConverterRustBuffer<List<MobileTable>> {
+    override fun read(buf: ByteBuffer): List<MobileTable> {
+        val len = buf.getInt()
+        return List<MobileTable>(len) {
+            FfiConverterTypeMobileTable.read(buf)
+        }
+    }
+
+    override fun allocationSize(value: List<MobileTable>): ULong {
+        val sizeForLength = 4UL
+        val sizeForItems = value.map { FfiConverterTypeMobileTable.allocationSize(it) }.sum()
+        return sizeForLength + sizeForItems
+    }
+
+    override fun write(value: List<MobileTable>, buf: ByteBuffer) {
+        buf.putInt(value.size)
+        value.iterator().forEach {
+            FfiConverterTypeMobileTable.write(it, buf)
+        }
+    }
+}
+
+
+
+
+/**
+ * @suppress
+ */
+public object FfiConverterSequenceTypeMobileTableCell: FfiConverterRustBuffer<List<MobileTableCell>> {
+    override fun read(buf: ByteBuffer): List<MobileTableCell> {
+        val len = buf.getInt()
+        return List<MobileTableCell>(len) {
+            FfiConverterTypeMobileTableCell.read(buf)
+        }
+    }
+
+    override fun allocationSize(value: List<MobileTableCell>): ULong {
+        val sizeForLength = 4UL
+        val sizeForItems = value.map { FfiConverterTypeMobileTableCell.allocationSize(it) }.sum()
+        return sizeForLength + sizeForItems
+    }
+
+    override fun write(value: List<MobileTableCell>, buf: ByteBuffer) {
+        buf.putInt(value.size)
+        value.iterator().forEach {
+            FfiConverterTypeMobileTableCell.write(it, buf)
+        }
+    }
+}
+
+
+
+
+/**
+ * @suppress
+ */
+public object FfiConverterSequenceTypeMobileTableColumn: FfiConverterRustBuffer<List<MobileTableColumn>> {
+    override fun read(buf: ByteBuffer): List<MobileTableColumn> {
+        val len = buf.getInt()
+        return List<MobileTableColumn>(len) {
+            FfiConverterTypeMobileTableColumn.read(buf)
+        }
+    }
+
+    override fun allocationSize(value: List<MobileTableColumn>): ULong {
+        val sizeForLength = 4UL
+        val sizeForItems = value.map { FfiConverterTypeMobileTableColumn.allocationSize(it) }.sum()
+        return sizeForLength + sizeForItems
+    }
+
+    override fun write(value: List<MobileTableColumn>, buf: ByteBuffer) {
+        buf.putInt(value.size)
+        value.iterator().forEach {
+            FfiConverterTypeMobileTableColumn.write(it, buf)
+        }
+    }
+}
+
+
+
+
+/**
+ * @suppress
+ */
+public object FfiConverterSequenceTypeMobileTableRow: FfiConverterRustBuffer<List<MobileTableRow>> {
+    override fun read(buf: ByteBuffer): List<MobileTableRow> {
+        val len = buf.getInt()
+        return List<MobileTableRow>(len) {
+            FfiConverterTypeMobileTableRow.read(buf)
+        }
+    }
+
+    override fun allocationSize(value: List<MobileTableRow>): ULong {
+        val sizeForLength = 4UL
+        val sizeForItems = value.map { FfiConverterTypeMobileTableRow.allocationSize(it) }.sum()
+        return sizeForLength + sizeForItems
+    }
+
+    override fun write(value: List<MobileTableRow>, buf: ByteBuffer) {
+        buf.putInt(value.size)
+        value.iterator().forEach {
+            FfiConverterTypeMobileTableRow.write(it, buf)
+        }
+    }
+}
+
+
+
+
+/**
+ * @suppress
+ */
+public object FfiConverterSequenceTypeMobileInline: FfiConverterRustBuffer<List<MobileInline>> {
+    override fun read(buf: ByteBuffer): List<MobileInline> {
+        val len = buf.getInt()
+        return List<MobileInline>(len) {
+            FfiConverterTypeMobileInline.read(buf)
+        }
+    }
+
+    override fun allocationSize(value: List<MobileInline>): ULong {
+        val sizeForLength = 4UL
+        val sizeForItems = value.map { FfiConverterTypeMobileInline.allocationSize(it) }.sum()
+        return sizeForLength + sizeForItems
+    }
+
+    override fun write(value: List<MobileInline>, buf: ByteBuffer) {
+        buf.putInt(value.size)
+        value.iterator().forEach {
+            FfiConverterTypeMobileInline.write(it, buf)
         }
     }
 }

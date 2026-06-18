@@ -28,6 +28,7 @@ final class AppModel: ObservableObject {
     // route the re-enable action to the store or our backend.
     @Published var subscriptionProvider: String?
     @Published var syncInProgress = false
+    @Published var syncOffline = false
     @Published var googleAuthInProgress = false
     @Published var googleSyncInProgress = false
     @Published var googleCalendarStatus: String?
@@ -91,7 +92,7 @@ final class AppModel: ObservableObject {
     var preferredColorScheme: ColorScheme? {
         switch snapshot?.settings.themeMode {
         case "light": .light
-        case "dark", nil: .dark
+        case "dark": .dark
         default: nil
         }
     }
@@ -333,6 +334,76 @@ final class AppModel: ObservableObject {
 
     func updateItemText(schemeID: String, itemID: String, text: String) {
         mutate { try $0.updateItemText(schemeID: schemeID, itemID: itemID, text: text) }
+    }
+
+    func insertTable(schemeID: String, afterItemID: String?) {
+        mutate { try $0.insertTable(schemeID: schemeID, afterItemID: afterItemID) }
+    }
+
+    func setTableCellText(schemeID: String, itemID: String, row: Int32, column: Int32, text: String) {
+        mutate {
+            try $0.setTableCellText(
+                schemeID: schemeID,
+                itemID: itemID,
+                row: row,
+                column: column,
+                text: text
+            )
+        }
+    }
+
+    func setTableCellLineText(schemeID: String, itemID: String, row: Int32, column: Int32, lineIndex: Int32, text: String) {
+        mutate {
+            try $0.setTableCellLineText(
+                schemeID: schemeID,
+                itemID: itemID,
+                row: row,
+                column: column,
+                lineIndex: lineIndex,
+                text: text
+            )
+        }
+    }
+
+    func addTableCellLine(schemeID: String, itemID: String, row: Int32, column: Int32, lineIndex: Int32, text: String) {
+        mutate {
+            try $0.addTableCellLine(
+                schemeID: schemeID,
+                itemID: itemID,
+                row: row,
+                column: column,
+                lineIndex: lineIndex,
+                text: text
+            )
+        }
+    }
+
+    func removeTableCellLine(schemeID: String, itemID: String, row: Int32, column: Int32, lineIndex: Int32) {
+        mutate {
+            try $0.removeTableCellLine(
+                schemeID: schemeID,
+                itemID: itemID,
+                row: row,
+                column: column,
+                lineIndex: lineIndex
+            )
+        }
+    }
+
+    func insertTableRow(schemeID: String, itemID: String, row: Int32) {
+        mutate { try $0.insertTableRow(schemeID: schemeID, itemID: itemID, row: row) }
+    }
+
+    func deleteTableRow(schemeID: String, itemID: String, row: Int32) {
+        mutate { try $0.deleteTableRow(schemeID: schemeID, itemID: itemID, row: row) }
+    }
+
+    func insertTableColumn(schemeID: String, itemID: String, column: Int32) {
+        mutate { try $0.insertTableColumn(schemeID: schemeID, itemID: itemID, column: column) }
+    }
+
+    func deleteTableColumn(schemeID: String, itemID: String, column: Int32) {
+        mutate { try $0.deleteTableColumn(schemeID: schemeID, itemID: itemID, column: column) }
     }
 
     func setItemMarker(schemeID: String, itemID: String, marker: Marker) {
@@ -790,6 +861,7 @@ final class AppModel: ObservableObject {
             refreshExpiresAt: payload.refreshExpiresAt
         )
         syncSession = session
+        syncOffline = false
         saveSyncSession(session)
         startSyncPolling()
         BackgroundSyncCoordinator.shared.scheduleIfEligible(backgroundRefreshEligible)
@@ -797,6 +869,7 @@ final class AppModel: ObservableObject {
 
     func signOutSync() {
         syncSession = nil
+        syncOffline = false
         syncPollTask?.cancel()
         syncPollTask = nil
         BackgroundSyncCoordinator.shared.scheduleIfEligible(backgroundRefreshEligible)
@@ -834,11 +907,15 @@ final class AppModel: ObservableObject {
     /// the local workspace intact (the in-app "cancel subscription" action). The
     /// backend rotates the session, so we install the credentials it returns.
     func cancelSyncSubscription() async {
-        guard syncSession != nil else { return }
+        guard syncSession != nil, !syncInProgress else { return }
         syncAccountActionInProgress = true
-        defer { syncAccountActionInProgress = false }
-        // Use a fresh access token; refresh signs us out if the session is dead.
-        guard await refreshSyncSessionIfNeeded(),
+        syncInProgress = true
+        defer {
+            syncInProgress = false
+            syncAccountActionInProgress = false
+        }
+        // Use a fresh access token; deferred refresh keeps the account signed in.
+        guard await refreshSyncSessionForAccountAction(),
               let session = syncSession,
               let url = URL(string: "\(session.apiBase)/v1/auth/subscription/cancel") else {
             return
@@ -893,10 +970,14 @@ final class AppModel: ObservableObject {
             await openManageAppleSubscription()
             return
         }
-        guard syncSession != nil else { return }
+        guard syncSession != nil, !syncInProgress else { return }
         syncAccountActionInProgress = true
-        defer { syncAccountActionInProgress = false }
-        guard await refreshSyncSessionIfNeeded(),
+        syncInProgress = true
+        defer {
+            syncInProgress = false
+            syncAccountActionInProgress = false
+        }
+        guard await refreshSyncSessionForAccountAction(),
               let session = syncSession,
               let url = URL(string: "\(session.apiBase)/v1/auth/subscription/resume") else {
             return
@@ -947,6 +1028,7 @@ final class AppModel: ObservableObject {
               let url = URL(string: "\(session.apiBase)/v1/auth/account/status") else {
             subscriptionCancelled = false
             subscriptionProvider = nil
+            syncOffline = false
             return
         }
         do {
@@ -958,11 +1040,15 @@ final class AppModel: ObservableObject {
                 return
             }
             let status = try JSONDecoder().decode(AccountStatusPayload.self, from: data)
+            syncOffline = false
             subscriptionProvider = status.subscriptionProvider
             subscriptionCancelled =
                 status.supportsSync && (status.subscriptionState?.lowercased() == "cancelled")
         } catch {
             // Leave the last known state; the user can retry from Settings.
+            if Self.isLikelyNetworkError(error) {
+                syncOffline = true
+            }
         }
     }
 
@@ -974,7 +1060,7 @@ final class AppModel: ObservableObject {
     /// never replay the single-use refresh token concurrently.
     func refreshSubscriptionStatus() async {
         guard syncSession != nil else { return }
-        await refreshEntitlement()
+        guard await refreshEntitlement() else { return }
         await refreshAccountStatus()
     }
 
@@ -1069,33 +1155,22 @@ final class AppModel: ObservableObject {
     /// Force a session refresh so a server-side entitlement change (granted by a
     /// billing webhook) is reflected locally. Guarded by syncInProgress so it can't
     /// race the poll loop into replaying the single-use refresh token.
-    func refreshEntitlement() async {
-        guard !syncInProgress,
-              let session = syncSession,
-              !session.refreshToken.isEmpty,
-              let url = URL(string: "\(session.apiBase)/v1/auth/refresh") else {
-            return
-        }
+    @discardableResult
+    func refreshEntitlement() async -> Bool {
+        guard !syncInProgress, syncSession != nil else { return false }
         syncInProgress = true
-        defer { syncInProgress = false }
-        do {
-            var request = URLRequest(url: url)
-            request.httpMethod = "POST"
-            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-            request.httpBody = try JSONSerialization.data(withJSONObject: ["refresh_token": session.refreshToken])
-            let (data, response) = try await URLSession.shared.data(for: request)
-            guard let http = response as? HTTPURLResponse else { return }
-            if http.statusCode == 401 {
-                signOutSync()
-                errorMessage = "Your sync session expired. Please sign in again."
-                return
+        var shouldScheduleSync = false
+        defer {
+            syncInProgress = false
+            if shouldScheduleSync {
+                scheduleSync()
             }
-            guard (200..<300).contains(http.statusCode) else { return }
-            let payload = try JSONDecoder().decode(SyncLoginResponse.self, from: data)
-            installRefreshedSession(payload, from: session)
-        } catch {
-            // Keep the current session; the user can retry.
         }
+        let result = await refreshSyncSessionIfNeeded(force: true)
+        if result == .ready, syncSession?.supportsSync == true {
+            shouldScheduleSync = true
+        }
+        return result == .ready
     }
 
     /// Verify a just-completed StoreKit purchase with the backend so the sync
@@ -1140,6 +1215,7 @@ final class AppModel: ObservableObject {
         updated.refreshExpiresAt = payload.refreshExpiresAt
         updated.supportsSync = payload.supportsSync
         syncSession = updated
+        syncOffline = false
         saveSyncSession(updated)
         BackgroundSyncCoordinator.shared.scheduleIfEligible(backgroundRefreshEligible)
         if updated.supportsSync {
@@ -1166,7 +1242,7 @@ final class AppModel: ObservableObject {
         guard !syncInProgress, let session = syncSession, session.supportsSync else { return false }
         syncInProgress = true
         defer { syncInProgress = false }
-        guard await refreshSyncSessionIfNeeded(), let bridge, let current = syncSession else {
+        guard await refreshSyncSessionIfNeeded() == .ready, let bridge, let current = syncSession else {
             return false
         }
         do {
@@ -1183,8 +1259,12 @@ final class AppModel: ObservableObject {
             if let notice = result.1 {
                 errorMessage = notice
             }
+            syncOffline = false
             return result.0
         } catch {
+            if Self.isLikelyNetworkError(error) {
+                syncOffline = true
+            }
             return false
         }
     }
@@ -1212,7 +1292,7 @@ final class AppModel: ObservableObject {
 
         // Refresh the short-lived access token if it's near expiry (persisting the
         // rotated credentials), or bail out if the session is gone.
-        guard await refreshSyncSessionIfNeeded() else { return }
+        guard await refreshSyncSessionIfNeeded() == .ready else { return }
 
         guard let bridge, let session = syncSession, session.supportsSync else { return }
         do {
@@ -1226,9 +1306,15 @@ final class AppModel: ObservableObject {
             if result.0 {
                 refresh()
             }
+            syncOffline = false
             errorMessage = result.1
         } catch {
-            errorMessage = error.localizedDescription
+            if Self.isLikelyNetworkError(error) {
+                syncOffline = true
+                errorMessage = nil
+            } else {
+                errorMessage = error.localizedDescription
+            }
         }
     }
 
@@ -1237,20 +1323,33 @@ final class AppModel: ObservableObject {
         Task { await self.syncOnce() }
     }
 
+    private func refreshSyncSessionForAccountAction() async -> Bool {
+        switch await refreshSyncSessionIfNeeded() {
+        case .ready:
+            return true
+        case .deferred:
+            errorMessage = "Sync is offline. Try again when your connection is back."
+            return false
+        case .sessionDead:
+            return false
+        }
+    }
+
     /// Refresh the access token before syncing if it's near expiry, persisting the
-    /// rotated credentials immediately. Returns false (and signs out) only if the
-    /// refresh token itself is dead; transient failures keep the current token.
-    private func refreshSyncSessionIfNeeded() async -> Bool {
-        guard let session = syncSession else { return false }
+    /// rotated credentials immediately. `.sessionDead` is only returned when the
+    /// auth endpoint rejects the refresh token; transient failures leave the account
+    /// signed in and mark sync offline.
+    private func refreshSyncSessionIfNeeded(force: Bool = false) async -> SyncSessionRefreshResult {
+        guard let session = syncSession else { return .sessionDead }
         guard !session.refreshToken.isEmpty else {
             signOutSync()
             errorMessage = "Your sync session expired. Please sign in again."
-            return false
+            return .sessionDead
         }
-        guard Self.tokenNeedsRefresh(session.expiresAt),
+        guard (force || Self.tokenNeedsRefresh(session.expiresAt)),
               let url = URL(string: "\(session.apiBase)/v1/auth/refresh")
         else {
-            return true
+            return .ready
         }
         do {
             var request = URLRequest(url: url)
@@ -1258,16 +1357,20 @@ final class AppModel: ObservableObject {
             request.setValue("application/json", forHTTPHeaderField: "Content-Type")
             request.httpBody = try JSONSerialization.data(withJSONObject: ["refresh_token": session.refreshToken])
             let (data, response) = try await URLSession.shared.data(for: request)
-            guard let http = response as? HTTPURLResponse else { return true }
+            guard let http = response as? HTTPURLResponse else {
+                syncOffline = true
+                return .deferred
+            }
             if http.statusCode == 401 {
                 // Refresh token revoked/expired/replayed: the session is gone.
                 signOutSync()
                 errorMessage = "Your sync session expired. Please sign in again."
-                return false
+                return .sessionDead
             }
             guard (200..<300).contains(http.statusCode) else {
                 // Transient server error: keep the current token, retry next tick.
-                return true
+                syncOffline = true
+                return .deferred
             }
             let payload = try JSONDecoder().decode(SyncLoginResponse.self, from: data)
             var updated = session
@@ -1277,12 +1380,14 @@ final class AppModel: ObservableObject {
             updated.refreshExpiresAt = payload.refreshExpiresAt
             updated.supportsSync = payload.supportsSync
             syncSession = updated
+            syncOffline = false
             saveSyncSession(updated)
             BackgroundSyncCoordinator.shared.scheduleIfEligible(backgroundRefreshEligible)
-            return true
+            return .ready
         } catch {
             // Network/parse hiccup: keep the current token, retry next tick.
-            return true
+            syncOffline = true
+            return .deferred
         }
     }
 
@@ -1297,6 +1402,15 @@ final class AppModel: ObservableObject {
             return true
         }
         return expiry.timeIntervalSinceNow <= 120
+    }
+
+    private static func isLikelyNetworkError(_ error: Error) -> Bool {
+        let nsError = error as NSError
+        if nsError.domain == NSURLErrorDomain {
+            return true
+        }
+        let message = error.localizedDescription.lowercased()
+        return ["network", "request failed", "offline", "timed out", "cannot connect", "not connected"].contains { message.contains($0) }
     }
 
     func scheme(id: String?) -> MobileScheme? {
@@ -1902,6 +2016,12 @@ private enum SyncAuthError: LocalizedError {
             return message
         }
     }
+}
+
+private enum SyncSessionRefreshResult: Equatable {
+    case ready
+    case deferred
+    case sessionDead
 }
 
 private struct GoogleOAuthMobileConfig {

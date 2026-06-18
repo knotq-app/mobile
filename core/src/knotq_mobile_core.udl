@@ -49,6 +49,20 @@ dictionary MobileItem {
   i32? notification_offset_secs;
   string? repeat_rule;
   sequence<MobileItemMedia> media;
+  sequence<MobileTable> tables;
+  // Ordered inline content for the line (text/image/table in document order).
+  // Source of truth for editor rendering; the flat `text`/`media`/`tables`
+  // fields above remain for non-editor consumers (widgets/timeline).
+  sequence<MobileInline> content;
+};
+
+// One piece of a line's content, in document order. Mirrors the Rust
+// `knotq_model::Inline` enum.
+[Enum]
+interface MobileInline {
+  Text(string text);
+  Image(MobileItemMedia media);
+  Table(MobileTable table);
 };
 
 dictionary MobileItemMedia {
@@ -57,6 +71,43 @@ dictionary MobileItemMedia {
   string format;
   i32? width;
   i32? height;
+};
+
+dictionary MobileTable {
+  sequence<MobileTableColumn> columns;
+  sequence<MobileTableRow> rows;
+};
+
+dictionary MobileTableColumn {
+  string id;
+  string name;
+};
+
+dictionary MobileTableRow {
+  string id;
+  sequence<MobileTableCell> cells;
+};
+
+// A table cell is a sub-document of line items. `lines` carries each line for
+// inline per-cell rendering & editing; `text` is a flat one-line summary kept
+// for read-only consumers.
+dictionary MobileTableCell {
+  string text;
+  sequence<MobileCellLine> lines;
+};
+
+// A single line within a table cell. Flat / non-recursive on purpose (no
+// MobileItem/MobileInline) to avoid UniFFI recursive-record issues. Carries the
+// subset of fields the cell renderer shows: text + marker + done + date range,
+// plus any inline images on the line.
+dictionary MobileCellLine {
+  string id;
+  string text;
+  string marker;
+  boolean done;
+  string? start;
+  string? end;
+  sequence<MobileItemMedia> media;
 };
 
 dictionary MobileItemEdit {
@@ -247,6 +298,33 @@ interface MobileCore {
 
   [Throws=MobileError]
   void update_item_text(string scheme_id, string item_id, string text);
+
+  [Throws=MobileError]
+  void insert_table(string scheme_id, string? after_item_id);
+
+  [Throws=MobileError]
+  void set_table_cell_text(string scheme_id, string item_id, i32 row, i32 column, string text);
+
+  [Throws=MobileError]
+  void set_table_cell_line_text(string scheme_id, string item_id, i32 row, i32 column, i32 line_index, string text);
+
+  [Throws=MobileError]
+  void add_table_cell_line(string scheme_id, string item_id, i32 row, i32 column, i32 line_index, string text);
+
+  [Throws=MobileError]
+  void remove_table_cell_line(string scheme_id, string item_id, i32 row, i32 column, i32 line_index);
+
+  [Throws=MobileError]
+  void insert_table_row(string scheme_id, string item_id, i32 row);
+
+  [Throws=MobileError]
+  void delete_table_row(string scheme_id, string item_id, i32 row);
+
+  [Throws=MobileError]
+  void insert_table_column(string scheme_id, string item_id, i32 column);
+
+  [Throws=MobileError]
+  void delete_table_column(string scheme_id, string item_id, i32 column);
 
   [Throws=MobileError]
   void set_item_marker(string scheme_id, string item_id, string marker);
