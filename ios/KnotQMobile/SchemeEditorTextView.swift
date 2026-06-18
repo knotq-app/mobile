@@ -65,6 +65,10 @@ final class EditorTableCellEditor: UIView, UITextFieldDelegate {
     /// a structural change; the `.resign` path on `onCommit` would tear the editor
     /// down, which must not happen mid-reuse.
     var onFlush: ((EditorTableCellHit, String) -> Void)?
+    /// Asks the owner to end the session (tear the editor down). The dismiss button
+    /// flushes then calls this, so Done always removes the overlay — `onCommit`'s
+    /// `.resign` only fires when the text changed, which used to leave a stray box.
+    var onRequestEnd: (() -> Void)?
     private var committedText: String
     private var didCommit = false
     private let theme: KnotQTheme
@@ -114,8 +118,8 @@ final class EditorTableCellEditor: UIView, UITextFieldDelegate {
         dismissConfig.baseForegroundColor = UIColor(theme.accent)
         dismissConfig.contentInsets = NSDirectionalEdgeInsets(top: 4, leading: 8, bottom: 4, trailing: 8)
         let dismissButton = UIButton(configuration: dismissConfig, primaryAction: UIAction { [weak self] _ in
-            self?.commit(reason: .resign)
-            self?.field.resignFirstResponder()
+            self?.flush()
+            self?.onRequestEnd?()
         })
         dismissButton.accessibilityLabel = "Done editing cell"
 
@@ -1623,6 +1627,10 @@ final class EditorTextView: UITextView {
         editor.onFlush = { [weak self] hit, text in
             // Persist only — never tears the editor down (the caller is reusing it).
             self?.onTableCellCommit?(hit, text)
+        }
+        editor.onRequestEnd = { [weak self] in
+            // Dismiss already flushed; tear the overlay down without re-committing.
+            self?.endTableCellEditing(commit: false)
         }
         editor.onStructureAction = { [weak self] hit, action in
             self?.handleCellStructureAction(hit, action: action)
