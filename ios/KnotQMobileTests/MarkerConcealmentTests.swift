@@ -170,6 +170,42 @@ final class MarkerConcealmentTests: XCTestCase {
         XCTAssertEqual(storage.string, text)
     }
 
+    // MARK: - Table boundaries
+
+    func testTableBoundaryBeforeCreatesBlankLineBeforeTableOnlyParagraph() {
+        let view = EditorTextView()
+        view.loadItems([tableOnlyItem(indent: 1)], theme: .dark, timeFormat: "twelve_hour", placeCursorAtEnd: false)
+
+        let hit = EditorTableBoundaryHit(paragraphRange: NSRange(location: 0, length: 1), side: .before)
+        XCTAssertTrue(view.placeCaretAtTableBoundary(hit, theme: .dark))
+
+        let edits = view.extractItemEdits()
+        XCTAssertEqual(edits.count, 2)
+        XCTAssertNil(edits[0].id)
+        XCTAssertEqual(edits[0].text, "")
+        XCTAssertEqual(edits[0].marker, "blank")
+        XCTAssertEqual(edits[0].indent, 1)
+        XCTAssertEqual(edits[1].id, "table-item")
+        XCTAssertEqual(view.selectedRange.location, 0)
+    }
+
+    func testTableBoundaryAfterCreatesBlankLineAfterTableOnlyParagraph() {
+        let view = EditorTextView()
+        view.loadItems([tableOnlyItem(indent: 2)], theme: .dark, timeFormat: "twelve_hour", placeCursorAtEnd: false)
+
+        let hit = EditorTableBoundaryHit(paragraphRange: NSRange(location: 0, length: 1), side: .after)
+        XCTAssertTrue(view.placeCaretAtTableBoundary(hit, theme: .dark))
+
+        let edits = view.extractItemEdits()
+        XCTAssertEqual(edits.count, 2)
+        XCTAssertEqual(edits[0].id, "table-item")
+        XCTAssertNil(edits[1].id)
+        XCTAssertEqual(edits[1].text, "")
+        XCTAssertEqual(edits[1].marker, "blank")
+        XCTAssertEqual(edits[1].indent, 2)
+        XCTAssertEqual(view.selectedRange.location, 1)
+    }
+
     // MARK: - Tagging (so future delimiter changes keep the markers concealable)
 
     func testEmphasisTagsEveryDelimiterStyle() {
@@ -196,5 +232,45 @@ final class MarkerConcealmentTests: XCTestCase {
         let storage = NSTextStorage(string: body, attributes: [.font: UIFont.systemFont(ofSize: 17)])
         applyEmphasis(body: body, lineLocation: 0, storage: storage)
         return markerRanges(storage)
+    }
+
+    private func tableOnlyItem(indent: Int32) -> MobileItem {
+        let line = MobileCellLine(
+            id: "cell-line",
+            text: "",
+            marker: "blank",
+            done: false,
+            start: nil,
+            end: nil,
+            media: []
+        )
+        let table = MobileTable(
+            columns: [
+                MobileTableColumn(id: "column-1", name: "Column 1")
+            ],
+            rows: [
+                MobileTableRow(
+                    id: "row-1",
+                    cells: [
+                        MobileTableCell(text: "", lines: [line])
+                    ]
+                )
+            ]
+        )
+        return MobileItem(
+            id: "table-item",
+            text: "",
+            marker: "blank",
+            indent: indent,
+            kind: "procedure",
+            done: false,
+            start: nil,
+            end: nil,
+            notificationOffsetSecs: nil,
+            repeatRule: nil,
+            media: [],
+            tables: [table],
+            content: [.table(table: table)]
+        )
     }
 }

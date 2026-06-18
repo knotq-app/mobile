@@ -1708,16 +1708,17 @@ final class EditorTextView: UITextView {
             inserted = true
         }
 
-        selectedRange = NSRange(location: targetLocation, length: 0)
+        let clampedTarget = clampedCaret(targetLocation, in: textStorage)
+        selectedRange = NSRange(location: clampedTarget, length: 0)
         typingAttributes = EditorAttributes.bodyAttributes(
-            meta: lineMeta(at: targetLocation, in: textStorage),
+            meta: lineMeta(at: clampedTarget, in: textStorage),
             theme: theme
         )
         if !isFirstResponder {
             becomeFirstResponder()
         }
         refreshMarkerVisibility(force: true)
-        scrollRangeToVisible(NSRange(location: targetLocation, length: 0))
+        scrollRangeToVisible(NSRange(location: clampedTarget, length: 0))
         if inserted {
             coordinator?.markDirty()
             coordinator?.refreshEmpty()
@@ -1770,7 +1771,10 @@ final class EditorTextView: UITextView {
         let tableMeta = lineMeta(at: paragraphRange.location, in: textStorage)
         let blankMeta = LineMeta(marker: .blank, indent: tableMeta.indent)
         let attrs = EditorAttributes.bodyAttributes(meta: blankMeta, theme: theme)
-        let insertionLocation = side == .before ? paragraphRange.location : NSMaxRange(paragraphRange)
+        let insertionLocation = min(
+            max(0, side == .before ? paragraphRange.location : NSMaxRange(paragraphRange)),
+            textStorage.length
+        )
 
         let edit = {
             self.textStorage.beginEditing()
