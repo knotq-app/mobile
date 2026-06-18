@@ -22,9 +22,61 @@ struct EditorTableCellHit {
     var isHeader: Bool { row < 0 }
 }
 
+enum EditorTableBoundarySide {
+    case before, after
+}
+
+struct EditorTableBoundaryHit {
+    let paragraphRange: NSRange
+    let side: EditorTableBoundarySide
+}
+
 private struct EditorTableCellHitRect {
     let rect: CGRect
     let hit: EditorTableCellHit
+}
+
+private struct EditorTableBlockHitRect {
+    let rect: CGRect
+    let paragraphRange: NSRange
+}
+
+private final class EditorTableInputAccessoryView: UIInputView {
+    init(height: CGFloat) {
+        super.init(frame: CGRect(x: 0, y: 0, width: UIScreen.main.bounds.width, height: height), inputViewStyle: .default)
+        allowsSelfSizing = true
+        backgroundColor = .clear
+        isOpaque = false
+        insetsLayoutMarginsFromSafeArea = false
+    }
+
+    override var intrinsicContentSize: CGSize {
+        CGSize(width: UIView.noIntrinsicMetric, height: bounds.height > 0 ? bounds.height : 52)
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) is not supported")
+    }
+
+    override func didMoveToWindow() {
+        super.didMoveToWindow()
+        clearAccessoryChrome()
+    }
+
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        clearAccessoryChrome()
+    }
+
+    private func clearAccessoryChrome() {
+        var next: UIView? = self
+        for _ in 0..<8 {
+            next?.backgroundColor = .clear
+            next?.isOpaque = false
+            next = next?.superview
+        }
+    }
 }
 
 /// How an in-place cell edit resolved, so the owning text view knows where to
@@ -73,8 +125,7 @@ final class EditorTableCellEditor: UIView, UITextFieldDelegate {
     private var didCommit = false
     private let theme: KnotQTheme
     private weak var contextLabel: UILabel?
-    private weak var insertRowButton: UIButton?
-    private weak var deleteRowButton: UIButton?
+    private weak var rowMenuButton: UIButton?
 
     init(hit: EditorTableCellHit, theme: KnotQTheme) {
         self.hit = hit
@@ -102,89 +153,166 @@ final class EditorTableCellEditor: UIView, UITextFieldDelegate {
         addSubview(field)
     }
 
-    /// Bar above the keyboard for the in-place cell editor. A context label names
-    /// the cell being edited (so the row/column ops are unambiguous) and the labeled
-    /// add/remove icons replace the old cramped "+Row / −Col" text buttons. The
-    /// dismiss button ends editing; moving between cells is by tapping a cell,
-    /// pressing Return (down), or hardware Tab.
+    /// Bar above the keyboard for the in-place cell editor. It keeps frequent
+    /// actions direct (done / previous / next) and moves row/column structure ops
+    /// into menus so destructive actions are less cramped and less accidental.
     private func makeAccessory() -> UIView {
-        let bar = UIToolbar(frame: CGRect(x: 0, y: 0, width: UIScreen.main.bounds.width, height: 46))
-        bar.barTintColor = UIColor(theme.bgModal)
-        bar.tintColor = UIColor(theme.accent)
-        bar.isTranslucent = false
+        let height: CGFloat = UIDevice.current.userInterfaceIdiom == .phone ? 56 : 50
+        let container = EditorTableInputAccessoryView(height: height)
 
-        var dismissConfig = UIButton.Configuration.plain()
-        dismissConfig.image = UIImage(systemName: "keyboard.chevron.compact.down")
-        dismissConfig.baseForegroundColor = UIColor(theme.accent)
-        dismissConfig.contentInsets = NSDirectionalEdgeInsets(top: 4, leading: 8, bottom: 4, trailing: 8)
-        let dismissButton = UIButton(configuration: dismissConfig, primaryAction: UIAction { [weak self] _ in
+        let backdrop: UIVisualEffectView
+        if #available(iOS 26.0, *) {
+            backdrop = UIVisualEffectView(effect: UIGlassEffect())
+        } else {
+            backdrop = UIVisualEffectView(effect: UIBlurEffect(style: .systemUltraThinMaterial))
+        }
+        backdrop.translatesAutoresizingMaskIntoConstraints = false
+        backdrop.backgroundColor = .clear
+        backdrop.isOpaque = false
+        backdrop.contentView.backgroundColor = .clear
+        backdrop.layer.cornerRadius = 10
+        backdrop.layer.cornerCurve = .continuous
+        backdrop.clipsToBounds = true
+        backdrop.layer.borderWidth = 1
+        backdrop.layer.borderColor = UIColor(theme.borderOverlay).cgColor
+        container.addSubview(backdrop)
+
+        let stack = UIStackView()
+        stack.axis = .horizontal
+        stack.alignment = .center
+        stack.spacing = 6
+        stack.translatesAutoresizingMaskIntoConstraints = false
+        stack.layoutMargins = UIEdgeInsets(top: 5, left: 8, bottom: 5, right: 8)
+        stack.isLayoutMarginsRelativeArrangement = true
+        stack.insetsLayoutMarginsFromSafeArea = false
+        backdrop.contentView.addSubview(stack)
+
+        let dismissButton = accessoryIconButton("keyboard.chevron.compact.down", label: "Done editing cell") { [weak self] in
             self?.flush()
             self?.onRequestEnd?()
-        })
-        dismissButton.accessibilityLabel = "Done editing cell"
+        }
 
         let context = UILabel()
         context.font = .systemFont(ofSize: 12, weight: .semibold)
         context.textColor = UIColor(theme.textDim)
+        context.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
         contextLabel = context
 
-        let insertRow = structureButton(title: "Row", systemImage: "plus", action: .insertRow)
-        let deleteRow = structureButton(title: "Row", systemImage: "minus", action: .deleteRow, destructive: true)
-        let insertColumn = structureButton(title: "Col", systemImage: "plus", action: .insertColumn)
-        let deleteColumn = structureButton(title: "Col", systemImage: "minus", action: .deleteColumn, destructive: true)
-        insertRowButton = insertRow
-        deleteRowButton = deleteRow
+        let previousButton = accessoryIconButton("chevron.left", label: "Previous cell") { [weak self] in
+            self?.commit(reason: .movePrevious)
+        }
+        let nextButton = accessoryIconButton("chevron.right", label: "Next cell") { [weak self] in
+            self?.commit(reason: .moveNext)
+        }
+        let rowMenu = structureMenuButton(
+            title: "Rows",
+            systemImage: "tablecells",
+            actions: [
+                ("Insert Row Below", "plus", .insertRow, false),
+                ("Delete Row", "trash", .deleteRow, true)
+            ]
+        )
+        let columnMenu = structureMenuButton(
+            title: "Columns",
+            systemImage: "tablecells",
+            actions: [
+                ("Insert Column Right", "plus", .insertColumn, false),
+                ("Delete Column", "trash", .deleteColumn, true)
+            ]
+        )
+        rowMenuButton = rowMenu
 
-        bar.items = [
-            UIBarButtonItem(customView: dismissButton),
-            fixedSpace(6),
-            UIBarButtonItem(customView: context),
-            UIBarButtonItem(systemItem: .flexibleSpace),
-            UIBarButtonItem(customView: insertRow),
-            UIBarButtonItem(customView: deleteRow),
-            fixedSpace(8),
-            UIBarButtonItem(customView: insertColumn),
-            UIBarButtonItem(customView: deleteColumn),
-        ]
+        stack.addArrangedSubview(dismissButton)
+        stack.addArrangedSubview(context)
+        stack.addArrangedSubview(UIView())
+        stack.addArrangedSubview(buttonGroup([previousButton, nextButton]))
+        stack.addArrangedSubview(rowMenu)
+        stack.addArrangedSubview(columnMenu)
+
+        if let spacer = stack.arrangedSubviews.first(where: { $0 !== dismissButton && $0 !== context && $0 !== rowMenu && $0 !== columnMenu && !($0 is UIStackView) }) {
+            spacer.setContentHuggingPriority(.defaultLow, for: .horizontal)
+        }
+
+        NSLayoutConstraint.activate([
+            backdrop.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 8),
+            backdrop.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -8),
+            backdrop.topAnchor.constraint(equalTo: container.topAnchor, constant: 4),
+            backdrop.bottomAnchor.constraint(equalTo: container.bottomAnchor, constant: UIDevice.current.userInterfaceIdiom == .phone ? -10 : -6),
+            stack.leadingAnchor.constraint(equalTo: backdrop.contentView.leadingAnchor),
+            stack.trailingAnchor.constraint(equalTo: backdrop.contentView.trailingAnchor),
+            stack.topAnchor.constraint(equalTo: backdrop.contentView.topAnchor),
+            stack.bottomAnchor.constraint(equalTo: backdrop.contentView.bottomAnchor)
+        ])
         updateAccessoryState()
-        return bar
+        return container
     }
 
-    private func fixedSpace(_ width: CGFloat) -> UIBarButtonItem {
-        let item = UIBarButtonItem(systemItem: .fixedSpace)
-        item.width = width
-        return item
-    }
-
-    /// A labeled icon button ("＋ Row", "－ Col") for one structure op. The icon
-    /// states add/remove and the label states the axis, so neither is ambiguous.
-    private func structureButton(title: String, systemImage: String, action: EditorCellStructureAction, destructive: Bool = false) -> UIButton {
+    private func accessoryIconButton(_ systemImage: String, label: String, action: @escaping () -> Void) -> UIButton {
         var config = UIButton.Configuration.plain()
         config.image = UIImage(systemName: systemImage)
-        config.imagePadding = 2
-        config.preferredSymbolConfigurationForImage = UIImage.SymbolConfiguration(pointSize: 11, weight: .semibold)
-        config.contentInsets = NSDirectionalEdgeInsets(top: 4, leading: 6, bottom: 4, trailing: 6)
-        config.baseForegroundColor = UIColor(destructive ? theme.danger : theme.accent)
+        config.preferredSymbolConfigurationForImage = UIImage.SymbolConfiguration(pointSize: 15, weight: .semibold)
+        config.contentInsets = NSDirectionalEdgeInsets(top: 5, leading: 8, bottom: 5, trailing: 8)
+        config.baseForegroundColor = UIColor(theme.accent)
+        let button = UIButton(configuration: config, primaryAction: UIAction { _ in action() })
+        button.accessibilityLabel = label
+        button.widthAnchor.constraint(greaterThanOrEqualToConstant: 34).isActive = true
+        button.heightAnchor.constraint(equalToConstant: 32).isActive = true
+        return button
+    }
+
+    private func structureMenuButton(
+        title: String,
+        systemImage: String,
+        actions: [(title: String, systemImage: String, action: EditorCellStructureAction, destructive: Bool)]
+    ) -> UIButton {
+        var config = UIButton.Configuration.plain()
+        config.image = UIImage(systemName: systemImage)
+        config.imagePadding = 4
+        config.preferredSymbolConfigurationForImage = UIImage.SymbolConfiguration(pointSize: 12, weight: .semibold)
+        config.contentInsets = NSDirectionalEdgeInsets(top: 5, leading: 8, bottom: 5, trailing: 8)
+        config.baseForegroundColor = UIColor(theme.textPrimary)
         var titleContainer = AttributeContainer()
-        titleContainer.font = .systemFont(ofSize: 13, weight: .medium)
+        titleContainer.font = .systemFont(ofSize: 12, weight: .semibold)
         config.attributedTitle = AttributedString(title, attributes: titleContainer)
-        return UIButton(configuration: config, primaryAction: UIAction { [weak self] _ in
-            self?.runStructure(action)
+        let button = UIButton(configuration: config)
+        button.menu = UIMenu(children: actions.map { entry in
+            let attributes: UIMenuElement.Attributes = entry.destructive ? .destructive : []
+            return UIAction(
+                title: entry.title,
+                image: UIImage(systemName: entry.systemImage),
+                attributes: attributes
+            ) { [weak self] _ in
+                self?.runStructure(entry.action)
+            }
         })
+        button.showsMenuAsPrimaryAction = true
+        button.heightAnchor.constraint(equalToConstant: 32).isActive = true
+        return button
+    }
+
+    private func buttonGroup(_ buttons: [UIButton]) -> UIStackView {
+        let group = UIStackView(arrangedSubviews: buttons)
+        group.axis = .horizontal
+        group.alignment = .center
+        group.spacing = 0
+        group.backgroundColor = UIColor(theme.buttonBg).withAlphaComponent(theme.isDark ? 0.48 : 0.62)
+        group.layer.cornerRadius = 8
+        group.layer.cornerCurve = .continuous
+        group.isLayoutMarginsRelativeArrangement = true
+        group.layoutMargins = UIEdgeInsets(top: 0, left: 1, bottom: 0, right: 1)
+        return group
     }
 
     private func contextText(for hit: EditorTableCellHit) -> String {
-        hit.isHeader ? "Header · C\(hit.column + 1)" : "R\(hit.row + 1) · C\(hit.column + 1)"
+        hit.isHeader ? "Header C\(hit.column + 1)" : "Cell R\(hit.row + 1) C\(hit.column + 1)"
     }
 
     private func updateAccessoryState() {
         contextLabel?.text = contextText(for: hit)
         contextLabel?.sizeToFit()
         let rowsEditable = !hit.isHeader
-        insertRowButton?.isEnabled = rowsEditable
-        deleteRowButton?.isEnabled = rowsEditable
-        insertRowButton?.alpha = rowsEditable ? 1 : 0.35
-        deleteRowButton?.alpha = rowsEditable ? 1 : 0.35
+        rowMenuButton?.isEnabled = rowsEditable
+        rowMenuButton?.alpha = rowsEditable ? 1 : 0.35
     }
 
     private func runStructure(_ action: EditorCellStructureAction) {
@@ -389,6 +517,7 @@ final class EditorTextView: UITextView {
     private let editorLayoutManager: EditorLayoutManager
     private var imageCache: [String: UIImage] = [:]
     private var renderedTableCellHits: [EditorTableCellHitRect] = []
+    private var renderedTableBlockHits: [EditorTableBlockHitRect] = []
     /// The in-place table cell editor, present only while a cell is being edited.
     private var activeCellEditor: EditorTableCellEditor?
     /// A cell to re-focus once the next document reload settles. Set right before a
@@ -1022,6 +1151,7 @@ final class EditorTextView: UITextView {
     fileprivate func drawChrome(forGlyphRange glyphsToShow: NSRange, at origin: CGPoint) {
         guard let context = UIGraphicsGetCurrentContext() else { return }
         renderedTableCellHits.removeAll()
+        renderedTableBlockHits.removeAll()
         let storage = textStorage
         let ns = storage.string as NSString
         let paragraphs = paragraphRanges(in: ns)
@@ -1059,6 +1189,7 @@ final class EditorTextView: UITextView {
             drawOrderedBlockStack(
                 for: meta,
                 itemID: meta.itemID,
+                paragraphRange: paragraph.fullRange,
                 textLeft: firstFragment.minX,
                 top: visualBounds.maxY + annotationHeight,
                 context: context
@@ -1246,6 +1377,7 @@ final class EditorTextView: UITextView {
     private func drawOrderedBlockStack(
         for meta: LineMeta,
         itemID: String?,
+        paragraphRange: NSRange,
         textLeft: CGFloat,
         top: CGFloat,
         context: CGContext
@@ -1266,11 +1398,18 @@ final class EditorTextView: UITextView {
                 y += size.height
             case let .table(table):
                 let height = tableHeight(table)
+                let tableRect = CGRect(x: textLeft, y: y, width: maxWidth, height: height)
+                if bodyText(paragraphRange: paragraphRange, in: textStorage).isEmpty {
+                    renderedTableBlockHits.append(EditorTableBlockHitRect(
+                        rect: tableRect,
+                        paragraphRange: paragraphRange
+                    ))
+                }
                 drawTable(
                     table,
                     itemID: itemID,
                     tableIndex: tableIndex,
-                    in: CGRect(x: textLeft, y: y, width: maxWidth, height: height),
+                    in: tableRect,
                     context: context
                 )
                 y += height
@@ -1523,6 +1662,134 @@ final class EditorTextView: UITextView {
             if meta.itemID == itemID { return meta }
         }
         return nil
+    }
+
+    func tableBoundaryHit(at point: CGPoint) -> EditorTableBoundaryHit? {
+        let horizontalSlop: CGFloat = 10
+        let beforeHeight = max(18, DesktopEditorMetrics.tableTopGap + 10)
+        let afterHeight: CGFloat = 22
+
+        for recorded in renderedTableBlockHits.reversed() {
+            let x = recorded.rect.minX - horizontalSlop
+            let width = recorded.rect.width + horizontalSlop * 2
+            let beforeRect = CGRect(
+                x: x,
+                y: recorded.rect.minY - beforeHeight,
+                width: width,
+                height: beforeHeight
+            )
+            if beforeRect.contains(point) {
+                return EditorTableBoundaryHit(paragraphRange: recorded.paragraphRange, side: .before)
+            }
+
+            let afterRect = CGRect(
+                x: x,
+                y: recorded.rect.maxY,
+                width: width,
+                height: afterHeight
+            )
+            if afterRect.contains(point), shouldUseAfterTableBoundary(for: recorded.paragraphRange) {
+                return EditorTableBoundaryHit(paragraphRange: recorded.paragraphRange, side: .after)
+            }
+        }
+        return nil
+    }
+
+    @discardableResult
+    func placeCaretAtTableBoundary(_ hit: EditorTableBoundaryHit, theme: KnotQTheme) -> Bool {
+        guard isEditable else { return false }
+        endTableCellEditing(commit: true)
+
+        let targetLocation: Int
+        var inserted = false
+        if let reusable = reusableBoundaryParagraph(relativeTo: hit.paragraphRange, side: hit.side) {
+            targetLocation = reusable.fullRange.location
+        } else {
+            targetLocation = insertBlankBoundaryLine(relativeTo: hit.paragraphRange, side: hit.side, theme: theme)
+            inserted = true
+        }
+
+        selectedRange = NSRange(location: targetLocation, length: 0)
+        typingAttributes = EditorAttributes.bodyAttributes(
+            meta: lineMeta(at: targetLocation, in: textStorage),
+            theme: theme
+        )
+        if !isFirstResponder {
+            becomeFirstResponder()
+        }
+        refreshMarkerVisibility(force: true)
+        scrollRangeToVisible(NSRange(location: targetLocation, length: 0))
+        if inserted {
+            coordinator?.markDirty()
+            coordinator?.refreshEmpty()
+            invalidateIntrinsicContentSize()
+        }
+        setNeedsDisplay()
+        return true
+    }
+
+    private func shouldUseAfterTableBoundary(for paragraphRange: NSRange) -> Bool {
+        let paragraphs = paragraphRanges(in: textStorage.string as NSString)
+        guard let index = paragraphs.firstIndex(where: { $0.fullRange.location == paragraphRange.location }) else {
+            return false
+        }
+        guard index + 1 < paragraphs.count else { return true }
+        return isReusableBoundaryParagraph(paragraphs[index + 1], tableParagraph: paragraphs[index])
+    }
+
+    private func reusableBoundaryParagraph(relativeTo paragraphRange: NSRange, side: EditorTableBoundarySide) -> EditorParagraphRange? {
+        let paragraphs = paragraphRanges(in: textStorage.string as NSString)
+        guard let index = paragraphs.firstIndex(where: { $0.fullRange.location == paragraphRange.location }) else {
+            return nil
+        }
+        let candidateIndex: Int
+        switch side {
+        case .before:
+            guard index > 0 else { return nil }
+            candidateIndex = index - 1
+        case .after:
+            guard index + 1 < paragraphs.count else { return nil }
+            candidateIndex = index + 1
+        }
+        let tableParagraph = paragraphs[index]
+        let candidate = paragraphs[candidateIndex]
+        return isReusableBoundaryParagraph(candidate, tableParagraph: tableParagraph) ? candidate : nil
+    }
+
+    private func isReusableBoundaryParagraph(_ paragraph: EditorParagraphRange, tableParagraph: EditorParagraphRange) -> Bool {
+        let meta = lineMeta(at: paragraph.fullRange.location, in: textStorage)
+        let tableMeta = lineMeta(at: tableParagraph.fullRange.location, in: textStorage)
+        return bodyText(paragraphRange: paragraph.fullRange, in: textStorage).isEmpty
+            && meta.marker == .blank
+            && meta.indent == tableMeta.indent
+            && meta.annotation == nil
+            && meta.media.isEmpty
+            && meta.tables.isEmpty
+    }
+
+    private func insertBlankBoundaryLine(relativeTo paragraphRange: NSRange, side: EditorTableBoundarySide, theme: KnotQTheme) -> Int {
+        let tableMeta = lineMeta(at: paragraphRange.location, in: textStorage)
+        let blankMeta = LineMeta(marker: .blank, indent: tableMeta.indent)
+        let attrs = EditorAttributes.bodyAttributes(meta: blankMeta, theme: theme)
+        let insertionLocation = side == .before ? paragraphRange.location : NSMaxRange(paragraphRange)
+
+        let edit = {
+            self.textStorage.beginEditing()
+            self.textStorage.replaceCharacters(
+                in: NSRange(location: insertionLocation, length: 0),
+                with: NSAttributedString(string: "\n", attributes: attrs)
+            )
+            let paragraph = editableParagraphRange(in: self.textStorage.string as NSString, at: insertionLocation)
+            setLineMeta(blankMeta, onParagraph: paragraph, in: self.textStorage, theme: theme)
+            self.textStorage.endEditing()
+        }
+        if let coordinator {
+            coordinator.suppress(edit)
+        } else {
+            edit()
+        }
+
+        return insertionLocation
     }
 
     func tableCellHit(at point: CGPoint) -> EditorTableCellHit? {
