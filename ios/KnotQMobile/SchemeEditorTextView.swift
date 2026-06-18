@@ -1687,6 +1687,7 @@ final class EditorTextView: UITextView {
         var inserted = false
         if let reusable = reusableBoundaryParagraph(relativeTo: hit.paragraphRange, side: hit.side) {
             targetLocation = reusable.fullRange.location
+            markBoundaryParagraph(reusable, relativeTo: hit.paragraphRange, side: hit.side, theme: theme)
         } else {
             targetLocation = insertBlankBoundaryLine(relativeTo: hit.paragraphRange, side: hit.side, theme: theme)
             inserted = true
@@ -1753,7 +1754,7 @@ final class EditorTextView: UITextView {
 
     private func insertBlankBoundaryLine(relativeTo paragraphRange: NSRange, side: EditorTableBoundarySide, theme: KnotQTheme) -> Int {
         let tableMeta = lineMeta(at: paragraphRange.location, in: textStorage)
-        let blankMeta = LineMeta(marker: .blank, indent: tableMeta.indent)
+        let blankMeta = tableBoundaryMeta(tableMeta: tableMeta, side: side)
         let attrs = EditorAttributes.bodyAttributes(meta: blankMeta, theme: theme)
         let insertionLocation = min(
             max(0, side == .before ? paragraphRange.location : NSMaxRange(paragraphRange)),
@@ -1775,6 +1776,30 @@ final class EditorTextView: UITextView {
         }
 
         return insertionLocation
+    }
+
+    private func markBoundaryParagraph(_ paragraph: EditorParagraphRange, relativeTo tableParagraphRange: NSRange, side: EditorTableBoundarySide, theme: KnotQTheme) {
+        let tableMeta = lineMeta(at: tableParagraphRange.location, in: textStorage)
+        let meta = tableBoundaryMeta(tableMeta: tableMeta, side: side)
+        let edit = {
+            self.textStorage.beginEditing()
+            setLineMeta(meta, onParagraph: paragraph.fullRange, in: self.textStorage, theme: theme)
+            self.textStorage.endEditing()
+        }
+        if let coordinator {
+            coordinator.suppress(edit)
+        } else {
+            edit()
+        }
+    }
+
+    private func tableBoundaryMeta(tableMeta: LineMeta, side: EditorTableBoundarySide) -> LineMeta {
+        LineMeta(
+            marker: .blank,
+            indent: tableMeta.indent,
+            tableBoundaryItemID: tableMeta.itemID,
+            tableBoundarySide: side == .before ? "before" : "after"
+        )
     }
 
     func tableCellHit(at point: CGPoint) -> EditorTableCellHit? {

@@ -15,10 +15,11 @@ use knotq_date_util::{upcoming_range, UPCOMING_LIMIT};
 use knotq_index::query::{SearchHitStatus, SearchOptions, SearchTarget};
 use knotq_index::IndexedWorkspace;
 use knotq_model::{
-    daily_queue_scheme_id, daily_queue_sync_metadata, AppSettings, CalendarProvider, DocumentId,
-    FolderId, GoogleOAuthAccount, ImageAssetFormat, ImageInline, ImportedCalendarSource, Inline,
-    Item, ItemId, ItemKind, ItemMarker, NodeRef, NotificationDefaults, OccurrenceId, OperationId,
-    Recurrence, Scheme, SchemeId, SchemeSource, Table, ThemeMode, TimeFormat, Workspace,
+    daily_queue_scheme_id, daily_queue_sync_metadata, AppSettings, CalendarProvider, ColumnId,
+    DocumentId, FolderId, GoogleOAuthAccount, ImageAssetFormat, ImageInline,
+    ImportedCalendarSource, Inline, Item, ItemId, ItemKind, ItemMarker, NodeRef,
+    NotificationDefaults, OccurrenceId, OperationId, Recurrence, RowId, Scheme, SchemeId,
+    SchemeSource, Table, TableCell, TableColumn, TableRow, ThemeMode, TimeFormat, Workspace,
     DAILY_QUEUE_COLOR_INDEX,
 };
 use knotq_notifications::{
@@ -2691,6 +2692,9 @@ impl MobileCoreInner {
                 );
             }
             item.enforce_marker_constraints();
+            if !draft.content.is_empty() {
+                item.content = mobile_inlines_to_inlines(&draft.content, &self.image_assets_dir)?;
+            }
             if item.marker == ItemMarker::Checkbox {
                 let state = item.state_for_occurrence_mut(OccurrenceId::Single);
                 state.progress = if draft.done { -1 } else { 0 };
@@ -3385,6 +3389,7 @@ pub struct MobileItemEdit {
     pub notification_offset_secs: Option<i32>,
     pub repeat_rule: Option<String>,
     pub media: Vec<MobileItemMedia>,
+    pub content: Vec<MobileInline>,
 }
 
 impl MobileItem {
@@ -3438,6 +3443,22 @@ impl MobileInline {
             }),
         }
     }
+}
+
+fn mobile_inlines_to_inlines(
+    content: &[MobileInline],
+    image_assets_dir: &Path,
+) -> Result<Vec<Inline>> {
+    content
+        .iter()
+        .map(|inline| match inline {
+            MobileInline::Text { text } => Ok(Inline::Text { text: text.clone() }),
+            MobileInline::Image { media } => mobile_media_to_item_media(media, image_assets_dir)
+                .map(Inline::Image)
+                .ok_or_else(|| anyhow!("invalid inline image media")),
+            MobileInline::Table { table } => Ok(Inline::Table(table.to_table(image_assets_dir)?)),
+        })
+        .collect()
 }
 
 /// Extracts the first RRULE body from a recurrence for display on the client.
@@ -3494,6 +3515,49 @@ impl MobileTable {
                 .collect(),
         }
     }
+
+    fn to_table(&self, image_assets_dir: &Path) -> Result<Table> {
+        let mut table = Table {
+            columns: self
+                .columns
+                .iter()
+                .map(|column| {
+                    Ok(TableColumn {
+                        id: parse_id::<ColumnId>(&column.id)?,
+                        name: column.name.clone(),
+                        width: None,
+                    })
+                })
+                .collect::<Result<Vec<_>>>()?,
+            rows: self
+                .rows
+                .iter()
+                .map(|row| {
+                    Ok(TableRow {
+                        id: parse_id::<RowId>(&row.id)?,
+                        cells: row
+                            .cells
+                            .iter()
+                            .map(|cell| cell.to_table_cell(image_assets_dir))
+                            .collect::<Result<Vec<_>>>()?,
+                    })
+                })
+                .collect::<Result<Vec<_>>>()?,
+        };
+        table.normalize();
+        Ok(table)
+    }
+}
+
+impl MobileTableCell {
+    fn to_table_cell(&self, image_assets_dir: &Path) -> Result<TableCell> {
+        Ok(TableCell::from_items(
+            self.lines
+                .iter()
+                .map(|line| line.to_item(image_assets_dir))
+                .collect::<Result<Vec<_>>>()?,
+        ))
+    }
 }
 
 impl MobileCellLine {
@@ -3510,6 +3574,27 @@ impl MobileCellLine {
                 .filter_map(|media| MobileItemMedia::from_media(media, image_assets_dir))
                 .collect(),
         }
+    }
+
+    fn to_item(&self, image_assets_dir: &Path) -> Result<Item> {
+        let mut item = Item::new(self.text.clone());
+        item.id = parse_id::<ItemId>(&self.id)?;
+        item.marker = parse_marker(Some(&self.marker))?;
+        item.start = parse_datetime_opt(self.start.as_deref())?;
+        item.end = parse_datetime_opt(self.end.as_deref())?;
+        item.content.extend(
+            self.media
+                .iter()
+                .filter_map(|media| mobile_media_to_item_media(media, image_assets_dir))
+                .map(Inline::Image),
+        );
+        if item.marker == ItemMarker::Checkbox {
+            let state = item.state_for_occurrence_mut(OccurrenceId::Single);
+            state.progress = if self.done { -1 } else { 0 };
+            item.normalize_state();
+        }
+        item.enforce_marker_constraints();
+        Ok(item)
     }
 }
 
@@ -4733,6 +4818,7 @@ mod tests {
                     notification_offset_secs: None,
                     repeat_rule: None,
                     media: Vec::new(),
+                    content: Vec::new(),
                 },
                 MobileItemEdit {
                     id: None,
@@ -4745,6 +4831,7 @@ mod tests {
                     notification_offset_secs: None,
                     repeat_rule: None,
                     media: Vec::new(),
+                    content: Vec::new(),
                 },
             ],
         )
@@ -4853,6 +4940,7 @@ mod tests {
                 notification_offset_secs: None,
                 repeat_rule: None,
                 media: Vec::new(),
+                content: Vec::new(),
             }],
         )
         .expect("replace items");
@@ -4873,6 +4961,50 @@ mod tests {
         assert_eq!(item.tables[0].rows.len(), 3);
         assert_eq!(item.tables[0].columns.len(), 3);
         assert_eq!(item.tables[0].columns[1].name, "Quarter");
+
+        let table = item.tables[0].clone();
+        core.replace_scheme_items(
+            scheme_id.clone(),
+            vec![MobileItemEdit {
+                id: Some(table_item.id.clone()),
+                text: "After".to_string(),
+                marker: "blank".to_string(),
+                indent: 0,
+                done: false,
+                start: None,
+                end: None,
+                notification_offset_secs: None,
+                repeat_rule: None,
+                media: Vec::new(),
+                content: vec![
+                    MobileInline::Table { table },
+                    MobileInline::Text {
+                        text: "After".to_string(),
+                    },
+                ],
+            }],
+        )
+        .expect("replace items with ordered content");
+
+        let item = core
+            .snapshot(Some("2026-05-26".to_string()), 0)
+            .expect("snapshot")
+            .schemes
+            .into_iter()
+            .find(|scheme| scheme.id == scheme_id)
+            .expect("scheme")
+            .items
+            .into_iter()
+            .find(|item| item.id == table_item.id)
+            .expect("table item");
+        assert_eq!(item.text, "After");
+        assert!(matches!(
+            item.content.first(),
+            Some(MobileInline::Table { .. })
+        ));
+        assert!(
+            matches!(item.content.last(), Some(MobileInline::Text { text }) if text == "After")
+        );
 
         core.delete_table_row(scheme_id.clone(), table_item.id.clone(), 1)
             .expect("delete row");
@@ -4895,9 +5027,12 @@ mod tests {
         // Ordered inline content carries the table in document order, and each
         // cell exposes editable lines (not just a flat summary string).
         assert!(matches!(
-            item.content.last(),
+            item.content.first(),
             Some(MobileInline::Table { .. })
         ));
+        assert!(
+            matches!(item.content.last(), Some(MobileInline::Text { text }) if text == "After")
+        );
         assert_eq!(item.tables[0].rows[0].cells[0].lines.len(), 1);
         assert_eq!(item.tables[0].rows[0].cells[0].lines[0].marker, "blank");
 
@@ -5141,6 +5276,7 @@ mod tests {
                 notification_offset_secs: None,
                 repeat_rule: None,
                 media: Vec::new(),
+                content: Vec::new(),
             }],
         )
         .expect("replace items");
@@ -5194,6 +5330,7 @@ mod tests {
                 notification_offset_secs: Some(600),
                 repeat_rule: Some("FREQ=WEEKLY;INTERVAL=1;BYDAY=MO,WE".to_string()),
                 media: Vec::new(),
+                content: Vec::new(),
             }],
         )
         .expect("replace items");

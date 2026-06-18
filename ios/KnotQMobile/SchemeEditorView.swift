@@ -141,6 +141,11 @@ enum DesktopEditorMetrics {
     let repeatRule: String?
     let media: [MobileItemMedia]
     let tables: [MobileTable]
+    /// Transient editor-only marker for a paragraph that visually hosts the
+    /// caret/text immediately before or after a table item. Extraction folds
+    /// this paragraph back into the table item instead of saving it separately.
+    let tableBoundaryItemID: String?
+    let tableBoundarySide: String?
     /// The line's inlines in document order (text/image/table). Drives in-place
     /// block rendering so an image/table sits at its position relative to text
     /// rather than always trailing the paragraph. Empty for lines built outside
@@ -160,6 +165,8 @@ enum DesktopEditorMetrics {
         repeatRule: String? = nil,
         media: [MobileItemMedia] = [],
         tables: [MobileTable] = [],
+        tableBoundaryItemID: String? = nil,
+        tableBoundarySide: String? = nil,
         content: [MobileInline] = []
     ) {
         self.marker = marker
@@ -173,6 +180,8 @@ enum DesktopEditorMetrics {
         self.repeatRule = repeatRule
         self.media = media
         self.tables = tables
+        self.tableBoundaryItemID = tableBoundaryItemID
+        self.tableBoundarySide = tableBoundarySide
         self.content = content
         super.init()
     }
@@ -224,6 +233,8 @@ enum DesktopEditorMetrics {
         repeatRule: String?? = nil,
         media: [MobileItemMedia]? = nil,
         tables: [MobileTable]? = nil,
+        tableBoundaryItemID: String?? = nil,
+        tableBoundarySide: String?? = nil,
         content: [MobileInline]? = nil
     ) -> LineMeta {
         LineMeta(
@@ -238,6 +249,8 @@ enum DesktopEditorMetrics {
             repeatRule: repeatRule ?? self.repeatRule,
             media: media ?? self.media,
             tables: tables ?? self.tables,
+            tableBoundaryItemID: tableBoundaryItemID ?? self.tableBoundaryItemID,
+            tableBoundarySide: tableBoundarySide ?? self.tableBoundarySide,
             content: content ?? self.content
         )
     }
@@ -255,6 +268,8 @@ enum DesktopEditorMetrics {
             && repeatRule == o.repeatRule
             && media == o.media
             && tables == o.tables
+            && tableBoundaryItemID == o.tableBoundaryItemID
+            && tableBoundarySide == o.tableBoundarySide
             && content == o.content
     }
 
@@ -271,6 +286,8 @@ enum DesktopEditorMetrics {
         h.combine(repeatRule)
         h.combine(media)
         h.combine(tables)
+        h.combine(tableBoundaryItemID)
+        h.combine(tableBoundarySide)
         h.combine(content)
         return h.finalize()
     }
@@ -351,18 +368,68 @@ func buildAttributedString(items: [MobileItem], theme: KnotQTheme, timeFormat: S
     }
     for item in items {
         let meta = LineMeta(item: item, timeFormat: timeFormat)
-        let collapse = shouldCollapseTextBand(body: item.text, meta: meta)
-        let attrs = EditorAttributes.bodyAttributes(meta: meta, theme: theme, collapseTextBand: collapse)
-        let bodyLocation = result.length
-        result.append(NSAttributedString(string: item.text, attributes: attrs))
-        let bodyRange = NSRange(location: bodyLocation, length: (item.text as NSString).length)
-        result.append(NSAttributedString(string: "\n", attributes: attrs))
-        // Heading / *bold* / _italic_ styling lives here too — not just in
-        // setLineMeta — so markdown renders correctly on the very first load
-        // instead of staying plain until the first edit.
-        applyInlineMarkdownStyling(body: item.text, bodyRange: bodyRange, in: result)
+        if let split = splitTrailingTextAfterLeadingTable(item: item, meta: meta) {
+            appendEditorParagraph(body: "", meta: split.tableMeta, theme: theme, to: result)
+            appendEditorParagraph(body: split.trailingText, meta: split.boundaryMeta, theme: theme, to: result)
+        } else {
+            appendEditorParagraph(body: item.text, meta: meta, theme: theme, to: result)
+        }
     }
     return result
+}
+
+private func appendEditorParagraph(body: String, meta: LineMeta, theme: KnotQTheme, to result: NSMutableAttributedString) {
+    let collapse = shouldCollapseTextBand(body: body, meta: meta)
+    let attrs = EditorAttributes.bodyAttributes(meta: meta, theme: theme, collapseTextBand: collapse)
+    let bodyLocation = result.length
+    result.append(NSAttributedString(string: body, attributes: attrs))
+    let bodyRange = NSRange(location: bodyLocation, length: (body as NSString).length)
+    result.append(NSAttributedString(string: "\n", attributes: attrs))
+    // Heading / *bold* / _italic_ styling lives here too — not just in
+    // setLineMeta — so markdown renders correctly on the very first load
+    // instead of staying plain until the first edit.
+    applyInlineMarkdownStyling(body: body, bodyRange: bodyRange, in: result)
+}
+
+private func splitTrailingTextAfterLeadingTable(item: MobileItem, meta: LineMeta) -> (tableMeta: LineMeta, boundaryMeta: LineMeta, trailingText: String)? {
+    guard !item.content.isEmpty, let itemID = meta.itemID else { return nil }
+    var blockContent: [MobileInline] = []
+    var trailingText = ""
+    var sawBlock = false
+    var sawTable = false
+
+    for inline in item.content {
+        switch inline {
+        case let .text(text):
+            if !sawBlock {
+                return nil
+            }
+            trailingText += text
+        case .image, .table:
+            if !trailingText.isEmpty {
+                return nil
+            }
+            sawBlock = true
+            if case .table = inline {
+                sawTable = true
+            }
+            blockContent.append(inline)
+        }
+    }
+
+    guard sawTable, !trailingText.isEmpty else { return nil }
+    let tableMeta = meta.with(
+        media: mediaInlines(from: blockContent),
+        tables: tableInlines(from: blockContent),
+        content: blockContent
+    )
+    let boundaryMeta = LineMeta(
+        marker: .blank,
+        indent: meta.indent,
+        tableBoundaryItemID: itemID,
+        tableBoundarySide: "after"
+    )
+    return (tableMeta, boundaryMeta, trailingText)
 }
 
 /// Ensures invariants I1 and I2 hold. Inserts a trailing "\n" with the previous
@@ -643,23 +710,50 @@ func extractEdits(from storage: NSAttributedString) -> [MobileItemEdit] {
     // an empty trailing paragraph only when the user typed an extra "\n".
     let ns = storage.string as NSString
     let paragraphs = paragraphRanges(in: ns)
-    let edits: [MobileItemEdit] = paragraphs.map { paragraph in
+    var edits: [MobileItemEdit] = []
+    var index = 0
+    while index < paragraphs.count {
+        let paragraph = paragraphs[index]
         let meta = lineMeta(at: paragraph.fullRange.location, in: storage)
-        let body = paragraph.lineRange.length > 0
-            ? ns.substring(with: paragraph.lineRange)
-            : ""
-        return MobileItemEdit(
-            id: meta.itemID,
-            text: body,
-            marker: meta.marker.rawValue,
-            indent: Int32(meta.indent),
-            done: meta.done,
-            start: meta.start,
-            end: meta.end,
-            notificationOffsetSecs: meta.notificationOffsetSecs,
-            repeatRule: meta.repeatRule,
-            media: meta.media
-        )
+
+        if meta.tableBoundarySide == "before",
+           let itemID = meta.tableBoundaryItemID,
+           index + 1 < paragraphs.count {
+            let tableParagraph = paragraphs[index + 1]
+            let tableMeta = lineMeta(at: tableParagraph.fullRange.location, in: storage)
+            if tableMeta.itemID == itemID, !tableMeta.tables.isEmpty {
+                edits.append(tableEdit(
+                    tableParagraph: tableParagraph,
+                    tableMeta: tableMeta,
+                    beforeBody: paragraphBody(paragraph, in: ns),
+                    afterBody: nil,
+                    ns: ns
+                ))
+                index += 2
+                continue
+            }
+        }
+
+        if !meta.tables.isEmpty,
+           index + 1 < paragraphs.count {
+            let nextParagraph = paragraphs[index + 1]
+            let nextMeta = lineMeta(at: nextParagraph.fullRange.location, in: storage)
+            if nextMeta.tableBoundarySide == "after",
+               nextMeta.tableBoundaryItemID == meta.itemID {
+                edits.append(tableEdit(
+                    tableParagraph: paragraph,
+                    tableMeta: meta,
+                    beforeBody: nil,
+                    afterBody: paragraphBody(nextParagraph, in: ns),
+                    ns: ns
+                ))
+                index += 2
+                continue
+            }
+        }
+
+        edits.append(plainEdit(paragraph: paragraph, meta: meta, ns: ns))
+        index += 1
     }
     // A single blank-marker, empty-text line means "no items" (matches the
     // pre-invariant semantics for an empty document).
@@ -677,6 +771,130 @@ func extractEdits(from storage: NSAttributedString) -> [MobileItemEdit] {
         }
     }
     return edits
+}
+
+private func paragraphBody(_ paragraph: EditorParagraphRange, in ns: NSString) -> String {
+    paragraph.lineRange.length > 0 ? ns.substring(with: paragraph.lineRange) : ""
+}
+
+private func plainEdit(paragraph: EditorParagraphRange, meta: LineMeta, ns: NSString) -> MobileItemEdit {
+    let body = paragraphBody(paragraph, in: ns)
+    return MobileItemEdit(
+        id: meta.itemID,
+        text: body,
+        marker: meta.marker.rawValue,
+        indent: Int32(meta.indent),
+        done: meta.done,
+        start: meta.start,
+        end: meta.end,
+        notificationOffsetSecs: meta.notificationOffsetSecs,
+        repeatRule: meta.repeatRule,
+        media: meta.media,
+        content: editContent(body: body, meta: meta)
+    )
+}
+
+private func tableEdit(
+    tableParagraph: EditorParagraphRange,
+    tableMeta: LineMeta,
+    beforeBody: String?,
+    afterBody: String?,
+    ns: NSString
+) -> MobileItemEdit {
+    let tableBody = paragraphBody(tableParagraph, in: ns)
+    let content = tableBoundaryContent(
+        tableBody: tableBody,
+        tableMeta: tableMeta,
+        beforeBody: beforeBody,
+        afterBody: afterBody
+    )
+    return MobileItemEdit(
+        id: tableMeta.itemID,
+        text: plainText(from: content),
+        marker: tableMeta.marker.rawValue,
+        indent: Int32(tableMeta.indent),
+        done: tableMeta.done,
+        start: tableMeta.start,
+        end: tableMeta.end,
+        notificationOffsetSecs: tableMeta.notificationOffsetSecs,
+        repeatRule: tableMeta.repeatRule,
+        media: mediaInlines(from: content),
+        content: content
+    )
+}
+
+private func editContent(body: String, meta: LineMeta) -> [MobileInline] {
+    guard !meta.content.isEmpty || meta.hasBlockContent else {
+        return []
+    }
+    return contentReplacingText(body, in: meta)
+}
+
+private func tableBoundaryContent(
+    tableBody: String,
+    tableMeta: LineMeta,
+    beforeBody: String?,
+    afterBody: String?
+) -> [MobileInline] {
+    var content = contentReplacingText(tableBody, in: tableMeta)
+    if let beforeBody, !beforeBody.isEmpty {
+        content.insert(.text(text: beforeBody), at: 0)
+    }
+    if let afterBody, !afterBody.isEmpty {
+        content.append(.text(text: afterBody))
+    }
+    return content
+}
+
+private func contentReplacingText(_ body: String, in meta: LineMeta) -> [MobileInline] {
+    var source = meta.content
+    if source.isEmpty {
+        source = meta.media.map { .image(media: $0) } + meta.tables.map { .table(table: $0) }
+    }
+
+    var replacedText = false
+    var output: [MobileInline] = []
+    for inline in source {
+        switch inline {
+        case .text:
+            if !replacedText, !body.isEmpty {
+                output.append(.text(text: body))
+            }
+            replacedText = true
+        case .image, .table:
+            output.append(inline)
+        }
+    }
+    if !replacedText, !body.isEmpty {
+        output.insert(.text(text: body), at: 0)
+    }
+    return output
+}
+
+private func plainText(from content: [MobileInline]) -> String {
+    content.reduce(into: "") { result, inline in
+        if case let .text(text) = inline {
+            result += text
+        }
+    }
+}
+
+private func mediaInlines(from content: [MobileInline]) -> [MobileItemMedia] {
+    content.compactMap { inline in
+        if case let .image(media) = inline {
+            return media
+        }
+        return nil
+    }
+}
+
+private func tableInlines(from content: [MobileInline]) -> [MobileTable] {
+    content.compactMap { inline in
+        if case let .table(table) = inline {
+            return table
+        }
+        return nil
+    }
 }
 
 /// Convenience overload kept for the chrome-drawing path which still works

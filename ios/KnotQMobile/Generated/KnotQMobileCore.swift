@@ -1892,10 +1892,11 @@ public struct MobileItemEdit: Equatable, Hashable {
     public var notificationOffsetSecs: Int32?
     public var repeatRule: String?
     public var media: [MobileItemMedia]
+    public var content: [MobileInline]
 
     // Default memberwise initializers are never public by default, so we
     // declare one manually.
-    public init(id: String?, text: String, marker: String, indent: Int32, done: Bool, start: String?, end: String?, notificationOffsetSecs: Int32?, repeatRule: String?, media: [MobileItemMedia]) {
+    public init(id: String?, text: String, marker: String, indent: Int32, done: Bool, start: String?, end: String?, notificationOffsetSecs: Int32?, repeatRule: String?, media: [MobileItemMedia], content: [MobileInline]) {
         self.id = id
         self.text = text
         self.marker = marker
@@ -1906,6 +1907,7 @@ public struct MobileItemEdit: Equatable, Hashable {
         self.notificationOffsetSecs = notificationOffsetSecs
         self.repeatRule = repeatRule
         self.media = media
+        self.content = content
     }
 
     
@@ -1933,7 +1935,8 @@ public struct FfiConverterTypeMobileItemEdit: FfiConverterRustBuffer {
                 end: FfiConverterOptionString.read(from: &buf), 
                 notificationOffsetSecs: FfiConverterOptionInt32.read(from: &buf), 
                 repeatRule: FfiConverterOptionString.read(from: &buf), 
-                media: FfiConverterSequenceTypeMobileItemMedia.read(from: &buf)
+                media: FfiConverterSequenceTypeMobileItemMedia.read(from: &buf),
+                content: FfiConverterSequenceTypeMobileInline.read(from: &buf)
         )
     }
 
@@ -1948,6 +1951,7 @@ public struct FfiConverterTypeMobileItemEdit: FfiConverterRustBuffer {
         FfiConverterOptionInt32.write(value.notificationOffsetSecs, into: &buf)
         FfiConverterOptionString.write(value.repeatRule, into: &buf)
         FfiConverterSequenceTypeMobileItemMedia.write(value.media, into: &buf)
+        FfiConverterSequenceTypeMobileInline.write(value.content, into: &buf)
     }
 }
 

@@ -182,13 +182,9 @@ final class MarkerConcealmentTests: XCTestCase {
         XCTAssertTrue(view.placeCaretAtTableBoundary(hit, theme: .dark))
 
         let edits = view.extractItemEdits()
-        XCTAssertEqual(edits.count, 2)
-        guard edits.count == 2 else { return }
-        XCTAssertNil(edits[0].id)
-        XCTAssertEqual(edits[0].text, "")
-        XCTAssertEqual(edits[0].marker, "blank")
-        XCTAssertEqual(edits[0].indent, 1)
-        XCTAssertEqual(edits[1].id, "table-item")
+        XCTAssertEqual(edits.count, 1)
+        XCTAssertEqual(edits.first?.id, "table-item")
+        XCTAssertEqual(edits.first?.text, "")
         XCTAssertEqual(view.selectedRange.location, 0)
     }
 
@@ -202,14 +198,38 @@ final class MarkerConcealmentTests: XCTestCase {
         XCTAssertTrue(view.placeCaretAtTableBoundary(hit, theme: .dark))
 
         let edits = view.extractItemEdits()
-        XCTAssertEqual(edits.count, 2)
-        guard edits.count == 2 else { return }
-        XCTAssertEqual(edits[0].id, "table-item")
-        XCTAssertNil(edits[1].id)
-        XCTAssertEqual(edits[1].text, "")
-        XCTAssertEqual(edits[1].marker, "blank")
-        XCTAssertEqual(edits[1].indent, 2)
+        XCTAssertEqual(edits.count, 1)
+        XCTAssertEqual(edits.first?.id, "table-item")
+        XCTAssertEqual(edits.first?.text, "")
         XCTAssertEqual(view.selectedRange.location, 1)
+    }
+
+    func testTypingAtTableBoundariesSavesAsOrderedTableContent() {
+        let before = tableBoundaryEditAfterTyping(side: .before, text: "Before")
+        XCTAssertEqual(before.text, "Before")
+        XCTAssertEqual(before.content.count, 2)
+        if case let .text(text)? = before.content.first {
+            XCTAssertEqual(text, "Before")
+        } else {
+            XCTFail("before-table typing should save before the table")
+        }
+        if case .table? = before.content.last {
+        } else {
+            XCTFail("table should remain after before-boundary text")
+        }
+
+        let after = tableBoundaryEditAfterTyping(side: .after, text: "After")
+        XCTAssertEqual(after.text, "After")
+        XCTAssertEqual(after.content.count, 2)
+        if case .table? = after.content.first {
+        } else {
+            XCTFail("table should remain before after-boundary text")
+        }
+        if case let .text(text)? = after.content.last {
+            XCTAssertEqual(text, "After")
+        } else {
+            XCTFail("after-table typing should save after the table")
+        }
     }
 
     func testTableBoundaryDeletes() {
@@ -290,6 +310,27 @@ final class MarkerConcealmentTests: XCTestCase {
         XCTAssertEqual(edits.count, 1, file: file, line: line)
         XCTAssertEqual(edits.first?.id, "table-item", file: file, line: line)
         XCTAssertEqual(view.selectedRange.location, 0, file: file, line: line)
+    }
+
+    private func tableBoundaryEditAfterTyping(side: EditorTableBoundarySide, text: String, file: StaticString = #filePath, line: UInt = #line) -> MobileItemEdit {
+        let fixture = makeEditorView()
+        let view = fixture.0
+        fixture.1.theme = .dark
+        view.loadItems([tableOnlyItem(indent: 1)], theme: .dark, timeFormat: "twelve_hour", placeCursorAtEnd: false)
+
+        let tableParagraph = paragraphRanges(in: view.textStorage.string as NSString)[0].fullRange
+        let hit = EditorTableBoundaryHit(paragraphRange: tableParagraph, side: side)
+        XCTAssertTrue(view.placeCaretAtTableBoundary(hit, theme: .dark), file: file, line: line)
+
+        view.textStorage.replaceCharacters(
+            in: view.selectedRange,
+            with: NSAttributedString(string: text, attributes: view.typingAttributes)
+        )
+        view.selectedRange = NSRange(location: view.selectedRange.location + (text as NSString).length, length: 0)
+
+        let edits = view.extractItemEdits()
+        XCTAssertEqual(edits.count, 1, file: file, line: line)
+        return edits[0]
     }
 
     private func makeEditorView() -> (EditorTextView, EditorCoordinator) {

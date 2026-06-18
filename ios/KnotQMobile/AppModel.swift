@@ -1916,7 +1916,8 @@ final class AppModel: ObservableObject {
             end: end.map { iso.string(from: $0) },
             notificationOffsetSecs: notificationOffsetSecs,
             repeatRule: repeatRule,
-            media: []
+            media: [],
+            content: []
         )
     }
 

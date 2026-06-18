@@ -121,6 +121,10 @@ dictionary MobileItemEdit {
   i32? notification_offset_secs;
   string? repeat_rule;
   sequence<MobileItemMedia> media;
+  // Optional ordered inline content for editors that need to preserve whether
+  // text sits before or after a block inline such as a table. Empty means:
+  // keep legacy flat text/media replacement behavior.
+  sequence<MobileInline> content;
 };
 
 dictionary MobileDailyEntry {

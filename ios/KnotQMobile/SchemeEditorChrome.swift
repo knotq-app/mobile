@@ -581,7 +581,19 @@ struct IntegratedSchemeEditorPane: View {
                         return "\(columns):\(rows)"
                     }
                     .joined(separator: "\u{1d}")
-                return "\($0.id)|\($0.text)|\($0.marker)|\($0.indent)|\($0.done)|\($0.start ?? "")|\($0.end ?? "")|\(media)|\(tables)"
+                let content = $0.content
+                    .map { inline -> String in
+                        switch inline {
+                        case let .text(text):
+                            return "text:\(text)"
+                        case let .image(media):
+                            return "image:\(media.path ?? ""):\(media.format)"
+                        case let .table(table):
+                            return "table:\(table.columns.map(\.name).joined(separator: ",")):\(table.rows.map { $0.cells.map(\.text).joined(separator: "\u{1f}") }.joined(separator: "\u{1e}"))"
+                        }
+                    }
+                    .joined(separator: "\u{1c}")
+                return "\($0.id)|\($0.text)|\($0.marker)|\($0.indent)|\($0.done)|\($0.start ?? "")|\($0.end ?? "")|\(media)|\(tables)|\(content)"
             }
             .joined(separator: "\n")
     }
