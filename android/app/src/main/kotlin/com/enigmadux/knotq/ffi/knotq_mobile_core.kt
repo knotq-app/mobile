@@ -734,6 +734,8 @@ internal object IntegrityCheckingUniffiLib {
     ): Short
     external fun uniffi_knotq_mobile_core_checksum_method_mobilecore_set_table_cell_text(
     ): Short
+    external fun uniffi_knotq_mobile_core_checksum_method_mobilecore_set_table_column_name(
+    ): Short
     external fun uniffi_knotq_mobile_core_checksum_method_mobilecore_set_theme_mode(
     ): Short
     external fun uniffi_knotq_mobile_core_checksum_method_mobilecore_set_time_format(
@@ -877,6 +879,8 @@ external fun uniffi_knotq_mobile_core_fn_method_mobilecore_set_scheme_color(`ptr
 external fun uniffi_knotq_mobile_core_fn_method_mobilecore_set_table_cell_line_text(`ptr`: Long,`schemeId`: RustBuffer.ByValue,`itemId`: RustBuffer.ByValue,`row`: Int,`column`: Int,`lineIndex`: Int,`text`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
 ): Unit
 external fun uniffi_knotq_mobile_core_fn_method_mobilecore_set_table_cell_text(`ptr`: Long,`schemeId`: RustBuffer.ByValue,`itemId`: RustBuffer.ByValue,`row`: Int,`column`: Int,`text`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+): Unit
+external fun uniffi_knotq_mobile_core_fn_method_mobilecore_set_table_column_name(`ptr`: Long,`schemeId`: RustBuffer.ByValue,`itemId`: RustBuffer.ByValue,`column`: Int,`name`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus,
 ): Unit
 external fun uniffi_knotq_mobile_core_fn_method_mobilecore_set_theme_mode(`ptr`: Long,`themeMode`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
 ): Unit
@@ -1161,6 +1165,9 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_knotq_mobile_core_checksum_method_mobilecore_set_table_cell_text() != 63326.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_knotq_mobile_core_checksum_method_mobilecore_set_table_column_name() != 1969.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_knotq_mobile_core_checksum_method_mobilecore_set_theme_mode() != 11963.toShort()) {
@@ -1676,6 +1683,8 @@ public interface MobileCoreInterface {
     
     fun `setTableCellText`(`schemeId`: kotlin.String, `itemId`: kotlin.String, `row`: kotlin.Int, `column`: kotlin.Int, `text`: kotlin.String)
     
+    fun `setTableColumnName`(`schemeId`: kotlin.String, `itemId`: kotlin.String, `column`: kotlin.Int, `name`: kotlin.String)
+
     fun `setThemeMode`(`themeMode`: kotlin.String)
     
     fun `setTimeFormat`(`timeFormat`: kotlin.String)
@@ -2436,6 +2445,19 @@ open class MobileCore: Disposable, AutoCloseable, MobileCoreInterface
     
 
     
+    @Throws(MobileException::class)override fun `setTableColumnName`(`schemeId`: kotlin.String, `itemId`: kotlin.String, `column`: kotlin.Int, `name`: kotlin.String)
+        =
+    callWithHandle {
+    uniffiRustCallWithError(MobileException) { _status ->
+    UniffiLib.uniffi_knotq_mobile_core_fn_method_mobilecore_set_table_column_name(
+        it,
+        FfiConverterString.lower(`schemeId`),FfiConverterString.lower(`itemId`),FfiConverterInt.lower(`column`),FfiConverterString.lower(`name`),_status)
+}
+    }
+
+
+
+
     @Throws(MobileException::class)override fun `setThemeMode`(`themeMode`: kotlin.String)
         = 
     callWithHandle {
@@ -4567,4 +4589,3 @@ public object FfiConverterSequenceTypeMobileInline: FfiConverterRustBuffer<List<
         }
     }
 }
-

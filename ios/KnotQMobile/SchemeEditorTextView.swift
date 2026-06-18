@@ -56,14 +56,21 @@ final class EditorTableCellEditor: UIView, UITextFieldDelegate {
     /// Called with the committed text and how the edit ended. The owner persists
     /// the text and, for the move reasons, focuses the resolved neighbor cell.
     var onCommit: ((EditorTableCellHit, String, EditorCellCommitReason) -> Void)?
-    /// Row/column structure ops from the accessory bar. The owner flushes the
-    /// current text, runs the op, then tears the editor down (the grid changes).
+    /// Row/column structure ops from the accessory bar. The owner runs the op and
+    /// keeps the editor mounted, retargeting it onto the resulting cell once the
+    /// grid reloads (so the keyboard stays up across the change).
     var onStructureAction: ((EditorTableCellHit, EditorCellStructureAction) -> Void)?
+    /// Persists the current cell text *without* ending the edit session. Used when
+    /// this editor is reused for a neighboring cell (retarget) or kept alive across
+    /// a structural change; the `.resign` path on `onCommit` would tear the editor
+    /// down, which must not happen mid-reuse.
+    var onFlush: ((EditorTableCellHit, String) -> Void)?
     private var committedText: String
     private var didCommit = false
     private let theme: KnotQTheme
-    private weak var insertRowItem: UIBarButtonItem?
-    private weak var deleteRowItem: UIBarButtonItem?
+    private weak var contextLabel: UILabel?
+    private weak var insertRowButton: UIButton?
+    private weak var deleteRowButton: UIButton?
 
     init(hit: EditorTableCellHit, theme: KnotQTheme) {
         self.hit = hit
@@ -91,43 +98,89 @@ final class EditorTableCellEditor: UIView, UITextFieldDelegate {
         addSubview(field)
     }
 
-    /// Compact bar above the keyboard with row/column add-delete and a Done
-    /// button — keeps table structure editing reachable without a modal sheet.
+    /// Bar above the keyboard for the in-place cell editor. A context label names
+    /// the cell being edited (so the row/column ops are unambiguous) and the labeled
+    /// add/remove icons replace the old cramped "+Row / −Col" text buttons. The
+    /// dismiss button ends editing; moving between cells is by tapping a cell,
+    /// pressing Return (down), or hardware Tab.
     private func makeAccessory() -> UIView {
-        let bar = UIToolbar(frame: CGRect(x: 0, y: 0, width: UIScreen.main.bounds.width, height: 44))
+        let bar = UIToolbar(frame: CGRect(x: 0, y: 0, width: UIScreen.main.bounds.width, height: 46))
         bar.barTintColor = UIColor(theme.bgModal)
         bar.tintColor = UIColor(theme.accent)
         bar.isTranslucent = false
 
-        func item(_ title: String, _ action: EditorCellStructureAction) -> UIBarButtonItem {
-            UIBarButtonItem(title: title, primaryAction: UIAction { [weak self] _ in
-                self?.runStructure(action)
-            })
-        }
-        let flex = UIBarButtonItem(systemItem: .flexibleSpace)
-        let done = UIBarButtonItem(systemItem: .done, primaryAction: UIAction { [weak self] _ in
+        var dismissConfig = UIButton.Configuration.plain()
+        dismissConfig.image = UIImage(systemName: "keyboard.chevron.compact.down")
+        dismissConfig.baseForegroundColor = UIColor(theme.accent)
+        dismissConfig.contentInsets = NSDirectionalEdgeInsets(top: 4, leading: 8, bottom: 4, trailing: 8)
+        let dismissButton = UIButton(configuration: dismissConfig, primaryAction: UIAction { [weak self] _ in
             self?.commit(reason: .resign)
             self?.field.resignFirstResponder()
         })
-        let insertRow = item("+Row", .insertRow)
-        let deleteRow = item("−Row", .deleteRow)
-        insertRowItem = insertRow
-        deleteRowItem = deleteRow
+        dismissButton.accessibilityLabel = "Done editing cell"
+
+        let context = UILabel()
+        context.font = .systemFont(ofSize: 12, weight: .semibold)
+        context.textColor = UIColor(theme.textDim)
+        contextLabel = context
+
+        let insertRow = structureButton(title: "Row", systemImage: "plus", action: .insertRow)
+        let deleteRow = structureButton(title: "Row", systemImage: "minus", action: .deleteRow, destructive: true)
+        let insertColumn = structureButton(title: "Col", systemImage: "plus", action: .insertColumn)
+        let deleteColumn = structureButton(title: "Col", systemImage: "minus", action: .deleteColumn, destructive: true)
+        insertRowButton = insertRow
+        deleteRowButton = deleteRow
+
         bar.items = [
-            insertRow,
-            deleteRow,
-            item("+Col", .insertColumn),
-            item("−Col", .deleteColumn),
-            flex,
-            done,
+            UIBarButtonItem(customView: dismissButton),
+            fixedSpace(6),
+            UIBarButtonItem(customView: context),
+            UIBarButtonItem(systemItem: .flexibleSpace),
+            UIBarButtonItem(customView: insertRow),
+            UIBarButtonItem(customView: deleteRow),
+            fixedSpace(8),
+            UIBarButtonItem(customView: insertColumn),
+            UIBarButtonItem(customView: deleteColumn),
         ]
         updateAccessoryState()
         return bar
     }
 
+    private func fixedSpace(_ width: CGFloat) -> UIBarButtonItem {
+        let item = UIBarButtonItem(systemItem: .fixedSpace)
+        item.width = width
+        return item
+    }
+
+    /// A labeled icon button ("＋ Row", "－ Col") for one structure op. The icon
+    /// states add/remove and the label states the axis, so neither is ambiguous.
+    private func structureButton(title: String, systemImage: String, action: EditorCellStructureAction, destructive: Bool = false) -> UIButton {
+        var config = UIButton.Configuration.plain()
+        config.image = UIImage(systemName: systemImage)
+        config.imagePadding = 2
+        config.preferredSymbolConfigurationForImage = UIImage.SymbolConfiguration(pointSize: 11, weight: .semibold)
+        config.contentInsets = NSDirectionalEdgeInsets(top: 4, leading: 6, bottom: 4, trailing: 6)
+        config.baseForegroundColor = UIColor(destructive ? theme.danger : theme.accent)
+        var titleContainer = AttributeContainer()
+        titleContainer.font = .systemFont(ofSize: 13, weight: .medium)
+        config.attributedTitle = AttributedString(title, attributes: titleContainer)
+        return UIButton(configuration: config, primaryAction: UIAction { [weak self] _ in
+            self?.runStructure(action)
+        })
+    }
+
+    private func contextText(for hit: EditorTableCellHit) -> String {
+        hit.isHeader ? "Header · C\(hit.column + 1)" : "R\(hit.row + 1) · C\(hit.column + 1)"
+    }
+
     private func updateAccessoryState() {
-        insertRowItem?.isEnabled = !hit.isHeader
-        deleteRowItem?.isEnabled = !hit.isHeader
+        contextLabel?.text = contextText(for: hit)
+        contextLabel?.sizeToFit()
+        let rowsEditable = !hit.isHeader
+        insertRowButton?.isEnabled = rowsEditable
+        deleteRowButton?.isEnabled = rowsEditable
+        insertRowButton?.alpha = rowsEditable ? 1 : 0.35
+        deleteRowButton?.alpha = rowsEditable ? 1 : 0.35
     }
 
     private func runStructure(_ action: EditorCellStructureAction) {
@@ -139,14 +192,10 @@ final class EditorTableCellEditor: UIView, UITextFieldDelegate {
                 break
             }
         }
-        // Persist any in-progress text first so the structural change keeps it,
-        // then hand off to the owner (which mutates the model + reloads).
-        let text = field.text ?? ""
-        if text != committedText {
-            committedText = text
-            didCommit = true
-            onCommit?(hit, text, .resign)
-        }
+        // Persist any in-progress text first so the structural change keeps it
+        // (flush, not commit — committing would tear the editor down), then hand
+        // off to the owner, which mutates the model and retargets us post-reload.
+        flush()
         onStructureAction?(hit, action)
     }
 
@@ -160,9 +209,10 @@ final class EditorTableCellEditor: UIView, UITextFieldDelegate {
     }
 
     /// Reposition the field over a (possibly new) cell without tearing down the
-    /// first responder — used when navigating Tab / Return to the next cell.
+    /// first responder — used when navigating between cells. Flushes (not commits)
+    /// the outgoing text so reuse doesn't trip the `.resign` teardown.
     func retarget(to hit: EditorTableCellHit) {
-        commit(reason: nil)
+        flush()
         self.hit = hit
         committedText = hit.text
         didCommit = false
@@ -170,6 +220,18 @@ final class EditorTableCellEditor: UIView, UITextFieldDelegate {
         field.text = hit.text
         updateAccessoryState()
         field.selectedTextRange = field.textRange(from: field.endOfDocument, to: field.endOfDocument)
+    }
+
+    /// Persists the current text (if it changed) and keeps the editor alive. The
+    /// owner's `onFlush` only writes to the model — unlike `commit(reason: .resign)`
+    /// it never removes the editor — so it is safe to call while reusing the editor
+    /// for another cell or across a structural change.
+    private func flush() {
+        let text = field.text ?? ""
+        guard text != committedText else { return }
+        committedText = text
+        didCommit = true
+        onFlush?(hit, text)
     }
 
     func focus() {
@@ -325,6 +387,12 @@ final class EditorTextView: UITextView {
     private var renderedTableCellHits: [EditorTableCellHitRect] = []
     /// The in-place table cell editor, present only while a cell is being edited.
     private var activeCellEditor: EditorTableCellEditor?
+    /// A cell to re-focus once the next document reload settles. Set right before a
+    /// model mutation that reloads the document and changes table geometry (a
+    /// row/column structural change). `loadItems` consumes it after layout so the
+    /// in-place editor lands on the freshly drawn cell instead of a stale rect —
+    /// and the keyboard stays up across the change.
+    private var pendingCellFocus: (itemID: String, tableIndex: Int, row: Int, column: Int)?
     /// Persists a committed cell-line edit (wired by the coordinator to the
     /// model's `setTableCellLineText`).
     var onTableCellCommit: ((EditorTableCellHit, String) -> Void)?
@@ -527,6 +595,7 @@ final class EditorTextView: UITextView {
         }
         setNeedsDisplay()
         coordinator?.markClean()
+        consumePendingCellFocusIfNeeded()
     }
 
     func extractItemEdits() -> [MobileItemEdit] {
@@ -1551,6 +1620,10 @@ final class EditorTextView: UITextView {
         editor.onCommit = { [weak self] hit, text, reason in
             self?.handleCellCommit(hit, text: text, reason: reason)
         }
+        editor.onFlush = { [weak self] hit, text in
+            // Persist only — never tears the editor down (the caller is reusing it).
+            self?.onTableCellCommit?(hit, text)
+        }
         editor.onStructureAction = { [weak self] hit, action in
             self?.handleCellStructureAction(hit, action: action)
         }
@@ -1563,6 +1636,8 @@ final class EditorTextView: UITextView {
     /// first (used when the document is committed / loses focus).
     func endTableCellEditing(commit: Bool) {
         guard let editor = activeCellEditor else { return }
+        // Editing is ending for real, so any queued post-reload retarget is moot.
+        pendingCellFocus = nil
         if commit {
             editor.commit(reason: nil)
         }
@@ -1572,15 +1647,48 @@ final class EditorTextView: UITextView {
     }
 
     private func handleCellStructureAction(_ hit: EditorTableCellHit, action: EditorCellStructureAction) {
+        // Queue the cell to land on once the grid reloads, then run the op. The
+        // editor stays mounted; `loadItems` retargets it via `pendingCellFocus`
+        // so the keyboard never collapses between structural edits.
+        pendingCellFocus = structureFocusTarget(for: hit, action: action)
         switch action {
         case .insertRow: onTableInsertRow?(hit)
         case .deleteRow: onTableDeleteRow?(hit)
         case .insertColumn: onTableInsertColumn?(hit)
         case .deleteColumn: onTableDeleteColumn?(hit)
         }
-        // The grid just changed shape and the document will reload; drop the
-        // editor so we don't point at a stale cell rect.
-        endTableCellEditing(commit: false)
+    }
+
+    /// Which cell the editor should occupy after `action` reshapes the grid.
+    /// Inserts land on the freshly created row/column; deletes land on the cell
+    /// that slides into the deleted one's place. If the target no longer exists
+    /// (e.g. the last row/column was deleted) `consumePendingCellFocusIfNeeded`
+    /// resolves to nil and ends editing gracefully.
+    private func structureFocusTarget(for hit: EditorTableCellHit, action: EditorCellStructureAction) -> (itemID: String, tableIndex: Int, row: Int, column: Int) {
+        switch action {
+        case .insertRow:    return (hit.itemID, hit.tableIndex, hit.row + 1, hit.column)
+        case .insertColumn: return (hit.itemID, hit.tableIndex, hit.row, hit.column + 1)
+        case .deleteRow:    return (hit.itemID, hit.tableIndex, hit.row, hit.column)
+        case .deleteColumn: return (hit.itemID, hit.tableIndex, hit.row, hit.column)
+        }
+    }
+
+    /// After a reload triggered by a structural change, move the still-mounted
+    /// cell editor onto the queued target using freshly computed geometry. The
+    /// recorded hit rects predate the change, so drop them and let the lookup fall
+    /// back to the document-order recompute. Ends editing if the target is gone.
+    private func consumePendingCellFocusIfNeeded() {
+        guard let target = pendingCellFocus else { return }
+        pendingCellFocus = nil
+        guard activeCellEditor != nil else { return }
+        layoutManager.ensureLayout(for: textContainer)
+        renderedTableCellHits.removeAll()
+        if let hit = tableCellHit(itemID: target.itemID, tableIndex: target.tableIndex, row: target.row, column: target.column) {
+            activeCellEditor?.retarget(to: hit)
+            activeCellEditor?.focus()
+        } else {
+            endTableCellEditing(commit: false)
+        }
     }
 
     private func handleCellCommit(_ hit: EditorTableCellHit, text: String, reason: EditorCellCommitReason) {

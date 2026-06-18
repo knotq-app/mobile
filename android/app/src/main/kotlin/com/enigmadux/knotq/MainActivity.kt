@@ -151,6 +151,16 @@ private const val CALENDAR_INTERACTION_CREATE = 2
 
 private const val REQUEST_ATTACH_IMAGE = 7311
 
+internal fun refreshApiErrorCode(connection: HttpURLConnection): String {
+    val raw = connection.errorStream?.bufferedReader()?.use { it.readText() }.orEmpty()
+    return runCatching { JSONObject(raw).optString("code") }.getOrDefault("")
+}
+
+internal fun isTerminalRefreshErrorCode(code: String): Boolean =
+    code == "invalid_refresh_token" ||
+        code == "refresh_token_reused" ||
+        code == "account_closed"
+
 private const val GLYPH_HOME = "⌂"
 private const val GLYPH_CALENDAR = "◷"
 private const val GLYPH_SETTINGS = "⚙"
@@ -4376,11 +4386,11 @@ class MainActivity : Activity() {
     }
 
     // Runs on a background thread (blocking HTTP). SessionDead is only returned
-    // when the refresh token is rejected by the auth endpoint. Deferred means the
-    // current token may be expired but the refresh could not be completed yet.
+    // when the refresh token is explicitly rejected by the auth endpoint. Deferred
+    // means the current token may be expired but the refresh could not be completed yet.
     private fun refreshSyncSessionIfNeeded(session: SyncSession, force: Boolean = false): SyncRefreshResult {
         val refreshToken = session.refreshToken
-        if (refreshToken.isEmpty()) return SyncRefreshResult.SessionDead
+        if (refreshToken.isEmpty()) return SyncRefreshResult.Deferred
         if (!force && !tokenNeedsRefresh(session.expiresAt)) return SyncRefreshResult.Ready(session)
         try {
             val connection =
@@ -4394,7 +4404,9 @@ class MainActivity : Activity() {
             val body = JSONObject().put("refresh_token", refreshToken).toString().toByteArray(Charsets.UTF_8)
             connection.outputStream.use { it.write(body) }
             val status = connection.responseCode
-            if (status == 401) return SyncRefreshResult.SessionDead
+            if (isTerminalRefreshErrorCode(refreshApiErrorCode(connection))) {
+                return SyncRefreshResult.SessionDead
+            }
             if (status !in 200..299) return SyncRefreshResult.Deferred
             val raw = connection.inputStream.bufferedReader().use { it.readText() }
             val json = JSONObject(raw)

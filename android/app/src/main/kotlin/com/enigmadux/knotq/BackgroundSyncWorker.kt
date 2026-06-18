@@ -49,8 +49,8 @@ internal class BackgroundSyncWorker(
                     if (!session.optBoolean("supports_sync", true)) return Result.success()
                 }
                 RefreshOutcome.SessionDead -> {
-                    // Refresh token revoked/expired: the session is gone. Clear
-                    // it so the app shows signed-out state on next launch.
+                    // The auth API explicitly rejected this refresh credential.
+                    // Clear it so the app shows signed-out state on next launch.
                     prefs.edit().remove(SYNC_SESSION_PREF).apply()
                     return Result.success()
                 }
@@ -100,7 +100,7 @@ internal class BackgroundSyncWorker(
             connection.outputStream.use { it.write(body) }
             val status = connection.responseCode
             when {
-                status == 401 -> RefreshOutcome.SessionDead
+                isTerminalRefreshErrorCode(refreshApiErrorCode(connection)) -> RefreshOutcome.SessionDead
                 status !in 200..299 -> RefreshOutcome.Transient
                 else -> {
                     val raw = connection.inputStream.bufferedReader().use { it.readText() }

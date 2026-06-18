@@ -1353,9 +1353,8 @@ final class AppModel: ObservableObject {
     private func refreshSyncSessionIfNeeded(force: Bool = false) async -> SyncSessionRefreshResult {
         guard let session = syncSession else { return .sessionDead }
         guard !session.refreshToken.isEmpty else {
-            signOutSync()
-            errorMessage = "Your sync session expired. Please sign in again."
-            return .sessionDead
+            syncOffline = true
+            return .deferred
         }
         guard (force || Self.tokenNeedsRefresh(session.expiresAt)),
               let url = URL(string: "\(session.apiBase)/v1/auth/refresh")
@@ -1372,8 +1371,8 @@ final class AppModel: ObservableObject {
                 syncOffline = true
                 return .deferred
             }
-            if http.statusCode == 401 {
-                // Refresh token revoked/expired/replayed: the session is gone.
+            if Self.isTerminalRefreshError(data) {
+                // The auth API explicitly rejected this refresh credential.
                 signOutSync()
                 errorMessage = "Your sync session expired. Please sign in again."
                 return .sessionDead
@@ -1423,6 +1422,22 @@ final class AppModel: ObservableObject {
         let message = error.localizedDescription.lowercased()
         return ["network", "request failed", "offline", "timed out", "cannot connect", "not connected"].contains { message.contains($0) }
     }
+
+    private static func isTerminalRefreshError(_ data: Data) -> Bool {
+        guard
+            let body = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+            let code = body["code"] as? String
+        else {
+            return false
+        }
+        return terminalRefreshErrorCodes.contains(code)
+    }
+
+    private static let terminalRefreshErrorCodes: Set<String> = [
+        "invalid_refresh_token",
+        "refresh_token_reused",
+        "account_closed"
+    ]
 
     func scheme(id: String?) -> MobileScheme? {
         guard let id else { return nil }
