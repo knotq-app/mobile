@@ -839,8 +839,7 @@ fn imported_item_lists_equal(existing: &[Item], imported: &[Item]) -> bool {
 }
 
 fn item_content_eq_ignoring_id(left: &Item, right: &Item) -> bool {
-    left.text == right.text
-        && left.media == right.media
+    left.content == right.content
         && left.marker == right.marker
         && left.indent == right.indent
         && left.start == right.start
@@ -1060,7 +1059,7 @@ fn sort_imported_items(items: &mut [Item]) {
         let right_date = right.start.or(right.end);
         left_date
             .cmp(&right_date)
-            .then_with(|| left.text.cmp(&right.text))
+            .then_with(|| left.text().cmp(&right.text()))
             .then_with(|| left.id.0.cmp(&right.id.0))
     });
 }

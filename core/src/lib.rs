@@ -16,9 +16,10 @@ use knotq_index::query::{SearchHitStatus, SearchOptions, SearchTarget};
 use knotq_index::IndexedWorkspace;
 use knotq_model::{
     daily_queue_scheme_id, daily_queue_sync_metadata, AppSettings, CalendarProvider, DocumentId,
-    FolderId, GoogleOAuthAccount, ImageAssetFormat, ImportedCalendarSource, Item, ItemId, ItemKind,
-    ItemMarker, ItemMedia, NodeRef, NotificationDefaults, OccurrenceId, OperationId, Recurrence,
-    Scheme, SchemeId, SchemeSource, ThemeMode, TimeFormat, Workspace, DAILY_QUEUE_COLOR_INDEX,
+    FolderId, GoogleOAuthAccount, ImageAssetFormat, ImageInline, ImportedCalendarSource, Inline,
+    Item, ItemId, ItemKind, ItemMarker, NodeRef, NotificationDefaults, OccurrenceId, OperationId,
+    Recurrence, Scheme, SchemeId, SchemeSource, ThemeMode, TimeFormat, Workspace,
+    DAILY_QUEUE_COLOR_INDEX,
 };
 use knotq_notifications::{
     compute_due_notifications_with_lead_times, NotificationLeadTimes, ScheduledNotification,
@@ -688,7 +689,8 @@ impl MobileCore {
         if source == target {
             return Ok(());
         }
-        if inner.workspace.is_scheme_read_only(source) || inner.workspace.is_scheme_read_only(target)
+        if inner.workspace.is_scheme_read_only(source)
+            || inner.workspace.is_scheme_read_only(target)
         {
             return Err(anyhow!("cannot move items to or from a read-only scheme").into());
         }
@@ -1238,7 +1240,7 @@ impl MobileCoreInner {
             .ok_or_else(|| anyhow!("item {item_id} missing in scheme {scheme_id}"))?;
 
         let mut commands = Vec::new();
-        if item.text != title {
+        if item.text() != title {
             commands.push(Command::UpdateItemText {
                 scheme: scheme_id,
                 item: item_id,
@@ -2329,7 +2331,7 @@ impl MobileCoreInner {
             scheme
                 .items
                 .iter()
-                .any(|item| item.text == EDITOR_IMAGE_FIXTURE_TEXT && !item.media.is_empty())
+                .any(|item| item.text() == EDITOR_IMAGE_FIXTURE_TEXT && item.has_images())
         }) {
             return Ok(());
         }
@@ -2362,12 +2364,12 @@ impl MobileCoreInner {
             .with_context(|| format!("write {}", asset_path.display()))?;
 
         let mut item = Item::new(EDITOR_IMAGE_FIXTURE_TEXT);
-        item.media.push(ItemMedia::Image {
+        item.content.push(Inline::Image(ImageInline {
             asset,
             format: ImageAssetFormat::Png,
             width: Some(320),
             height: Some(180),
-        });
+        }));
 
         let scheme = self
             .workspace
@@ -2416,18 +2418,24 @@ impl MobileCoreInner {
             let mut item = existing_item.unwrap_or_else(|| Item::new(""));
 
             used_ids.push(item.id);
-            item.text = draft.text;
+            item.set_text(draft.text);
             item.marker = parse_marker(Some(&draft.marker))?;
             item.indent = as_u8(draft.indent, "indent")?.min(8);
             if should_apply_rich_metadata {
                 item.start = parse_datetime_opt(draft.start.as_deref())?;
                 item.end = parse_datetime_opt(draft.end.as_deref())?;
                 item.repeats = recurrence_from_rrule(draft.repeat_rule);
-                item.media = draft
-                    .media
-                    .iter()
-                    .filter_map(|media| mobile_media_to_item_media(media, &self.image_assets_dir))
-                    .collect();
+                item.content
+                    .retain(|inline| !matches!(inline, Inline::Image(_)));
+                item.content.extend(
+                    draft
+                        .media
+                        .iter()
+                        .filter_map(|media| {
+                            mobile_media_to_item_media(media, &self.image_assets_dir)
+                        })
+                        .map(Inline::Image),
+                );
             }
             item.enforce_marker_constraints();
             if item.marker == ItemMarker::Checkbox {
@@ -2455,7 +2463,7 @@ impl MobileCoreInner {
 fn mobile_media_to_item_media(
     media: &MobileItemMedia,
     image_assets_dir: &Path,
-) -> Option<ItemMedia> {
+) -> Option<ImageInline> {
     if media.kind != "image" {
         return None;
     }
@@ -2466,7 +2474,7 @@ fn mobile_media_to_item_media(
     if !path.starts_with(image_assets_dir) {
         return None;
     }
-    Some(ItemMedia::Image {
+    Some(ImageInline {
         asset,
         format,
         width: media.width.and_then(|value| u32::try_from(value).ok()),
@@ -2668,12 +2676,11 @@ fn mobile_workspace_media_assets(workspace: &Workspace) -> Vec<MobileSyncMediaAs
             continue;
         };
         for item in &scheme.items {
-            for media in &item.media {
-                let ItemMedia::Image { asset, format, .. } = media;
+            for media in mobile_item_image_assets(item) {
                 let media = MobileSyncMediaAsset {
                     document: meta.id,
-                    asset: *asset,
-                    format: *format,
+                    asset: media.asset,
+                    format: media.format,
                 };
                 if seen.insert(media) {
                     assets.push(media);
@@ -2682,6 +2689,28 @@ fn mobile_workspace_media_assets(workspace: &Workspace) -> Vec<MobileSyncMediaAs
         }
     }
     assets
+}
+
+fn mobile_item_image_assets(item: &Item) -> Vec<ImageInline> {
+    let mut images = Vec::new();
+    mobile_collect_item_image_assets(item, &mut images);
+    images
+}
+
+fn mobile_collect_item_image_assets(item: &Item, images: &mut Vec<ImageInline>) {
+    for inline in &item.content {
+        match inline {
+            Inline::Text { .. } => {}
+            Inline::Image(image) => images.push(*image),
+            Inline::Table(table) => {
+                for cell in table.cells() {
+                    for item in &cell.items {
+                        mobile_collect_item_image_assets(item, images);
+                    }
+                }
+            }
+        }
+    }
 }
 
 fn mobile_upload_local_media_assets(
@@ -2855,7 +2884,7 @@ mod sync_api_base_tests {
     use super::{
         mobile_media_asset_needs_download, mobile_workspace_media_assets, normalize_sync_api_base,
     };
-    use knotq_model::{ImageAssetFormat, Item, ItemMedia, Scheme, Workspace};
+    use knotq_model::{ImageAssetFormat, ImageInline, Inline, Item, Scheme, Workspace};
     use std::{fs, path::PathBuf};
 
     #[test]
@@ -2890,18 +2919,18 @@ mod sync_api_base_tests {
         let scheme_id = scheme.id;
         let asset = uuid::Uuid::new_v4();
         let mut item = Item::new("photo");
-        item.media.push(ItemMedia::Image {
+        item.content.push(Inline::Image(ImageInline {
             asset,
             format: ImageAssetFormat::Png,
             width: Some(10),
             height: Some(10),
-        });
-        item.media.push(ItemMedia::Image {
+        }));
+        item.content.push(Inline::Image(ImageInline {
             asset,
             format: ImageAssetFormat::Png,
             width: Some(10),
             height: Some(10),
-        });
+        }));
         scheme.items.push(item);
         workspace.schemes.insert(scheme_id, scheme);
         workspace.ensure_sync_metadata();
@@ -3062,7 +3091,7 @@ impl MobileItem {
     fn from_item(item: &Item, image_assets_dir: &Path) -> Self {
         Self {
             id: item.id.to_string(),
-            text: item.text.clone(),
+            text: item.text(),
             marker: marker_str(item.marker).to_string(),
             indent: i32::from(item.indent),
             kind: item_kind_str(item.kind()).to_string(),
@@ -3074,8 +3103,7 @@ impl MobileItem {
                 .notification_offset_secs
                 .map(offset_to_i32),
             repeat_rule: recurrence_rule(item.repeats.as_ref()),
-            media: item
-                .media
+            media: mobile_item_image_assets(item)
                 .iter()
                 .filter_map(|media| MobileItemMedia::from_media(media, image_assets_dir))
                 .collect(),
@@ -3089,24 +3117,18 @@ fn recurrence_rule(repeats: Option<&Recurrence>) -> Option<String> {
 }
 
 impl MobileItemMedia {
-    fn from_media(media: &ItemMedia, image_assets_dir: &Path) -> Option<Self> {
-        let ItemMedia::Image {
-            asset,
-            format,
-            width,
-            height,
-        } = media;
+    fn from_media(media: &ImageInline, image_assets_dir: &Path) -> Option<Self> {
         Some(Self {
             kind: "image".to_string(),
             path: Some(
                 image_assets_dir
-                    .join(format!("{asset}.{}", format.extension()))
+                    .join(format!("{}.{}", media.asset, media.format.extension()))
                     .display()
                     .to_string(),
             ),
-            format: image_format_str(*format).to_string(),
-            width: width.and_then(|value| i32::try_from(value).ok()),
-            height: height.and_then(|value| i32::try_from(value).ok()),
+            format: image_format_str(media.format).to_string(),
+            width: media.width.and_then(|value| i32::try_from(value).ok()),
+            height: media.height.and_then(|value| i32::try_from(value).ok()),
         })
     }
 }
@@ -3161,7 +3183,7 @@ impl MobileOccurrence {
         let item = workspace
             .scheme(context.scheme_id)
             .and_then(|scheme| scheme.item(context.item_id));
-        let title = item.map(|item| item.text.clone()).unwrap_or_default();
+        let title = item.map(|item| item.text()).unwrap_or_default();
         let repeat_rule = item.and_then(|item| recurrence_rule(item.repeats.as_ref()));
         let can_delete_future = item
             .and_then(|item| item.repeats.as_ref())
