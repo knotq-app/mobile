@@ -150,6 +150,7 @@ struct SchemeTextView: UIViewRepresentable {
             uiView.inputAccessoryView = nil
         }
         uiView.configureTitle(title: schemeTitle, theme: theme, visible: showsTitle, editable: titleEditable, validator: titleValidator, onCommit: onRenameTitle)
+        uiView.refreshEmbeddedLayoutIfNeeded(deferred: true)
         uiView.setNeedsDisplay()
     }
 

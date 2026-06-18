@@ -501,8 +501,24 @@ final class EditorTextView: UITextView {
         // an unbounded container and the text never breaks.
         if !isScrollEnabled, bounds.width != lastIntrinsicWidth {
             lastIntrinsicWidth = bounds.width
-            invalidateIntrinsicContentSize()
+            refreshEmbeddedLayoutIfNeeded()
         }
+    }
+
+    func refreshEmbeddedLayoutIfNeeded(deferred: Bool = false) {
+        guard !isScrollEnabled else { return }
+        if deferred {
+            DispatchQueue.main.async { [weak self] in
+                self?.refreshEmbeddedLayoutIfNeeded()
+            }
+            return
+        }
+        invalidateIntrinsicContentSize()
+        layoutManager.ensureLayout(for: textContainer)
+        if contentOffset != .zero {
+            setContentOffset(.zero, animated: false)
+        }
+        setNeedsDisplay()
     }
 
     override var intrinsicContentSize: CGSize {
@@ -588,15 +604,18 @@ final class EditorTextView: UITextView {
         layoutManager.ensureLayout(for: textContainer)
         refreshMarkerVisibility(force: true)
         if placeCursorAtEnd {
-            scrollRangeToVisible(NSRange(location: targetLocation, length: 0))
-            // On first open the text view often has no real bounds yet, so the
-            // initial scroll lands nowhere. Re-scroll to the end once layout has
-            // settled so we reliably open at the very bottom of the document.
-            DispatchQueue.main.async { [weak self] in
-                guard let self else { return }
-                self.scrollRangeToVisible(NSRange(location: max(0, self.textStorage.length - 1), length: 0))
+            if isScrollEnabled {
+                scrollRangeToVisible(NSRange(location: targetLocation, length: 0))
+                // On first open the text view often has no real bounds yet, so the
+                // initial scroll lands nowhere. Re-scroll to the end once layout has
+                // settled so we reliably open at the very bottom of the document.
+                DispatchQueue.main.async { [weak self] in
+                    guard let self, self.isScrollEnabled else { return }
+                    self.scrollRangeToVisible(NSRange(location: max(0, self.textStorage.length - 1), length: 0))
+                }
             }
         }
+        refreshEmbeddedLayoutIfNeeded(deferred: true)
         setNeedsDisplay()
         coordinator?.markClean()
         consumePendingCellFocusIfNeeded()
