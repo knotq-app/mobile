@@ -1312,7 +1312,8 @@ final class EditorTextView: UITextView {
         UIBezierPath(rect: headerRect).fill()
 
         let colWidth = rect.width / CGFloat(columnCount)
-        let headerAttributes = tableTextAttributes(weight: .semibold, color: UIColor(theme.textDim))
+        let headerTextColor = UIColor(theme.isDark ? theme.textSoft : theme.textDim)
+        let headerAttributes = tableTextAttributes(weight: .semibold, color: headerTextColor)
         let bodyAttributes = tableTextAttributes(weight: .regular, color: UIColor(theme.textPrimary))
 
         for column in 0..<columnCount {
