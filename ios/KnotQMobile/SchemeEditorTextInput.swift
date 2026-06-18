@@ -267,6 +267,28 @@ final class EditorCoordinator: NSObject, UITextViewDelegate, @preconcurrency NST
         return true
     }
 
+    func gestureRecognizer(
+        _ gestureRecognizer: UIGestureRecognizer,
+        shouldRecognizeSimultaneouslyWith otherGestureRecognizer: UIGestureRecognizer
+    ) -> Bool {
+        guard gestureRecognizer === checkboxTapRecognizer, let view else { return false }
+        // Our checkbox/table tap and UITextView's built-in caret-positioning tap
+        // are both single-tap recognizers. Without allowing them to recognize
+        // simultaneously they are mutually exclusive and ours wins, so a single
+        // tap on plain text (a no-op for us) stops moving the cursor and the only
+        // way to position the caret is a long-press.
+        //
+        // On a table cell / boundary tap we take over caret placement and focus
+        // ourselves (the in-place cell editor), so stay exclusive there to keep
+        // UITextView's tap from fighting for first responder. Everywhere else,
+        // let both fire so a tap positions the caret (and toggles a checkbox).
+        let point = gestureRecognizer.location(in: view)
+        if view.tableBoundaryHit(at: point) != nil || view.tableCellHit(at: point) != nil {
+            return false
+        }
+        return true
+    }
+
     func textView(_ textView: UITextView, shouldChangeTextIn range: NSRange, replacementText text: String) -> Bool {
         guard !readOnly else { return false }
         guard let view = textView as? EditorTextView else { return true }

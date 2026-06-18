@@ -543,8 +543,8 @@ struct IntegratedSchemeEditorPane: View {
         model.insertTable(schemeID: scheme.id, afterItemID: afterItemID)
     }
 
-    /// Persists an in-place cell edit. Edits the cell's first line so the cell's
-    /// marker / dates / images / extra lines are preserved by the core.
+    /// Persists an in-place cell edit. Body cell text may contain newlines; the
+    /// core splits those into the cell's line items.
     private func commitTableCell(_ hit: EditorTableCellHit, text: String) {
         guard !scheme.isReadOnly else { return }
         if hit.isHeader {
@@ -556,12 +556,11 @@ struct IntegratedSchemeEditorPane: View {
             )
             return
         }
-        model.setTableCellLineText(
+        model.setTableCellText(
             schemeID: scheme.id,
             itemID: hit.itemID,
             row: Int32(hit.row),
             column: Int32(hit.column),
-            lineIndex: 0,
             text: text
         )
     }

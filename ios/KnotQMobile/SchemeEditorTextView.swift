@@ -84,7 +84,7 @@ private final class EditorTableInputAccessoryView: UIInputView {
 enum EditorCellCommitReason {
     /// Field resigned (tap elsewhere / keyboard dismissed): stop editing.
     case resign
-    /// Return pressed: commit and move to the cell directly below.
+    /// Explicit move-down command: commit and move to the cell directly below.
     case moveDown
     /// Tab pressed: commit and move to the next cell (left→right, wrapping rows).
     case moveNext
@@ -98,13 +98,13 @@ enum EditorCellStructureAction {
     case insertColumnLeft, insertColumnRight, deleteColumn
 }
 
-/// A single-line editable field overlaid exactly on a drawn table cell. Replaces
+/// A multiline editable field overlaid exactly on a drawn table cell. Replaces
 /// the old full-screen `TableCellEditSheet` so cell text is edited in place. The
 /// owning `EditorTextView` positions it over the cell's frame, prefills it from
-/// the cell's first line, and drives Tab / Return navigation. Commits route back
+/// the cell's full text, and drives Tab navigation. Commits route back
 /// to the core via the view's `onCellCommit` closure.
-final class EditorTableCellEditor: UIView, UITextFieldDelegate {
-    let field = UITextField()
+final class EditorTableCellEditor: UIView, UITextViewDelegate {
+    let field = UITextView()
     private(set) var hit: EditorTableCellHit
     /// Called with the committed text and how the edit ended. The owner persists
     /// the text and, for the move reasons, focuses the resolved neighbor cell.
@@ -141,13 +141,16 @@ final class EditorTableCellEditor: UIView, UITextFieldDelegate {
         field.font = .systemFont(ofSize: 13)
         field.textColor = UIColor(theme.textPrimary)
         field.tintColor = UIColor(theme.accent)
-        field.borderStyle = .none
+        field.backgroundColor = .clear
+        field.textContainerInset = .zero
+        field.textContainer.lineFragmentPadding = 0
+        field.isScrollEnabled = true
+        field.alwaysBounceVertical = false
         field.autocorrectionType = .no
         field.autocapitalizationType = .sentences
         field.smartDashesType = .no
         field.smartQuotesType = .no
-        field.clearButtonMode = .never
-        field.returnKeyType = .next
+        field.returnKeyType = .default
         field.delegate = self
         field.inputAccessoryView = makeAccessory()
         addSubview(field)
@@ -315,7 +318,7 @@ final class EditorTableCellEditor: UIView, UITextFieldDelegate {
         frame = hit.frame
         field.text = hit.text
         updateAccessoryState()
-        field.selectedTextRange = field.textRange(from: field.endOfDocument, to: field.endOfDocument)
+        field.selectedRange = NSRange(location: (field.text as NSString).length, length: 0)
     }
 
     /// Persists the current text (if it changed) and keeps the editor alive. The
@@ -332,7 +335,7 @@ final class EditorTableCellEditor: UIView, UITextFieldDelegate {
 
     func focus() {
         field.becomeFirstResponder()
-        field.selectedTextRange = field.textRange(from: field.endOfDocument, to: field.endOfDocument)
+        field.selectedRange = NSRange(location: (field.text as NSString).length, length: 0)
     }
 
     /// Persists the current text if it changed. `reason` nil means "flush only"
@@ -349,14 +352,9 @@ final class EditorTableCellEditor: UIView, UITextFieldDelegate {
         }
     }
 
-    // MARK: UITextFieldDelegate
+    // MARK: UITextViewDelegate
 
-    func textFieldShouldReturn(_ textField: UITextField) -> Bool {
-        commit(reason: .moveDown)
-        return false
-    }
-
-    func textFieldDidEndEditing(_ textField: UITextField) {
+    func textViewDidEndEditing(_ textView: UITextView) {
         // Only treat as a plain resign if no explicit navigation already fired.
         if !didCommit {
             commit(reason: .resign)
@@ -1376,7 +1374,7 @@ final class EditorTextView: UITextView {
         case let .image(media):
             return mediaDisplaySize(media, maxWidth: maxWidth).height
         case let .table(table):
-            return tableHeight(table)
+            return tableHeight(table, maxWidth: maxWidth)
         }
     }
 
@@ -1413,7 +1411,7 @@ final class EditorTextView: UITextView {
                 }
                 y += size.height
             case let .table(table):
-                let height = tableHeight(table)
+                let height = tableHeight(table, maxWidth: maxWidth)
                 let tableRect = CGRect(x: textLeft, y: y, width: maxWidth, height: height)
                 if bodyText(paragraphRange: paragraphRange, in: textStorage).isEmpty {
                     renderedTableBlockHits.append(EditorTableBlockHitRect(
@@ -1535,9 +1533,46 @@ final class EditorTextView: UITextView {
         return editorInlineBlockMaxWidth(textLeft: textLeft)
     }
 
-    private func tableHeight(_ table: MobileTable) -> CGFloat {
+    private func tableHeight(_ table: MobileTable, maxWidth: CGFloat) -> CGFloat {
+        let columnCount = tableColumnCount(table)
+        guard columnCount > 0, maxWidth > 0 else {
+            return DesktopEditorMetrics.tableHeaderHeight + DesktopEditorMetrics.tableCellHeight
+        }
+        let colWidth = maxWidth / CGFloat(columnCount)
+        return DesktopEditorMetrics.tableHeaderHeight
+            + tableRowHeights(table, columnWidth: colWidth).reduce(0, +)
+    }
+
+    private func tableRowHeights(_ table: MobileTable, columnWidth: CGFloat) -> [CGFloat] {
         let rowCount = max(1, table.rows.count)
-        return DesktopEditorMetrics.tableHeaderHeight + CGFloat(rowCount) * DesktopEditorMetrics.tableCellHeight
+        let textWidth = max(1, columnWidth - 14)
+        let attributes = tableTextAttributes(
+            weight: .regular,
+            color: UIColor(theme.textPrimary),
+            lineBreakMode: .byWordWrapping
+        )
+        return (0..<rowCount).map { row in
+            let rowData = row < table.rows.count ? table.rows[row] : nil
+            var height = DesktopEditorMetrics.tableCellHeight
+            for column in 0..<tableColumnCount(table) {
+                let cell = rowData.flatMap { column < $0.cells.count ? $0.cells[column] : nil }
+                let text = tableCellDisplayText(cell)
+                let rect = ((text.isEmpty ? " " : text) as NSString).boundingRect(
+                    with: CGSize(width: textWidth, height: .greatestFiniteMagnitude),
+                    options: [.usesLineFragmentOrigin, .usesFontLeading],
+                    attributes: attributes,
+                    context: nil
+                )
+                height = max(height, ceil(rect.height) + 14)
+            }
+            return height
+        }
+    }
+
+    private func tableCellDisplayText(_ cell: MobileTableCell?) -> String {
+        guard let cell else { return "" }
+        let lineText = cell.lines.map(\.text).joined(separator: "\n")
+        return lineText.isEmpty ? cell.text : lineText
     }
 
     private func drawTable(_ table: MobileTable, itemID: String?, tableIndex: Int, in rect: CGRect, context: CGContext) {
@@ -1562,7 +1597,12 @@ final class EditorTextView: UITextView {
         let colWidth = rect.width / CGFloat(columnCount)
         let headerTextColor = UIColor(theme.isDark ? theme.textSoft : theme.textDim)
         let headerAttributes = tableTextAttributes(weight: .semibold, color: headerTextColor)
-        let bodyAttributes = tableTextAttributes(weight: .regular, color: UIColor(theme.textPrimary))
+        let bodyAttributes = tableTextAttributes(
+            weight: .regular,
+            color: UIColor(theme.textPrimary),
+            lineBreakMode: .byWordWrapping
+        )
+        let rowHeights = tableRowHeights(table, columnWidth: colWidth)
 
         for column in 0..<columnCount {
             let cellRect = CGRect(
@@ -1588,22 +1628,21 @@ final class EditorTextView: UITextView {
             }
         }
 
+        var rowTop = rect.minY + DesktopEditorMetrics.tableHeaderHeight
         for row in 0..<max(1, table.rows.count) {
             let rowData = row < table.rows.count ? table.rows[row] : nil
+            let rowHeight = rowHeights.indices.contains(row) ? rowHeights[row] : DesktopEditorMetrics.tableCellHeight
             for column in 0..<columnCount {
                 let cellRect = CGRect(
                     x: rect.minX + CGFloat(column) * colWidth,
-                    y: rect.minY + DesktopEditorMetrics.tableHeaderHeight + CGFloat(row) * DesktopEditorMetrics.tableCellHeight,
+                    y: rowTop,
                     width: colWidth,
-                    height: DesktopEditorMetrics.tableCellHeight
+                    height: rowHeight
                 )
                 let cell = rowData.flatMap { column < $0.cells.count ? $0.cells[column] : nil }
-                let text = cell?.text ?? ""
+                let text = tableCellDisplayText(cell)
                 drawTableText(text, in: cellRect, attributes: bodyAttributes)
                 if let itemID, row < table.rows.count {
-                    // The in-place editor edits the cell's first line; prefill
-                    // from it (not the multi-line summary `cell.text`).
-                    let editText = cell?.lines.first?.text ?? text
                     renderedTableCellHits.append(EditorTableCellHitRect(
                         rect: cellRect,
                         hit: EditorTableCellHit(
@@ -1611,12 +1650,13 @@ final class EditorTextView: UITextView {
                             tableIndex: tableIndex,
                             row: row,
                             column: column,
-                            text: editText,
+                            text: text,
                             frame: cellRect
                         )
                     ))
                 }
             }
+            rowTop += rowHeight
         }
 
         UIColor(theme.divider).setStroke()
@@ -1626,18 +1666,24 @@ final class EditorTextView: UITextView {
             context.move(to: CGPoint(x: x, y: rect.minY))
             context.addLine(to: CGPoint(x: x, y: rect.maxY))
         }
-        let rowLines = max(1, table.rows.count)
-        for row in 0...rowLines {
-            let y = rect.minY + DesktopEditorMetrics.tableHeaderHeight + CGFloat(row) * DesktopEditorMetrics.tableCellHeight
-            context.move(to: CGPoint(x: rect.minX, y: y))
-            context.addLine(to: CGPoint(x: rect.maxX, y: y))
+        var gridLineY = rect.minY + DesktopEditorMetrics.tableHeaderHeight
+        context.move(to: CGPoint(x: rect.minX, y: gridLineY))
+        context.addLine(to: CGPoint(x: rect.maxX, y: gridLineY))
+        for rowHeight in rowHeights {
+            gridLineY += rowHeight
+            context.move(to: CGPoint(x: rect.minX, y: gridLineY))
+            context.addLine(to: CGPoint(x: rect.maxX, y: gridLineY))
         }
         context.strokePath()
     }
 
-    private func tableTextAttributes(weight: UIFont.Weight, color: UIColor) -> [NSAttributedString.Key: Any] {
+    private func tableTextAttributes(
+        weight: UIFont.Weight,
+        color: UIColor,
+        lineBreakMode: NSLineBreakMode = .byTruncatingTail
+    ) -> [NSAttributedString.Key: Any] {
         let paragraph = NSMutableParagraphStyle()
-        paragraph.lineBreakMode = .byTruncatingTail
+        paragraph.lineBreakMode = lineBreakMode
         return [
             .font: UIFont.systemFont(ofSize: 13, weight: weight),
             .foregroundColor: color,
@@ -1905,14 +1951,16 @@ final class EditorTextView: UITextView {
                         )
                         if let result = match(hit) { return result }
                     }
-                    let bodyY = y + DesktopEditorMetrics.tableHeaderHeight
+                    var bodyY = y + DesktopEditorMetrics.tableHeaderHeight
+                    let rowHeights = tableRowHeights(table, columnWidth: colWidth)
                     for row in 0..<table.rows.count {
+                        let rowHeight = rowHeights.indices.contains(row) ? rowHeights[row] : DesktopEditorMetrics.tableCellHeight
                         for column in 0..<columnCount {
                             let rect = CGRect(
                                 x: textLeft + CGFloat(column) * colWidth,
-                                y: bodyY + CGFloat(row) * DesktopEditorMetrics.tableCellHeight,
+                                y: bodyY,
                                 width: colWidth,
-                                height: DesktopEditorMetrics.tableCellHeight
+                                height: rowHeight
                             )
                             let cell = column < table.rows[row].cells.count ? table.rows[row].cells[column] : nil
                             let hit = EditorTableCellHit(
@@ -1920,13 +1968,14 @@ final class EditorTextView: UITextView {
                                 tableIndex: tableIndex,
                                 row: row,
                                 column: column,
-                                text: cell?.lines.first?.text ?? cell?.text ?? "",
+                                text: tableCellDisplayText(cell),
                                 frame: rect
                             )
                             if let result = match(hit) { return result }
                         }
+                        bodyY += rowHeight
                     }
-                    y += tableHeight(table)
+                    y += tableHeight(table, maxWidth: maxWidth)
                     tableIndex += 1
                 }
                 previous = block

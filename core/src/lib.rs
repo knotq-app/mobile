@@ -491,12 +491,17 @@ impl MobileCore {
                 let cell = table
                     .cell_mut(row, column)
                     .ok_or_else(|| anyhow!("table cell {row},{column} is missing"))?;
-                if let Some(first) = cell.items.first_mut() {
-                    first.set_text(text);
-                    cell.items.truncate(1);
-                } else {
-                    cell.items.push(Item::new(text));
+                let mut lines = text.split('\n');
+                let mut items = Vec::new();
+                if let Some(first_text) = lines.next() {
+                    let mut first = cell.items.first().cloned().unwrap_or_else(|| Item::new(""));
+                    first.set_text(first_text.to_string());
+                    items.push(first);
                 }
+                for line in lines {
+                    items.push(Item::new(line.to_string()));
+                }
+                cell.items = items;
                 Ok(())
             })
             .map_err(Into::into)
@@ -4927,6 +4932,30 @@ mod tests {
         assert_eq!(item.tables[0].columns.len(), 3);
         assert_eq!(item.tables[0].columns[1].name, "Quarter");
 
+        core.set_table_cell_text(
+            scheme_id.clone(),
+            table_item.id.clone(),
+            0,
+            1,
+            "One\nTwo".to_string(),
+        )
+        .expect("edit multiline cell");
+        let item = core
+            .snapshot(Some("2026-05-26".to_string()), 0)
+            .expect("snapshot")
+            .schemes
+            .into_iter()
+            .find(|scheme| scheme.id == scheme_id)
+            .expect("scheme")
+            .items
+            .into_iter()
+            .find(|item| item.id == table_item.id)
+            .expect("table item");
+        assert_eq!(item.tables[0].rows[0].cells[1].text, "One Two");
+        assert_eq!(item.tables[0].rows[0].cells[1].lines.len(), 2);
+        assert_eq!(item.tables[0].rows[0].cells[1].lines[0].text, "One");
+        assert_eq!(item.tables[0].rows[0].cells[1].lines[1].text, "Two");
+
         core.replace_scheme_items(
             scheme_id.clone(),
             vec![MobileItemEdit {
@@ -4957,7 +4986,7 @@ mod tests {
             .find(|item| item.id == table_item.id)
             .expect("table item");
         assert_eq!(item.text, "Budget");
-        assert_eq!(item.tables[0].rows[0].cells[1].text, "Q1");
+        assert_eq!(item.tables[0].rows[0].cells[1].text, "One Two");
         assert_eq!(item.tables[0].rows.len(), 3);
         assert_eq!(item.tables[0].columns.len(), 3);
         assert_eq!(item.tables[0].columns[1].name, "Quarter");
