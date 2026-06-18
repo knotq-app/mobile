@@ -457,6 +457,7 @@ final class EditorTextView: UITextView {
         if became {
             coordinator?.refreshToolbarActiveMarker(in: self)
             refreshMarkerVisibility(force: true)
+            refreshEmbeddedLayoutIfNeeded(deferred: true)
         }
         return became
     }
