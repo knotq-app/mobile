@@ -1935,7 +1935,7 @@ public struct FfiConverterTypeMobileItemEdit: FfiConverterRustBuffer {
                 end: FfiConverterOptionString.read(from: &buf), 
                 notificationOffsetSecs: FfiConverterOptionInt32.read(from: &buf), 
                 repeatRule: FfiConverterOptionString.read(from: &buf), 
-                media: FfiConverterSequenceTypeMobileItemMedia.read(from: &buf),
+                media: FfiConverterSequenceTypeMobileItemMedia.read(from: &buf), 
                 content: FfiConverterSequenceTypeMobileInline.read(from: &buf)
         )
     }

@@ -232,6 +232,88 @@ final class MarkerConcealmentTests: XCTestCase {
         }
     }
 
+    func testBackspaceFromNonEmptyLineAfterTableMergesIntoTableItem() {
+        let fixture = makeEditorView()
+        let view = fixture.0
+        let coordinator = fixture.1
+        coordinator.theme = .dark
+        view.loadItems(
+            [tableOnlyItem(indent: 1), textItem(id: "after-item", text: "After", indent: 1)],
+            theme: .dark,
+            timeFormat: "twelve_hour",
+            placeCursorAtEnd: false
+        )
+
+        let paragraphs = paragraphRanges(in: view.textStorage.string as NSString)
+        XCTAssertEqual(paragraphs.count, 2)
+        let deletionRange = NSRange(location: paragraphs[0].fullRange.location, length: 1)
+
+        let shouldAllowUIKitDelete = coordinator.textView(
+            view,
+            shouldChangeTextIn: deletionRange,
+            replacementText: ""
+        )
+
+        XCTAssertFalse(shouldAllowUIKitDelete)
+        XCTAssertEqual(view.selectedRange.location, paragraphs[1].fullRange.location)
+
+        let edits = view.extractItemEdits()
+        XCTAssertEqual(edits.count, 1)
+        XCTAssertEqual(edits.first?.id, "table-item")
+        XCTAssertEqual(edits.first?.text, "After")
+        XCTAssertEqual(edits.first?.content.count, 2)
+        if case .table? = edits.first?.content.first {
+        } else {
+            XCTFail("table should remain before merged after-text")
+        }
+        if case let .text(text)? = edits.first?.content.last {
+            XCTAssertEqual(text, "After")
+        } else {
+            XCTFail("after-text should be saved after the table")
+        }
+    }
+
+    func testDeleteFromNonEmptyLineBeforeTableMergesIntoTableItem() {
+        let fixture = makeEditorView()
+        let view = fixture.0
+        let coordinator = fixture.1
+        coordinator.theme = .dark
+        view.loadItems(
+            [textItem(id: "before-item", text: "Before", indent: 1), tableOnlyItem(indent: 1)],
+            theme: .dark,
+            timeFormat: "twelve_hour",
+            placeCursorAtEnd: false
+        )
+
+        let paragraphs = paragraphRanges(in: view.textStorage.string as NSString)
+        XCTAssertEqual(paragraphs.count, 2)
+        let deletionRange = NSRange(location: NSMaxRange(paragraphs[0].lineRange), length: 1)
+
+        let shouldAllowUIKitDelete = coordinator.textView(
+            view,
+            shouldChangeTextIn: deletionRange,
+            replacementText: ""
+        )
+
+        XCTAssertFalse(shouldAllowUIKitDelete)
+        XCTAssertEqual(view.selectedRange.location, NSMaxRange(paragraphs[0].lineRange))
+
+        let edits = view.extractItemEdits()
+        XCTAssertEqual(edits.count, 1)
+        XCTAssertEqual(edits.first?.id, "table-item")
+        XCTAssertEqual(edits.first?.text, "Before")
+        XCTAssertEqual(edits.first?.content.count, 2)
+        if case let .text(text)? = edits.first?.content.first {
+            XCTAssertEqual(text, "Before")
+        } else {
+            XCTFail("before-text should be saved before the table")
+        }
+        if case .table? = edits.first?.content.last {
+        } else {
+            XCTFail("table should remain after merged before-text")
+        }
+    }
+
     func testTableBoundaryDeletes() {
         assertAfterTableBoundaryDelete(deletionRange: NSRange(location: 0, length: 1))
         assertAfterTableBoundaryDelete { view in
@@ -378,6 +460,24 @@ final class MarkerConcealmentTests: XCTestCase {
             media: [],
             tables: [table],
             content: [.table(table: table)]
+        )
+    }
+
+    private func textItem(id: String, text: String, indent: Int32) -> MobileItem {
+        MobileItem(
+            id: id,
+            text: text,
+            marker: "blank",
+            indent: indent,
+            kind: "procedure",
+            done: false,
+            start: nil,
+            end: nil,
+            notificationOffsetSecs: nil,
+            repeatRule: nil,
+            media: [],
+            tables: [],
+            content: [.text(text: text)]
         )
     }
 }

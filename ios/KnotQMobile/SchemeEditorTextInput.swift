@@ -283,6 +283,9 @@ final class EditorCoordinator: NSObject, UITextViewDelegate, @preconcurrency NST
             if handleDeleteEmptyTableBoundaryLine(in: view, deletionRange: range) {
                 return false
             }
+            if handleMergeTableBoundaryLine(in: view, deletionRange: range) {
+                return false
+            }
             if handleDeletePreviousTableBlock(in: view, deletionRange: range) {
                 return false
             }
@@ -451,10 +454,107 @@ final class EditorCoordinator: NSObject, UITextViewDelegate, @preconcurrency NST
         view.invalidateEmbeddedBlockDisplay(reflow: true)
     }
 
-    /// Backspace at the start of the line after a table-only item removes the
-    /// table line. Letting UITextView delete the newline would merge the lower
-    /// line into the table item and preserve the table, which feels like the key
-    /// did nothing useful.
+    /// Deleting the separator between a table and a non-empty adjacent text line
+    /// makes that text part of the table item instead of deleting the table or
+    /// saving a second item. The boundary line remains as the visual host for
+    /// text before/after a full-width table, but extraction folds it into the
+    /// table item in document order.
+    private func handleMergeTableBoundaryLine(in view: EditorTextView, deletionRange: NSRange) -> Bool {
+        let storage = view.textStorage
+        let ns = storage.string as NSString
+        guard deletionRange.length == 1,
+              deletionRange.location < ns.length,
+              ns.character(at: deletionRange.location) == 10,
+              deletionRange.location < ns.length - 1 else { return false }
+
+        let paragraphs = paragraphRanges(in: ns)
+        guard let upperIndex = paragraphs.firstIndex(where: { NSMaxRange($0.fullRange) == deletionRange.location + 1 }),
+              let lowerIndex = paragraphs.firstIndex(where: { $0.fullRange.location == deletionRange.location + 1 }) else {
+            return false
+        }
+
+        let upper = paragraphs[upperIndex]
+        let lower = paragraphs[lowerIndex]
+        let upperMeta = lineMeta(at: upper.fullRange.location, in: storage)
+        let lowerMeta = lineMeta(at: lower.fullRange.location, in: storage)
+
+        if let tableItemID = upperMeta.itemID,
+           !upperMeta.tables.isEmpty,
+           bodyText(paragraphRange: upper.fullRange, in: storage).isEmpty,
+           isTableBoundaryHost(lowerMeta, side: "after", itemID: tableItemID),
+           !bodyText(paragraphRange: lower.fullRange, in: storage).isEmpty {
+            let boundaryMeta = LineMeta(
+                marker: .blank,
+                indent: upperMeta.indent,
+                tableBoundaryItemID: tableItemID,
+                tableBoundarySide: "after"
+            )
+            markTableBoundaryMerge(
+                paragraph: lower.fullRange,
+                meta: boundaryMeta,
+                caret: lower.fullRange.location,
+                in: view
+            )
+            return true
+        }
+
+        if let tableItemID = lowerMeta.itemID,
+           !lowerMeta.tables.isEmpty,
+           bodyText(paragraphRange: lower.fullRange, in: storage).isEmpty,
+           isTableBoundaryHost(upperMeta, side: "before", itemID: tableItemID),
+           !bodyText(paragraphRange: upper.fullRange, in: storage).isEmpty {
+            let boundaryMeta = LineMeta(
+                marker: .blank,
+                indent: lowerMeta.indent,
+                tableBoundaryItemID: tableItemID,
+                tableBoundarySide: "before"
+            )
+            markTableBoundaryMerge(
+                paragraph: upper.fullRange,
+                meta: boundaryMeta,
+                caret: deletionRange.location,
+                in: view
+            )
+            return true
+        }
+
+        return false
+    }
+
+    private func isTableBoundaryHost(_ meta: LineMeta, side: String, itemID: String) -> Bool {
+        if let boundarySide = meta.tableBoundarySide {
+            return boundarySide == side && meta.tableBoundaryItemID == itemID
+        }
+        return meta.marker == .blank
+            && meta.annotation == nil
+            && meta.media.isEmpty
+            && meta.tables.isEmpty
+    }
+
+    private func markTableBoundaryMerge(
+        paragraph: NSRange,
+        meta: LineMeta,
+        caret: Int,
+        in view: EditorTextView
+    ) {
+        let storage = view.textStorage
+        suppress {
+            storage.beginEditing()
+            setLineMeta(meta, onParagraph: paragraph, in: storage, theme: theme)
+            storage.endEditing()
+        }
+        let newCaret = clampedCaret(caret, in: storage)
+        view.selectedRange = NSRange(location: newCaret, length: 0)
+        view.typingAttributes = EditorAttributes.bodyAttributes(meta: meta, theme: theme)
+        autoBulletUndo = nil
+        markDirty()
+        refreshEmpty()
+        view.invalidateEmbeddedBlockDisplay(reflow: true)
+    }
+
+    /// Backspace at the start of a non-boundary line after a table-only item
+    /// removes the table line. Empty and non-empty text boundary cases are
+    /// handled above so ordinary table-adjacent text keeps the table intact.
     private func handleDeletePreviousTableBlock(in view: EditorTextView, deletionRange: NSRange) -> Bool {
         let storage = view.textStorage
         let ns = storage.string as NSString
