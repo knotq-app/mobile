@@ -353,6 +353,144 @@ final class MarkerConcealmentTests: XCTestCase {
         XCTAssertEqual(view.selectedRange.location, 0)
     }
 
+    // MARK: - Image boundaries
+
+    func testTypingAtImageBoundariesSavesAsOrderedImageContent() {
+        let before = imageBoundaryEditAfterTyping(side: .before, text: "Before")
+        XCTAssertEqual(before.text, "Before")
+        XCTAssertEqual(before.content.count, 2)
+        if case let .text(text)? = before.content.first {
+            XCTAssertEqual(text, "Before")
+        } else {
+            XCTFail("before-image typing should save before the image")
+        }
+        if case .image? = before.content.last {
+        } else {
+            XCTFail("image should remain after before-boundary text")
+        }
+
+        let after = imageBoundaryEditAfterTyping(side: .after, text: "After")
+        XCTAssertEqual(after.text, "After")
+        XCTAssertEqual(after.content.count, 2)
+        if case .image? = after.content.first {
+        } else {
+            XCTFail("image should remain before after-boundary text")
+        }
+        if case let .text(text)? = after.content.last {
+            XCTAssertEqual(text, "After")
+        } else {
+            XCTFail("after-image typing should save after the image")
+        }
+    }
+
+    func testBackspaceFromNonEmptyLineAfterImageMergesIntoImageItem() {
+        let fixture = makeEditorView()
+        let view = fixture.0
+        let coordinator = fixture.1
+        coordinator.theme = .dark
+        view.loadItems(
+            [imageOnlyItem(indent: 1), textItem(id: "after-image-item", text: "After", indent: 1)],
+            theme: .dark,
+            timeFormat: "twelve_hour",
+            placeCursorAtEnd: false
+        )
+
+        let paragraphs = paragraphRanges(in: view.textStorage.string as NSString)
+        XCTAssertEqual(paragraphs.count, 2)
+        let deletionRange = NSRange(location: paragraphs[0].fullRange.location, length: 1)
+
+        let shouldAllowUIKitDelete = coordinator.textView(
+            view,
+            shouldChangeTextIn: deletionRange,
+            replacementText: ""
+        )
+
+        XCTAssertFalse(shouldAllowUIKitDelete)
+        XCTAssertEqual(view.selectedRange.location, paragraphs[1].fullRange.location)
+
+        let edits = view.extractItemEdits()
+        XCTAssertEqual(edits.count, 1)
+        XCTAssertEqual(edits.first?.id, "image-item")
+        XCTAssertEqual(edits.first?.text, "After")
+        XCTAssertEqual(edits.first?.content.count, 2)
+        if case .image? = edits.first?.content.first {
+        } else {
+            XCTFail("image should remain before merged after-text")
+        }
+        if case let .text(text)? = edits.first?.content.last {
+            XCTAssertEqual(text, "After")
+        } else {
+            XCTFail("after-text should be saved after the image")
+        }
+    }
+
+    func testDeleteFromNonEmptyLineBeforeImageMergesIntoImageItem() {
+        let fixture = makeEditorView()
+        let view = fixture.0
+        let coordinator = fixture.1
+        coordinator.theme = .dark
+        view.loadItems(
+            [textItem(id: "before-image-item", text: "Before", indent: 1), imageOnlyItem(indent: 1)],
+            theme: .dark,
+            timeFormat: "twelve_hour",
+            placeCursorAtEnd: false
+        )
+
+        let paragraphs = paragraphRanges(in: view.textStorage.string as NSString)
+        XCTAssertEqual(paragraphs.count, 2)
+        let deletionRange = NSRange(location: NSMaxRange(paragraphs[0].lineRange), length: 1)
+
+        let shouldAllowUIKitDelete = coordinator.textView(
+            view,
+            shouldChangeTextIn: deletionRange,
+            replacementText: ""
+        )
+
+        XCTAssertFalse(shouldAllowUIKitDelete)
+        XCTAssertEqual(view.selectedRange.location, NSMaxRange(paragraphs[0].lineRange))
+
+        let edits = view.extractItemEdits()
+        XCTAssertEqual(edits.count, 1)
+        XCTAssertEqual(edits.first?.id, "image-item")
+        XCTAssertEqual(edits.first?.text, "Before")
+        XCTAssertEqual(edits.first?.content.count, 2)
+        if case let .text(text)? = edits.first?.content.first {
+            XCTAssertEqual(text, "Before")
+        } else {
+            XCTFail("before-text should be saved before the image")
+        }
+        if case .image? = edits.first?.content.last {
+        } else {
+            XCTFail("image should remain after merged before-text")
+        }
+    }
+
+    func testImageTrailingTextSplitsIntoBoundaryParagraphOnLoad() {
+        let fixture = makeEditorView()
+        let view = fixture.0
+        view.loadItems([imageThenTextItem(text: "After", indent: 1)], theme: .dark, timeFormat: "twelve_hour", placeCursorAtEnd: false)
+
+        let paragraphs = paragraphRanges(in: view.textStorage.string as NSString)
+        XCTAssertEqual(paragraphs.count, 2)
+        XCTAssertEqual(testParagraphBody(paragraphs[0], in: view.textStorage.string as NSString), "")
+        XCTAssertEqual(testParagraphBody(paragraphs[1], in: view.textStorage.string as NSString), "After")
+
+        let edits = view.extractItemEdits()
+        XCTAssertEqual(edits.count, 1)
+        XCTAssertEqual(edits.first?.id, "image-item")
+        XCTAssertEqual(edits.first?.text, "After")
+        XCTAssertEqual(edits.first?.content.count, 2)
+        if case .image? = edits.first?.content.first {
+        } else {
+            XCTFail("image should remain before split trailing text")
+        }
+        if case let .text(text)? = edits.first?.content.last {
+            XCTAssertEqual(text, "After")
+        } else {
+            XCTFail("trailing text should be saved after the image")
+        }
+    }
+
     // MARK: - Tagging (so future delimiter changes keep the markers concealable)
 
     func testEmphasisTagsEveryDelimiterStyle() {
@@ -430,6 +568,31 @@ final class MarkerConcealmentTests: XCTestCase {
         return edits[0]
     }
 
+    private func imageBoundaryEditAfterTyping(side: EditorTableBoundarySide, text: String, file: StaticString = #filePath, line: UInt = #line) -> MobileItemEdit {
+        let fixture = makeEditorView()
+        let view = fixture.0
+        fixture.1.theme = .dark
+        view.loadItems([imageOnlyItem(indent: 1)], theme: .dark, timeFormat: "twelve_hour", placeCursorAtEnd: false)
+
+        let imageParagraph = paragraphRanges(in: view.textStorage.string as NSString)[0].fullRange
+        let hit = EditorTableBoundaryHit(paragraphRange: imageParagraph, side: side)
+        XCTAssertTrue(view.placeCaretAtTableBoundary(hit, theme: .dark), file: file, line: line)
+
+        view.textStorage.replaceCharacters(
+            in: view.selectedRange,
+            with: NSAttributedString(string: text, attributes: view.typingAttributes)
+        )
+        view.selectedRange = NSRange(location: view.selectedRange.location + (text as NSString).length, length: 0)
+
+        let edits = view.extractItemEdits()
+        XCTAssertEqual(edits.count, 1, file: file, line: line)
+        return edits[0]
+    }
+
+    private func testParagraphBody(_ paragraph: EditorParagraphRange, in ns: NSString) -> String {
+        paragraph.lineRange.length > 0 ? ns.substring(with: paragraph.lineRange) : ""
+    }
+
     private func makeEditorView() -> (EditorTextView, EditorCoordinator) {
         let view = EditorTextView()
         let coordinator = EditorCoordinator()
@@ -476,6 +639,48 @@ final class MarkerConcealmentTests: XCTestCase {
             tables: [table],
             content: [.table(table: table)]
         )
+    }
+
+    private func imageOnlyItem(indent: Int32) -> MobileItem {
+        let media = testImageMedia()
+        return MobileItem(
+            id: "image-item",
+            text: "",
+            marker: "blank",
+            indent: indent,
+            kind: "procedure",
+            done: false,
+            start: nil,
+            end: nil,
+            notificationOffsetSecs: nil,
+            repeatRule: nil,
+            media: [media],
+            tables: [],
+            content: [.image(media: media)]
+        )
+    }
+
+    private func imageThenTextItem(text: String, indent: Int32) -> MobileItem {
+        let media = testImageMedia()
+        return MobileItem(
+            id: "image-item",
+            text: text,
+            marker: "blank",
+            indent: indent,
+            kind: "procedure",
+            done: false,
+            start: nil,
+            end: nil,
+            notificationOffsetSecs: nil,
+            repeatRule: nil,
+            media: [media],
+            tables: [],
+            content: [.image(media: media), .text(text: text)]
+        )
+    }
+
+    private func testImageMedia() -> MobileItemMedia {
+        MobileItemMedia(kind: "image", path: nil, format: "png", width: 320, height: 200)
     }
 
     private func textItem(id: String, text: String, indent: Int32) -> MobileItem {

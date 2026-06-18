@@ -368,7 +368,7 @@ func buildAttributedString(items: [MobileItem], theme: KnotQTheme, timeFormat: S
     }
     for item in items {
         let meta = LineMeta(item: item, timeFormat: timeFormat)
-        if let split = splitTrailingTextAfterLeadingTable(item: item, meta: meta) {
+        if let split = splitTrailingTextAfterLeadingBlock(item: item, meta: meta) {
             appendEditorParagraph(body: "", meta: split.tableMeta, theme: theme, to: result)
             appendEditorParagraph(body: split.trailingText, meta: split.boundaryMeta, theme: theme, to: result)
         } else {
@@ -391,12 +391,11 @@ private func appendEditorParagraph(body: String, meta: LineMeta, theme: KnotQThe
     applyInlineMarkdownStyling(body: body, bodyRange: bodyRange, in: result)
 }
 
-private func splitTrailingTextAfterLeadingTable(item: MobileItem, meta: LineMeta) -> (tableMeta: LineMeta, boundaryMeta: LineMeta, trailingText: String)? {
+private func splitTrailingTextAfterLeadingBlock(item: MobileItem, meta: LineMeta) -> (tableMeta: LineMeta, boundaryMeta: LineMeta, trailingText: String)? {
     guard !item.content.isEmpty, let itemID = meta.itemID else { return nil }
     var blockContent: [MobileInline] = []
     var trailingText = ""
     var sawBlock = false
-    var sawTable = false
 
     for inline in item.content {
         switch inline {
@@ -410,14 +409,11 @@ private func splitTrailingTextAfterLeadingTable(item: MobileItem, meta: LineMeta
                 return nil
             }
             sawBlock = true
-            if case .table = inline {
-                sawTable = true
-            }
             blockContent.append(inline)
         }
     }
 
-    guard sawTable, !trailingText.isEmpty else { return nil }
+    guard sawBlock, !trailingText.isEmpty else { return nil }
     let tableMeta = meta.with(
         media: mediaInlines(from: blockContent),
         tables: tableInlines(from: blockContent),
@@ -753,7 +749,7 @@ func extractEdits(from storage: NSAttributedString) -> [MobileItemEdit] {
            index + 1 < paragraphs.count {
             let tableParagraph = paragraphs[index + 1]
             let tableMeta = lineMeta(at: tableParagraph.fullRange.location, in: storage)
-            if tableMeta.itemID == itemID, !tableMeta.tables.isEmpty {
+            if tableMeta.itemID == itemID, tableMeta.hasBlockContent {
                 edits.append(tableEdit(
                     tableParagraph: tableParagraph,
                     tableMeta: tableMeta,
@@ -766,7 +762,7 @@ func extractEdits(from storage: NSAttributedString) -> [MobileItemEdit] {
             }
         }
 
-        if !meta.tables.isEmpty,
+        if meta.hasBlockContent,
            index + 1 < paragraphs.count {
             let nextParagraph = paragraphs[index + 1]
             let nextMeta = lineMeta(at: nextParagraph.fullRange.location, in: storage)

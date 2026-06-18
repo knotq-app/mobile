@@ -640,13 +640,16 @@ final class EditorTextView: UITextView {
     }
 
     override func caretRect(for position: UITextPosition) -> CGRect {
+        let offset = offset(from: beginningOfDocument, to: position)
+        if let blockCaret = blockBoundaryCaretRect(at: offset) {
+            return blockCaret
+        }
         var rect = super.caretRect(for: position)
         // Image/annotation space is reserved *below* the text (as line spacing
         // after the glyph), which inflates the line fragment. Clamp the caret to
         // the line's text height and keep it pinned to the top of the fragment —
         // sitting on the text — instead of stretching down into the image or
         // centering in the gap. Headings keep their taller caret.
-        let offset = offset(from: beginningOfDocument, to: position)
         let textHeight = caretLineIsHeading(at: offset)
             ? DesktopEditorMetrics.headingLineHeight
             : DesktopEditorMetrics.textLineHeight
@@ -655,6 +658,29 @@ final class EditorTextView: UITextView {
         }
         rect.size.width = 2
         return rect
+    }
+
+    private func blockBoundaryCaretRect(at offset: Int) -> CGRect? {
+        guard textStorage.length > 0 else { return nil }
+        let caret = clampedCaret(offset, in: textStorage)
+        let meta = lineMeta(at: caret, in: textStorage)
+        guard let itemID = meta.tableBoundaryItemID,
+              let side = meta.tableBoundarySide else { return nil }
+        let paragraphs = paragraphRanges(in: textStorage.string as NSString)
+        guard let blockParagraph = paragraphs.first(where: {
+            let blockMeta = lineMeta(at: $0.fullRange.location, in: textStorage)
+            return blockMeta.itemID == itemID && blockMeta.hasBlockContent
+        }) else { return nil }
+        guard let hit = renderedTableBlockHits.last(where: {
+            $0.paragraphRange.location == blockParagraph.fullRange.location
+        }) else { return nil }
+        let x = side == "after" ? hit.rect.maxX : hit.rect.minX
+        return CGRect(
+            x: x,
+            y: hit.rect.minY,
+            width: 2,
+            height: max(hit.rect.height, DesktopEditorMetrics.textLineHeight)
+        )
     }
 
     /// A line is a heading when its run carries the enlarged heading font.
@@ -1376,7 +1402,14 @@ final class EditorTextView: UITextView {
             case let .image(media):
                 let size = mediaDisplaySize(media, maxWidth: maxWidth)
                 if size.width > 0, size.height > 0 {
-                    drawImageMedia(media, in: CGRect(x: textLeft, y: y, width: size.width, height: size.height), context: context)
+                    let imageRect = CGRect(x: textLeft, y: y, width: size.width, height: size.height)
+                    if bodyText(paragraphRange: paragraphRange, in: textStorage).isEmpty {
+                        renderedTableBlockHits.append(EditorTableBlockHitRect(
+                            rect: imageRect,
+                            paragraphRange: paragraphRange
+                        ))
+                    }
+                    drawImageMedia(media, in: imageRect, context: context)
                 }
                 y += size.height
             case let .table(table):

@@ -427,7 +427,7 @@ final class EditorCoordinator: NSObject, UITextViewDelegate, @preconcurrency NST
             guard paragraphs.indices.contains(index) else { return false }
             let paragraph = paragraphs[index]
             let meta = lineMeta(at: paragraph.fullRange.location, in: storage)
-            return !meta.tables.isEmpty
+            return meta.hasBlockContent
                 && bodyText(paragraphRange: paragraph.fullRange, in: storage).isEmpty
         }
         return touchesTable
@@ -479,7 +479,7 @@ final class EditorCoordinator: NSObject, UITextViewDelegate, @preconcurrency NST
         let lowerMeta = lineMeta(at: lower.fullRange.location, in: storage)
 
         if let tableItemID = upperMeta.itemID,
-           !upperMeta.tables.isEmpty,
+           upperMeta.hasBlockContent,
            bodyText(paragraphRange: upper.fullRange, in: storage).isEmpty,
            isTableBoundaryHost(lowerMeta, side: "after", itemID: tableItemID),
            !bodyText(paragraphRange: lower.fullRange, in: storage).isEmpty {
@@ -499,7 +499,7 @@ final class EditorCoordinator: NSObject, UITextViewDelegate, @preconcurrency NST
         }
 
         if let tableItemID = lowerMeta.itemID,
-           !lowerMeta.tables.isEmpty,
+           lowerMeta.hasBlockContent,
            bodyText(paragraphRange: lower.fullRange, in: storage).isEmpty,
            isTableBoundaryHost(upperMeta, side: "before", itemID: tableItemID),
            !bodyText(paragraphRange: upper.fullRange, in: storage).isEmpty {
@@ -552,9 +552,9 @@ final class EditorCoordinator: NSObject, UITextViewDelegate, @preconcurrency NST
         view.invalidateEmbeddedBlockDisplay(reflow: true)
     }
 
-    /// Backspace at the start of a non-boundary line after a table-only item
-    /// removes the table line. Empty and non-empty text boundary cases are
-    /// handled above so ordinary table-adjacent text keeps the table intact.
+    /// Backspace at the start of a non-boundary line after a block-only item
+    /// removes the block line. Empty and non-empty text boundary cases are
+    /// handled above so ordinary block-adjacent text keeps the block intact.
     private func handleDeletePreviousTableBlock(in view: EditorTextView, deletionRange: NSRange) -> Bool {
         let storage = view.textStorage
         let ns = storage.string as NSString
@@ -565,7 +565,7 @@ final class EditorCoordinator: NSObject, UITextViewDelegate, @preconcurrency NST
 
         let upperPara = editableParagraphRange(in: ns, at: deletionRange.location)
         let upperMeta = lineMeta(at: upperPara.location, in: storage)
-        guard !upperMeta.tables.isEmpty,
+        guard upperMeta.hasBlockContent,
               bodyText(paragraphRange: upperPara, in: storage).isEmpty else { return false }
 
         suppress {
