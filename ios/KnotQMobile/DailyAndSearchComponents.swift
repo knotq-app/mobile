@@ -33,6 +33,8 @@ struct DailyFeedPane: View {
     let onNext: () -> Void
     let onDate: @MainActor (Date) -> Void
     var onLoadOlder: @MainActor (String) -> Void = { _ in }
+    var isLoadingOlder: Bool = false
+    var canLoadOlder: Bool = true
     var loadAnchorDate: String?
     var onLoadAnchorRestored: @MainActor () -> Void = {}
     let onBack: () -> Void
@@ -68,6 +70,7 @@ struct DailyFeedPane: View {
                                             )
                                         }
                                     }
+                                DailyHistoryLoadingRow(isLoading: isLoadingOlder, theme: theme)
                                 ForEach(visibleEntries) { entry in
                                     DailyDayEditorSection(
                                         entry: entry,
@@ -187,6 +190,10 @@ struct DailyFeedPane: View {
         else {
             return
         }
+        guard canLoadOlder, !isLoadingOlder else {
+            userScrolledTowardOlderEntries = false
+            return
+        }
         userScrolledTowardOlderEntries = false
         onLoadOlder(oldestVisibleDate)
     }
@@ -250,6 +257,28 @@ private struct DailyFeedTopOffsetPreferenceKey: PreferenceKey {
 
     static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
         value = nextValue()
+    }
+}
+
+private struct DailyHistoryLoadingRow: View {
+    let isLoading: Bool
+    let theme: KnotQTheme
+
+    var body: some View {
+        HStack {
+            Spacer()
+            if isLoading {
+                ProgressView()
+                    .controlSize(.small)
+                    .tint(theme.textMuted)
+                    .accessibilityLabel("Loading older daily entries")
+            }
+            Spacer()
+        }
+        .frame(height: isLoading ? 34 : 0)
+        .opacity(isLoading ? 1 : 0)
+        .allowsHitTesting(false)
+        .accessibilityHidden(!isLoading)
     }
 }
 

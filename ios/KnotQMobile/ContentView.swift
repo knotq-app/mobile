@@ -529,6 +529,8 @@ struct ContentView: View {
                 onLoadOlder: { oldestDate in
                     model.loadOlderDailyEntries(from: oldestDate)
                 },
+                isLoadingOlder: model.dailyHistoryLoadInProgress,
+                canLoadOlder: model.canLoadOlderDailyHistory,
                 loadAnchorDate: model.dailyHistoryLoadAnchorDate,
                 onLoadAnchorRestored: {
                     model.clearDailyHistoryLoadAnchor()
@@ -635,6 +637,8 @@ struct ContentView: View {
                 onLoadOlder: { oldestDate in
                     model.loadOlderDailyEntries(from: oldestDate)
                 },
+                isLoadingOlder: model.dailyHistoryLoadInProgress,
+                canLoadOlder: model.canLoadOlderDailyHistory,
                 loadAnchorDate: model.dailyHistoryLoadAnchorDate,
                 onLoadAnchorRestored: {
                     model.clearDailyHistoryLoadAnchor()

@@ -36,6 +36,7 @@ final class AppModel: ObservableObject {
     @Published var syncProducts: [Product] = []
     @Published var purchaseInProgress = false
     @Published private(set) var dailyHistoryLoadAnchorDate: String?
+    @Published private(set) var dailyHistoryLoadInProgress = false
 
     // App Store Connect product id(s) for the sync subscription.
     static let syncProductIDs: Set<String> = ["com.enigmadux.knotq.sync.monthly"]
@@ -59,7 +60,6 @@ final class AppModel: ObservableObject {
     private var browserSignInSession: WebAuthenticationSessionCoordinator?
     private var transactionListener: Task<Void, Never>?
     private var dailyHistoryDays = AppModel.initialDailyHistoryDays(for: Date())
-    private var dailyHistoryLoadInProgress = false
     private var pendingDailyHistoryLoadAnchorDate: String?
 
     init() {
@@ -105,12 +105,17 @@ final class AppModel: ObservableObject {
         syncSession?.supportsSync == true || (snapshot?.settings.googleAccountCount ?? 0) > 0
     }
 
+    var canLoadOlderDailyHistory: Bool {
+        dailyHistoryDays < Self.maxDailyHistoryDays
+    }
+
     func refresh() {
         guard let bridge else { return }
         let today = Self.dateOnly(selectedDate)
         let week = weekOffset
         let history = dailyHistoryDays
         let loadAnchorDate = pendingDailyHistoryLoadAnchorDate
+        let isDailyHistoryLoad = loadAnchorDate != nil
         pendingDailyHistoryLoadAnchorDate = nil
         bridge.enqueue({ b in
             (
@@ -119,14 +124,24 @@ final class AppModel: ObservableObject {
             )
         }) { [weak self] result in
             guard let self else { return }
-            self.dailyHistoryLoadInProgress = false
+            if isDailyHistoryLoad {
+                self.dailyHistoryLoadInProgress = false
+                guard Self.dateOnly(self.selectedDate) == today else {
+                    self.dailyHistoryLoadAnchorDate = nil
+                    return
+                }
+            }
             switch result {
             case .success(let (snapshot, pending)):
                 self.apply(snapshot: snapshot, pendingNotifications: pending)
-                self.dailyHistoryLoadAnchorDate = loadAnchorDate
+                if isDailyHistoryLoad {
+                    self.dailyHistoryLoadAnchorDate = loadAnchorDate
+                }
                 self.errorMessage = nil
             case .failure(let error):
-                self.dailyHistoryLoadAnchorDate = nil
+                if isDailyHistoryLoad {
+                    self.dailyHistoryLoadAnchorDate = nil
+                }
                 self.errorMessage = error.localizedDescription
             }
         }
@@ -134,13 +149,14 @@ final class AppModel: ObservableObject {
 
     func loadOlderDailyEntries(from oldestDate: String) {
         guard !dailyHistoryLoadInProgress else { return }
-        guard dailyHistoryDays < Self.maxDailyHistoryDays else { return }
-        dailyHistoryLoadInProgress = true
-        pendingDailyHistoryLoadAnchorDate = oldestDate
-        dailyHistoryDays = min(
+        let nextDailyHistoryDays = min(
             dailyHistoryDays + Self.dailyHistoryPageDays,
             Self.maxDailyHistoryDays
         )
+        guard nextDailyHistoryDays > dailyHistoryDays else { return }
+        pendingDailyHistoryLoadAnchorDate = oldestDate
+        dailyHistoryDays = nextDailyHistoryDays
+        dailyHistoryLoadInProgress = true
         refresh()
     }
 
@@ -316,6 +332,7 @@ final class AppModel: ObservableObject {
         dailyHistoryDays = Self.initialDailyHistoryDays(for: date)
         pendingDailyHistoryLoadAnchorDate = nil
         dailyHistoryLoadAnchorDate = nil
+        dailyHistoryLoadInProgress = false
         refresh()
     }
 
