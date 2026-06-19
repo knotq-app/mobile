@@ -67,7 +67,57 @@ final class MarkerConcealmentTests: XCTestCase {
         return ranges
     }
 
+    private func assertColor(
+        _ actual: UIColor?,
+        equals expected: UIColor,
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) {
+        guard let actual else {
+            XCTFail("Missing color", file: file, line: line)
+            return
+        }
+        var ar: CGFloat = 0
+        var ag: CGFloat = 0
+        var ab: CGFloat = 0
+        var aa: CGFloat = 0
+        var er: CGFloat = 0
+        var eg: CGFloat = 0
+        var eb: CGFloat = 0
+        var ea: CGFloat = 0
+        XCTAssertTrue(
+            actual.getRed(&ar, green: &ag, blue: &ab, alpha: &aa),
+            file: file,
+            line: line
+        )
+        XCTAssertTrue(
+            expected.getRed(&er, green: &eg, blue: &eb, alpha: &ea),
+            file: file,
+            line: line
+        )
+        XCTAssertEqual(ar, er, accuracy: 0.01, file: file, line: line)
+        XCTAssertEqual(ag, eg, accuracy: 0.01, file: file, line: line)
+        XCTAssertEqual(ab, eb, accuracy: 0.01, file: file, line: line)
+        XCTAssertEqual(aa, ea, accuracy: 0.01, file: file, line: line)
+    }
+
     // MARK: - The core regression
+
+    func testRestyleEditorStorageRecolorsExistingTextForThemeChange() {
+        let meta = LineMeta()
+        let storage = NSTextStorage(
+            string: "Plain text\n",
+            attributes: EditorAttributes.bodyAttributes(meta: meta, theme: .dark)
+        )
+
+        restyleEditorStorage(storage, theme: .light)
+
+        XCTAssertEqual(storage.string, "Plain text\n")
+        assertColor(
+            storage.attribute(.foregroundColor, at: 0, effectiveRange: nil) as? UIColor,
+            equals: UIColor(KnotQTheme.light.textPrimary)
+        )
+    }
 
     /// The bug, end to end: as the caret moves on and off a line, the markers
     /// must actually collapse and re-expand. Width is a faithful proxy because

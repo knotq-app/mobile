@@ -10,6 +10,7 @@ import android.animation.ValueAnimator
 import android.content.ActivityNotFoundException
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.content.res.Configuration
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
@@ -76,6 +77,7 @@ import com.android.billingclient.api.Purchase
 import com.android.billingclient.api.PurchasesUpdatedListener
 import com.android.billingclient.api.QueryProductDetailsParams
 import com.android.billingclient.api.QueryPurchasesParams
+import com.google.android.play.core.review.ReviewManagerFactory
 import org.json.JSONArray
 import org.json.JSONObject
 import java.time.Instant
@@ -150,6 +152,9 @@ private const val CALENDAR_INTERACTION_DRAG = 1
 private const val CALENDAR_INTERACTION_CREATE = 2
 
 private const val REQUEST_ATTACH_IMAGE = 7311
+private const val REVIEW_FIRST_LAUNCH_AT_PREF = "knotq.reviewFirstLaunchAt.v1"
+private const val REVIEW_PROMPTED_PREF = "knotq.reviewPrompted.v1"
+private const val REVIEW_MIN_USAGE_MS = 14L * 24L * 60L * 60L * 1000L
 
 internal fun refreshApiErrorCode(connection: HttpURLConnection): String {
     val raw = connection.errorStream?.bufferedReader()?.use { it.readText() }.orEmpty()
@@ -436,6 +441,12 @@ class MainActivity : Activity() {
         configureGoogleSyncPolling()
     }
 
+    override fun onResume() {
+        super.onResume()
+        if (!::bridge.isInitialized) return
+        maybeRequestStoreReview()
+    }
+
     override fun onStop() {
         isInForeground = false
         syncPollHandler.removeCallbacks(syncPollRunnable)
@@ -465,6 +476,46 @@ class MainActivity : Activity() {
         super.onNewIntent(intent)
         setIntent(intent)
         handleIncomingAuthIntent(intent?.data)
+    }
+
+    private fun maybeRequestStoreReview() {
+        val prefs = getSharedPreferences("knotq", MODE_PRIVATE)
+        val now = System.currentTimeMillis()
+        val firstLaunchAt = reviewUsageStartAt(prefs, now)
+
+        if (!prefs.getBoolean(ONBOARDING_PREF, false)) return
+        if (prefs.getBoolean(REVIEW_PROMPTED_PREF, false)) return
+        if (now - firstLaunchAt < REVIEW_MIN_USAGE_MS) return
+
+        prefs.edit().putBoolean(REVIEW_PROMPTED_PREF, true).apply()
+        val manager = runCatching { ReviewManagerFactory.create(this) }.getOrNull() ?: return
+        runCatching {
+            manager.requestReviewFlow().addOnCompleteListener { request ->
+                if (!request.isSuccessful) return@addOnCompleteListener
+                if (!isInForeground || isFinishing || isDestroyed) return@addOnCompleteListener
+                manager.launchReviewFlow(this, request.result)
+            }
+        }
+    }
+
+    private fun reviewUsageStartAt(prefs: android.content.SharedPreferences, now: Long): Long {
+        val stored = prefs.getLong(REVIEW_FIRST_LAUNCH_AT_PREF, 0L)
+        if (stored > 0L) return stored
+
+        val inferred = runCatching {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                packageManager.getPackageInfo(
+                    packageName,
+                    PackageManager.PackageInfoFlags.of(0)
+                ).firstInstallTime
+            } else {
+                @Suppress("DEPRECATION")
+                packageManager.getPackageInfo(packageName, 0).firstInstallTime
+            }
+        }.getOrDefault(now).takeIf { it > 0L } ?: now
+
+        prefs.edit().putLong(REVIEW_FIRST_LAUNCH_AT_PREF, inferred).apply()
+        return inferred
     }
 
     @Suppress("DEPRECATION", "OVERRIDE_DEPRECATION")

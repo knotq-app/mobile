@@ -126,11 +126,19 @@ final class EditorTableCellEditor: UIView, UITextViewDelegate {
     private var didCommit = false
     private let theme: KnotQTheme
     private weak var rowMenuButton: UIButton?
+    /// The drawn cell's natural height. The overlay grows past this to fit text
+    /// being typed, but never shrinks below it (the drawn table only reflows once
+    /// the edit commits).
+    private var baseHeight: CGFloat
+    /// Cap on how tall the overlay grows before its text scrolls internally, so a
+    /// long note can't push the editing surface off-screen / under the keyboard.
+    private let maxGrownHeight: CGFloat = 220
 
     init(hit: EditorTableCellHit, theme: KnotQTheme) {
         self.hit = hit
         self.committedText = hit.text
         self.theme = theme
+        self.baseHeight = hit.frame.height
         super.init(frame: hit.frame)
         backgroundColor = UIColor(theme.bgModal)
         layer.borderWidth = 1.5
@@ -315,10 +323,26 @@ final class EditorTableCellEditor: UIView, UITextViewDelegate {
         self.hit = hit
         committedText = hit.text
         didCommit = false
+        baseHeight = hit.frame.height
         frame = hit.frame
         field.text = hit.text
         updateAccessoryState()
         field.selectedRange = NSRange(location: (field.text as NSString).length, length: 0)
+        growToFitContent()
+    }
+
+    /// Grows the overlay downward so every line being typed stays visible. The
+    /// drawn cell can't reflow until the edit commits, so without this the added
+    /// lines just scroll out of a one-row-tall box. Capped at `maxGrownHeight`,
+    /// past which `field` scrolls internally to keep the caret in view.
+    private func growToFitContent() {
+        // Width available to text matches `layoutSubviews`' 7pt inset on each side.
+        let textWidth = max(1, bounds.width - 14)
+        let fitted = field.sizeThatFits(CGSize(width: textWidth, height: .greatestFiniteMagnitude)).height
+        let desired = min(max(baseHeight, ceil(fitted) + 14), maxGrownHeight)
+        if abs(desired - bounds.height) > 0.5 {
+            frame.size.height = desired
+        }
     }
 
     /// Persists the current text (if it changed) and keeps the editor alive. The
@@ -338,6 +362,14 @@ final class EditorTableCellEditor: UIView, UITextViewDelegate {
         field.selectedRange = NSRange(location: (field.text as NSString).length, length: 0)
     }
 
+    /// Focus and select the whole cell, so the next keystroke replaces it. Used
+    /// when Tab/arrow navigation lands on a cell (matching the desktop editor),
+    /// unlike a tap-to-edit which places a caret.
+    func focusSelectingAll() {
+        field.becomeFirstResponder()
+        field.selectedRange = NSRange(location: 0, length: (field.text as NSString).length)
+    }
+
     /// Persists the current text if it changed. `reason` nil means "flush only"
     /// (no navigation); callers pass an explicit reason to also move.
     func commit(reason: EditorCellCommitReason?) {
@@ -353,6 +385,10 @@ final class EditorTableCellEditor: UIView, UITextViewDelegate {
     }
 
     // MARK: UITextViewDelegate
+
+    func textViewDidChange(_ textView: UITextView) {
+        growToFitContent()
+    }
 
     func textViewDidEndEditing(_ textView: UITextView) {
         // Only treat as a plain resign if no explicit navigation already fired.
@@ -753,6 +789,30 @@ final class EditorTextView: UITextView {
         setNeedsDisplay()
         coordinator?.markClean()
         consumePendingCellFocusIfNeeded()
+    }
+
+    func restyleForTheme(_ theme: KnotQTheme) {
+        let savedSelection = selectedRange
+        self.theme = theme
+        coordinator?.suppress {
+            textStorage.beginEditing()
+            restyleEditorStorage(textStorage, theme: theme)
+            textStorage.endEditing()
+        }
+        let targetLocation = clampedCaret(savedSelection.location, in: textStorage)
+        let targetLength = min(
+            savedSelection.length,
+            max(0, textStorage.length - targetLocation)
+        )
+        selectedRange = NSRange(location: targetLocation, length: targetLength)
+        typingAttributes = EditorAttributes.bodyAttributes(
+            meta: lineMeta(at: targetLocation, in: textStorage),
+            theme: theme
+        )
+        layoutManager.ensureLayout(for: textContainer)
+        refreshMarkerVisibility(force: true)
+        refreshEmbeddedLayoutIfNeeded(deferred: true)
+        setNeedsDisplay()
     }
 
     func extractItemEdits() -> [MobileItemEdit] {
@@ -2095,6 +2155,9 @@ final class EditorTextView: UITextView {
     private func handleCellCommit(_ hit: EditorTableCellHit, text: String, reason: EditorCellCommitReason) {
         if text != hit.text {
             onTableCellCommit?(hit, text)
+            // Show the edit on the drawn cell immediately; the model round-trip
+            // reloads later and reconciles to the same value.
+            applyTableCellEditOptimistically(hit, text: text)
         }
         switch reason {
         case .resign:
@@ -2107,6 +2170,31 @@ final class EditorTextView: UITextView {
             moveCellEditor(from: hit, rowDelta: 0, columnDelta: 1, textChanged: text != hit.text)
         case .movePrevious:
             moveCellEditor(from: hit, rowDelta: 0, columnDelta: -1, textChanged: text != hit.text)
+        }
+    }
+
+    /// Patch the drawn table cell (or header) for `hit` to `text` right away, so
+    /// the edit is visible before the model write reloads the document. The
+    /// reload then reconciles to the authoritative value (a no-op when equal).
+    private func applyTableCellEditOptimistically(_ hit: EditorTableCellHit, text: String) {
+        let ns = textStorage.string as NSString
+        for paragraph in paragraphRanges(in: ns) {
+            let meta = lineMeta(at: paragraph.fullRange.location, in: textStorage)
+            guard meta.itemID == hit.itemID else { continue }
+            guard let newMeta = meta.patchingTable(
+                tableIndex: hit.tableIndex,
+                row: hit.row,
+                column: hit.column,
+                isHeader: hit.isHeader,
+                text: text
+            ) else { continue }
+            coordinator?.suppress {
+                textStorage.beginEditing()
+                setLineMeta(newMeta, onParagraph: paragraph.fullRange, in: textStorage, theme: theme)
+                textStorage.endEditing()
+            }
+            invalidateEmbeddedBlockDisplay(reflow: true)
+            return
         }
     }
 
@@ -2147,7 +2235,8 @@ final class EditorTextView: UITextView {
             guard let self, let editor = self.activeCellEditor else { return }
             if let next = self.tableCellHit(itemID: hit.itemID, tableIndex: hit.tableIndex, row: targetRow, column: targetColumn) {
                 editor.retarget(to: next)
-                editor.focus()
+                // Tab/arrow into a cell selects the whole cell (desktop parity).
+                editor.focusSelectingAll()
             } else {
                 self.endTableCellEditing(commit: false)
             }

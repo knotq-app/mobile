@@ -294,6 +294,67 @@ enum DesktopEditorMetrics {
 
 }
 
+extension LineMeta {
+    /// A copy with the `tableIndex`-th table's cell text (or header column name)
+    /// set to `text`. Patches both the flat `tables` list and the inline
+    /// `content`, so every draw path reflects the edit. Used to update a drawn
+    /// table cell *optimistically* on commit, before the model round-trip
+    /// reloads the document (which then reconciles to the same value). Returns
+    /// nil when the addressed table isn't on this line.
+    func patchingTable(tableIndex: Int, row: Int, column: Int, isHeader: Bool, text: String) -> LineMeta? {
+        func patched(_ table: MobileTable) -> MobileTable {
+            var t = table
+            if isHeader {
+                if column >= 0, column < t.columns.count {
+                    t.columns[column].name = text
+                }
+                return t
+            }
+            guard row >= 0, row < t.rows.count, column >= 0, column < t.rows[row].cells.count else {
+                return t
+            }
+            var cell = t.rows[row].cells[column]
+            let lineTexts = text.isEmpty ? [""] : text.components(separatedBy: "\n")
+            var lines: [MobileCellLine] = []
+            for (index, lineText) in lineTexts.enumerated() {
+                if index < cell.lines.count {
+                    var line = cell.lines[index]
+                    line.text = lineText
+                    lines.append(line)
+                } else {
+                    lines.append(MobileCellLine(
+                        id: "", text: lineText, marker: "blank",
+                        done: false, start: nil, end: nil, media: []
+                    ))
+                }
+            }
+            cell.lines = lines
+            cell.text = lines.map(\.text).joined(separator: " ")
+            t.rows[row].cells[column] = cell
+            return t
+        }
+
+        var found = false
+        var newContent = content
+        var seen = 0
+        for index in newContent.indices {
+            if case let .table(table) = newContent[index] {
+                if seen == tableIndex {
+                    newContent[index] = .table(table: patched(table))
+                    found = true
+                }
+                seen += 1
+            }
+        }
+        var newTables = tables
+        if tableIndex >= 0, tableIndex < newTables.count {
+            newTables[tableIndex] = patched(newTables[tableIndex])
+            found = true
+        }
+        return found ? with(tables: newTables, content: newContent) : nil
+    }
+}
+
 // MARK: - Attribute composition
 
 enum EditorAttributes {
@@ -521,6 +582,24 @@ func setLineMeta(
         length: (body as NSString).length
     )
     applyInlineMarkdownStyling(body: body, bodyRange: bodyRange, in: storage)
+}
+
+/// Re-applies theme-derived attributes to the existing editor storage without
+/// replacing the document text. Used when iOS appearance changes so dirty edits
+/// keep their content while foreground colors move to the new theme.
+func restyleEditorStorage(_ storage: NSTextStorage, theme: KnotQTheme) {
+    guard storage.length > 0 else {
+        _ = ensureWellFormed(storage, theme: theme)
+        return
+    }
+
+    let ns = storage.string as NSString
+    let paragraphs = paragraphRanges(in: ns)
+    for paragraph in paragraphs {
+        let meta = paragraphMeta(of: paragraph.fullRange, in: storage)
+        setLineMeta(meta, onParagraph: paragraph.fullRange, in: storage, theme: theme)
+    }
+    _ = ensureWellFormed(storage, theme: theme)
 }
 
 /// Applies heading enlargement or `**…**`/`*…*`/`==…==` emphasis over a paragraph

@@ -127,6 +127,7 @@ struct SchemeTextView: UIViewRepresentable {
 
     func updateUIView(_ uiView: EditorTextView, context: Context) {
         let coordinator = context.coordinator
+        let themeChanged = uiView.theme.isDark != theme.isDark
         coordinator.theme = theme
         coordinator.accentColor = UIColor(accent)
         coordinator.onDateRequested = onDate
@@ -146,6 +147,9 @@ struct SchemeTextView: UIViewRepresentable {
         uiView.keyboardDismissMode = .none
         uiView.isEditable = !readOnly
         uiView.isSelectable = true
+        if themeChanged {
+            uiView.restyleForTheme(theme)
+        }
         if readOnly, uiView.inputAccessoryView != nil {
             uiView.inputAccessoryView = nil
         }
