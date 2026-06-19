@@ -67,6 +67,30 @@ final class MarkerConcealmentTests: XCTestCase {
         return ranges
     }
 
+    private func markerCharacterIndexes(_ storage: NSAttributedString) -> [Int] {
+        markerRanges(storage).flatMap { range in
+            Array(range.location..<NSMaxRange(range))
+        }
+    }
+
+    private func assertMarkerCharacters(
+        _ indexes: [Int],
+        hidden expectedHidden: Bool,
+        in layoutManager: EditorLayoutManager,
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) {
+        for index in indexes {
+            XCTAssertEqual(
+                layoutManager.isHiddenMarker(at: index),
+                expectedHidden,
+                "Marker at UTF-16 index \(index)",
+                file: file,
+                line: line
+            )
+        }
+    }
+
     private func assertColor(
         _ actual: UIColor?,
         equals expected: UIColor,
@@ -174,6 +198,106 @@ final class MarkerConcealmentTests: XCTestCase {
         // the collapse actually re-laid out line one, not just line two.
         let line1HiddenWidth = lineWidth(layoutManager, container, charRange: line1Content)
         XCTAssertLessThan(line1HiddenWidth, line1RevealedWidth)
+    }
+
+    func testHighlightMarkersCollapseAndRevealWithCaretState() {
+        let text = "Lead ==mark== tail"
+        let (storage, layoutManager, container) = makeStack(text)
+        let ns = text as NSString
+        let wholeLine = NSRange(location: 0, length: ns.length)
+        let markerIndexes = markerCharacterIndexes(storage)
+
+        XCTAssertEqual(
+            markerRanges(storage),
+            [NSRange(location: 5, length: 2), NSRange(location: 11, length: 2)]
+        )
+        XCTAssertNotNil(
+            storage.attribute(.backgroundColor, at: ns.range(of: "mark").location, effectiveRange: nil),
+            "Highlighted content should stay formatted while its == markers are hidden"
+        )
+
+        layoutManager.setRevealedRange(wholeLine, force: true)
+        assertMarkerCharacters(markerIndexes, hidden: false, in: layoutManager)
+        let expandedWidth = lineWidth(layoutManager, container, charRange: wholeLine)
+
+        layoutManager.setRevealedRange(NSRange(location: 0, length: 0), force: false)
+        assertMarkerCharacters(markerIndexes, hidden: true, in: layoutManager)
+        let formattedWidth = lineWidth(layoutManager, container, charRange: wholeLine)
+
+        XCTAssertLessThan(
+            formattedWidth,
+            expandedWidth,
+            "Collapsed preview should hide the == syntax without removing the highlighted text"
+        )
+        XCTAssertEqual(storage.string, text)
+    }
+
+    func testNestedHighlightRevealsEveryDelimiterOnCursorLine() {
+        let text = "==**bold** and *italic*=="
+        let (storage, layoutManager, _) = makeStack(text)
+        let ns = text as NSString
+        let wholeLine = NSRange(location: 0, length: ns.length)
+        let markerIndexes = markerCharacterIndexes(storage)
+
+        XCTAssertEqual(
+            markerIndexes,
+            [0, 1, 2, 3, 8, 9, 15, 22, 23, 24]
+        )
+        XCTAssertNotNil(storage.attribute(.backgroundColor, at: ns.range(of: "bold").location, effectiveRange: nil))
+        XCTAssertNotNil(storage.attribute(.backgroundColor, at: ns.range(of: "italic").location, effectiveRange: nil))
+
+        layoutManager.setRevealedRange(wholeLine, force: true)
+        assertMarkerCharacters(markerIndexes, hidden: false, in: layoutManager)
+
+        layoutManager.setRevealedRange(NSRange(location: 0, length: 0), force: false)
+        assertMarkerCharacters(markerIndexes, hidden: true, in: layoutManager)
+    }
+
+    func testEditorSelectionExpandsHighlightSyntaxOnlyOnSelectedLines() {
+        let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 400, height: 700))
+        let fixture = makeWiredEditorView()
+        let view = fixture.0
+        window.addSubview(view)
+        window.makeKeyAndVisible()
+        view.loadItems(
+            [
+                textItem(id: "one", text: "==one==", indent: 0),
+                textItem(id: "two", text: "==two==", indent: 0),
+                textItem(id: "three", text: "==three==", indent: 0),
+            ],
+            theme: .dark,
+            timeFormat: "twelve_hour",
+            placeCursorAtEnd: false
+        )
+        XCTAssertTrue(view.becomeFirstResponder())
+
+        guard let layoutManager = view.layoutManager as? EditorLayoutManager else {
+            XCTFail("Expected editor layout manager")
+            return
+        }
+        let ns = view.textStorage.string as NSString
+        let paragraphs = paragraphRanges(in: ns)
+        XCTAssertGreaterThanOrEqual(paragraphs.count, 3)
+
+        let selectionStart = paragraphs[0].lineRange.location + 2
+        let selectionEnd = paragraphs[1].lineRange.location + 4
+        view.selectedRange = NSRange(location: selectionStart, length: selectionEnd - selectionStart)
+        view.refreshMarkerVisibility(force: true)
+
+        let markerIndexes = markerCharacterIndexes(view.textStorage)
+        let selectedLineRange = NSUnionRange(paragraphs[0].lineRange, paragraphs[1].lineRange)
+        let selectedMarkers = markerIndexes.filter { NSLocationInRange($0, selectedLineRange) }
+        let unselectedMarkers = markerIndexes.filter { NSLocationInRange($0, paragraphs[2].lineRange) }
+
+        XCTAssertEqual(selectedMarkers.count, 8)
+        XCTAssertEqual(unselectedMarkers.count, 4)
+        assertMarkerCharacters(selectedMarkers, hidden: false, in: layoutManager)
+        assertMarkerCharacters(unselectedMarkers, hidden: true, in: layoutManager)
+
+        view.resignFirstResponder()
+        view.refreshMarkerVisibility(force: true)
+        assertMarkerCharacters(markerIndexes, hidden: true, in: layoutManager)
+        view.removeFromSuperview()
     }
 
     // MARK: - Decision logic
