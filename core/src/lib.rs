@@ -17,7 +17,7 @@ use knotq_index::IndexedWorkspace;
 use knotq_model::{
     daily_queue_scheme_id, daily_queue_sync_metadata, AppSettings, CalendarProvider, ColumnId,
     DocumentId, FolderId, GoogleOAuthAccount, ImageAssetFormat, ImageInline,
-    ImportedCalendarSource, Inline, Item, ItemId, ItemKind, ItemMarker, NodeRef,
+    ImportedCalendarSource, Inline, Item, ItemContent, ItemId, ItemKind, ItemMarker, NodeRef,
     NotificationDefaults, OccurrenceId, OperationId, Recurrence, RowId, Scheme, SchemeId,
     SchemeSource, Table, TableCell, TableColumn, TableRow, ThemeMode, TimeFormat, Workspace,
     DAILY_QUEUE_COLOR_INDEX,
@@ -2550,7 +2550,7 @@ impl MobileCoreInner {
         };
 
         let mut item = Item::new("");
-        item.content.push(Inline::Table(Table::new(2, 2)));
+        item.set_table(Table::new(2, 2));
         self.apply(Command::InsertItem {
             scheme: scheme_id,
             position,
@@ -2590,7 +2590,7 @@ impl MobileCoreInner {
             scheme
                 .items
                 .iter()
-                .any(|item| item.text() == EDITOR_IMAGE_FIXTURE_TEXT && item.has_images())
+                .any(|item| item.text() == EDITOR_IMAGE_FIXTURE_TEXT)
         }) {
             return Ok(());
         }
@@ -2622,19 +2622,22 @@ impl MobileCoreInner {
         fs::write(&asset_path, EDITOR_IMAGE_FIXTURE_PNG)
             .with_context(|| format!("write {}", asset_path.display()))?;
 
-        let mut item = Item::new(EDITOR_IMAGE_FIXTURE_TEXT);
-        item.content.push(Inline::Image(ImageInline {
+        // Single-content: the caption and the image are two separate lines.
+        let caption = Item::new(EDITOR_IMAGE_FIXTURE_TEXT);
+        let mut image_item = Item::new("");
+        image_item.set_image(ImageInline {
             asset,
             format: ImageAssetFormat::Png,
             width: Some(320),
             height: Some(180),
-        }));
+        });
 
         let scheme = self
             .workspace
             .scheme_mut(target_id)
             .ok_or_else(|| anyhow!("scheme {target_id} is missing"))?;
-        scheme.items.push(item);
+        scheme.items.push(caption);
+        scheme.items.push(image_item);
         self.record_crdt_changes(WorkspaceCrdtChangeSet::default().touch_scheme(target_id))?;
         self.save_workspace()
     }
@@ -2677,16 +2680,28 @@ impl MobileCoreInner {
             let mut item = existing_item.unwrap_or_else(|| Item::new(""));
 
             used_ids.push(item.id);
-            item.set_text(draft.text);
+            // A line is single-content. A bulk save sends empty `content`/`media`
+            // for an existing image/table line (its block lives only in
+            // `content`, which the editor may omit), so preserve the block rather
+            // than let `set_text` clobber it. When content/media *are* supplied,
+            // or the line was text, the incoming text/content wins.
+            let preserve_existing_block =
+                item.content.is_block() && draft.content.is_empty() && draft.media.is_empty();
+            if !preserve_existing_block {
+                item.set_text(draft.text);
+            }
             item.marker = parse_marker(Some(&draft.marker))?;
             item.indent = as_u8(draft.indent, "indent")?.min(8);
             if should_apply_rich_metadata {
                 item.start = parse_datetime_opt(draft.start.as_deref())?;
                 item.end = parse_datetime_opt(draft.end.as_deref())?;
                 item.repeats = recurrence_from_rrule(draft.repeat_rule);
-                item.content
-                    .retain(|inline| !matches!(inline, Inline::Image(_)));
-                item.content.extend(
+                // Legacy text+media path: rebuild the inline run, swapping the
+                // attached images, then collapse back to single-content (a block
+                // wins, so a line with media becomes an image line).
+                let mut inlines = item.content.to_inlines();
+                inlines.retain(|inline| !matches!(inline, Inline::Image(_)));
+                inlines.extend(
                     draft
                         .media
                         .iter()
@@ -2695,10 +2710,14 @@ impl MobileCoreInner {
                         })
                         .map(Inline::Image),
                 );
+                item.content = ItemContent::from_inlines(inlines);
             }
             item.enforce_marker_constraints();
             if !draft.content.is_empty() {
-                item.content = mobile_inlines_to_inlines(&draft.content, &self.image_assets_dir)?;
+                item.content = ItemContent::from_inlines(mobile_inlines_to_inlines(
+                    &draft.content,
+                    &self.image_assets_dir,
+                )?);
             }
             if item.marker == ItemMarker::Checkbox {
                 let state = item.state_for_occurrence_mut(OccurrenceId::Single);
@@ -2960,15 +2979,13 @@ fn mobile_item_image_assets(item: &Item) -> Vec<ImageInline> {
 }
 
 fn mobile_collect_item_image_assets(item: &Item, images: &mut Vec<ImageInline>) {
-    for inline in &item.content {
-        match inline {
-            Inline::Text { .. } => {}
-            Inline::Image(image) => images.push(*image),
-            Inline::Table(table) => {
-                for cell in table.cells() {
-                    for item in &cell.items {
-                        mobile_collect_item_image_assets(item, images);
-                    }
+    match &item.content {
+        ItemContent::Text { .. } => {}
+        ItemContent::Image(image) => images.push(*image),
+        ItemContent::Table(table) => {
+            for cell in table.cells() {
+                for item in &cell.items {
+                    mobile_collect_item_image_assets(item, images);
                 }
             }
         }
@@ -3146,7 +3163,7 @@ mod sync_api_base_tests {
     use super::{
         mobile_media_asset_needs_download, mobile_workspace_media_assets, normalize_sync_api_base,
     };
-    use knotq_model::{ImageAssetFormat, ImageInline, Inline, Item, Scheme, Workspace};
+    use knotq_model::{ImageAssetFormat, ImageInline, Item, Scheme, Workspace};
     use std::{fs, path::PathBuf};
 
     #[test]
@@ -3180,20 +3197,20 @@ mod sync_api_base_tests {
         let mut scheme = Scheme::new("Images", 0);
         let scheme_id = scheme.id;
         let asset = uuid::Uuid::new_v4();
-        let mut item = Item::new("photo");
-        item.content.push(Inline::Image(ImageInline {
+        // Two image lines referencing the *same* asset — media collection must
+        // dedupe them to a single asset entry.
+        let image = ImageInline {
             asset,
             format: ImageAssetFormat::Png,
             width: Some(10),
             height: Some(10),
-        }));
-        item.content.push(Inline::Image(ImageInline {
-            asset,
-            format: ImageAssetFormat::Png,
-            width: Some(10),
-            height: Some(10),
-        }));
-        scheme.items.push(item);
+        };
+        let mut first = Item::new("");
+        first.set_image(image);
+        let mut second = Item::new("");
+        second.set_image(image);
+        scheme.items.push(first);
+        scheme.items.push(second);
         workspace.schemes.insert(scheme_id, scheme);
         workspace.ensure_sync_metadata();
         let document = workspace.scheme_sync.get(&scheme_id).unwrap().id;
@@ -3399,6 +3416,9 @@ pub struct MobileItemEdit {
 
 impl MobileItem {
     fn from_item(item: &Item, image_assets_dir: &Path) -> Self {
+        // A line is single-content; flatten to the inline run the bridge speaks
+        // (one element, or empty for a blank text line).
+        let inlines = item.content.to_inlines();
         Self {
             id: item.id.to_string(),
             text: item.text(),
@@ -3417,16 +3437,14 @@ impl MobileItem {
                 .iter()
                 .filter_map(|media| MobileItemMedia::from_media(media, image_assets_dir))
                 .collect(),
-            tables: item
-                .content
+            tables: inlines
                 .iter()
                 .filter_map(|inline| match inline {
                     Inline::Table(table) => Some(MobileTable::from_table(table, image_assets_dir)),
                     _ => None,
                 })
                 .collect(),
-            content: item
-                .content
+            content: inlines
                 .iter()
                 .filter_map(|inline| MobileInline::from_inline(inline, image_assets_dir))
                 .collect(),
@@ -3587,12 +3605,16 @@ impl MobileCellLine {
         item.marker = parse_marker(Some(&self.marker))?;
         item.start = parse_datetime_opt(self.start.as_deref())?;
         item.end = parse_datetime_opt(self.end.as_deref())?;
-        item.content.extend(
+        // Legacy cell line: text plus optional media collapses to single-content
+        // (a block wins, so a cell line with media is an image line).
+        let mut inlines = item.content.to_inlines();
+        inlines.extend(
             self.media
                 .iter()
                 .filter_map(|media| mobile_media_to_item_media(media, image_assets_dir))
                 .map(Inline::Image),
         );
+        item.content = ItemContent::from_inlines(inlines);
         if item.marker == ItemMarker::Checkbox {
             let state = item.state_for_occurrence_mut(OccurrenceId::Single);
             state.progress = if self.done { -1 } else { 0 };
@@ -4956,11 +4978,14 @@ mod tests {
         assert_eq!(item.tables[0].rows[0].cells[1].lines[0].text, "One");
         assert_eq!(item.tables[0].rows[0].cells[1].lines[1].text, "Two");
 
+        // A bulk save that carries no replacement content for the table line must
+        // preserve the table. A table is the whole content of its line, so the
+        // editor sends empty text/content for it.
         core.replace_scheme_items(
             scheme_id.clone(),
             vec![MobileItemEdit {
                 id: Some(table_item.id.clone()),
-                text: "Budget".to_string(),
+                text: String::new(),
                 marker: "blank".to_string(),
                 indent: 0,
                 done: false,
@@ -4985,18 +5010,20 @@ mod tests {
             .into_iter()
             .find(|item| item.id == table_item.id)
             .expect("table item");
-        assert_eq!(item.text, "Budget");
+        assert_eq!(item.text, "");
         assert_eq!(item.tables[0].rows[0].cells[1].text, "One Two");
         assert_eq!(item.tables[0].rows.len(), 3);
         assert_eq!(item.tables[0].columns.len(), 3);
         assert_eq!(item.tables[0].columns[1].name, "Quarter");
 
+        // A save that *does* carry the table in `content` round-trips it as the
+        // line's single block.
         let table = item.tables[0].clone();
         core.replace_scheme_items(
             scheme_id.clone(),
             vec![MobileItemEdit {
                 id: Some(table_item.id.clone()),
-                text: "After".to_string(),
+                text: String::new(),
                 marker: "blank".to_string(),
                 indent: 0,
                 done: false,
@@ -5005,15 +5032,10 @@ mod tests {
                 notification_offset_secs: None,
                 repeat_rule: None,
                 media: Vec::new(),
-                content: vec![
-                    MobileInline::Table { table },
-                    MobileInline::Text {
-                        text: "After".to_string(),
-                    },
-                ],
+                content: vec![MobileInline::Table { table }],
             }],
         )
-        .expect("replace items with ordered content");
+        .expect("replace items with table content");
 
         let item = core
             .snapshot(Some("2026-05-26".to_string()), 0)
@@ -5026,14 +5048,12 @@ mod tests {
             .into_iter()
             .find(|item| item.id == table_item.id)
             .expect("table item");
-        assert_eq!(item.text, "After");
+        assert_eq!(item.text, "");
+        assert_eq!(item.content.len(), 1);
         assert!(matches!(
             item.content.first(),
             Some(MobileInline::Table { .. })
         ));
-        assert!(
-            matches!(item.content.last(), Some(MobileInline::Text { text }) if text == "After")
-        );
 
         core.delete_table_row(scheme_id.clone(), table_item.id.clone(), 1)
             .expect("delete row");
@@ -5053,15 +5073,13 @@ mod tests {
         assert_eq!(item.tables[0].rows.len(), 2);
         assert_eq!(item.tables[0].columns.len(), 2);
 
-        // Ordered inline content carries the table in document order, and each
-        // cell exposes editable lines (not just a flat summary string).
+        // The line's content is the single table block; each cell exposes
+        // editable lines (not just a flat summary string).
+        assert_eq!(item.content.len(), 1);
         assert!(matches!(
             item.content.first(),
             Some(MobileInline::Table { .. })
         ));
-        assert!(
-            matches!(item.content.last(), Some(MobileInline::Text { text }) if text == "After")
-        );
         assert_eq!(item.tables[0].rows[0].cells[0].lines.len(), 1);
         assert_eq!(item.tables[0].rows[0].cells[0].lines[0].marker, "blank");
 
