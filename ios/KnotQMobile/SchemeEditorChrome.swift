@@ -29,6 +29,12 @@ final class EditorController: ObservableObject {
         }
     }
 
+    /// A table cell is being edited in place. Its edits write straight to the
+    /// model, so the document reload is redundant (the cell editor already shows
+    /// them) — except when a structural change is pending a retarget.
+    var isEditingTableCell: Bool { view?.isEditingTableCell ?? false }
+    var hasPendingCellFocus: Bool { view?.hasPendingCellFocus ?? false }
+
     func commit() -> [MobileItemEdit] {
         view?.extractItemEdits() ?? []
     }
@@ -401,6 +407,10 @@ struct IntegratedSchemeEditorPane: View {
 
     private func loadDocument(force: Bool) {
         if !force && controller.isDirty { return }
+        // A cell edit goes straight to the model and is shown optimistically by
+        // the in-place editor, so the full reload only hitches. Skip it while a
+        // cell is being edited, unless a structural change needs to retarget.
+        if !force && controller.isEditingTableCell && !controller.hasPendingCellFocus { return }
         let shouldPlaceCursorAtEnd = loadedSchemeID != scheme.id
         controller.load(items: scheme.items, theme: theme, timeFormat: timeFormat, placeCursorAtEnd: shouldPlaceCursorAtEnd)
         schemeSignature = signature(for: scheme)

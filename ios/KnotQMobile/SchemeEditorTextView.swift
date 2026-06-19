@@ -2048,6 +2048,11 @@ final class EditorTextView: UITextView {
 
     var isEditingTableCell: Bool { activeCellEditor != nil }
 
+    /// True when a structural table change (insert/delete row/column) is waiting
+    /// for the document to reload before retargeting the cell editor — the one
+    /// case where a mid-edit reload must still run.
+    var hasPendingCellFocus: Bool { pendingCellFocus != nil }
+
     /// Starts (or moves) the in-place editor over `hit`. Resigns the document's
     /// own keyboard so the cell field owns input, and focuses it.
     func beginEditingTableCell(_ hit: EditorTableCellHit) {

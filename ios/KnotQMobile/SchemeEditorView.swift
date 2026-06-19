@@ -829,13 +829,14 @@ func extractEdits(from storage: NSAttributedString) -> [MobileItemEdit] {
             let tableParagraph = paragraphs[index + 1]
             let tableMeta = lineMeta(at: tableParagraph.fullRange.location, in: storage)
             if tableMeta.itemID == itemID, tableMeta.hasBlockContent {
-                edits.append(tableEdit(
-                    tableParagraph: tableParagraph,
-                    tableMeta: tableMeta,
-                    beforeBody: paragraphBody(paragraph, in: ns),
-                    afterBody: nil,
-                    ns: ns
-                ))
+                // Single-content: a block is its own line. Text on the boundary
+                // line before it is a *separate* item — never folded into the
+                // block, which the core would drop (block-wins). An empty
+                // boundary just disappears.
+                if !paragraphBody(paragraph, in: ns).isEmpty {
+                    edits.append(plainEdit(paragraph: paragraph, meta: meta, ns: ns))
+                }
+                edits.append(plainEdit(paragraph: tableParagraph, meta: tableMeta, ns: ns))
                 index += 2
                 continue
             }
@@ -847,13 +848,11 @@ func extractEdits(from storage: NSAttributedString) -> [MobileItemEdit] {
             let nextMeta = lineMeta(at: nextParagraph.fullRange.location, in: storage)
             if nextMeta.tableBoundarySide == "after",
                nextMeta.tableBoundaryItemID == meta.itemID {
-                edits.append(tableEdit(
-                    tableParagraph: paragraph,
-                    tableMeta: meta,
-                    beforeBody: nil,
-                    afterBody: paragraphBody(nextParagraph, in: ns),
-                    ns: ns
-                ))
+                edits.append(plainEdit(paragraph: paragraph, meta: meta, ns: ns))
+                // Text on the boundary line after the block is its own item.
+                if !paragraphBody(nextParagraph, in: ns).isEmpty {
+                    edits.append(plainEdit(paragraph: nextParagraph, meta: nextMeta, ns: ns))
+                }
                 index += 2
                 continue
             }
@@ -901,56 +900,11 @@ private func plainEdit(paragraph: EditorParagraphRange, meta: LineMeta, ns: NSSt
     )
 }
 
-private func tableEdit(
-    tableParagraph: EditorParagraphRange,
-    tableMeta: LineMeta,
-    beforeBody: String?,
-    afterBody: String?,
-    ns: NSString
-) -> MobileItemEdit {
-    let tableBody = paragraphBody(tableParagraph, in: ns)
-    let content = tableBoundaryContent(
-        tableBody: tableBody,
-        tableMeta: tableMeta,
-        beforeBody: beforeBody,
-        afterBody: afterBody
-    )
-    return MobileItemEdit(
-        id: tableMeta.itemID,
-        text: plainText(from: content),
-        marker: tableMeta.marker.rawValue,
-        indent: Int32(tableMeta.indent),
-        done: tableMeta.done,
-        start: tableMeta.start,
-        end: tableMeta.end,
-        notificationOffsetSecs: tableMeta.notificationOffsetSecs,
-        repeatRule: tableMeta.repeatRule,
-        media: mediaInlines(from: content),
-        content: content
-    )
-}
-
 private func editContent(body: String, meta: LineMeta) -> [MobileInline] {
     guard !meta.content.isEmpty || meta.hasBlockContent else {
         return []
     }
     return contentReplacingText(body, in: meta)
-}
-
-private func tableBoundaryContent(
-    tableBody: String,
-    tableMeta: LineMeta,
-    beforeBody: String?,
-    afterBody: String?
-) -> [MobileInline] {
-    var content = contentReplacingText(tableBody, in: tableMeta)
-    if let beforeBody, !beforeBody.isEmpty {
-        content.insert(.text(text: beforeBody), at: 0)
-    }
-    if let afterBody, !afterBody.isEmpty {
-        content.append(.text(text: afterBody))
-    }
-    return content
 }
 
 private func contentReplacingText(_ body: String, in meta: LineMeta) -> [MobileInline] {
@@ -976,14 +930,6 @@ private func contentReplacingText(_ body: String, in meta: LineMeta) -> [MobileI
         output.insert(.text(text: body), at: 0)
     }
     return output
-}
-
-private func plainText(from content: [MobileInline]) -> String {
-    content.reduce(into: "") { result, inline in
-        if case let .text(text) = inline {
-            result += text
-        }
-    }
 }
 
 private func mediaInlines(from content: [MobileInline]) -> [MobileItemMedia] {
