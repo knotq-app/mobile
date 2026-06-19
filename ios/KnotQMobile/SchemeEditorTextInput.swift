@@ -185,6 +185,7 @@ final class EditorCoordinator: NSObject, UITextViewDelegate, @preconcurrency NST
 
     private var suppressDelegateDepth = 0
     private var autoBulletizePending = false
+    private var blockIsolationPending = false
     fileprivate var autoBulletUndo: (lineLocation: Int, originalBody: String)?
 
     // Toolbar marker buttons keyed by Marker, so we can tint the active one.
@@ -250,10 +251,6 @@ final class EditorCoordinator: NSObject, UITextViewDelegate, @preconcurrency NST
         guard !readOnly else { return }
         guard recognizer.state == .ended, let view else { return }
         let point = recognizer.location(in: view)
-        if let boundary = view.tableBoundaryHit(at: point) {
-            view.placeCaretAtTableBoundary(boundary, theme: theme)
-            return
-        }
         if let hit = view.tableCellHit(at: point) {
             // Edit the cell in place rather than opening a modal sheet.
             view.beginEditingTableCell(hit)
@@ -282,12 +279,12 @@ final class EditorCoordinator: NSObject, UITextViewDelegate, @preconcurrency NST
         // tap on plain text (a no-op for us) stops moving the cursor and the only
         // way to position the caret is a long-press.
         //
-        // On a table cell / boundary tap we take over caret placement and focus
-        // ourselves (the in-place cell editor), so stay exclusive there to keep
-        // UITextView's tap from fighting for first responder. Everywhere else,
-        // let both fire so a tap positions the caret (and toggles a checkbox).
+        // On a table cell tap we take over caret placement and focus ourselves
+        // (the in-place cell editor), so stay exclusive there to keep UITextView's
+        // tap from fighting for first responder. Everywhere else, let both fire so
+        // a tap positions the caret (and toggles a checkbox).
         let point = gestureRecognizer.location(in: view)
-        if view.tableBoundaryHit(at: point) != nil || view.tableCellHit(at: point) != nil {
+        if view.tableCellHit(at: point) != nil {
             return false
         }
         return true
@@ -296,16 +293,12 @@ final class EditorCoordinator: NSObject, UITextViewDelegate, @preconcurrency NST
     func textView(_ textView: UITextView, shouldChangeTextIn range: NSRange, replacementText text: String) -> Bool {
         guard !readOnly else { return false }
         guard let view = textView as? EditorTextView else { return true }
-        if text == "\n" && range.length == 0 {
-            return !handleEnter(in: view, at: range.location)
-        }
-        if text.isEmpty,
-           range.length > 0,
-           view.selectedRange.length > 0,
-           NSEqualRanges(view.selectedRange, range),
-           view.deleteSelectionIntersectingBlocksIfPossible(range: range) {
+        if text.isEmpty && range.length > 0, view.deleteSelectedBlockParagraphsIfNeeded(in: range) {
             autoBulletUndo = nil
             return false
+        }
+        if text == "\n" && range.length == 0 {
+            return !handleEnter(in: view, at: range.location)
         }
         if text.isEmpty && range.length == 1 {
             if handleAutoBulletUndo(in: view, deletionRange: range) {
@@ -314,21 +307,21 @@ final class EditorCoordinator: NSObject, UITextViewDelegate, @preconcurrency NST
             if handleClearMarkerBackspace(in: view, deletionRange: range) {
                 return false
             }
-            if handleDeletePreviousBlockFromEmptyBoundaryLine(in: view, deletionRange: range) {
-                return false
-            }
-            if handleDeleteEmptyTableBoundaryLine(in: view, deletionRange: range) {
-                return false
-            }
-            if handleMergeTableBoundaryLine(in: view, deletionRange: range) {
-                return false
-            }
-            if handleDeletePreviousTableBlock(in: view, deletionRange: range) {
+            // Refuse a backspace that would merge a block (image/table) line with
+            // a non-empty text line — the block stays alone on its line (I4). The
+            // block's own glyph still deletes natively (it is one real character).
+            if handleBlockMergeGuard(in: view, deletionRange: range) {
                 return false
             }
             if handleMergeParagraphs(in: view, deletionRange: range) {
                 return false
             }
+        }
+        // Typing a real character while the caret sits on a block line: redirect
+        // it onto a fresh adjacent text line so the block keeps its own line (I4).
+        if !text.isEmpty, range.length == 0, handleTypingOnBlockLine(in: view, range: range, text: text) {
+            autoBulletUndo = nil
+            return false
         }
         // Any non-backspace edit clears the pending auto-bullet undo.
         if !(text.isEmpty && range.length == 1) {
@@ -409,290 +402,107 @@ final class EditorCoordinator: NSObject, UITextViewDelegate, @preconcurrency NST
         return true
     }
 
-    func handleDeleteEmptyTableBoundaryAtDocumentStart(in view: EditorTextView) -> Bool {
-        guard !readOnly else { return false }
-        let selection = view.selectedRange
-        guard selection.location == 0, selection.length == 0 else { return false }
-        let storage = view.textStorage
-        let paragraphs = paragraphRanges(in: storage.string as NSString)
-        guard paragraphs.count > 1,
-              isEmptyTableBoundaryLine(at: 0, paragraphs: paragraphs, storage: storage) else {
-            return false
-        }
-
-        deleteEmptyTableBoundaryLine(at: 0, paragraphs: paragraphs, in: view)
-        return true
-    }
-
-    /// Backspace on an empty boundary line next to a table removes that blank
-    /// line first. This mirrors normal text editing: delete the separator
-    /// newline, leaving the table in place for a subsequent backspace if desired.
-    private func handleDeleteEmptyTableBoundaryLine(in view: EditorTextView, deletionRange: NSRange) -> Bool {
+    /// Refuses a backspace over the "\n" between two paragraphs when the merge
+    /// would put a block (image/table) and text on the same line — the block
+    /// stays alone on its line (invariant I4). A merge where the non-block side is
+    /// empty is allowed (it just removes the blank line); the block's own glyph
+    /// still deletes natively since it is a single real character. Returns true
+    /// when it consumed (and dropped) the backspace.
+    private func handleBlockMergeGuard(in view: EditorTextView, deletionRange: NSRange) -> Bool {
         let storage = view.textStorage
         let ns = storage.string as NSString
         guard deletionRange.length == 1,
-              deletionRange.location < ns.length,
+              deletionRange.location < ns.length - 1,
               ns.character(at: deletionRange.location) == 10 else { return false }
 
         let paragraphs = paragraphRanges(in: ns)
-        var candidateIndexes: [Int] = []
-        if let lowerIndex = paragraphs.firstIndex(where: { $0.fullRange.location == deletionRange.location + 1 }) {
-            candidateIndexes.append(lowerIndex)
-        }
-        if let endingIndex = paragraphs.firstIndex(where: { NSMaxRange($0.fullRange) == deletionRange.location + 1 }),
-           !candidateIndexes.contains(endingIndex) {
-            candidateIndexes.append(endingIndex)
-        }
-        guard let currentIndex = candidateIndexes.first(where: {
-            isEmptyTableBoundaryLine(at: $0, paragraphs: paragraphs, storage: storage)
-        }) else { return false }
-
-        deleteEmptyTableBoundaryLine(at: currentIndex, paragraphs: paragraphs, in: view)
-        return true
-    }
-
-    /// Backspace from an empty line immediately after a block-only paragraph
-    /// removes that block. This is the block equivalent of deleting the previous
-    /// character when the caret is visually just after it.
-    private func handleDeletePreviousBlockFromEmptyBoundaryLine(in view: EditorTextView, deletionRange: NSRange) -> Bool {
-        let storage = view.textStorage
-        let ns = storage.string as NSString
-        guard deletionRange.length == 1,
-              deletionRange.location < ns.length,
-              ns.character(at: deletionRange.location) == 10 else { return false }
-
-        let paragraphs = paragraphRanges(in: ns)
-        var candidateIndexes: [Int] = []
-        if let lowerIndex = paragraphs.firstIndex(where: { $0.fullRange.location == deletionRange.location + 1 }) {
-            candidateIndexes.append(lowerIndex)
-        }
-        if let endingIndex = paragraphs.firstIndex(where: { NSMaxRange($0.fullRange) == deletionRange.location + 1 }),
-           !candidateIndexes.contains(endingIndex) {
-            candidateIndexes.append(endingIndex)
-        }
-
-        guard let boundaryIndex = candidateIndexes.first(where: {
-            isEmptyLineImmediatelyAfterBlock(at: $0, paragraphs: paragraphs, storage: storage)
-        }) else { return false }
-        deleteBlockBeforeBoundaryLine(at: boundaryIndex, paragraphs: paragraphs, in: view)
-        return true
-    }
-
-    private func isEmptyLineImmediatelyAfterBlock(at currentIndex: Int, paragraphs: [EditorParagraphRange], storage: NSTextStorage) -> Bool {
-        guard paragraphs.indices.contains(currentIndex),
-              currentIndex > 0 else { return false }
-
-        let current = paragraphs[currentIndex]
-        let currentMeta = lineMeta(at: current.fullRange.location, in: storage)
-        guard bodyText(paragraphRange: current.fullRange, in: storage).isEmpty,
-              currentMeta.marker == .blank,
-              currentMeta.annotation == nil,
-              currentMeta.media.isEmpty,
-              currentMeta.tables.isEmpty else { return false }
-
-        let previous = paragraphs[currentIndex - 1]
-        let previousMeta = lineMeta(at: previous.fullRange.location, in: storage)
-        return previousMeta.hasBlockContent
-            && bodyText(paragraphRange: previous.fullRange, in: storage).isEmpty
-    }
-
-    private func deleteBlockBeforeBoundaryLine(at boundaryIndex: Int, paragraphs: [EditorParagraphRange], in view: EditorTextView) {
-        let storage = view.textStorage
-        let block = paragraphs[boundaryIndex - 1]
-        let boundary = paragraphs[boundaryIndex]
-        let deleteRange = NSRange(
-            location: block.fullRange.location,
-            length: NSMaxRange(boundary.fullRange) - block.fullRange.location
-        )
-        suppress {
-            storage.beginEditing()
-            storage.replaceCharacters(in: deleteRange, with: NSAttributedString(string: ""))
-            ensureWellFormed(storage, theme: theme)
-            storage.endEditing()
-        }
-        let newCaret = clampedCaret(deleteRange.location, in: storage)
-        view.selectedRange = NSRange(location: newCaret, length: 0)
-        view.typingAttributes = EditorAttributes.bodyAttributes(
-            meta: lineMeta(at: newCaret, in: storage),
-            theme: theme
-        )
-        autoBulletUndo = nil
-        markDirty()
-        refreshEmpty()
-        view.invalidateEmbeddedBlockDisplay(reflow: true)
-    }
-
-    private func isEmptyTableBoundaryLine(at currentIndex: Int, paragraphs: [EditorParagraphRange], storage: NSTextStorage) -> Bool {
-        guard paragraphs.indices.contains(currentIndex) else { return false }
-        let current = paragraphs[currentIndex]
-        let currentMeta = lineMeta(at: current.fullRange.location, in: storage)
-        guard bodyText(paragraphRange: current.fullRange, in: storage).isEmpty,
-              currentMeta.marker == .blank,
-              currentMeta.annotation == nil,
-              currentMeta.media.isEmpty,
-              currentMeta.tables.isEmpty else { return false }
-        let touchesTable = [currentIndex - 1, currentIndex + 1].contains { index in
-            guard paragraphs.indices.contains(index) else { return false }
-            let paragraph = paragraphs[index]
-            let meta = lineMeta(at: paragraph.fullRange.location, in: storage)
-            return meta.hasBlockContent
-                && bodyText(paragraphRange: paragraph.fullRange, in: storage).isEmpty
-        }
-        return touchesTable
-    }
-
-    private func deleteEmptyTableBoundaryLine(at currentIndex: Int, paragraphs: [EditorParagraphRange], in view: EditorTextView) {
-        let storage = view.textStorage
-        let current = paragraphs[currentIndex]
-        suppress {
-            storage.beginEditing()
-            storage.replaceCharacters(in: current.fullRange, with: NSAttributedString(string: ""))
-            ensureWellFormed(storage, theme: theme)
-            storage.endEditing()
-        }
-        let newCaret = clampedCaret(current.fullRange.location, in: storage)
-        view.selectedRange = NSRange(location: newCaret, length: 0)
-        view.typingAttributes = EditorAttributes.bodyAttributes(
-            meta: lineMeta(at: newCaret, in: storage),
-            theme: theme
-        )
-        autoBulletUndo = nil
-        markDirty()
-        refreshEmpty()
-        view.invalidateEmbeddedBlockDisplay(reflow: true)
-    }
-
-    /// Deleting the separator between a table and a non-empty adjacent text line
-    /// makes that text part of the table item instead of deleting the table or
-    /// saving a second item. The boundary line remains as the visual host for
-    /// text before/after a full-width table, but extraction folds it into the
-    /// table item in document order.
-    private func handleMergeTableBoundaryLine(in view: EditorTextView, deletionRange: NSRange) -> Bool {
-        let storage = view.textStorage
-        let ns = storage.string as NSString
-        guard deletionRange.length == 1,
-              deletionRange.location < ns.length,
-              ns.character(at: deletionRange.location) == 10,
-              deletionRange.location < ns.length - 1 else { return false }
-
-        let paragraphs = paragraphRanges(in: ns)
-        guard let upperIndex = paragraphs.firstIndex(where: { NSMaxRange($0.fullRange) == deletionRange.location + 1 }),
-              let lowerIndex = paragraphs.firstIndex(where: { $0.fullRange.location == deletionRange.location + 1 }) else {
+        guard let upper = paragraphs.first(where: { NSMaxRange($0.fullRange) == deletionRange.location + 1 }),
+              let lower = paragraphs.first(where: { $0.fullRange.location == deletionRange.location + 1 }) else {
             return false
         }
-
-        let upper = paragraphs[upperIndex]
-        let lower = paragraphs[lowerIndex]
         let upperMeta = lineMeta(at: upper.fullRange.location, in: storage)
         let lowerMeta = lineMeta(at: lower.fullRange.location, in: storage)
+        let upperEmpty = bodyText(paragraphRange: upper.fullRange, in: storage).isEmpty
+        let lowerEmpty = bodyText(paragraphRange: lower.fullRange, in: storage).isEmpty
 
-        if let tableItemID = upperMeta.itemID,
-           upperMeta.hasBlockContent,
-           bodyText(paragraphRange: upper.fullRange, in: storage).isEmpty,
-           isTableBoundaryHost(lowerMeta, side: "after", itemID: tableItemID),
-           !bodyText(paragraphRange: lower.fullRange, in: storage).isEmpty {
-            let boundaryMeta = LineMeta(
-                marker: .blank,
-                indent: upperMeta.indent,
-                tableBoundaryItemID: tableItemID,
-                tableBoundarySide: "after"
-            )
-            markTableBoundaryMerge(
-                paragraph: lower.fullRange,
-                meta: boundaryMeta,
-                caret: lower.fullRange.location,
-                in: view
-            )
+        if (upperMeta.hasBlockContent && !lowerEmpty) || (lowerMeta.hasBlockContent && !upperEmpty) {
+            autoBulletUndo = nil
             return true
         }
-
-        if let tableItemID = lowerMeta.itemID,
-           lowerMeta.hasBlockContent,
-           bodyText(paragraphRange: lower.fullRange, in: storage).isEmpty,
-           isTableBoundaryHost(upperMeta, side: "before", itemID: tableItemID),
-           !bodyText(paragraphRange: upper.fullRange, in: storage).isEmpty {
-            let boundaryMeta = LineMeta(
-                marker: .blank,
-                indent: lowerMeta.indent,
-                tableBoundaryItemID: tableItemID,
-                tableBoundarySide: "before"
-            )
-            markTableBoundaryMerge(
-                paragraph: upper.fullRange,
-                meta: boundaryMeta,
-                caret: deletionRange.location,
-                in: view
-            )
-            return true
-        }
-
         return false
     }
 
-    private func isTableBoundaryHost(_ meta: LineMeta, side: String, itemID: String) -> Bool {
-        if let boundarySide = meta.tableBoundarySide {
-            return boundarySide == side && meta.tableBoundaryItemID == itemID
-        }
-        return meta.marker == .blank
-            && meta.annotation == nil
-            && meta.media.isEmpty
-            && meta.tables.isEmpty
-    }
-
-    private func markTableBoundaryMerge(
-        paragraph: NSRange,
-        meta: LineMeta,
-        caret: Int,
-        in view: EditorTextView
-    ) {
-        let storage = view.textStorage
-        suppress {
-            storage.beginEditing()
-            setLineMeta(meta, onParagraph: paragraph, in: storage, theme: theme)
-            storage.endEditing()
-        }
-        let newCaret = clampedCaret(caret, in: storage)
-        view.selectedRange = NSRange(location: newCaret, length: 0)
-        view.typingAttributes = EditorAttributes.bodyAttributes(meta: meta, theme: theme)
-        autoBulletUndo = nil
-        markDirty()
-        refreshEmpty()
-        view.invalidateEmbeddedBlockDisplay(reflow: true)
-    }
-
-    /// Backspace at the start of a non-boundary line after a block-only item
-    /// removes the block line. Empty and non-empty text boundary cases are
-    /// handled above so ordinary block-adjacent text keeps the block intact.
-    private func handleDeletePreviousTableBlock(in view: EditorTextView, deletionRange: NSRange) -> Bool {
+    /// Typing a character while the caret sits on a block (image/table) line: the
+    /// character lands on a fresh blank line adjacent to the block — after it when
+    /// the caret is past the glyph, before it otherwise — so the block keeps its
+    /// own line (invariant I4). Returns true when it handled the keystroke.
+    private func handleTypingOnBlockLine(in view: EditorTextView, range: NSRange, text: String) -> Bool {
         let storage = view.textStorage
         let ns = storage.string as NSString
-        guard deletionRange.length == 1,
-              deletionRange.location < ns.length,
-              ns.character(at: deletionRange.location) == 10,
-              deletionRange.location < ns.length - 1 else { return false }
+        let para = editableParagraphRange(in: ns, at: range.location)
+        let meta = lineMeta(at: para.location, in: storage)
+        guard meta.hasBlockContent else { return false }
 
-        let upperPara = editableParagraphRange(in: ns, at: deletionRange.location)
-        let upperMeta = lineMeta(at: upperPara.location, in: storage)
-        guard upperMeta.hasBlockContent,
-              bodyText(paragraphRange: upperPara, in: storage).isEmpty else { return false }
-
+        // The block body is a single glyph at para.location; a caret past it
+        // starts a line after the block, otherwise before it.
+        let insertAfter = range.location > para.location
+        let newMeta = LineMeta(marker: .blank, indent: meta.indent)
+        let attrs = EditorAttributes.bodyAttributes(meta: newMeta, theme: theme)
+        let insertionLocation = insertAfter ? NSMaxRange(para) : para.location
         suppress {
             storage.beginEditing()
-            storage.replaceCharacters(in: upperPara, with: NSAttributedString(string: ""))
+            storage.replaceCharacters(
+                in: NSRange(location: insertionLocation, length: 0),
+                with: NSAttributedString(string: text + "\n", attributes: attrs)
+            )
+            let newPara = editableParagraphRange(in: storage.string as NSString, at: insertionLocation)
+            setLineMeta(newMeta, onParagraph: newPara, in: storage, theme: theme)
             ensureWellFormed(storage, theme: theme)
             storage.endEditing()
         }
-        let caret = min(deletionRange.location, max(0, storage.length - 1))
+        let caret = clampedCaret(insertionLocation + (text as NSString).length, in: storage)
         view.selectedRange = NSRange(location: caret, length: 0)
-        view.typingAttributes = EditorAttributes.bodyAttributes(
-            meta: lineMeta(at: caret, in: storage),
-            theme: theme
-        )
-        autoBulletUndo = nil
+        view.typingAttributes = attrs
         markDirty()
         refreshEmpty()
         view.invalidateEmbeddedBlockDisplay(reflow: true)
         return true
+    }
+
+    /// The image/table a block glyph in `paragraphRange` carries (read off its
+    /// `KnotQBlockAttachment`), used to recover block meta after a merge moved the
+    /// glyph onto a paragraph whose meta lost the block.
+    private func blockAttachmentInline(in storage: NSTextStorage, paragraphRange: NSRange) -> MobileInline? {
+        let ns = storage.string as NSString
+        let end = min(NSMaxRange(paragraphRange), ns.length)
+        var index = paragraphRange.location
+        while index < end {
+            if ns.character(at: index) == blockObjectScalar,
+               let attachment = storage.attribute(.attachment, at: index, effectiveRange: nil) as? KnotQBlockAttachment {
+                return attachment.block
+            }
+            index += 1
+        }
+        return nil
+    }
+
+    /// Reconciles a paragraph's meta to invariant I4: a paragraph that contains
+    /// the block glyph must carry that block in its meta (recovered from the
+    /// attachment if a merge dropped it); a paragraph without the glyph must carry
+    /// no block. Keeps the editor's view of a line and what it draws/extracts in
+    /// sync after native edits.
+    private func reconciledBlockMeta(_ meta: LineMeta, paragraphRange: NSRange, in storage: NSTextStorage) -> LineMeta {
+        let hasGlyph = containsBlockObject(bodyText(paragraphRange: paragraphRange, in: storage))
+        if hasGlyph {
+            if meta.hasBlockContent { return meta }
+            guard let block = blockAttachmentInline(in: storage, paragraphRange: paragraphRange) else { return meta }
+            switch block {
+            case let .image(media): return meta.with(media: [media], tables: [], content: [block])
+            case let .table(table): return meta.with(media: [], tables: [table], content: [block])
+            case .text: return meta
+            }
+        }
+        return meta.hasBlockContent ? meta.with(media: [], tables: [], content: []) : meta
     }
 
     /// Deleting the "\n" between two paragraphs merges the lower line *into* the
@@ -717,6 +527,7 @@ final class EditorCoordinator: NSObject, UITextViewDelegate, @preconcurrency NST
         // delete removes it.
         let upperMeta = lineMeta(forParagraphAt: deletionRange.location, in: storage)
         let upperAttrs = EditorAttributes.bodyAttributes(meta: upperMeta, theme: theme)
+        var mergedMeta = upperMeta
         suppress {
             storage.beginEditing()
             storage.replaceCharacters(
@@ -724,11 +535,15 @@ final class EditorCoordinator: NSObject, UITextViewDelegate, @preconcurrency NST
                 with: NSAttributedString(string: "", attributes: upperAttrs)
             )
             let merged = editableParagraphRange(in: storage.string as NSString, at: deletionRange.location)
-            setLineMeta(upperMeta, onParagraph: merged, in: storage, theme: theme)
+            // If the merge pulled a block glyph onto this line (e.g. removing a
+            // blank line above a block), recover the block; if it dropped one,
+            // clear stale block meta — keep meta and glyph in sync (I4).
+            mergedMeta = reconciledBlockMeta(upperMeta, paragraphRange: merged, in: storage)
+            setLineMeta(mergedMeta, onParagraph: merged, in: storage, theme: theme)
             storage.endEditing()
         }
         view.selectedRange = NSRange(location: deletionRange.location, length: 0)
-        view.typingAttributes = upperAttrs
+        view.typingAttributes = EditorAttributes.bodyAttributes(meta: mergedMeta, theme: theme)
         autoBulletUndo = nil
         markDirty()
         refreshEmpty()
@@ -780,7 +595,34 @@ final class EditorCoordinator: NSObject, UITextViewDelegate, @preconcurrency NST
     /// special handling.
     private func handleEnter(in view: EditorTextView, at cursor: Int) -> Bool {
         let storage = view.textStorage
-        let currentMeta = lineMeta(at: editableParagraphRange(in: storage.string as NSString, at: cursor).location, in: storage)
+        let currentPara = editableParagraphRange(in: storage.string as NSString, at: cursor)
+        let currentMeta = lineMeta(at: currentPara.location, in: storage)
+
+        // A block (image/table) line can't be split — Enter adds a fresh blank
+        // line adjacent to it (after the glyph if the caret is past it, before
+        // otherwise) so the block keeps its own line (invariant I4).
+        if currentMeta.hasBlockContent {
+            let insertAfter = cursor > currentPara.location
+            let blankMeta = LineMeta(marker: .blank, indent: currentMeta.indent)
+            let blankAttrs = EditorAttributes.bodyAttributes(meta: blankMeta, theme: theme)
+            let insertionLocation = insertAfter ? NSMaxRange(currentPara) : currentPara.location
+            suppress {
+                storage.beginEditing()
+                storage.replaceCharacters(
+                    in: NSRange(location: insertionLocation, length: 0),
+                    with: NSAttributedString(string: "\n", attributes: blankAttrs)
+                )
+                let newPara = editableParagraphRange(in: storage.string as NSString, at: insertionLocation)
+                setLineMeta(blankMeta, onParagraph: newPara, in: storage, theme: theme)
+                storage.endEditing()
+            }
+            view.selectedRange = NSRange(location: insertionLocation, length: 0)
+            view.typingAttributes = blankAttrs
+            markDirty()
+            refreshEmpty()
+            view.invalidateEmbeddedBlockDisplay(reflow: true)
+            return true
+        }
 
         // Split the paragraph at the caret: old half keeps currentMeta, new half
         // gets continuation meta (fresh identity, same marker/indent/done-reset).
@@ -835,6 +677,15 @@ final class EditorCoordinator: NSObject, UITextViewDelegate, @preconcurrency NST
         }
         view?.invalidateEmbeddedBlockDisplay()
 
+        // I4 backstop runs deferred (length changes are unsafe inside this
+        // callback — they corrupt the layout manager and crash a later pass).
+        if !blockIsolationPending {
+            blockIsolationPending = true
+            DispatchQueue.main.async { [weak self] in
+                self?.runBlockIsolationPass()
+            }
+        }
+
         if !autoBulletizePending {
             autoBulletizePending = true
             let editLocation = editedRange.location
@@ -852,6 +703,11 @@ final class EditorCoordinator: NSObject, UITextViewDelegate, @preconcurrency NST
     private func normalizeAffectedParagraphs(in storage: NSTextStorage, around editedRange: NSRange) {
         let ns = storage.string as NSString
         let editParaRange = paragraphRangeCovering(editedRange, in: ns)
+        // Attribute-only fixups (no length change): mutating the storage *length*
+        // from inside `didProcessEditing` corrupts the layout manager's glyph↔char
+        // map (it later reads `characterAtIndex(length)` → NSRangeException). The
+        // structural I4 fix (splitting a glyph off a mixed line) is therefore
+        // deferred to `runBlockIsolationPass` after the edit cycle.
         for paragraph in paragraphRanges(in: ns, intersecting: editParaRange) {
             let fullRange = paragraph.fullRange
             guard fullRange.length > 0 else { continue }
@@ -871,8 +727,64 @@ final class EditorCoordinator: NSObject, UITextViewDelegate, @preconcurrency NST
                     )
                 }
             }
+            // Keep block meta and the block glyph in sync after native edits: a
+            // line that still has the glyph keeps/recovers its block; a line that
+            // lost it (the glyph was deleted) drops the stale block meta (I4).
+            meta = reconciledBlockMeta(meta, paragraphRange: fullRange, in: storage)
             setLineMeta(meta, onParagraph: fullRange, in: storage, theme: theme)
         }
+    }
+
+    /// Backstop for invariant I4: if a native edit (cross-block selection delete,
+    /// plain paste, IME, drag) merged a block glyph onto a line with other
+    /// characters, split every such glyph back onto its own line and re-reconcile.
+    /// Runs **deferred** (off the `didProcessEditing` stack) because it changes the
+    /// text length — doing that mid-edit corrupts the layout manager and crashes a
+    /// later layout pass with an out-of-bounds `characterAtIndex`. The per-case
+    /// guards keep precise carets in the common paths; this only fires for the rare
+    /// ones, and it's a no-op (one cheap scan) when nothing is mixed.
+    private func runBlockIsolationPass() {
+        blockIsolationPending = false
+        guard let view, !readOnly else { return }
+        let storage = view.textStorage
+        let scan = storage.string as NSString
+        var insertionPoints: [Int] = []
+        for paragraph in paragraphRanges(in: scan) {
+            let line = paragraph.lineRange
+            guard line.length > 1, containsBlockObject(scan.substring(with: line)) else { continue }
+            // A "\n" goes between any two adjacent body chars where either is a
+            // glyph, so every glyph ends up bracketed by line breaks.
+            for i in line.location..<(NSMaxRange(line) - 1) where
+                scan.character(at: i) == blockObjectScalar || scan.character(at: i + 1) == blockObjectScalar {
+                insertionPoints.append(i + 1)
+            }
+        }
+        guard !insertionPoints.isEmpty else { return }
+
+        let blankAttrs = EditorAttributes.bodyAttributes(meta: LineMeta(), theme: theme)
+        suppress {
+            storage.beginEditing()
+            // Right-to-left so earlier offsets stay valid as we insert.
+            for location in insertionPoints.sorted(by: >) {
+                storage.replaceCharacters(
+                    in: NSRange(location: location, length: 0),
+                    with: NSAttributedString(string: "\n", attributes: blankAttrs)
+                )
+            }
+            // Restore each resulting line's meta (block lines recover their block
+            // from the glyph's attachment; text lines drop any stale block meta).
+            let ns = storage.string as NSString
+            for paragraph in paragraphRanges(in: ns) {
+                let fullRange = paragraph.fullRange
+                guard fullRange.length > 0 else { continue }
+                let meta = reconciledBlockMeta(paragraphMeta(of: fullRange, in: storage), paragraphRange: fullRange, in: storage)
+                setLineMeta(meta, onParagraph: fullRange, in: storage, theme: theme)
+            }
+            storage.endEditing()
+        }
+        markDirty()
+        refreshEmpty()
+        view.invalidateEmbeddedBlockDisplay(reflow: true)
     }
 
     /// Detects "- ", "* ", or "N. " typed on a blank line and converts the
@@ -987,7 +899,7 @@ final class EditorCoordinator: NSObject, UITextViewDelegate, @preconcurrency NST
             separator(),
             toolbarButton("calendar.badge.clock") { [weak self] in self?.onDateRequested?() },
             separator(),
-            toolbarButton("bold") { [weak self] in self?.view?.toggleWrappedMarkdown("*", theme: self?.theme ?? .dark) },
+            toolbarButton("bold") { [weak self] in self?.view?.toggleWrappedMarkdown("**", theme: self?.theme ?? .dark) },
             toolbarButton("italic") { [weak self] in self?.view?.toggleWrappedMarkdown("_", theme: self?.theme ?? .dark) },
             toolbarButton("textformat.size") { [weak self] in self?.view?.toggleHeading(theme: self?.theme ?? .dark) },
             separator(),

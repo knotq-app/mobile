@@ -40,6 +40,10 @@ final class AppModel: ObservableObject {
     // App Store Connect product id(s) for the sync subscription.
     static let syncProductIDs: Set<String> = ["com.enigmadux.knotq.sync.monthly"]
     private static let minimumDailyHistoryDays = 3
+    /// Days of daily history loaded on first open. Kept small — most sessions
+    /// only touch the last few days — so the initial snapshot builds fast; older
+    /// days page in (a month at a time) as the feed scrolls up.
+    private static let initialDailyHistoryWindowDays = 7
     private static let dailyHistoryPageDays = 31
     private static let maxDailyHistoryDays = 3650
     private static let foregroundGoogleSyncIntervalNanos: UInt64 = 120_000_000_000
@@ -1941,19 +1945,10 @@ final class AppModel: ObservableObject {
     #endif
 
     private static func initialDailyHistoryDays(for date: Date) -> Int {
-        var calendar = Calendar(identifier: .gregorian)
-        calendar.timeZone = .current
-        let day = calendar.startOfDay(for: date)
-        let components = calendar.dateComponents([.year, .month], from: day)
-        guard
-            let currentMonthStart = calendar.date(from: components),
-            let previousMonthStart = calendar.date(byAdding: .month, value: -1, to: currentMonthStart)
-        else {
-            return dailyHistoryPageDays
-        }
-        let days = calendar.dateComponents([.day], from: previousMonthStart, to: day).day
-            ?? dailyHistoryPageDays
-        return min(max(days, minimumDailyHistoryDays), maxDailyHistoryDays)
+        // Open on just the last few days so the first snapshot is cheap; the feed
+        // pages in older days on scroll. (Was: the whole previous month → today,
+        // which loaded dozens of daily queues up front.)
+        min(max(initialDailyHistoryWindowDays, minimumDailyHistoryDays), maxDailyHistoryDays)
     }
 
     static func dateOnly(_ date: Date) -> String {

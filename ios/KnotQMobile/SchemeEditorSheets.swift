@@ -57,6 +57,7 @@ struct ItemDateSheet: View {
     @State private var repeatChoice: RepeatChoice
     @State private var weeklyRepeatDays: Set<RepeatWeekdayChoice>
     @State private var notificationOffsetSecs: Int32?
+    @State private var didPromoteMarker = false
     private let initialNotificationOffsetSecs: Int32?
 
     init(schemeID: String, item: MobileItem) {
@@ -102,6 +103,9 @@ struct ItemDateSheet: View {
             }
             .navigationTitle("Schedule")
             .navigationBarTitleDisplayMode(.inline)
+            .onAppear {
+                promoteMarkerToTaskIfNeeded()
+            }
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { dismiss() }
@@ -148,6 +152,12 @@ struct ItemDateSheet: View {
         )
     }
 
+    private func promoteMarkerToTaskIfNeeded() {
+        guard !didPromoteMarker, item.marker != Marker.checkbox.rawValue else { return }
+        didPromoteMarker = true
+        model.setItemMarker(schemeID: schemeID, itemID: item.id, marker: .checkbox)
+    }
+
     private var repeatAnchorDate: Date {
         if hasStart { return start }
         if hasEnd { return end }
@@ -167,6 +177,7 @@ struct ItemDateSheet: View {
     }
 
     private func save() {
+        promoteMarkerToTaskIfNeeded()
         model.setItemDate(schemeID: schemeID, itemID: item.id, kind: "start", date: hasStart ? start : nil)
         model.setItemDate(schemeID: schemeID, itemID: item.id, kind: "end", date: hasEnd ? end : nil)
         model.setItemRecurrence(schemeID: schemeID, itemID: item.id, rrule: (hasStart || hasEnd) ? repeatChoice.rrule(weekdays: weeklyRepeatDays) : nil)

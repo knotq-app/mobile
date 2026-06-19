@@ -235,290 +235,437 @@ final class MarkerConcealmentTests: XCTestCase {
         XCTAssertEqual(storage.string, text)
     }
 
-    // MARK: - Table boundaries
+    // MARK: - Single-content block lines (image/table = one glyph on its own line)
 
-    func testTableBoundaryBeforeCreatesBlankLineBeforeTableOnlyParagraph() {
+    func testTableItemLoadsAsSingleGlyphLineAndExtractsAsBlock() {
         let fixture = makeEditorView()
         let view = fixture.0
         view.loadItems([tableOnlyItem(indent: 1)], theme: .dark, timeFormat: "twelve_hour", placeCursorAtEnd: false)
 
-        let tableParagraph = paragraphRanges(in: view.textStorage.string as NSString)[0].fullRange
-        let hit = EditorTableBoundaryHit(paragraphRange: tableParagraph, side: .before)
-        XCTAssertTrue(view.placeCaretAtTableBoundary(hit, theme: .dark))
+        // The whole line is exactly one block-object glyph (no surrounding text).
+        XCTAssertEqual(view.textStorage.string, "\(blockObjectChar)\n")
 
         let edits = view.extractItemEdits()
         XCTAssertEqual(edits.count, 1)
         XCTAssertEqual(edits.first?.id, "table-item")
         XCTAssertEqual(edits.first?.text, "")
-        XCTAssertEqual(view.selectedRange.location, 0)
+        guard case .table? = edits.first?.content.first else {
+            XCTFail("table item should extract as table content")
+            return
+        }
     }
 
-    func testTableBoundaryAfterCreatesBlankLineAfterTableOnlyParagraph() {
+    func testImageItemLoadsAsSingleGlyphLineAndExtractsAsBlock() {
         let fixture = makeEditorView()
         let view = fixture.0
-        view.loadItems([tableOnlyItem(indent: 2)], theme: .dark, timeFormat: "twelve_hour", placeCursorAtEnd: false)
+        view.loadItems([imageOnlyItem(indent: 1)], theme: .dark, timeFormat: "twelve_hour", placeCursorAtEnd: false)
 
-        let tableParagraph = paragraphRanges(in: view.textStorage.string as NSString)[0].fullRange
-        let hit = EditorTableBoundaryHit(paragraphRange: tableParagraph, side: .after)
-        XCTAssertTrue(view.placeCaretAtTableBoundary(hit, theme: .dark))
+        XCTAssertEqual(view.textStorage.string, "\(blockObjectChar)\n")
 
         let edits = view.extractItemEdits()
         XCTAssertEqual(edits.count, 1)
-        XCTAssertEqual(edits.first?.id, "table-item")
         XCTAssertEqual(edits.first?.text, "")
-        XCTAssertEqual(view.selectedRange.location, 1)
-    }
-
-    func testTypingAtTableBoundariesSavesAdjacentTextItems() {
-        let before = tableBoundaryEditAfterTyping(side: .before, text: "Before")
-        XCTAssertEqual(before.count, 2)
-        XCTAssertEqual(before[0].text, "Before")
-        XCTAssertNil(before[0].id)
-        XCTAssertEqual(before[1].id, "table-item")
-        if case .table? = before[1].content.first {
-        } else {
-            XCTFail("table should remain after before-boundary text")
-        }
-
-        let after = tableBoundaryEditAfterTyping(side: .after, text: "After")
-        XCTAssertEqual(after.count, 2)
-        XCTAssertEqual(after[0].id, "table-item")
-        if case .table? = after[0].content.first {
-        } else {
-            XCTFail("table should remain before after-boundary text")
-        }
-        XCTAssertEqual(after[1].text, "After")
-        XCTAssertNil(after[1].id)
-    }
-
-    func testBackspaceFromNonEmptyLineAfterTableMarksAdjacentBoundary() {
-        let fixture = makeEditorView()
-        let view = fixture.0
-        let coordinator = fixture.1
-        coordinator.theme = .dark
-        view.loadItems(
-            [tableOnlyItem(indent: 1), textItem(id: "after-item", text: "After", indent: 1)],
-            theme: .dark,
-            timeFormat: "twelve_hour",
-            placeCursorAtEnd: false
-        )
-
-        let paragraphs = paragraphRanges(in: view.textStorage.string as NSString)
-        XCTAssertEqual(paragraphs.count, 2)
-        let deletionRange = NSRange(location: paragraphs[0].fullRange.location, length: 1)
-
-        let shouldAllowUIKitDelete = coordinator.textView(
-            view,
-            shouldChangeTextIn: deletionRange,
-            replacementText: ""
-        )
-
-        XCTAssertFalse(shouldAllowUIKitDelete)
-        XCTAssertEqual(view.selectedRange.location, paragraphs[1].fullRange.location)
-
-        let edits = view.extractItemEdits()
-        XCTAssertEqual(edits.count, 2)
-        XCTAssertEqual(edits.first?.id, "table-item")
-        if case .table? = edits.first?.content.first {
-        } else {
-            XCTFail("table should remain before merged after-text")
-        }
-        XCTAssertEqual(edits[1].text, "After")
-        XCTAssertNil(edits[1].id)
-    }
-
-    func testDeleteFromNonEmptyLineBeforeTableMarksAdjacentBoundary() {
-        let fixture = makeEditorView()
-        let view = fixture.0
-        let coordinator = fixture.1
-        coordinator.theme = .dark
-        view.loadItems(
-            [textItem(id: "before-item", text: "Before", indent: 1), tableOnlyItem(indent: 1)],
-            theme: .dark,
-            timeFormat: "twelve_hour",
-            placeCursorAtEnd: false
-        )
-
-        let paragraphs = paragraphRanges(in: view.textStorage.string as NSString)
-        XCTAssertEqual(paragraphs.count, 2)
-        let deletionRange = NSRange(location: NSMaxRange(paragraphs[0].lineRange), length: 1)
-
-        let shouldAllowUIKitDelete = coordinator.textView(
-            view,
-            shouldChangeTextIn: deletionRange,
-            replacementText: ""
-        )
-
-        XCTAssertFalse(shouldAllowUIKitDelete)
-        XCTAssertEqual(view.selectedRange.location, NSMaxRange(paragraphs[0].lineRange))
-
-        let edits = view.extractItemEdits()
-        XCTAssertEqual(edits.count, 2)
-        XCTAssertEqual(edits[0].text, "Before")
-        XCTAssertNil(edits[0].id)
-        XCTAssertEqual(edits[1].id, "table-item")
-        if case .table? = edits[1].content.first {
-        } else {
-            XCTFail("table should remain after merged before-text")
+        guard case .image? = edits.first?.content.first else {
+            XCTFail("image item should extract as image content")
+            return
         }
     }
 
-    func testTableBoundaryDeletes() {
-        assertAfterTableBoundaryDelete(deletionRange: NSRange(location: 0, length: 1))
-        assertAfterTableBoundaryDelete { view in
-            NSRange(location: view.selectedRange.location, length: 1)
-        }
-
+    func testTextAndBlockItemsLoadAsSeparateLines() {
         let fixture = makeEditorView()
         let view = fixture.0
-        fixture.1.theme = .dark
-        view.loadItems([tableOnlyItem(indent: 1)], theme: .dark, timeFormat: "twelve_hour", placeCursorAtEnd: false)
-
-        let tableParagraph = paragraphRanges(in: view.textStorage.string as NSString)[0].fullRange
-        let hit = EditorTableBoundaryHit(paragraphRange: tableParagraph, side: .before)
-        XCTAssertTrue(view.placeCaretAtTableBoundary(hit, theme: .dark))
-        XCTAssertEqual(view.selectedRange.location, 0)
-
-        view.deleteBackward()
-
-        let edits = view.extractItemEdits()
-        XCTAssertEqual(edits.count, 1)
-        XCTAssertEqual(edits.first?.id, "table-item")
-        XCTAssertEqual(view.selectedRange.location, 0)
-    }
-
-    func testDeletingSelectedSingleTableLeavesEmptyDocument() {
-        let fixture = makeEditorView()
-        let view = fixture.0
-        let coordinator = fixture.1
-        coordinator.theme = .dark
-        view.loadItems([tableOnlyItem(indent: 1)], theme: .dark, timeFormat: "twelve_hour", placeCursorAtEnd: false)
-
-        let tableParagraph = paragraphRanges(in: view.textStorage.string as NSString)[0].fullRange
-        view.selectedRange = tableParagraph
-
-        let shouldAllowUIKitDelete = coordinator.textView(
-            view,
-            shouldChangeTextIn: tableParagraph,
-            replacementText: ""
-        )
-
-        XCTAssertFalse(shouldAllowUIKitDelete)
-        XCTAssertEqual(view.textStorage.string, "\n")
-        XCTAssertEqual(view.extractItemEdits(), [])
-        XCTAssertEqual(view.selectedRange.location, 0)
-    }
-
-    func testDeletingSelectedTableBetweenTextDeletesOnlyTable() {
-        let fixture = makeEditorView()
-        let view = fixture.0
-        let coordinator = fixture.1
-        coordinator.theme = .dark
         view.loadItems(
             [
-                textItem(id: "before-item", text: "Before", indent: 1),
+                textItem(id: "before", text: "Before", indent: 1),
                 tableOnlyItem(indent: 1),
-                textItem(id: "after-item", text: "After", indent: 1)
+                textItem(id: "after", text: "After", indent: 1)
             ],
             theme: .dark,
             timeFormat: "twelve_hour",
             placeCursorAtEnd: false
         )
 
-        let paragraphs = paragraphRanges(in: view.textStorage.string as NSString)
-        let tableParagraph = paragraphs.first { paragraph in
-            lineMeta(at: paragraph.fullRange.location, in: view.textStorage).hasBlockContent
-        }
-        guard let tableParagraph else {
-            XCTFail("Expected table paragraph")
+        XCTAssertEqual(view.textStorage.string, "Before\n\(blockObjectChar)\nAfter\n")
+
+        let edits = view.extractItemEdits()
+        guard edits.count == 3 else {
+            XCTFail("expected text/block/text to load as three lines, got \(edits.count)")
             return
         }
-        view.selectedRange = tableParagraph.fullRange
-
-        let shouldAllowUIKitDelete = coordinator.textView(
-            view,
-            shouldChangeTextIn: tableParagraph.fullRange,
-            replacementText: ""
-        )
-
-        XCTAssertFalse(shouldAllowUIKitDelete)
-        let edits = view.extractItemEdits()
-        XCTAssertEqual(edits.count, 2)
         XCTAssertEqual(edits[0].text, "Before")
-        XCTAssertEqual(edits[1].text, "After")
-        XCTAssertTrue(edits.allSatisfy { edit in
-            !edit.content.contains { inline in
-                if case .table = inline { return true }
-                return false
-            }
+        XCTAssertEqual(edits[1].text, "")
+        guard case .table? = edits[1].content.first else {
+            XCTFail("middle item should stay a table block on its own line")
+            return
+        }
+        XCTAssertEqual(edits[2].text, "After")
+    }
+
+    func testBlockAttachmentSuppliesTransparentGlyphSoNoPlaceholderIconDraws() {
+        // A nil glyph image makes TextKit stamp its default "missing attachment"
+        // document icon (foreground pass) over the table/image that drawChrome
+        // paints (background pass). The attachment must always return a
+        // transparent image so only our render shows.
+        let bounds = CGRect(x: 0, y: 0, width: 120, height: 80)
+        let imageAttachment = KnotQBlockAttachment(block: .image(media: testImageMedia()), indent: 0)
+        XCTAssertNotNil(
+            imageAttachment.image(forBounds: bounds, textContainer: nil, characterIndex: 0),
+            "image block attachment must supply a glyph image so TextKit draws no placeholder"
+        )
+        let tableAttachment = KnotQBlockAttachment(
+            block: .table(table: MobileTable(columns: [], rows: [])),
+            indent: 0
+        )
+        XCTAssertNotNil(
+            tableAttachment.image(forBounds: bounds, textContainer: nil, characterIndex: 0),
+            "table block attachment must supply a glyph image so TextKit draws no placeholder"
+        )
+    }
+
+    func testDeletingSelectedTableDoesNotCrash() {
+        let fixture = makeWiredEditorView()
+        let view = fixture.0
+        view.loadItems(
+            [
+                textItem(id: "a", text: "Before", indent: 0),
+                tableOnlyItem(indent: 0),
+                textItem(id: "b", text: "After", indent: 0)
+            ],
+            theme: .dark,
+            timeFormat: "twelve_hour",
+            placeCursorAtEnd: false
+        )
+        renderEditor(view)
+
+        let paras = paragraphRanges(in: view.textStorage.string as NSString)
+        let tablePara = paras[1].fullRange
+        view.selectedRange = tablePara
+        // Mimic the native deletion UITextView performs for a selection delete;
+        // it fires `didProcessEditing` → normalize/isolate, which is where the
+        // crash was reported.
+        view.textStorage.replaceCharacters(in: tablePara, with: "")
+        renderEditor(view)
+
+        let edits = view.extractItemEdits()
+        XCTAssertEqual(edits.map(\.text), ["Before", "After"])
+        XCTAssertFalse(edits.contains { edit in
+            edit.content.contains { if case .table = $0 { return true } else { return false } }
         })
     }
 
-    func testDeletingSelectionFromPreviousLineBreakThroughTableDoesNotCrash() {
-        let fixture = makeEditorView()
+    func testDeleteSelectedTableThroughUIKitFirstResponderDoesNotCrash() {
+        let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 400, height: 700))
+        let fixture = makeWiredEditorView()
         let view = fixture.0
-        let coordinator = fixture.1
-        coordinator.theme = .dark
+        view.isEditable = true
+        view.isSelectable = true
+        window.addSubview(view)
+        window.makeKeyAndVisible()
         view.loadItems(
-            [
-                textItem(id: "before-item", text: "Before", indent: 1),
-                tableOnlyItem(indent: 1),
-                textItem(id: "after-item", text: "After", indent: 1)
-            ],
+            [textItem(id: "a", text: "Before", indent: 0), tableOnlyItem(indent: 0), textItem(id: "b", text: "After", indent: 0)],
             theme: .dark,
             timeFormat: "twelve_hour",
             placeCursorAtEnd: false
         )
+        XCTAssertTrue(view.becomeFirstResponder())
+        renderEditor(view)
 
-        let paragraphs = paragraphRanges(in: view.textStorage.string as NSString)
-        let tableParagraph = paragraphs[1]
-        let selection = NSRange(
-            location: NSMaxRange(paragraphs[0].lineRange),
-            length: NSMaxRange(tableParagraph.fullRange) - NSMaxRange(paragraphs[0].lineRange)
-        )
-        view.selectedRange = selection
+        let paras = paragraphRanges(in: view.textStorage.string as NSString)
+        view.selectedRange = paras[1].fullRange
+        // Real UIKit deletion of the selection (routes through the text input
+        // machinery + delegate callbacks), the closest repro to a user delete.
+        view.deleteBackward()
+        renderEditor(view)
 
-        let shouldAllowUIKitDelete = coordinator.textView(
-            view,
-            shouldChangeTextIn: selection,
-            replacementText: ""
-        )
-
-        XCTAssertFalse(shouldAllowUIKitDelete)
-        XCTAssertEqual(view.textStorage.string, "BeforeAfter\n")
-        XCTAssertFalse(extractContainsTable(view.extractItemEdits()))
+        XCTAssertFalse(view.extractItemEdits().contains { edit in
+            edit.content.contains { if case .table = $0 { return true } else { return false } }
+        })
+        view.removeFromSuperview()
     }
 
-    func testDeletingSelectionFromTableIntoNextLineDoesNotCrash() {
-        let fixture = makeEditorView()
+    func testDeleteRichMultiCellTableThroughUIKitDoesNotCrash() {
+        let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 400, height: 700))
+        let fixture = makeWiredEditorView()
         let view = fixture.0
-        let coordinator = fixture.1
-        coordinator.theme = .dark
+        window.addSubview(view)
+        window.makeKeyAndVisible()
         view.loadItems(
-            [
-                textItem(id: "before-item", text: "Before", indent: 1),
-                tableOnlyItem(indent: 1),
-                textItem(id: "after-item", text: "After", indent: 1)
-            ],
+            [richTableItem(indent: 0), textItem(id: "b", text: "After", indent: 0)],
             theme: .dark,
             timeFormat: "twelve_hour",
             placeCursorAtEnd: false
         )
+        XCTAssertTrue(view.becomeFirstResponder())
+        renderEditor(view)
 
-        let paragraphs = paragraphRanges(in: view.textStorage.string as NSString)
-        let tableParagraph = paragraphs[1]
-        let selection = NSRange(location: tableParagraph.fullRange.location, length: tableParagraph.fullRange.length + 2)
-        view.selectedRange = selection
+        let paras = paragraphRanges(in: view.textStorage.string as NSString)
+        view.selectedRange = paras[0].fullRange
+        view.deleteBackward()
+        renderEditor(view)
 
-        let shouldAllowUIKitDelete = coordinator.textView(
-            view,
-            shouldChangeTextIn: selection,
-            replacementText: ""
+        XCTAssertFalse(view.extractItemEdits().contains { edit in
+            edit.content.contains { if case .table = $0 { return true } else { return false } }
+        })
+        view.removeFromSuperview()
+    }
+
+    func testDeleteTableWhileCellEditorActiveDoesNotCrash() {
+        let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 400, height: 700))
+        let fixture = makeWiredEditorView()
+        let view = fixture.0
+        window.addSubview(view)
+        window.makeKeyAndVisible()
+        view.loadItems([richTableItem(indent: 0)], theme: .dark, timeFormat: "twelve_hour", placeCursorAtEnd: false)
+        _ = view.becomeFirstResponder()
+        renderEditor(view)
+
+        // Open an in-place cell editor, then delete the whole table paragraph out
+        // from under it (the overlay still references the now-gone table).
+        if let hit = view.tableCellHit(itemID: "rich-table", tableIndex: 0, row: 0, column: 0) {
+            view.beginEditingTableCell(hit)
+        }
+        let paras = paragraphRanges(in: view.textStorage.string as NSString)
+        view.selectedRange = paras[0].fullRange
+        view.textStorage.replaceCharacters(in: paras[0].fullRange, with: "")
+        view.endTableCellEditing(commit: true)
+        renderEditor(view)
+
+        XCTAssertEqual(view.extractItemEdits(), [])
+        view.removeFromSuperview()
+    }
+
+    func testDeletingTableWithChangedCellEditorDoesNotCommitStaleCell() {
+        let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 400, height: 700))
+        let fixture = makeWiredEditorView()
+        let view = fixture.0
+        var commits: [(EditorTableCellHit, String)] = []
+        view.onTableCellCommit = { hit, text in
+            commits.append((hit, text))
+        }
+        window.addSubview(view)
+        window.makeKeyAndVisible()
+        view.loadItems([richTableItem(indent: 0)], theme: .dark, timeFormat: "twelve_hour", placeCursorAtEnd: false)
+        _ = view.becomeFirstResponder()
+        renderEditor(view)
+
+        guard let hit = view.tableCellHit(itemID: "rich-table", tableIndex: 0, row: 0, column: 0) else {
+            XCTFail("Expected editable table cell")
+            return
+        }
+        view.beginEditingTableCell(hit)
+        guard let cellField = firstEmbeddedTextView(in: view) else {
+            XCTFail("Expected in-place table cell field")
+            return
+        }
+        cellField.text = "changed after delete"
+
+        let paras = paragraphRanges(in: view.textStorage.string as NSString)
+        view.selectedRange = paras[0].fullRange
+        view.deleteBackward()
+        renderEditor(view)
+
+        XCTAssertTrue(commits.isEmpty)
+        XCTAssertFalse(view.isEditingTableCell)
+        XCTAssertEqual(view.extractItemEdits(), [])
+        view.removeFromSuperview()
+    }
+
+    private func pumpRunLoop() {
+        let drained = expectation(description: "run loop drained")
+        DispatchQueue.main.async { drained.fulfill() }
+        wait(for: [drained], timeout: 1)
+    }
+
+    func testDeleteLastRowTableGlyphThroughUIKitDoesNotCrash() {
+        let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 400, height: 700))
+        let fixture = makeWiredEditorView()
+        let view = fixture.0
+        window.addSubview(view)
+        window.makeKeyAndVisible()
+        view.loadItems(
+            [textItem(id: "a", text: "Line one", indent: 0), textItem(id: "b", text: "Line two", indent: 0), tableOnlyItem(indent: 0)],
+            theme: .dark,
+            timeFormat: "twelve_hour",
+            placeCursorAtEnd: false
         )
+        _ = view.becomeFirstResponder()
+        renderEditor(view)
 
-        XCTAssertFalse(shouldAllowUIKitDelete)
-        XCTAssertEqual(view.textStorage.string, "Before\nter\n")
-        XCTAssertFalse(extractContainsTable(view.extractItemEdits()))
+        // Table is the last paragraph; its "\n" is the document's trailing
+        // newline. Select just the glyph and delete.
+        let paras = paragraphRanges(in: view.textStorage.string as NSString)
+        view.selectedRange = paras[2].lineRange   // the lone block glyph
+        view.deleteBackward()
+        pumpRunLoop()          // let UIKit's deferred layout/draw fire
+        renderEditor(view)
+
+        XCTAssertFalse(view.extractItemEdits().contains { edit in
+            edit.content.contains { if case .table = $0 { return true } else { return false } }
+        })
+        view.removeFromSuperview()
+    }
+
+    func testDeleteLastRowTableWholeParagraphThroughUIKitDoesNotCrash() {
+        let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 400, height: 700))
+        let fixture = makeWiredEditorView()
+        let view = fixture.0
+        window.addSubview(view)
+        window.makeKeyAndVisible()
+        view.loadItems(
+            [textItem(id: "a", text: "Line one", indent: 0), tableOnlyItem(indent: 0)],
+            theme: .dark,
+            timeFormat: "twelve_hour",
+            placeCursorAtEnd: false
+        )
+        _ = view.becomeFirstResponder()
+        renderEditor(view)
+
+        // Select the table's WHOLE paragraph — including the document's trailing
+        // "\n" — then delete; this removes the trailing newline.
+        let paras = paragraphRanges(in: view.textStorage.string as NSString)
+        view.selectedRange = paras[1].fullRange
+        view.deleteBackward()
+        pumpRunLoop()
+        renderEditor(view)
+
+        XCTAssertFalse(view.extractItemEdits().contains { edit in
+            edit.content.contains { if case .table = $0 { return true } else { return false } }
+        })
+        view.removeFromSuperview()
+    }
+
+    func testDeleteLastRowTableInSelfSizingDailyEditorDoesNotCrash() {
+        let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 400, height: 700))
+        let fixture = makeWiredEditorView()
+        let view = fixture.0
+        view.isScrollEnabled = false   // Daily-feed self-sizing mode
+        window.addSubview(view)
+        window.makeKeyAndVisible()
+        view.loadItems(
+            [textItem(id: "a", text: "Line one", indent: 0), textItem(id: "b", text: "Line two", indent: 0), tableOnlyItem(indent: 0)],
+            theme: .dark,
+            timeFormat: "twelve_hour",
+            placeCursorAtEnd: false
+        )
+        _ = view.becomeFirstResponder()
+        _ = view.measuredHeight(forWidth: 400)
+        renderEditor(view)
+
+        let paras = paragraphRanges(in: view.textStorage.string as NSString)
+        view.selectedRange = paras[2].fullRange
+        view.deleteBackward()
+        // Self-sizing re-measure path (the deferred Auto Layout / draw cycle).
+        _ = view.measuredHeight(forWidth: 400)
+        _ = view.intrinsicContentSize
+        view.refreshEmbeddedLayoutIfNeeded()
+        pumpRunLoop()
+        _ = view.measuredHeight(forWidth: 400)
+        renderEditor(view)
+
+        XCTAssertFalse(view.extractItemEdits().contains { edit in
+            edit.content.contains { if case .table = $0 { return true } else { return false } }
+        })
+        view.removeFromSuperview()
+    }
+
+    func testDeleteOnlyTableInSelfSizingDailyEditorDoesNotCrash() {
+        let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 400, height: 700))
+        let fixture = makeWiredEditorView()
+        let view = fixture.0
+        view.isScrollEnabled = false
+        window.addSubview(view)
+        window.makeKeyAndVisible()
+        view.loadItems([tableOnlyItem(indent: 0)], theme: .dark, timeFormat: "twelve_hour", placeCursorAtEnd: false)
+        _ = view.becomeFirstResponder()
+        _ = view.measuredHeight(forWidth: 400)
+        renderEditor(view)
+
+        let paras = paragraphRanges(in: view.textStorage.string as NSString)
+        view.selectedRange = paras[0].fullRange
+        view.deleteBackward()
+        _ = view.measuredHeight(forWidth: 400)
+        _ = view.intrinsicContentSize
+        view.refreshEmbeddedLayoutIfNeeded()
+        pumpRunLoop()
+        renderEditor(view)
+
+        XCTAssertEqual(view.extractItemEdits(), [])
+        view.removeFromSuperview()
+    }
+
+    func testCutSelectedTableDoesNotCrash() {
+        let fixture = makeWiredEditorView()
+        let view = fixture.0
+        view.loadItems(
+            [textItem(id: "a", text: "Before", indent: 0), tableOnlyItem(indent: 0)],
+            theme: .dark,
+            timeFormat: "twelve_hour",
+            placeCursorAtEnd: false
+        )
+        renderEditor(view)
+
+        let paras = paragraphRanges(in: view.textStorage.string as NSString)
+        view.selectedRange = paras[1].fullRange
+        view.cut(nil)
+        renderEditor(view)
+
+        XCTAssertFalse(view.extractItemEdits().contains { edit in
+            edit.content.contains { if case .table = $0 { return true } else { return false } }
+        })
+    }
+
+    func testPartialDeleteMergingTextIntoTableIsolatesGlyphWithoutCrash() {
+        let fixture = makeWiredEditorView()
+        let view = fixture.0
+        view.loadItems(
+            [textItem(id: "a", text: "Before", indent: 0), tableOnlyItem(indent: 0), textItem(id: "b", text: "After", indent: 0)],
+            theme: .dark,
+            timeFormat: "twelve_hour",
+            placeCursorAtEnd: false
+        )
+        renderEditor(view)
+
+        let paras = paragraphRanges(in: view.textStorage.string as NSString)
+        // Delete "fore\n" so "Be" would merge onto the table's glyph line; the
+        // deferred isolate backstop must split it back apart (and not crash).
+        let start = paras[0].fullRange.location + 2
+        let end = paras[1].fullRange.location
+        view.selectedRange = NSRange(location: start, length: end - start)
+        view.textStorage.replaceCharacters(in: NSRange(location: start, length: end - start), with: "")
+        renderEditor(view)
+
+        // The isolate pass is deferred (length changes are unsafe inside the edit
+        // callback); pump the run loop so it runs, then re-render.
+        let drained = expectation(description: "deferred isolate pass")
+        DispatchQueue.main.async { drained.fulfill() }
+        wait(for: [drained], timeout: 1)
+        renderEditor(view)
+
+        // "Be" and the table end up on separate lines; the table survives.
+        let edits = view.extractItemEdits()
+        XCTAssertEqual(edits.first?.text, "Be")
+        XCTAssertTrue(edits.contains { edit in
+            edit.content.contains { if case .table = $0 { return true } else { return false } }
+        })
+    }
+
+    func testSelectAllDeleteWithTableDoesNotCrash() {
+        let fixture = makeWiredEditorView()
+        let view = fixture.0
+        view.loadItems(
+            [textItem(id: "a", text: "Before", indent: 0), tableOnlyItem(indent: 0)],
+            theme: .dark,
+            timeFormat: "twelve_hour",
+            placeCursorAtEnd: false
+        )
+        renderEditor(view)
+
+        let whole = NSRange(location: 0, length: view.textStorage.length)
+        view.selectedRange = whole
+        view.textStorage.replaceCharacters(in: whole, with: "")
+        renderEditor(view)
+
+        XCTAssertEqual(view.extractItemEdits(), [])
     }
 
     func testRichCopyPastePreservesTableContent() {
@@ -544,200 +691,6 @@ final class MarkerConcealmentTests: XCTestCase {
         }
         XCTAssertEqual(table.columns.first?.name, "Column 1")
         XCTAssertEqual(table.rows.first?.id, "row-1")
-    }
-
-    // MARK: - Image boundaries
-
-    func testImageBlockBoundaryHitComputesBeforeAndAfterWithoutDrawCache() {
-        let fixture = makeEditorView()
-        let view = fixture.0
-        fixture.1.theme = .dark
-        view.frame = CGRect(x: 0, y: 0, width: 420, height: 360)
-        view.textContainer.size = CGSize(width: 420, height: CGFloat.greatestFiniteMagnitude)
-        view.loadItems([imageOnlyItem(indent: 1)], theme: .dark, timeFormat: "twelve_hour", placeCursorAtEnd: false)
-
-        guard let before = firstBoundaryHit(in: view, matching: .before) else {
-            XCTFail("Expected a computed before-block hit before any draw cache exists")
-            return
-        }
-        guard let after = firstBoundaryHit(in: view, matching: .after) else {
-            XCTFail("Expected a computed after-block hit before any draw cache exists")
-            return
-        }
-
-        XCTAssertTrue(view.placeCaretAtTableBoundary(before, theme: .dark))
-        XCTAssertEqual(view.selectedRange.location, 0)
-        XCTAssertTrue(view.placeCaretAtTableBoundary(after, theme: .dark))
-        XCTAssertGreaterThan(view.selectedRange.location, 0)
-    }
-
-    func testTypingAtImageBoundariesSavesAdjacentTextItems() {
-        let before = imageBoundaryEditAfterTyping(side: .before, text: "Before")
-        XCTAssertEqual(before.count, 2)
-        XCTAssertEqual(before[0].text, "Before")
-        XCTAssertNil(before[0].id)
-        XCTAssertEqual(before[1].id, "image-item")
-        if case .image? = before[1].content.first {
-        } else {
-            XCTFail("image should remain after before-boundary text")
-        }
-
-        let after = imageBoundaryEditAfterTyping(side: .after, text: "After")
-        XCTAssertEqual(after.count, 2)
-        XCTAssertEqual(after[0].id, "image-item")
-        if case .image? = after[0].content.first {
-        } else {
-            XCTFail("image should remain before after-boundary text")
-        }
-        XCTAssertEqual(after[1].text, "After")
-        XCTAssertNil(after[1].id)
-    }
-
-    func testBackspaceFromNonEmptyLineAfterImageMarksAdjacentBoundary() {
-        let fixture = makeEditorView()
-        let view = fixture.0
-        let coordinator = fixture.1
-        coordinator.theme = .dark
-        view.loadItems(
-            [imageOnlyItem(indent: 1), textItem(id: "after-image-item", text: "After", indent: 1)],
-            theme: .dark,
-            timeFormat: "twelve_hour",
-            placeCursorAtEnd: false
-        )
-
-        let paragraphs = paragraphRanges(in: view.textStorage.string as NSString)
-        XCTAssertEqual(paragraphs.count, 2)
-        let deletionRange = NSRange(location: paragraphs[0].fullRange.location, length: 1)
-
-        let shouldAllowUIKitDelete = coordinator.textView(
-            view,
-            shouldChangeTextIn: deletionRange,
-            replacementText: ""
-        )
-
-        XCTAssertFalse(shouldAllowUIKitDelete)
-        XCTAssertEqual(view.selectedRange.location, paragraphs[1].fullRange.location)
-
-        let edits = view.extractItemEdits()
-        XCTAssertEqual(edits.count, 2)
-        XCTAssertEqual(edits.first?.id, "image-item")
-        if case .image? = edits.first?.content.first {
-        } else {
-            XCTFail("image should remain before merged after-text")
-        }
-        XCTAssertEqual(edits[1].text, "After")
-        XCTAssertNil(edits[1].id)
-    }
-
-    func testDeleteFromNonEmptyLineBeforeImageMarksAdjacentBoundary() {
-        let fixture = makeEditorView()
-        let view = fixture.0
-        let coordinator = fixture.1
-        coordinator.theme = .dark
-        view.loadItems(
-            [textItem(id: "before-image-item", text: "Before", indent: 1), imageOnlyItem(indent: 1)],
-            theme: .dark,
-            timeFormat: "twelve_hour",
-            placeCursorAtEnd: false
-        )
-
-        let paragraphs = paragraphRanges(in: view.textStorage.string as NSString)
-        XCTAssertEqual(paragraphs.count, 2)
-        let deletionRange = NSRange(location: NSMaxRange(paragraphs[0].lineRange), length: 1)
-
-        let shouldAllowUIKitDelete = coordinator.textView(
-            view,
-            shouldChangeTextIn: deletionRange,
-            replacementText: ""
-        )
-
-        XCTAssertFalse(shouldAllowUIKitDelete)
-        XCTAssertEqual(view.selectedRange.location, NSMaxRange(paragraphs[0].lineRange))
-
-        let edits = view.extractItemEdits()
-        XCTAssertEqual(edits.count, 2)
-        XCTAssertEqual(edits[0].text, "Before")
-        XCTAssertNil(edits[0].id)
-        XCTAssertEqual(edits[1].id, "image-item")
-        if case .image? = edits[1].content.first {
-        } else {
-            XCTFail("image should remain after merged before-text")
-        }
-    }
-
-    func testBackspaceAfterImageBoundaryDeletesImageBlock() {
-        let fixture = makeEditorView()
-        let view = fixture.0
-        let coordinator = fixture.1
-        coordinator.theme = .dark
-        view.loadItems([imageOnlyItem(indent: 1)], theme: .dark, timeFormat: "twelve_hour", placeCursorAtEnd: false)
-
-        let imageParagraph = paragraphRanges(in: view.textStorage.string as NSString)[0].fullRange
-        let hit = EditorTableBoundaryHit(paragraphRange: imageParagraph, side: .after)
-        XCTAssertTrue(view.placeCaretAtTableBoundary(hit, theme: .dark))
-
-        let shouldAllowUIKitDelete = coordinator.textView(
-            view,
-            shouldChangeTextIn: NSRange(location: 0, length: 1),
-            replacementText: ""
-        )
-
-        XCTAssertFalse(shouldAllowUIKitDelete)
-        XCTAssertEqual(view.extractItemEdits(), [])
-        XCTAssertEqual(view.selectedRange.location, 0)
-    }
-
-    func testDeletingSelectionFromImageIntoNextLineDoesNotCrash() {
-        let fixture = makeEditorView()
-        let view = fixture.0
-        let coordinator = fixture.1
-        coordinator.theme = .dark
-        view.loadItems(
-            [
-                textItem(id: "before-image-item", text: "Before", indent: 1),
-                imageOnlyItem(indent: 1),
-                textItem(id: "after-image-item", text: "After", indent: 1)
-            ],
-            theme: .dark,
-            timeFormat: "twelve_hour",
-            placeCursorAtEnd: false
-        )
-
-        let paragraphs = paragraphRanges(in: view.textStorage.string as NSString)
-        let imageParagraph = paragraphs[1]
-        let selection = NSRange(location: imageParagraph.fullRange.location, length: imageParagraph.fullRange.length + 2)
-        view.selectedRange = selection
-
-        let shouldAllowUIKitDelete = coordinator.textView(
-            view,
-            shouldChangeTextIn: selection,
-            replacementText: ""
-        )
-
-        XCTAssertFalse(shouldAllowUIKitDelete)
-        XCTAssertEqual(view.textStorage.string, "Before\nter\n")
-        XCTAssertFalse(extractContainsImage(view.extractItemEdits()))
-    }
-
-    func testImageTrailingTextSplitsIntoBoundaryParagraphOnLoad() {
-        let fixture = makeEditorView()
-        let view = fixture.0
-        view.loadItems([imageThenTextItem(text: "After", indent: 1)], theme: .dark, timeFormat: "twelve_hour", placeCursorAtEnd: false)
-
-        let paragraphs = paragraphRanges(in: view.textStorage.string as NSString)
-        XCTAssertEqual(paragraphs.count, 2)
-        XCTAssertEqual(testParagraphBody(paragraphs[0], in: view.textStorage.string as NSString), "")
-        XCTAssertEqual(testParagraphBody(paragraphs[1], in: view.textStorage.string as NSString), "After")
-
-        let edits = view.extractItemEdits()
-        XCTAssertEqual(edits.count, 2)
-        XCTAssertEqual(edits.first?.id, "image-item")
-        if case .image? = edits.first?.content.first {
-        } else {
-            XCTFail("image should remain before split trailing text")
-        }
-        XCTAssertEqual(edits[1].text, "After")
-        XCTAssertNil(edits[1].id)
     }
 
     func testControllerCommitFlushesActiveTableCellEdit() {
@@ -848,88 +801,6 @@ final class MarkerConcealmentTests: XCTestCase {
         return markerRanges(storage)
     }
 
-    private func assertAfterTableBoundaryDelete(deletionRange: NSRange, file: StaticString = #filePath, line: UInt = #line) {
-        assertAfterTableBoundaryDelete({ _ in deletionRange }, file: file, line: line)
-    }
-
-    private func assertAfterTableBoundaryDelete(_ deletionRange: (EditorTextView) -> NSRange, file: StaticString = #filePath, line: UInt = #line) {
-        let fixture = makeEditorView()
-        let view = fixture.0
-        let coordinator = fixture.1
-        coordinator.theme = .dark
-        view.loadItems([tableOnlyItem(indent: 2)], theme: .dark, timeFormat: "twelve_hour", placeCursorAtEnd: false)
-
-        let tableParagraph = paragraphRanges(in: view.textStorage.string as NSString)[0].fullRange
-        let hit = EditorTableBoundaryHit(paragraphRange: tableParagraph, side: .after)
-        XCTAssertTrue(view.placeCaretAtTableBoundary(hit, theme: .dark), file: file, line: line)
-
-        let shouldAllowUIKitDelete = coordinator.textView(
-            view,
-            shouldChangeTextIn: deletionRange(view),
-            replacementText: ""
-        )
-
-        XCTAssertFalse(shouldAllowUIKitDelete, file: file, line: line)
-        let edits = view.extractItemEdits()
-        XCTAssertEqual(edits.count, 0, file: file, line: line)
-        XCTAssertEqual(view.selectedRange.location, 0, file: file, line: line)
-    }
-
-    private func tableBoundaryEditAfterTyping(side: EditorTableBoundarySide, text: String, file: StaticString = #filePath, line: UInt = #line) -> [MobileItemEdit] {
-        let fixture = makeEditorView()
-        let view = fixture.0
-        fixture.1.theme = .dark
-        view.loadItems([tableOnlyItem(indent: 1)], theme: .dark, timeFormat: "twelve_hour", placeCursorAtEnd: false)
-
-        let tableParagraph = paragraphRanges(in: view.textStorage.string as NSString)[0].fullRange
-        let hit = EditorTableBoundaryHit(paragraphRange: tableParagraph, side: side)
-        XCTAssertTrue(view.placeCaretAtTableBoundary(hit, theme: .dark), file: file, line: line)
-
-        view.textStorage.replaceCharacters(
-            in: view.selectedRange,
-            with: NSAttributedString(string: text, attributes: view.typingAttributes)
-        )
-        view.selectedRange = NSRange(location: view.selectedRange.location + (text as NSString).length, length: 0)
-
-        let edits = view.extractItemEdits()
-        return edits
-    }
-
-    private func imageBoundaryEditAfterTyping(side: EditorTableBoundarySide, text: String, file: StaticString = #filePath, line: UInt = #line) -> [MobileItemEdit] {
-        let fixture = makeEditorView()
-        let view = fixture.0
-        fixture.1.theme = .dark
-        view.loadItems([imageOnlyItem(indent: 1)], theme: .dark, timeFormat: "twelve_hour", placeCursorAtEnd: false)
-
-        let imageParagraph = paragraphRanges(in: view.textStorage.string as NSString)[0].fullRange
-        let hit = EditorTableBoundaryHit(paragraphRange: imageParagraph, side: side)
-        XCTAssertTrue(view.placeCaretAtTableBoundary(hit, theme: .dark), file: file, line: line)
-
-        view.textStorage.replaceCharacters(
-            in: view.selectedRange,
-            with: NSAttributedString(string: text, attributes: view.typingAttributes)
-        )
-        view.selectedRange = NSRange(location: view.selectedRange.location + (text as NSString).length, length: 0)
-
-        let edits = view.extractItemEdits()
-        return edits
-    }
-
-    private func firstBoundaryHit(in view: EditorTextView, matching side: EditorTableBoundarySide) -> EditorTableBoundaryHit? {
-        for y in stride(from: CGFloat(0), through: view.bounds.height, by: CGFloat(3)) {
-            for x in stride(from: CGFloat(0), through: view.bounds.width, by: CGFloat(3)) {
-                guard let hit = view.tableBoundaryHit(at: CGPoint(x: x, y: y)) else { continue }
-                switch (hit.side, side) {
-                case (.before, .before), (.after, .after):
-                    return hit
-                default:
-                    continue
-                }
-            }
-        }
-        return nil
-    }
-
     private func firstEmbeddedTextView(in root: UIView) -> UITextView? {
         for subview in root.subviews {
             if let textView = subview as? UITextView, textView !== root {
@@ -942,34 +813,37 @@ final class MarkerConcealmentTests: XCTestCase {
         return nil
     }
 
-    private func extractContainsTable(_ edits: [MobileItemEdit]) -> Bool {
-        edits.contains { edit in
-            edit.content.contains { inline in
-                if case .table = inline { return true }
-                return false
-            }
-        }
-    }
-
-    private func extractContainsImage(_ edits: [MobileItemEdit]) -> Bool {
-        edits.contains { edit in
-            edit.content.contains { inline in
-                if case .image = inline { return true }
-                return false
-            }
-        }
-    }
-
-    private func testParagraphBody(_ paragraph: EditorParagraphRange, in ns: NSString) -> String {
-        paragraph.lineRange.length > 0 ? ns.substring(with: paragraph.lineRange) : ""
-    }
-
     private func makeEditorView() -> (EditorTextView, EditorCoordinator) {
         let view = EditorTextView()
         let coordinator = EditorCoordinator()
         coordinator.view = view
         view.coordinator = coordinator
         return (view, coordinator)
+    }
+
+    /// Like `makeEditorView` but wired the way `SchemeTextView.makeUIView` does:
+    /// the coordinator is the text-storage delegate (so a native edit runs the
+    /// `didProcessEditing` → normalize/isolate pass) and the view has real bounds
+    /// (so layout + `drawChrome` run). Used to reproduce edit-time crashes.
+    private func makeWiredEditorView() -> (EditorTextView, EditorCoordinator) {
+        let view = EditorTextView()
+        let coordinator = EditorCoordinator()
+        coordinator.view = view
+        coordinator.theme = .dark
+        view.coordinator = coordinator
+        view.delegate = coordinator
+        view.textStorage.delegate = coordinator
+        view.frame = CGRect(x: 0, y: 0, width: 400, height: 700)
+        view.textContainer.size = CGSize(width: 400, height: CGFloat.greatestFiniteMagnitude)
+        return (view, coordinator)
+    }
+
+    /// Forces layout + the custom `drawChrome` pass so a render-time crash (stale
+    /// table geometry after an edit) surfaces in the test.
+    private func renderEditor(_ view: EditorTextView) {
+        view.layoutManager.ensureLayout(for: view.textContainer)
+        let renderer = UIGraphicsImageRenderer(size: CGSize(width: 400, height: 700))
+        _ = renderer.image { ctx in view.layer.render(in: ctx.cgContext) }
     }
 
     private func tableOnlyItem(indent: Int32) -> MobileItem {
@@ -1012,6 +886,40 @@ final class MarkerConcealmentTests: XCTestCase {
         )
     }
 
+    private func richTableItem(indent: Int32) -> MobileItem {
+        func cell(_ id: String, _ text: String) -> MobileTableCell {
+            MobileTableCell(
+                text: text,
+                lines: [MobileCellLine(id: id, text: text, marker: "blank", done: false, start: nil, end: nil, media: [])]
+            )
+        }
+        let table = MobileTable(
+            columns: [
+                MobileTableColumn(id: "c1", name: "A"),
+                MobileTableColumn(id: "c2", name: "B")
+            ],
+            rows: [
+                MobileTableRow(id: "r1", cells: [cell("r1c1", "1a"), cell("r1c2", "1b")]),
+                MobileTableRow(id: "r2", cells: [cell("r2c1", "2a"), cell("r2c2", "2b")])
+            ]
+        )
+        return MobileItem(
+            id: "rich-table",
+            text: "",
+            marker: "blank",
+            indent: indent,
+            kind: "procedure",
+            done: false,
+            start: nil,
+            end: nil,
+            notificationOffsetSecs: nil,
+            repeatRule: nil,
+            media: [],
+            tables: [table],
+            content: [.table(table: table)]
+        )
+    }
+
     private func imageOnlyItem(indent: Int32) -> MobileItem {
         let media = testImageMedia()
         return MobileItem(
@@ -1028,25 +936,6 @@ final class MarkerConcealmentTests: XCTestCase {
             media: [media],
             tables: [],
             content: [.image(media: media)]
-        )
-    }
-
-    private func imageThenTextItem(text: String, indent: Int32) -> MobileItem {
-        let media = testImageMedia()
-        return MobileItem(
-            id: "image-item",
-            text: text,
-            marker: "blank",
-            indent: indent,
-            kind: "procedure",
-            done: false,
-            start: nil,
-            end: nil,
-            notificationOffsetSecs: nil,
-            repeatRule: nil,
-            media: [media],
-            tables: [],
-            content: [.image(media: media), .text(text: text)]
         )
     }
 

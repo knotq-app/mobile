@@ -21,6 +21,19 @@ enum EditorMarkdownStyle {
 let editorRichClipboardType = "com.enigmadux.knotq.scheme-items.v1"
 let editorRichClipboardFormat = "knotq.mobile.scheme_items.v1"
 
+/// A block (image/table) line carries exactly this single object-replacement
+/// character as its body; the block itself is laid out + drawn through a
+/// `KnotQBlockAttachment` glyph occupying its own line. Mirrors the desktop
+/// editor's `TABLE_OBJECT_CHAR` (`\u{fffc}`) so both platforms model a block
+/// line identically: single content per line, the block alone on its line.
+let blockObjectChar = "\u{fffc}"
+let blockObjectScalar: unichar = 0xFFFC
+
+/// Whether `text` (a paragraph body) contains a block object glyph.
+func containsBlockObject(_ text: String) -> Bool {
+    text.utf16.contains(blockObjectScalar)
+}
+
 struct EditorRichClipboardPayload: Codable {
     var format = editorRichClipboardFormat
     var items: [EditorRichClipboardItem]
@@ -283,11 +296,6 @@ enum DesktopEditorMetrics {
     static let markerVerticalNudge: CGFloat = 1
     static let textFontSize: CGFloat = 16
     static let textLineHeight: CGFloat = 22
-    /// Line height for a block-only paragraph (table/image, no text). Collapses
-    /// the empty text band so the block sits in place instead of below a full
-    /// blank line, mirroring desktop's ~2px collapse. Kept non-zero so the line
-    /// still lays out one fragment, stays tappable, and can host the caret.
-    static let blockOnlyLineHeight: CGFloat = 2
     static let headingFontSize: CGFloat = 24
     static let headingLineHeight: CGFloat = 30
     static let annotationFontSize: CGFloat = 11
@@ -295,16 +303,11 @@ enum DesktopEditorMetrics {
     static let annotationBarGap: CGFloat = 8
     static let annotationTextGap: CGFloat = 7
     static let indentGuideXShift: CGFloat = 2
-    static let imageTopGap: CGFloat = 8
-    static let imageStackGap: CGFloat = 7
     static let imageMaxHeight: CGFloat = 300
     static let imageFallbackWidth: CGFloat = 320
     static let imageFallbackHeight: CGFloat = 180
-    static let tableTopGap: CGFloat = 9
-    static let tableStackGap: CGFloat = 10
     static let tableHeaderHeight: CGFloat = 30
     static let tableCellHeight: CGFloat = 36
-    static let tableMinWidth: CGFloat = 170
     static let titleFontSize: CGFloat = 26
     static let titleLineHeight: CGFloat = 34
     static let titleBlockHeight: CGFloat = 44
@@ -324,16 +327,11 @@ enum DesktopEditorMetrics {
     let repeatRule: String?
     let media: [MobileItemMedia]
     let tables: [MobileTable]
-    /// Transient editor-only marker for a paragraph that visually hosts the
-    /// caret/text immediately before or after a table item. Extraction folds
-    /// this paragraph back into the table item instead of saving it separately.
-    let tableBoundaryItemID: String?
-    let tableBoundarySide: String?
-    /// The line's inlines in document order (text/image/table). Drives in-place
-    /// block rendering so an image/table sits at its position relative to text
-    /// rather than always trailing the paragraph. Empty for lines built outside
-    /// the core (clipboard paste, fresh edits) — those fall back to the flat
-    /// `media`/`tables` ordering.
+    /// The line's single content kind, expressed as inlines so the CRDT/wire
+    /// bridge stays uniform: `[.text]`, `[.image]`, or `[.table]`. A block line
+    /// (image/table) is drawn through its `KnotQBlockAttachment` glyph; a text
+    /// line uses its body. Empty for lines built outside the core (fresh edits)
+    /// — those fall back to the flat `media`/`tables`/body.
     let content: [MobileInline]
 
     init(
@@ -348,8 +346,6 @@ enum DesktopEditorMetrics {
         repeatRule: String? = nil,
         media: [MobileItemMedia] = [],
         tables: [MobileTable] = [],
-        tableBoundaryItemID: String? = nil,
-        tableBoundarySide: String? = nil,
         content: [MobileInline] = []
     ) {
         self.marker = marker
@@ -363,8 +359,6 @@ enum DesktopEditorMetrics {
         self.repeatRule = repeatRule
         self.media = media
         self.tables = tables
-        self.tableBoundaryItemID = tableBoundaryItemID
-        self.tableBoundarySide = tableBoundarySide
         self.content = content
         super.init()
     }
@@ -386,22 +380,25 @@ enum DesktopEditorMetrics {
         )
     }
 
-    /// True when the line carries a table/image block but no text — its text
-    /// band should collapse so the block sits in place (mirrors desktop). When
-    /// `content` is unavailable (paste/edit-built metas), falls back to "has a
-    /// block and empty text", which the caller resolves against the line body.
+    /// True when the line is a block line (its single content is an image or
+    /// table). Such a line's body is exactly one `blockObjectChar`; the block is
+    /// laid out + drawn via its `KnotQBlockAttachment` glyph.
     var hasBlockContent: Bool {
         !media.isEmpty || !tables.isEmpty
     }
 
-    /// Whether the document-ordered content begins with a block (image/table)
-    /// rather than text — i.e. there is no leading text band to host the caret
-    /// on the same visual row as the block.
-    var leadingContentIsBlock: Bool {
-        switch content.first {
-        case .image, .table: return true
-        case .text, .none: return false
+    /// The single image/table this block line draws, preferring the ordered
+    /// `content` (table-over-image when both somehow coexist) and falling back to
+    /// the flat `tables`/`media` for metas built outside the core. nil for a
+    /// plain text line.
+    var blockInline: MobileInline? {
+        for inline in content {
+            if case .table = inline { return inline }
+            if case .image = inline { return inline }
         }
+        if let table = tables.first { return .table(table: table) }
+        if let media = media.first(where: { $0.kind == "image" }) { return .image(media: media) }
+        return nil
     }
 
     func with(
@@ -416,8 +413,6 @@ enum DesktopEditorMetrics {
         repeatRule: String?? = nil,
         media: [MobileItemMedia]? = nil,
         tables: [MobileTable]? = nil,
-        tableBoundaryItemID: String?? = nil,
-        tableBoundarySide: String?? = nil,
         content: [MobileInline]? = nil
     ) -> LineMeta {
         LineMeta(
@@ -432,8 +427,6 @@ enum DesktopEditorMetrics {
             repeatRule: repeatRule ?? self.repeatRule,
             media: media ?? self.media,
             tables: tables ?? self.tables,
-            tableBoundaryItemID: tableBoundaryItemID ?? self.tableBoundaryItemID,
-            tableBoundarySide: tableBoundarySide ?? self.tableBoundarySide,
             content: content ?? self.content
         )
     }
@@ -451,8 +444,6 @@ enum DesktopEditorMetrics {
             && repeatRule == o.repeatRule
             && media == o.media
             && tables == o.tables
-            && tableBoundaryItemID == o.tableBoundaryItemID
-            && tableBoundarySide == o.tableBoundarySide
             && content == o.content
     }
 
@@ -469,8 +460,6 @@ enum DesktopEditorMetrics {
         h.combine(repeatRule)
         h.combine(media)
         h.combine(tables)
-        h.combine(tableBoundaryItemID)
-        h.combine(tableBoundarySide)
         h.combine(content)
         return h.finalize()
     }
@@ -541,32 +530,24 @@ extension LineMeta {
 // MARK: - Attribute composition
 
 enum EditorAttributes {
-    /// `collapseTextBand` shrinks the line fragment to ~2px for a block-only
-    /// line (table/image with empty leading text) so the block renders in place
-    /// instead of below a full blank text row.
-    static func paragraphStyle(meta: LineMeta, collapseTextBand: Bool = false) -> NSParagraphStyle {
+    static func paragraphStyle(meta: LineMeta) -> NSParagraphStyle {
         let style = NSMutableParagraphStyle()
         let indent = CGFloat(meta.indent) * DesktopEditorMetrics.indentWidth
         let markerOffset = meta.marker == .blank ? CGFloat(0) : DesktopEditorMetrics.markerSlot
         style.firstLineHeadIndent = indent + markerOffset
         style.headIndent = indent
-        if collapseTextBand {
-            // Pin both bounds so the empty body lays out a single minimal-height
-            // fragment; the block then sits at the paragraph's top.
-            style.minimumLineHeight = DesktopEditorMetrics.blockOnlyLineHeight
-            style.maximumLineHeight = DesktopEditorMetrics.blockOnlyLineHeight
-        } else {
-            style.minimumLineHeight = DesktopEditorMetrics.textLineHeight
-        }
+        // A block line's `KnotQBlockAttachment` glyph dictates the fragment
+        // height; for text lines this keeps the body row at the standard height.
+        style.minimumLineHeight = DesktopEditorMetrics.textLineHeight
         style.paragraphSpacing = 0
         return style
     }
 
-    static func bodyAttributes(meta: LineMeta, theme: KnotQTheme, collapseTextBand: Bool = false) -> [NSAttributedString.Key: Any] {
+    static func bodyAttributes(meta: LineMeta, theme: KnotQTheme) -> [NSAttributedString.Key: Any] {
         var attrs: [NSAttributedString.Key: Any] = [
             .font: UIFont.systemFont(ofSize: DesktopEditorMetrics.textFontSize),
             .foregroundColor: UIColor(theme.textPrimary),
-            .paragraphStyle: paragraphStyle(meta: meta, collapseTextBand: collapseTextBand),
+            .paragraphStyle: paragraphStyle(meta: meta),
             .knotqLine: meta
         ]
         if meta.done {
@@ -575,15 +556,6 @@ enum EditorAttributes {
         }
         return attrs
     }
-}
-
-/// Whether a paragraph's text band should collapse to ~2px: it carries a block
-/// (table/image) that leads its content and has no body text to sit beside.
-func shouldCollapseTextBand(body: String, meta: LineMeta) -> Bool {
-    guard body.isEmpty, meta.hasBlockContent else { return false }
-    // Prefer the precise document-ordered answer when content is available;
-    // otherwise (paste/edit-built metas) any block on an empty line collapses.
-    return meta.content.isEmpty ? true : meta.leadingContentIsBlock
 }
 
 // MARK: - Editor invariants
@@ -612,19 +584,19 @@ func buildAttributedString(items: [MobileItem], theme: KnotQTheme, timeFormat: S
     }
     for item in items {
         let meta = LineMeta(item: item, timeFormat: timeFormat)
-        if let split = splitTrailingTextAfterLeadingBlock(item: item, meta: meta) {
-            appendEditorParagraph(body: "", meta: split.tableMeta, theme: theme, to: result)
-            appendEditorParagraph(body: split.trailingText, meta: split.boundaryMeta, theme: theme, to: result)
-        } else {
-            appendEditorParagraph(body: item.text, meta: meta, theme: theme, to: result)
-        }
+        appendEditorParagraph(body: item.text, meta: meta, theme: theme, to: result)
     }
     return result
 }
 
 private func appendEditorParagraph(body: String, meta: LineMeta, theme: KnotQTheme, to result: NSMutableAttributedString) {
-    let collapse = shouldCollapseTextBand(body: body, meta: meta)
-    let attrs = EditorAttributes.bodyAttributes(meta: meta, theme: theme, collapseTextBand: collapse)
+    // Single content per line: a block (image/table) is its own paragraph,
+    // rendered as one `blockObjectChar` attachment glyph with no body text.
+    if meta.hasBlockContent {
+        result.append(makeBlockAttributedParagraph(meta: meta, theme: theme))
+        return
+    }
+    let attrs = EditorAttributes.bodyAttributes(meta: meta, theme: theme)
     let bodyLocation = result.length
     result.append(NSAttributedString(string: body, attributes: attrs))
     let bodyRange = NSRange(location: bodyLocation, length: (body as NSString).length)
@@ -635,41 +607,20 @@ private func appendEditorParagraph(body: String, meta: LineMeta, theme: KnotQThe
     applyInlineMarkdownStyling(body: body, bodyRange: bodyRange, in: result)
 }
 
-private func splitTrailingTextAfterLeadingBlock(item: MobileItem, meta: LineMeta) -> (tableMeta: LineMeta, boundaryMeta: LineMeta, trailingText: String)? {
-    guard !item.content.isEmpty, let itemID = meta.itemID else { return nil }
-    var blockContent: [MobileInline] = []
-    var trailingText = ""
-    var sawBlock = false
-
-    for inline in item.content {
-        switch inline {
-        case let .text(text):
-            if !sawBlock {
-                return nil
-            }
-            trailingText += text
-        case .image, .table:
-            if !trailingText.isEmpty {
-                return nil
-            }
-            sawBlock = true
-            blockContent.append(inline)
-        }
-    }
-
-    guard sawBlock, !trailingText.isEmpty else { return nil }
-    let tableMeta = meta.with(
-        media: mediaInlines(from: blockContent),
-        tables: tableInlines(from: blockContent),
-        content: blockContent
-    )
-    let boundaryMeta = LineMeta(
-        marker: .blank,
-        indent: meta.indent,
-        tableBoundaryItemID: itemID,
-        tableBoundarySide: "after"
-    )
-    return (tableMeta, boundaryMeta, trailingText)
+/// A block paragraph: a single `blockObjectChar` carrying a `KnotQBlockAttachment`
+/// (which reserves the block's layout box) plus the line meta, followed by the
+/// paragraph's trailing "\n". The attachment's `owner` is wired up by the text
+/// view after the storage is installed so it can size itself against the live
+/// container width.
+func makeBlockAttributedParagraph(meta: LineMeta, theme: KnotQTheme) -> NSAttributedString {
+    let attrs = EditorAttributes.bodyAttributes(meta: meta, theme: theme)
+    let result = NSMutableAttributedString()
+    let attachment = KnotQBlockAttachment(block: meta.blockInline ?? .text(text: ""), indent: meta.indent)
+    let glyph = NSMutableAttributedString(attachment: attachment)
+    glyph.addAttributes(attrs, range: NSRange(location: 0, length: glyph.length))
+    result.append(glyph)
+    result.append(NSAttributedString(string: "\n", attributes: attrs))
+    return result
 }
 
 /// Ensures invariants I1 and I2 hold. Inserts a trailing "\n" with the previous
@@ -750,8 +701,7 @@ func setLineMeta(
 ) {
     guard let safeRange = nonEmptyTextRange(paragraphRange, length: storage.length) else { return }
     let body = bodyText(paragraphRange: safeRange, in: storage)
-    let collapse = shouldCollapseTextBand(body: body, meta: meta)
-    let attrs = EditorAttributes.bodyAttributes(meta: meta, theme: theme, collapseTextBand: collapse)
+    let attrs = EditorAttributes.bodyAttributes(meta: meta, theme: theme)
     storage.removeAttribute(.font, range: safeRange)
     storage.removeAttribute(.foregroundColor, range: safeRange)
     storage.removeAttribute(.backgroundColor, range: safeRange)
@@ -1070,65 +1020,23 @@ func paragraphRangeCovering(_ range: NSRange, in ns: NSString) -> NSRange {
 func extractEdits(from storage: NSAttributedString) -> [MobileItemEdit] {
     // With invariant I1, paragraphRanges yields one entry per line including
     // an empty trailing paragraph only when the user typed an extra "\n".
+    // Single content per line: each paragraph is exactly one item — a text line
+    // (its body) or a block line (one `blockObjectChar` carrying an image/table).
     let ns = storage.string as NSString
     let paragraphs = paragraphRanges(in: ns)
-    var edits: [MobileItemEdit] = []
-    var index = 0
-    while index < paragraphs.count {
-        let paragraph = paragraphs[index]
-        let meta = lineMeta(at: paragraph.fullRange.location, in: storage)
-
-        if meta.tableBoundarySide == "before",
-           let itemID = meta.tableBoundaryItemID,
-           index + 1 < paragraphs.count {
-            let tableParagraph = paragraphs[index + 1]
-            let tableMeta = lineMeta(at: tableParagraph.fullRange.location, in: storage)
-            if tableMeta.itemID == itemID, tableMeta.hasBlockContent {
-                // Single-content: a block is its own line. Text on the boundary
-                // line before it is a *separate* item — never folded into the
-                // block, which the core would drop (block-wins). An empty
-                // boundary just disappears.
-                if !paragraphBody(paragraph, in: ns).isEmpty {
-                    edits.append(plainEdit(paragraph: paragraph, meta: meta, ns: ns))
-                }
-                edits.append(plainEdit(paragraph: tableParagraph, meta: tableMeta, ns: ns))
-                index += 2
-                continue
-            }
-        }
-
-        if meta.hasBlockContent,
-           index + 1 < paragraphs.count {
-            let nextParagraph = paragraphs[index + 1]
-            let nextMeta = lineMeta(at: nextParagraph.fullRange.location, in: storage)
-            if nextMeta.tableBoundarySide == "after",
-               nextMeta.tableBoundaryItemID == meta.itemID {
-                edits.append(plainEdit(paragraph: paragraph, meta: meta, ns: ns))
-                // Text on the boundary line after the block is its own item.
-                if !paragraphBody(nextParagraph, in: ns).isEmpty {
-                    edits.append(plainEdit(paragraph: nextParagraph, meta: nextMeta, ns: ns))
-                }
-                index += 2
-                continue
-            }
-        }
-
-        edits.append(plainEdit(paragraph: paragraph, meta: meta, ns: ns))
-        index += 1
+    let edits: [MobileItemEdit] = paragraphs.map { paragraph in
+        plainEdit(paragraph: paragraph, meta: lineMeta(at: paragraph.fullRange.location, in: storage), ns: ns)
     }
     // A single blank-marker, empty-text line means "no items" (matches the
     // pre-invariant semantics for an empty document).
-    if edits.count == 1,
-       let only = edits.first,
-       let paragraph = paragraphs.first {
-        let meta = lineMeta(at: paragraph.fullRange.location, in: storage)
+    if edits.count == 1, let only = edits.first {
         if only.text.isEmpty,
            only.marker == "blank",
            only.indent == 0,
            !only.done,
            only.media.isEmpty,
-           meta.tables.isEmpty {
-        return []
+           only.content.isEmpty {
+            return []
         }
     }
     return edits
@@ -1139,10 +1047,27 @@ private func paragraphBody(_ paragraph: EditorParagraphRange, in ns: NSString) -
 }
 
 private func plainEdit(paragraph: EditorParagraphRange, meta: LineMeta, ns: NSString) -> MobileItemEdit {
-    let body = paragraphBody(paragraph, in: ns)
+    // A block line carries no text — its body is the sentinel glyph — so it is
+    // sent as content (image/table) which the core stores block-wins.
+    if meta.hasBlockContent {
+        let content = blockEditContent(meta)
+        return MobileItemEdit(
+            id: meta.itemID,
+            text: "",
+            marker: meta.marker.rawValue,
+            indent: Int32(meta.indent),
+            done: meta.done,
+            start: meta.start,
+            end: meta.end,
+            notificationOffsetSecs: meta.notificationOffsetSecs,
+            repeatRule: meta.repeatRule,
+            media: mediaInlines(from: content),
+            content: content
+        )
+    }
     return MobileItemEdit(
         id: meta.itemID,
-        text: body,
+        text: paragraphBody(paragraph, in: ns),
         marker: meta.marker.rawValue,
         indent: Int32(meta.indent),
         done: meta.done,
@@ -1150,41 +1075,18 @@ private func plainEdit(paragraph: EditorParagraphRange, meta: LineMeta, ns: NSSt
         end: meta.end,
         notificationOffsetSecs: meta.notificationOffsetSecs,
         repeatRule: meta.repeatRule,
-        media: meta.media,
-        content: editContent(body: body, meta: meta)
+        media: [],
+        content: []
     )
 }
 
-private func editContent(body: String, meta: LineMeta) -> [MobileInline] {
-    guard !meta.content.isEmpty || meta.hasBlockContent else {
-        return []
+/// The single block inline (image/table) a block line carries, as a one-element
+/// content list for the core (which collapses to single content anyway).
+private func blockEditContent(_ meta: LineMeta) -> [MobileInline] {
+    if let block = meta.blockInline {
+        return [block]
     }
-    return contentReplacingText(body, in: meta)
-}
-
-private func contentReplacingText(_ body: String, in meta: LineMeta) -> [MobileInline] {
-    var source = meta.content
-    if source.isEmpty {
-        source = meta.media.map { .image(media: $0) } + meta.tables.map { .table(table: $0) }
-    }
-
-    var replacedText = false
-    var output: [MobileInline] = []
-    for inline in source {
-        switch inline {
-        case .text:
-            if !replacedText, !body.isEmpty {
-                output.append(.text(text: body))
-            }
-            replacedText = true
-        case .image, .table:
-            output.append(inline)
-        }
-    }
-    if !replacedText, !body.isEmpty {
-        output.insert(.text(text: body), at: 0)
-    }
-    return output
+    return meta.media.map { .image(media: $0) } + meta.tables.map { .table(table: $0) }
 }
 
 private func mediaInlines(from content: [MobileInline]) -> [MobileItemMedia] {

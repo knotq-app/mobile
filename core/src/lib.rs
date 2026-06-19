@@ -1684,7 +1684,7 @@ impl MobileCoreInner {
             &self.image_assets_dir,
             &pull.remote_latest,
         )?;
-        let media_downloaded =
+        let mut media_downloaded =
             mobile_download_missing_media_assets(&client, &self.workspace, &self.image_assets_dir)?;
 
         // Persist the merged workspace BEFORE pushing. The durable pull cursors are
@@ -1744,6 +1744,26 @@ impl MobileCoreInner {
         );
         save_local_sync_state(&self.workspace_path, &sync_state)?;
         push_result?;
+
+        // Retry media after the CRDT push using a head map that treats newly
+        // pushed documents as present, so successful pre-push uploads are not
+        // re-sent but skipped or changed local assets still get uploaded.
+        let mut media_remote_latest = pull.remote_latest;
+        for pushed_document in &pushed {
+            media_remote_latest
+                .entry(pushed_document.document)
+                .or_insert(1);
+        }
+        mobile_upload_local_media_assets(
+            &client,
+            &mut sync_state,
+            &self.workspace,
+            &self.image_assets_dir,
+            &media_remote_latest,
+        )?;
+        save_local_sync_state(&self.workspace_path, &sync_state)?;
+        media_downloaded |=
+            mobile_download_missing_media_assets(&client, &self.workspace, &self.image_assets_dir)?;
 
         Ok(remote_updates_applied > 0
             || repaired_workspace_changed
@@ -3163,7 +3183,7 @@ mod sync_api_base_tests {
     use super::{
         mobile_media_asset_needs_download, mobile_workspace_media_assets, normalize_sync_api_base,
     };
-    use knotq_model::{ImageAssetFormat, ImageInline, Item, Scheme, Workspace};
+    use knotq_model::{ImageAssetFormat, ImageInline, Item, Scheme, Table, Workspace};
     use std::{fs, path::PathBuf};
 
     #[test]
@@ -3173,6 +3193,8 @@ mod sync_api_base_tests {
             "https://sync.example.com"
         );
         assert!(normalize_sync_api_base("http://127.0.0.1:8787").is_ok());
+        assert!(normalize_sync_api_base("http://localhost.evil.com").is_err());
+        assert!(normalize_sync_api_base("http://127.0.0.1.evil.com").is_err());
         assert!(normalize_sync_api_base("http://sync.example.com").is_err());
         assert!(normalize_sync_api_base("").is_err());
     }
@@ -3220,6 +3242,37 @@ mod sync_api_base_tests {
         assert_eq!(media.len(), 1);
         assert_eq!(media[0].document, document);
         assert_eq!(media[0].asset, asset);
+    }
+
+    #[test]
+    fn mobile_media_assets_include_images_inside_table_cells() {
+        let mut workspace = Workspace::new();
+        let mut scheme = Scheme::new("Table Images", 0);
+        let scheme_id = scheme.id;
+        let asset = uuid::Uuid::new_v4();
+        let image = ImageInline {
+            asset,
+            format: ImageAssetFormat::Png,
+            width: Some(20),
+            height: Some(12),
+        };
+        let mut image_item = Item::new("");
+        image_item.set_image(image);
+        let mut table = Table::new(1, 2);
+        table.cell_mut(0, 1).unwrap().items = vec![Item::new("caption"), image_item];
+        let mut table_item = Item::new("");
+        table_item.set_table(table);
+        scheme.items.push(table_item);
+        workspace.schemes.insert(scheme_id, scheme);
+        workspace.ensure_sync_metadata();
+        let document = workspace.scheme_sync.get(&scheme_id).unwrap().id;
+
+        let media = mobile_workspace_media_assets(&workspace);
+
+        assert_eq!(media.len(), 1);
+        assert_eq!(media[0].document, document);
+        assert_eq!(media[0].asset, asset);
+        assert_eq!(media[0].format, ImageAssetFormat::Png);
     }
 
     fn unique_temp_dir(prefix: &str) -> PathBuf {
