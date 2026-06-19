@@ -36,6 +36,20 @@ struct EditorRichClipboardItem: Codable {
     var notificationOffsetSecs: Int32?
     var repeatRule: String?
     var media: [EditorRichClipboardMedia]
+    var content: [EditorRichClipboardInline]
+
+    enum CodingKeys: String, CodingKey {
+        case text
+        case marker
+        case indent
+        case done
+        case start
+        case end
+        case notificationOffsetSecs
+        case repeatRule
+        case media
+        case content
+    }
 
     init(text: String, meta: LineMeta) {
         self.text = text
@@ -47,10 +61,47 @@ struct EditorRichClipboardItem: Codable {
         notificationOffsetSecs = meta.notificationOffsetSecs
         repeatRule = meta.repeatRule
         media = meta.media.map(EditorRichClipboardMedia.init(media:))
+        var orderedContent = meta.content
+        if orderedContent.isEmpty {
+            orderedContent = meta.media.map { .image(media: $0) }
+                + meta.tables.map { .table(table: $0) }
+        }
+        content = orderedContent.map(EditorRichClipboardInline.init(inline:))
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        text = try container.decode(String.self, forKey: .text)
+        marker = try container.decode(String.self, forKey: .marker)
+        indent = try container.decode(Int32.self, forKey: .indent)
+        done = try container.decode(Bool.self, forKey: .done)
+        start = try container.decodeIfPresent(String.self, forKey: .start)
+        end = try container.decodeIfPresent(String.self, forKey: .end)
+        notificationOffsetSecs = try container.decodeIfPresent(Int32.self, forKey: .notificationOffsetSecs)
+        repeatRule = try container.decodeIfPresent(String.self, forKey: .repeatRule)
+        media = try container.decodeIfPresent([EditorRichClipboardMedia].self, forKey: .media) ?? []
+        content = try container.decodeIfPresent([EditorRichClipboardInline].self, forKey: .content) ?? []
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(text, forKey: .text)
+        try container.encode(marker, forKey: .marker)
+        try container.encode(indent, forKey: .indent)
+        try container.encode(done, forKey: .done)
+        try container.encodeIfPresent(start, forKey: .start)
+        try container.encodeIfPresent(end, forKey: .end)
+        try container.encodeIfPresent(notificationOffsetSecs, forKey: .notificationOffsetSecs)
+        try container.encodeIfPresent(repeatRule, forKey: .repeatRule)
+        try container.encode(media, forKey: .media)
+        try container.encode(content, forKey: .content)
     }
 
     func lineMeta(timeFormat: String) -> LineMeta {
         let marker = Marker(rawValue: marker) ?? .blank
+        let decodedContent = content.compactMap { $0.mobileInline }
+        let decodedMedia = mediaInlines(from: decodedContent)
+        let decodedTables = tableInlines(from: decodedContent)
         return LineMeta(
             marker: marker,
             indent: Int(indent),
@@ -61,10 +112,54 @@ struct EditorRichClipboardItem: Codable {
             end: marker == .checkbox ? end : nil,
             notificationOffsetSecs: marker == .checkbox ? notificationOffsetSecs : nil,
             repeatRule: marker == .checkbox ? repeatRule : nil,
-            media: media.map(\.mobileMedia)
+            media: decodedContent.isEmpty ? media.map(\.mobileMedia) : decodedMedia,
+            tables: decodedTables,
+            content: decodedContent
         )
     }
 
+}
+
+struct EditorRichClipboardInline: Codable {
+    var kind: String
+    var text: String?
+    var media: EditorRichClipboardMedia?
+    var table: EditorRichClipboardTable?
+
+    init(inline: MobileInline) {
+        switch inline {
+        case let .text(text):
+            kind = "text"
+            self.text = text
+            media = nil
+            table = nil
+        case let .image(media):
+            kind = "image"
+            text = nil
+            self.media = EditorRichClipboardMedia(media: media)
+            table = nil
+        case let .table(table):
+            kind = "table"
+            text = nil
+            media = nil
+            self.table = EditorRichClipboardTable(table: table)
+        }
+    }
+
+    var mobileInline: MobileInline? {
+        switch kind {
+        case "text":
+            return .text(text: text ?? "")
+        case "image":
+            guard let media else { return nil }
+            return .image(media: media.mobileMedia)
+        case "table":
+            guard let table else { return nil }
+            return .table(table: table.mobileTable)
+        default:
+            return nil
+        }
+    }
 }
 
 struct EditorRichClipboardMedia: Codable {
@@ -84,6 +179,94 @@ struct EditorRichClipboardMedia: Codable {
 
     var mobileMedia: MobileItemMedia {
         MobileItemMedia(kind: kind, path: path, format: format, width: width, height: height)
+    }
+}
+
+struct EditorRichClipboardTable: Codable {
+    var columns: [EditorRichClipboardTableColumn]
+    var rows: [EditorRichClipboardTableRow]
+
+    init(table: MobileTable) {
+        columns = table.columns.map(EditorRichClipboardTableColumn.init(column:))
+        rows = table.rows.map(EditorRichClipboardTableRow.init(row:))
+    }
+
+    var mobileTable: MobileTable {
+        MobileTable(columns: columns.map(\.mobileColumn), rows: rows.map(\.mobileRow))
+    }
+}
+
+struct EditorRichClipboardTableColumn: Codable {
+    var id: String
+    var name: String
+
+    init(column: MobileTableColumn) {
+        id = column.id
+        name = column.name
+    }
+
+    var mobileColumn: MobileTableColumn {
+        MobileTableColumn(id: id, name: name)
+    }
+}
+
+struct EditorRichClipboardTableRow: Codable {
+    var id: String
+    var cells: [EditorRichClipboardTableCell]
+
+    init(row: MobileTableRow) {
+        id = row.id
+        cells = row.cells.map(EditorRichClipboardTableCell.init(cell:))
+    }
+
+    var mobileRow: MobileTableRow {
+        MobileTableRow(id: id, cells: cells.map(\.mobileCell))
+    }
+}
+
+struct EditorRichClipboardTableCell: Codable {
+    var text: String
+    var lines: [EditorRichClipboardCellLine]
+
+    init(cell: MobileTableCell) {
+        text = cell.text
+        lines = cell.lines.map(EditorRichClipboardCellLine.init(line:))
+    }
+
+    var mobileCell: MobileTableCell {
+        MobileTableCell(text: text, lines: lines.map(\.mobileLine))
+    }
+}
+
+struct EditorRichClipboardCellLine: Codable {
+    var id: String
+    var text: String
+    var marker: String
+    var done: Bool
+    var start: String?
+    var end: String?
+    var media: [EditorRichClipboardMedia]
+
+    init(line: MobileCellLine) {
+        id = line.id
+        text = line.text
+        marker = line.marker
+        done = line.done
+        start = line.start
+        end = line.end
+        media = line.media.map(EditorRichClipboardMedia.init(media:))
+    }
+
+    var mobileLine: MobileCellLine {
+        MobileCellLine(
+            id: id,
+            text: text,
+            marker: marker,
+            done: done,
+            start: start,
+            end: end,
+            media: media.map(\.mobileMedia)
+        )
     }
 }
 
@@ -602,7 +785,7 @@ func restyleEditorStorage(_ storage: NSTextStorage, theme: KnotQTheme) {
     _ = ensureWellFormed(storage, theme: theme)
 }
 
-/// Applies heading enlargement or `**…**`/`*…*`/`==…==` emphasis over a paragraph
+/// Applies heading enlargement or `**...**`/`*...*`/`==...==`/`~~...~~` emphasis over a paragraph
 /// body. Shared by `setLineMeta` and `buildAttributedString` so styling is
 /// identical whether a line is edited or freshly loaded. Marker characters are
 /// tagged `.knotqMarker` so the layout manager can collapse them off the caret.
@@ -610,18 +793,19 @@ func applyInlineMarkdownStyling(
     body: String,
     bodyRange: NSRange,
     in storage: NSMutableAttributedString,
-    enlargeHeadings: Bool = true
+    enlargeHeadings: Bool = true,
+    baseFont: UIFont = UIFont.systemFont(ofSize: DesktopEditorMetrics.textFontSize)
 ) {
     guard bodyRange.length > 0 else { return }
     if isMarkdownHeading(body) {
         // The compact daily preview keeps headings at body size (bold) so a
         // larger font doesn't overflow its fixed row height.
-        let headingSize = enlargeHeadings
-            ? DesktopEditorMetrics.headingFontSize
-            : DesktopEditorMetrics.textFontSize
+        let headingFont = enlargeHeadings
+            ? UIFont.systemFont(ofSize: DesktopEditorMetrics.headingFontSize, weight: .bold)
+            : styledInlineFont(baseFont: baseFont, bold: true, italic: false)
         storage.addAttribute(
             .font,
-            value: UIFont.systemFont(ofSize: headingSize, weight: .bold),
+            value: headingFont,
             range: bodyRange
         )
         if let markerLen = headingMarkerLength(body), markerLen > 0 {
@@ -632,7 +816,47 @@ func applyInlineMarkdownStyling(
             )
         }
     } else {
-        applyEmphasis(body: body, lineLocation: bodyRange.location, storage: storage)
+        applyEmphasis(body: body, lineLocation: bodyRange.location, storage: storage, baseFont: baseFont)
+    }
+}
+
+func markdownDisplayAttributedString(
+    body: String,
+    attributes: [NSAttributedString.Key: Any],
+    enlargeHeadings: Bool = false,
+    removeMarkers: Bool = true,
+    baseFont: UIFont? = nil
+) -> NSAttributedString {
+    let displayText = body.isEmpty ? " " : body
+    let storage = NSMutableAttributedString(string: displayText, attributes: attributes)
+    let effectiveBaseFont = baseFont
+        ?? attributes[.font] as? UIFont
+        ?? UIFont.systemFont(ofSize: DesktopEditorMetrics.textFontSize)
+    let ns = displayText as NSString
+    for paragraph in paragraphRanges(in: ns) where paragraph.lineRange.length > 0 {
+        let line = ns.substring(with: paragraph.lineRange)
+        applyInlineMarkdownStyling(
+            body: line,
+            bodyRange: paragraph.lineRange,
+            in: storage,
+            enlargeHeadings: enlargeHeadings,
+            baseFont: effectiveBaseFont
+        )
+    }
+    if removeMarkers {
+        removeMarkdownMarkerCharacters(from: storage)
+    }
+    return storage
+}
+
+private func removeMarkdownMarkerCharacters(from storage: NSMutableAttributedString) {
+    guard storage.length > 0 else { return }
+    var ranges: [NSRange] = []
+    storage.enumerateAttribute(.knotqMarker, in: NSRange(location: 0, length: storage.length)) { value, range, _ in
+        if value != nil { ranges.append(range) }
+    }
+    for range in ranges.reversed() {
+        storage.deleteCharacters(in: range)
     }
 }
 
@@ -657,25 +881,27 @@ private struct InlineStyle {
     var bold = false
     var italic = false
     var highlight = false
+    var strikethrough = false
 }
 
 private enum InlineEmphasis {
-    case bold, italic, highlight
+    case bold, italic, highlight, strikethrough
     func apply(to style: inout InlineStyle) {
         switch self {
         case .bold: style.bold = true
         case .italic: style.italic = true
         case .highlight: style.highlight = true
+        case .strikethrough: style.strikethrough = true
         }
     }
 }
 
 /// The markdown delimiter starting at `index`, matched longest-first so `**`
 /// wins over `*`. Mirrors the desktop parser: `**`/`__` bold, `*`/`_` italic,
-/// `==` highlight.
+/// `==` highlight, `~~` strikethrough.
 private func openDelimiter(_ ns: NSString, at index: Int, limit: Int) -> (token: String, emphasis: InlineEmphasis)? {
     let candidates: [(String, InlineEmphasis)] = [
-        ("**", .bold), ("__", .bold), ("==", .highlight), ("*", .italic), ("_", .italic),
+        ("**", .bold), ("__", .bold), ("==", .highlight), ("~~", .strikethrough), ("*", .italic), ("_", .italic),
     ]
     for (token, emphasis) in candidates where matchesToken(ns, token, at: index, limit: limit) {
         return (token, emphasis)
@@ -685,14 +911,20 @@ private func openDelimiter(_ ns: NSString, at index: Int, limit: Int) -> (token:
 
 /// Emphasis pass matching the desktop parser. Delimiters are tagged
 /// `.knotqMarker`; wrapped content is styled (and nesting parses recursively).
-func applyEmphasis(body: String, lineLocation: Int, storage: NSMutableAttributedString) {
+func applyEmphasis(
+    body: String,
+    lineLocation: Int,
+    storage: NSMutableAttributedString,
+    baseFont: UIFont = UIFont.systemFont(ofSize: DesktopEditorMetrics.textFontSize)
+) {
     let ns = body as NSString
     parseInlineEmphasis(
         ns: ns,
         range: NSRange(location: 0, length: ns.length),
         style: InlineStyle(),
         lineLocation: lineLocation,
-        storage: storage
+        storage: storage,
+        baseFont: baseFont
     )
 }
 
@@ -701,7 +933,8 @@ private func parseInlineEmphasis(
     range: NSRange,
     style: InlineStyle,
     lineLocation: Int,
-    storage: NSMutableAttributedString
+    storage: NSMutableAttributedString,
+    baseFont: UIFont
 ) {
     let end = NSMaxRange(range)
     var i = range.location
@@ -712,7 +945,8 @@ private func parseInlineEmphasis(
             applyInlineStyle(
                 style,
                 over: NSRange(location: lineLocation + plainStart, length: upTo - plainStart),
-                storage: storage
+                storage: storage,
+                baseFont: baseFont
             )
         }
     }
@@ -737,7 +971,8 @@ private func parseInlineEmphasis(
                         range: NSRange(location: innerStart, length: close.location - innerStart),
                         style: inner,
                         lineLocation: lineLocation,
-                        storage: storage
+                        storage: storage,
+                        baseFont: baseFont
                     )
                 }
                 i = close.location + tokenLen
@@ -756,21 +991,41 @@ private func matchesToken(_ ns: NSString, _ token: String, at index: Int, limit:
     return ns.substring(with: NSRange(location: index, length: t.length)) == token
 }
 
-private func applyInlineStyle(_ style: InlineStyle, over range: NSRange, storage: NSMutableAttributedString) {
+private func applyInlineStyle(
+    _ style: InlineStyle,
+    over range: NSRange,
+    storage: NSMutableAttributedString,
+    baseFont: UIFont
+) {
+    guard range.length > 0 else { return }
     if style.bold || style.italic {
-        var traits: UIFontDescriptor.SymbolicTraits = []
-        if style.bold { traits.insert(.traitBold) }
-        if style.italic { traits.insert(.traitItalic) }
-        let base = UIFont.systemFont(ofSize: DesktopEditorMetrics.textFontSize)
-        let font = base.fontDescriptor.withSymbolicTraits(traits)
-            .map { UIFont(descriptor: $0, size: DesktopEditorMetrics.textFontSize) } ?? base
-        storage.addAttribute(.font, value: font, range: range)
+        storage.addAttribute(
+            .font,
+            value: styledInlineFont(baseFont: baseFont, bold: style.bold, italic: style.italic),
+            range: range
+        )
     }
     if style.highlight {
         // Only the translucent background is applied; the text keeps its base
         // color (Obsidian-style), so it stays readable on light and dark themes.
         storage.addAttribute(.backgroundColor, value: EditorMarkdownStyle.highlightBackground, range: range)
     }
+    if style.strikethrough {
+        storage.addAttribute(.strikethroughStyle, value: NSUnderlineStyle.single.rawValue, range: range)
+        if let color = storage.attribute(.foregroundColor, at: range.location, effectiveRange: nil) as? UIColor {
+            storage.addAttribute(.strikethroughColor, value: color, range: range)
+        }
+    }
+}
+
+private func styledInlineFont(baseFont: UIFont, bold: Bool, italic: Bool) -> UIFont {
+    var traits = baseFont.fontDescriptor.symbolicTraits
+    if bold { traits.insert(.traitBold) }
+    if italic { traits.insert(.traitItalic) }
+    guard let descriptor = baseFont.fontDescriptor.withSymbolicTraits(traits) else {
+        return baseFont
+    }
+    return UIFont(descriptor: descriptor, size: baseFont.pointSize)
 }
 
 /// Clamps a caret position to [0, length - 1] under invariant I3. With I1 the

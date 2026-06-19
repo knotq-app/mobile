@@ -36,7 +36,12 @@ final class EditorController: ObservableObject {
     var hasPendingCellFocus: Bool { view?.hasPendingCellFocus ?? false }
 
     func commit() -> [MobileItemEdit] {
-        view?.extractItemEdits() ?? []
+        view?.endTableCellEditing(commit: true)
+        return view?.extractItemEdits() ?? []
+    }
+
+    func flushCellEdit() {
+        view?.endTableCellEditing(commit: true)
     }
 
     func appendTaskLine(theme: KnotQTheme) {
@@ -422,6 +427,7 @@ struct IntegratedSchemeEditorPane: View {
             controller.isDirty = false
             return
         }
+        controller.flushCellEdit()
         guard controller.isDirty else { return }
         let edits = controller.commit()
         model.replaceSchemeItems(schemeID: scheme.id, items: edits)

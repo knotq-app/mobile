@@ -269,35 +269,29 @@ final class MarkerConcealmentTests: XCTestCase {
         XCTAssertEqual(view.selectedRange.location, 1)
     }
 
-    func testTypingAtTableBoundariesSavesAsOrderedTableContent() {
+    func testTypingAtTableBoundariesSavesAdjacentTextItems() {
         let before = tableBoundaryEditAfterTyping(side: .before, text: "Before")
-        XCTAssertEqual(before.text, "Before")
-        XCTAssertEqual(before.content.count, 2)
-        if case let .text(text)? = before.content.first {
-            XCTAssertEqual(text, "Before")
-        } else {
-            XCTFail("before-table typing should save before the table")
-        }
-        if case .table? = before.content.last {
+        XCTAssertEqual(before.count, 2)
+        XCTAssertEqual(before[0].text, "Before")
+        XCTAssertNil(before[0].id)
+        XCTAssertEqual(before[1].id, "table-item")
+        if case .table? = before[1].content.first {
         } else {
             XCTFail("table should remain after before-boundary text")
         }
 
         let after = tableBoundaryEditAfterTyping(side: .after, text: "After")
-        XCTAssertEqual(after.text, "After")
-        XCTAssertEqual(after.content.count, 2)
-        if case .table? = after.content.first {
+        XCTAssertEqual(after.count, 2)
+        XCTAssertEqual(after[0].id, "table-item")
+        if case .table? = after[0].content.first {
         } else {
             XCTFail("table should remain before after-boundary text")
         }
-        if case let .text(text)? = after.content.last {
-            XCTAssertEqual(text, "After")
-        } else {
-            XCTFail("after-table typing should save after the table")
-        }
+        XCTAssertEqual(after[1].text, "After")
+        XCTAssertNil(after[1].id)
     }
 
-    func testBackspaceFromNonEmptyLineAfterTableMergesIntoTableItem() {
+    func testBackspaceFromNonEmptyLineAfterTableMarksAdjacentBoundary() {
         let fixture = makeEditorView()
         let view = fixture.0
         let coordinator = fixture.1
@@ -323,22 +317,17 @@ final class MarkerConcealmentTests: XCTestCase {
         XCTAssertEqual(view.selectedRange.location, paragraphs[1].fullRange.location)
 
         let edits = view.extractItemEdits()
-        XCTAssertEqual(edits.count, 1)
+        XCTAssertEqual(edits.count, 2)
         XCTAssertEqual(edits.first?.id, "table-item")
-        XCTAssertEqual(edits.first?.text, "After")
-        XCTAssertEqual(edits.first?.content.count, 2)
         if case .table? = edits.first?.content.first {
         } else {
             XCTFail("table should remain before merged after-text")
         }
-        if case let .text(text)? = edits.first?.content.last {
-            XCTAssertEqual(text, "After")
-        } else {
-            XCTFail("after-text should be saved after the table")
-        }
+        XCTAssertEqual(edits[1].text, "After")
+        XCTAssertNil(edits[1].id)
     }
 
-    func testDeleteFromNonEmptyLineBeforeTableMergesIntoTableItem() {
+    func testDeleteFromNonEmptyLineBeforeTableMarksAdjacentBoundary() {
         let fixture = makeEditorView()
         let view = fixture.0
         let coordinator = fixture.1
@@ -364,16 +353,11 @@ final class MarkerConcealmentTests: XCTestCase {
         XCTAssertEqual(view.selectedRange.location, NSMaxRange(paragraphs[0].lineRange))
 
         let edits = view.extractItemEdits()
-        XCTAssertEqual(edits.count, 1)
-        XCTAssertEqual(edits.first?.id, "table-item")
-        XCTAssertEqual(edits.first?.text, "Before")
-        XCTAssertEqual(edits.first?.content.count, 2)
-        if case let .text(text)? = edits.first?.content.first {
-            XCTAssertEqual(text, "Before")
-        } else {
-            XCTFail("before-text should be saved before the table")
-        }
-        if case .table? = edits.first?.content.last {
+        XCTAssertEqual(edits.count, 2)
+        XCTAssertEqual(edits[0].text, "Before")
+        XCTAssertNil(edits[0].id)
+        XCTAssertEqual(edits[1].id, "table-item")
+        if case .table? = edits[1].content.first {
         } else {
             XCTFail("table should remain after merged before-text")
         }
@@ -403,37 +387,213 @@ final class MarkerConcealmentTests: XCTestCase {
         XCTAssertEqual(view.selectedRange.location, 0)
     }
 
+    func testDeletingSelectedSingleTableLeavesEmptyDocument() {
+        let fixture = makeEditorView()
+        let view = fixture.0
+        let coordinator = fixture.1
+        coordinator.theme = .dark
+        view.loadItems([tableOnlyItem(indent: 1)], theme: .dark, timeFormat: "twelve_hour", placeCursorAtEnd: false)
+
+        let tableParagraph = paragraphRanges(in: view.textStorage.string as NSString)[0].fullRange
+        view.selectedRange = tableParagraph
+
+        let shouldAllowUIKitDelete = coordinator.textView(
+            view,
+            shouldChangeTextIn: tableParagraph,
+            replacementText: ""
+        )
+
+        XCTAssertFalse(shouldAllowUIKitDelete)
+        XCTAssertEqual(view.textStorage.string, "\n")
+        XCTAssertEqual(view.extractItemEdits(), [])
+        XCTAssertEqual(view.selectedRange.location, 0)
+    }
+
+    func testDeletingSelectedTableBetweenTextDeletesOnlyTable() {
+        let fixture = makeEditorView()
+        let view = fixture.0
+        let coordinator = fixture.1
+        coordinator.theme = .dark
+        view.loadItems(
+            [
+                textItem(id: "before-item", text: "Before", indent: 1),
+                tableOnlyItem(indent: 1),
+                textItem(id: "after-item", text: "After", indent: 1)
+            ],
+            theme: .dark,
+            timeFormat: "twelve_hour",
+            placeCursorAtEnd: false
+        )
+
+        let paragraphs = paragraphRanges(in: view.textStorage.string as NSString)
+        let tableParagraph = paragraphs.first { paragraph in
+            lineMeta(at: paragraph.fullRange.location, in: view.textStorage).hasBlockContent
+        }
+        guard let tableParagraph else {
+            XCTFail("Expected table paragraph")
+            return
+        }
+        view.selectedRange = tableParagraph.fullRange
+
+        let shouldAllowUIKitDelete = coordinator.textView(
+            view,
+            shouldChangeTextIn: tableParagraph.fullRange,
+            replacementText: ""
+        )
+
+        XCTAssertFalse(shouldAllowUIKitDelete)
+        let edits = view.extractItemEdits()
+        XCTAssertEqual(edits.count, 2)
+        XCTAssertEqual(edits[0].text, "Before")
+        XCTAssertEqual(edits[1].text, "After")
+        XCTAssertTrue(edits.allSatisfy { edit in
+            !edit.content.contains { inline in
+                if case .table = inline { return true }
+                return false
+            }
+        })
+    }
+
+    func testDeletingSelectionFromPreviousLineBreakThroughTableDoesNotCrash() {
+        let fixture = makeEditorView()
+        let view = fixture.0
+        let coordinator = fixture.1
+        coordinator.theme = .dark
+        view.loadItems(
+            [
+                textItem(id: "before-item", text: "Before", indent: 1),
+                tableOnlyItem(indent: 1),
+                textItem(id: "after-item", text: "After", indent: 1)
+            ],
+            theme: .dark,
+            timeFormat: "twelve_hour",
+            placeCursorAtEnd: false
+        )
+
+        let paragraphs = paragraphRanges(in: view.textStorage.string as NSString)
+        let tableParagraph = paragraphs[1]
+        let selection = NSRange(
+            location: NSMaxRange(paragraphs[0].lineRange),
+            length: NSMaxRange(tableParagraph.fullRange) - NSMaxRange(paragraphs[0].lineRange)
+        )
+        view.selectedRange = selection
+
+        let shouldAllowUIKitDelete = coordinator.textView(
+            view,
+            shouldChangeTextIn: selection,
+            replacementText: ""
+        )
+
+        XCTAssertFalse(shouldAllowUIKitDelete)
+        XCTAssertEqual(view.textStorage.string, "BeforeAfter\n")
+        XCTAssertFalse(extractContainsTable(view.extractItemEdits()))
+    }
+
+    func testDeletingSelectionFromTableIntoNextLineDoesNotCrash() {
+        let fixture = makeEditorView()
+        let view = fixture.0
+        let coordinator = fixture.1
+        coordinator.theme = .dark
+        view.loadItems(
+            [
+                textItem(id: "before-item", text: "Before", indent: 1),
+                tableOnlyItem(indent: 1),
+                textItem(id: "after-item", text: "After", indent: 1)
+            ],
+            theme: .dark,
+            timeFormat: "twelve_hour",
+            placeCursorAtEnd: false
+        )
+
+        let paragraphs = paragraphRanges(in: view.textStorage.string as NSString)
+        let tableParagraph = paragraphs[1]
+        let selection = NSRange(location: tableParagraph.fullRange.location, length: tableParagraph.fullRange.length + 2)
+        view.selectedRange = selection
+
+        let shouldAllowUIKitDelete = coordinator.textView(
+            view,
+            shouldChangeTextIn: selection,
+            replacementText: ""
+        )
+
+        XCTAssertFalse(shouldAllowUIKitDelete)
+        XCTAssertEqual(view.textStorage.string, "Before\nter\n")
+        XCTAssertFalse(extractContainsTable(view.extractItemEdits()))
+    }
+
+    func testRichCopyPastePreservesTableContent() {
+        let sourceFixture = makeEditorView()
+        let source = sourceFixture.0
+        source.loadItems([tableOnlyItem(indent: 1)], theme: .dark, timeFormat: "twelve_hour", placeCursorAtEnd: false)
+        XCTAssertGreaterThan(source.textStorage.length, 0)
+        source.selectedRange = NSRange(location: 0, length: source.textStorage.length)
+
+        source.copy(nil)
+
+        let destinationFixture = makeEditorView()
+        let destination = destinationFixture.0
+        destination.loadItems([], theme: .dark, timeFormat: "twelve_hour", placeCursorAtEnd: false)
+        destination.selectedRange = NSRange(location: 0, length: 0)
+        destination.paste(nil)
+
+        let edits = destination.extractItemEdits()
+        XCTAssertEqual(edits.count, 1)
+        guard case let .table(table)? = edits.first?.content.first else {
+            XCTFail("pasted item should retain table content")
+            return
+        }
+        XCTAssertEqual(table.columns.first?.name, "Column 1")
+        XCTAssertEqual(table.rows.first?.id, "row-1")
+    }
+
     // MARK: - Image boundaries
 
-    func testTypingAtImageBoundariesSavesAsOrderedImageContent() {
-        let before = imageBoundaryEditAfterTyping(side: .before, text: "Before")
-        XCTAssertEqual(before.text, "Before")
-        XCTAssertEqual(before.content.count, 2)
-        if case let .text(text)? = before.content.first {
-            XCTAssertEqual(text, "Before")
-        } else {
-            XCTFail("before-image typing should save before the image")
+    func testImageBlockBoundaryHitComputesBeforeAndAfterWithoutDrawCache() {
+        let fixture = makeEditorView()
+        let view = fixture.0
+        fixture.1.theme = .dark
+        view.frame = CGRect(x: 0, y: 0, width: 420, height: 360)
+        view.textContainer.size = CGSize(width: 420, height: CGFloat.greatestFiniteMagnitude)
+        view.loadItems([imageOnlyItem(indent: 1)], theme: .dark, timeFormat: "twelve_hour", placeCursorAtEnd: false)
+
+        guard let before = firstBoundaryHit(in: view, matching: .before) else {
+            XCTFail("Expected a computed before-block hit before any draw cache exists")
+            return
         }
-        if case .image? = before.content.last {
+        guard let after = firstBoundaryHit(in: view, matching: .after) else {
+            XCTFail("Expected a computed after-block hit before any draw cache exists")
+            return
+        }
+
+        XCTAssertTrue(view.placeCaretAtTableBoundary(before, theme: .dark))
+        XCTAssertEqual(view.selectedRange.location, 0)
+        XCTAssertTrue(view.placeCaretAtTableBoundary(after, theme: .dark))
+        XCTAssertGreaterThan(view.selectedRange.location, 0)
+    }
+
+    func testTypingAtImageBoundariesSavesAdjacentTextItems() {
+        let before = imageBoundaryEditAfterTyping(side: .before, text: "Before")
+        XCTAssertEqual(before.count, 2)
+        XCTAssertEqual(before[0].text, "Before")
+        XCTAssertNil(before[0].id)
+        XCTAssertEqual(before[1].id, "image-item")
+        if case .image? = before[1].content.first {
         } else {
             XCTFail("image should remain after before-boundary text")
         }
 
         let after = imageBoundaryEditAfterTyping(side: .after, text: "After")
-        XCTAssertEqual(after.text, "After")
-        XCTAssertEqual(after.content.count, 2)
-        if case .image? = after.content.first {
+        XCTAssertEqual(after.count, 2)
+        XCTAssertEqual(after[0].id, "image-item")
+        if case .image? = after[0].content.first {
         } else {
             XCTFail("image should remain before after-boundary text")
         }
-        if case let .text(text)? = after.content.last {
-            XCTAssertEqual(text, "After")
-        } else {
-            XCTFail("after-image typing should save after the image")
-        }
+        XCTAssertEqual(after[1].text, "After")
+        XCTAssertNil(after[1].id)
     }
 
-    func testBackspaceFromNonEmptyLineAfterImageMergesIntoImageItem() {
+    func testBackspaceFromNonEmptyLineAfterImageMarksAdjacentBoundary() {
         let fixture = makeEditorView()
         let view = fixture.0
         let coordinator = fixture.1
@@ -459,22 +619,17 @@ final class MarkerConcealmentTests: XCTestCase {
         XCTAssertEqual(view.selectedRange.location, paragraphs[1].fullRange.location)
 
         let edits = view.extractItemEdits()
-        XCTAssertEqual(edits.count, 1)
+        XCTAssertEqual(edits.count, 2)
         XCTAssertEqual(edits.first?.id, "image-item")
-        XCTAssertEqual(edits.first?.text, "After")
-        XCTAssertEqual(edits.first?.content.count, 2)
         if case .image? = edits.first?.content.first {
         } else {
             XCTFail("image should remain before merged after-text")
         }
-        if case let .text(text)? = edits.first?.content.last {
-            XCTAssertEqual(text, "After")
-        } else {
-            XCTFail("after-text should be saved after the image")
-        }
+        XCTAssertEqual(edits[1].text, "After")
+        XCTAssertNil(edits[1].id)
     }
 
-    func testDeleteFromNonEmptyLineBeforeImageMergesIntoImageItem() {
+    func testDeleteFromNonEmptyLineBeforeImageMarksAdjacentBoundary() {
         let fixture = makeEditorView()
         let view = fixture.0
         let coordinator = fixture.1
@@ -500,19 +655,68 @@ final class MarkerConcealmentTests: XCTestCase {
         XCTAssertEqual(view.selectedRange.location, NSMaxRange(paragraphs[0].lineRange))
 
         let edits = view.extractItemEdits()
-        XCTAssertEqual(edits.count, 1)
-        XCTAssertEqual(edits.first?.id, "image-item")
-        XCTAssertEqual(edits.first?.text, "Before")
-        XCTAssertEqual(edits.first?.content.count, 2)
-        if case let .text(text)? = edits.first?.content.first {
-            XCTAssertEqual(text, "Before")
-        } else {
-            XCTFail("before-text should be saved before the image")
-        }
-        if case .image? = edits.first?.content.last {
+        XCTAssertEqual(edits.count, 2)
+        XCTAssertEqual(edits[0].text, "Before")
+        XCTAssertNil(edits[0].id)
+        XCTAssertEqual(edits[1].id, "image-item")
+        if case .image? = edits[1].content.first {
         } else {
             XCTFail("image should remain after merged before-text")
         }
+    }
+
+    func testBackspaceAfterImageBoundaryDeletesImageBlock() {
+        let fixture = makeEditorView()
+        let view = fixture.0
+        let coordinator = fixture.1
+        coordinator.theme = .dark
+        view.loadItems([imageOnlyItem(indent: 1)], theme: .dark, timeFormat: "twelve_hour", placeCursorAtEnd: false)
+
+        let imageParagraph = paragraphRanges(in: view.textStorage.string as NSString)[0].fullRange
+        let hit = EditorTableBoundaryHit(paragraphRange: imageParagraph, side: .after)
+        XCTAssertTrue(view.placeCaretAtTableBoundary(hit, theme: .dark))
+
+        let shouldAllowUIKitDelete = coordinator.textView(
+            view,
+            shouldChangeTextIn: NSRange(location: 0, length: 1),
+            replacementText: ""
+        )
+
+        XCTAssertFalse(shouldAllowUIKitDelete)
+        XCTAssertEqual(view.extractItemEdits(), [])
+        XCTAssertEqual(view.selectedRange.location, 0)
+    }
+
+    func testDeletingSelectionFromImageIntoNextLineDoesNotCrash() {
+        let fixture = makeEditorView()
+        let view = fixture.0
+        let coordinator = fixture.1
+        coordinator.theme = .dark
+        view.loadItems(
+            [
+                textItem(id: "before-image-item", text: "Before", indent: 1),
+                imageOnlyItem(indent: 1),
+                textItem(id: "after-image-item", text: "After", indent: 1)
+            ],
+            theme: .dark,
+            timeFormat: "twelve_hour",
+            placeCursorAtEnd: false
+        )
+
+        let paragraphs = paragraphRanges(in: view.textStorage.string as NSString)
+        let imageParagraph = paragraphs[1]
+        let selection = NSRange(location: imageParagraph.fullRange.location, length: imageParagraph.fullRange.length + 2)
+        view.selectedRange = selection
+
+        let shouldAllowUIKitDelete = coordinator.textView(
+            view,
+            shouldChangeTextIn: selection,
+            replacementText: ""
+        )
+
+        XCTAssertFalse(shouldAllowUIKitDelete)
+        XCTAssertEqual(view.textStorage.string, "Before\nter\n")
+        XCTAssertFalse(extractContainsImage(view.extractItemEdits()))
     }
 
     func testImageTrailingTextSplitsIntoBoundaryParagraphOnLoad() {
@@ -526,19 +730,46 @@ final class MarkerConcealmentTests: XCTestCase {
         XCTAssertEqual(testParagraphBody(paragraphs[1], in: view.textStorage.string as NSString), "After")
 
         let edits = view.extractItemEdits()
-        XCTAssertEqual(edits.count, 1)
+        XCTAssertEqual(edits.count, 2)
         XCTAssertEqual(edits.first?.id, "image-item")
-        XCTAssertEqual(edits.first?.text, "After")
-        XCTAssertEqual(edits.first?.content.count, 2)
         if case .image? = edits.first?.content.first {
         } else {
             XCTFail("image should remain before split trailing text")
         }
-        if case let .text(text)? = edits.first?.content.last {
-            XCTAssertEqual(text, "After")
-        } else {
-            XCTFail("trailing text should be saved after the image")
+        XCTAssertEqual(edits[1].text, "After")
+        XCTAssertNil(edits[1].id)
+    }
+
+    func testControllerCommitFlushesActiveTableCellEdit() {
+        let fixture = makeEditorView()
+        let view = fixture.0
+        let controller = EditorController()
+        controller.view = view
+        var commits: [(EditorTableCellHit, String)] = []
+        view.onTableCellCommit = { hit, text in
+            commits.append((hit, text))
         }
+
+        view.beginEditingTableCell(EditorTableCellHit(
+            itemID: "table-item",
+            tableIndex: 0,
+            row: 0,
+            column: 0,
+            text: "Old",
+            frame: CGRect(x: 10, y: 10, width: 120, height: 40)
+        ))
+        guard let field = firstEmbeddedTextView(in: view) else {
+            XCTFail("Expected in-place table cell field")
+            return
+        }
+
+        field.text = "New"
+        _ = controller.commit()
+
+        XCTAssertEqual(commits.count, 1)
+        XCTAssertEqual(commits.first?.0.itemID, "table-item")
+        XCTAssertEqual(commits.first?.1, "New")
+        XCTAssertFalse(view.isEditingTableCell)
     }
 
     // MARK: - Tagging (so future delimiter changes keep the markers concealable)
@@ -547,8 +778,56 @@ final class MarkerConcealmentTests: XCTestCase {
         XCTAssertEqual(taggedRanges(for: "**b**"), [NSRange(location: 0, length: 2), NSRange(location: 3, length: 2)])
         XCTAssertEqual(taggedRanges(for: "__b__"), [NSRange(location: 0, length: 2), NSRange(location: 3, length: 2)])
         XCTAssertEqual(taggedRanges(for: "==h=="), [NSRange(location: 0, length: 2), NSRange(location: 3, length: 2)])
+        XCTAssertEqual(taggedRanges(for: "~~s~~"), [NSRange(location: 0, length: 2), NSRange(location: 3, length: 2)])
         XCTAssertEqual(taggedRanges(for: "*i*"), [NSRange(location: 0, length: 1), NSRange(location: 2, length: 1)])
         XCTAssertEqual(taggedRanges(for: "_i_"), [NSRange(location: 0, length: 1), NSRange(location: 2, length: 1)])
+    }
+
+    func testStrikethroughMarkdownAppliesAttribute() {
+        let body = "Keep ~~remove~~"
+        let storage = NSTextStorage(
+            string: body,
+            attributes: [.font: UIFont.systemFont(ofSize: 17), .foregroundColor: UIColor.label]
+        )
+
+        applyInlineMarkdownStyling(
+            body: body,
+            bodyRange: NSRange(location: 0, length: (body as NSString).length),
+            in: storage
+        )
+
+        let struckRange = (body as NSString).range(of: "remove")
+        XCTAssertEqual(
+            storage.attribute(.strikethroughStyle, at: struckRange.location, effectiveRange: nil) as? Int,
+            NSUnderlineStyle.single.rawValue
+        )
+    }
+
+    func testMarkdownDisplayAttributedStringConcealsMarkersAndKeepsCompactFont() {
+        let attributes: [NSAttributedString.Key: Any] = [
+            .font: UIFont.systemFont(ofSize: 13),
+            .foregroundColor: UIColor.label
+        ]
+
+        let rendered = markdownDisplayAttributedString(
+            body: "**Bold** ==Mark== ~~Gone~~",
+            attributes: attributes,
+            baseFont: UIFont.systemFont(ofSize: 13)
+        )
+
+        XCTAssertEqual(rendered.string, "Bold Mark Gone")
+        let ns = rendered.string as NSString
+        let boldRange = ns.range(of: "Bold")
+        let markRange = ns.range(of: "Mark")
+        let goneRange = ns.range(of: "Gone")
+        let boldFont = rendered.attribute(.font, at: boldRange.location, effectiveRange: nil) as? UIFont
+        XCTAssertEqual(boldFont?.pointSize, 13)
+        XCTAssertTrue(boldFont?.fontDescriptor.symbolicTraits.contains(.traitBold) ?? false)
+        XCTAssertNotNil(rendered.attribute(.backgroundColor, at: markRange.location, effectiveRange: nil))
+        XCTAssertEqual(
+            rendered.attribute(.strikethroughStyle, at: goneRange.location, effectiveRange: nil) as? Int,
+            NSUnderlineStyle.single.rawValue
+        )
     }
 
     func testHeadingMarkerIsTagged() {
@@ -592,12 +871,11 @@ final class MarkerConcealmentTests: XCTestCase {
 
         XCTAssertFalse(shouldAllowUIKitDelete, file: file, line: line)
         let edits = view.extractItemEdits()
-        XCTAssertEqual(edits.count, 1, file: file, line: line)
-        XCTAssertEqual(edits.first?.id, "table-item", file: file, line: line)
+        XCTAssertEqual(edits.count, 0, file: file, line: line)
         XCTAssertEqual(view.selectedRange.location, 0, file: file, line: line)
     }
 
-    private func tableBoundaryEditAfterTyping(side: EditorTableBoundarySide, text: String, file: StaticString = #filePath, line: UInt = #line) -> MobileItemEdit {
+    private func tableBoundaryEditAfterTyping(side: EditorTableBoundarySide, text: String, file: StaticString = #filePath, line: UInt = #line) -> [MobileItemEdit] {
         let fixture = makeEditorView()
         let view = fixture.0
         fixture.1.theme = .dark
@@ -614,11 +892,10 @@ final class MarkerConcealmentTests: XCTestCase {
         view.selectedRange = NSRange(location: view.selectedRange.location + (text as NSString).length, length: 0)
 
         let edits = view.extractItemEdits()
-        XCTAssertEqual(edits.count, 1, file: file, line: line)
-        return edits[0]
+        return edits
     }
 
-    private func imageBoundaryEditAfterTyping(side: EditorTableBoundarySide, text: String, file: StaticString = #filePath, line: UInt = #line) -> MobileItemEdit {
+    private func imageBoundaryEditAfterTyping(side: EditorTableBoundarySide, text: String, file: StaticString = #filePath, line: UInt = #line) -> [MobileItemEdit] {
         let fixture = makeEditorView()
         let view = fixture.0
         fixture.1.theme = .dark
@@ -635,8 +912,52 @@ final class MarkerConcealmentTests: XCTestCase {
         view.selectedRange = NSRange(location: view.selectedRange.location + (text as NSString).length, length: 0)
 
         let edits = view.extractItemEdits()
-        XCTAssertEqual(edits.count, 1, file: file, line: line)
-        return edits[0]
+        return edits
+    }
+
+    private func firstBoundaryHit(in view: EditorTextView, matching side: EditorTableBoundarySide) -> EditorTableBoundaryHit? {
+        for y in stride(from: CGFloat(0), through: view.bounds.height, by: CGFloat(3)) {
+            for x in stride(from: CGFloat(0), through: view.bounds.width, by: CGFloat(3)) {
+                guard let hit = view.tableBoundaryHit(at: CGPoint(x: x, y: y)) else { continue }
+                switch (hit.side, side) {
+                case (.before, .before), (.after, .after):
+                    return hit
+                default:
+                    continue
+                }
+            }
+        }
+        return nil
+    }
+
+    private func firstEmbeddedTextView(in root: UIView) -> UITextView? {
+        for subview in root.subviews {
+            if let textView = subview as? UITextView, textView !== root {
+                return textView
+            }
+            if let nested = firstEmbeddedTextView(in: subview) {
+                return nested
+            }
+        }
+        return nil
+    }
+
+    private func extractContainsTable(_ edits: [MobileItemEdit]) -> Bool {
+        edits.contains { edit in
+            edit.content.contains { inline in
+                if case .table = inline { return true }
+                return false
+            }
+        }
+    }
+
+    private func extractContainsImage(_ edits: [MobileItemEdit]) -> Bool {
+        edits.contains { edit in
+            edit.content.contains { inline in
+                if case .image = inline { return true }
+                return false
+            }
+        }
     }
 
     private func testParagraphBody(_ paragraph: EditorParagraphRange, in ns: NSString) -> String {

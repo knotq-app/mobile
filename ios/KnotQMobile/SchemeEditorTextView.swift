@@ -20,6 +20,17 @@ struct EditorTableCellHit {
     let frame: CGRect
 
     var isHeader: Bool { row < 0 }
+
+    func withText(_ text: String) -> EditorTableCellHit {
+        EditorTableCellHit(
+            itemID: itemID,
+            tableIndex: tableIndex,
+            row: row,
+            column: column,
+            text: text,
+            frame: frame
+        )
+    }
 }
 
 enum EditorTableBoundarySide {
@@ -353,6 +364,7 @@ final class EditorTableCellEditor: UIView, UITextViewDelegate {
         let text = field.text ?? ""
         guard text != committedText else { return }
         committedText = text
+        hit = hit.withText(text)
         didCommit = true
         onFlush?(hit, text)
     }
@@ -705,9 +717,12 @@ final class EditorTextView: UITextView {
             let blockMeta = lineMeta(at: $0.fullRange.location, in: textStorage)
             return blockMeta.itemID == itemID && blockMeta.hasBlockContent
         }) else { return nil }
-        guard let hit = renderedTableBlockHits.last(where: {
+        let hit = renderedTableBlockHits.last(where: {
             $0.paragraphRange.location == blockParagraph.fullRange.location
-        }) else { return nil }
+        }) ?? computedBlockHitRects().last(where: {
+            $0.paragraphRange.location == blockParagraph.fullRange.location
+        })
+        guard let hit else { return nil }
         let x = side == "after" ? hit.rect.maxX : hit.rect.minX
         return CGRect(
             x: x,
@@ -1014,7 +1029,10 @@ final class EditorTextView: UITextView {
     }
 
     private func richSelectedParagraphs() -> [EditorParagraphRange]? {
-        let range = selectedRange
+        richParagraphs(in: selectedRange)
+    }
+
+    private func richParagraphs(in range: NSRange) -> [EditorParagraphRange]? {
         guard range.length > 0 else { return nil }
         let ns = textStorage.string as NSString
         guard ns.length > 0,
@@ -1037,6 +1055,50 @@ final class EditorTextView: UITextView {
             }
         }
         return nil
+    }
+
+    func deleteSelectionIntersectingBlocksIfPossible(range: NSRange) -> Bool {
+        let ns = textStorage.string as NSString
+        guard range.length > 0,
+              ns.length > 0,
+              range.location >= 0,
+              NSMaxRange(range) <= ns.length else {
+            return false
+        }
+
+        var deleteRange = range
+        var intersectsBlock = false
+        for paragraph in paragraphRanges(in: ns) {
+            guard rangesIntersect(paragraph.fullRange, range) else { continue }
+            let meta = lineMeta(at: paragraph.fullRange.location, in: textStorage)
+            if meta.hasBlockContent || (meta.tableBoundarySide != nil && rangeContains(range, paragraph.fullRange)) {
+                deleteRange = NSUnionRange(deleteRange, paragraph.fullRange)
+                intersectsBlock = true
+            }
+        }
+        guard intersectsBlock else { return false }
+
+        coordinator?.suppress {
+            textStorage.beginEditing()
+            textStorage.replaceCharacters(in: deleteRange, with: NSAttributedString(string: ""))
+            ensureWellFormed(textStorage, theme: theme)
+            textStorage.endEditing()
+        }
+        let caret = clampedCaret(deleteRange.location, in: textStorage)
+        selectedRange = NSRange(location: caret, length: 0)
+        typingAttributes = EditorAttributes.bodyAttributes(meta: lineMeta(at: caret, in: textStorage), theme: theme)
+        coordinator?.markDirty()
+        coordinator?.refreshEmpty()
+        invalidateEmbeddedBlockDisplay(reflow: true)
+        return true
+    }
+
+    private func rangesIntersect(_ a: NSRange, _ b: NSRange) -> Bool {
+        a.location < NSMaxRange(b) && b.location < NSMaxRange(a)
+    }
+
+    private func rangeContains(_ outer: NSRange, _ inner: NSRange) -> Bool {
+        outer.location <= inner.location && NSMaxRange(inner) <= NSMaxRange(outer)
     }
 
     private func richPasteReplacementRange() -> NSRange {
@@ -1228,7 +1290,7 @@ final class EditorTextView: UITextView {
             guard let geometry = paragraphGeometry(for: paragraph, origin: origin) else { continue }
             let glyphRange = geometry.glyphRange
             guard NSIntersectionRange(glyphRange, glyphsToShow).length > 0 else { continue }
-            let firstFragment = geometry.fragments[0]
+            guard let firstFragment = geometry.fragments.first else { continue }
             let visualBounds = geometry.bounds
             let meta = metas[index]
             let previousMeta = index > 0 ? metas[index - 1] : nil
@@ -1616,11 +1678,10 @@ final class EditorTextView: UITextView {
             var height = DesktopEditorMetrics.tableCellHeight
             for column in 0..<tableColumnCount(table) {
                 let cell = rowData.flatMap { column < $0.cells.count ? $0.cells[column] : nil }
-                let text = tableCellDisplayText(cell)
-                let rect = ((text.isEmpty ? " " : text) as NSString).boundingRect(
+                let text = tableCellAttributedDisplayText(cell, attributes: attributes)
+                let rect = text.boundingRect(
                     with: CGSize(width: textWidth, height: .greatestFiniteMagnitude),
                     options: [.usesLineFragmentOrigin, .usesFontLeading],
-                    attributes: attributes,
                     context: nil
                 )
                 height = max(height, ceil(rect.height) + 14)
@@ -1701,7 +1762,7 @@ final class EditorTextView: UITextView {
                 )
                 let cell = rowData.flatMap { column < $0.cells.count ? $0.cells[column] : nil }
                 let text = tableCellDisplayText(cell)
-                drawTableText(text, in: cellRect, attributes: bodyAttributes)
+                drawTableCellText(cell, in: cellRect, attributes: bodyAttributes)
                 if let itemID, row < table.rows.count {
                     renderedTableCellHits.append(EditorTableCellHitRect(
                         rect: cellRect,
@@ -1753,8 +1814,54 @@ final class EditorTextView: UITextView {
 
     private func drawTableText(_ text: String, in rect: CGRect, attributes: [NSAttributedString.Key: Any]) {
         let inset = rect.insetBy(dx: 7, dy: 7)
-        let value = (text.isEmpty ? " " : text) as NSString
-        value.draw(in: inset, withAttributes: attributes)
+        markdownDisplayAttributedString(body: text, attributes: attributes, baseFont: tableBaseFont(attributes))
+            .draw(in: inset)
+    }
+
+    private func drawTableCellText(
+        _ cell: MobileTableCell?,
+        in rect: CGRect,
+        attributes: [NSAttributedString.Key: Any]
+    ) {
+        let inset = rect.insetBy(dx: 7, dy: 7)
+        tableCellAttributedDisplayText(cell, attributes: attributes).draw(in: inset)
+    }
+
+    private func tableCellAttributedDisplayText(
+        _ cell: MobileTableCell?,
+        attributes: [NSAttributedString.Key: Any]
+    ) -> NSAttributedString {
+        guard let cell else {
+            return markdownDisplayAttributedString(body: "", attributes: attributes, baseFont: tableBaseFont(attributes))
+        }
+        guard !cell.lines.isEmpty else {
+            return markdownDisplayAttributedString(body: cell.text, attributes: attributes, baseFont: tableBaseFont(attributes))
+        }
+
+        let result = NSMutableAttributedString()
+        for (index, line) in cell.lines.enumerated() {
+            if index > 0 {
+                result.append(NSAttributedString(string: "\n", attributes: attributes))
+            }
+            let lineText = NSMutableAttributedString(attributedString: markdownDisplayAttributedString(
+                body: line.text,
+                attributes: attributes,
+                baseFont: tableBaseFont(attributes)
+            ))
+            if line.done, lineText.length > 0 {
+                let lineRange = NSRange(location: 0, length: lineText.length)
+                lineText.addAttribute(.strikethroughStyle, value: NSUnderlineStyle.single.rawValue, range: lineRange)
+                lineText.addAttribute(.strikethroughColor, value: UIColor(theme.textDim), range: lineRange)
+            }
+            result.append(lineText)
+        }
+        return result.length > 0
+            ? result
+            : markdownDisplayAttributedString(body: cell.text, attributes: attributes, baseFont: tableBaseFont(attributes))
+    }
+
+    private func tableBaseFont(_ attributes: [NSAttributedString.Key: Any]) -> UIFont {
+        attributes[.font] as? UIFont ?? UIFont.systemFont(ofSize: 13)
     }
 
     private func tableColumnCount(_ table: MobileTable) -> Int {
@@ -1787,34 +1894,103 @@ final class EditorTextView: UITextView {
     }
 
     func tableBoundaryHit(at point: CGPoint) -> EditorTableBoundaryHit? {
-        let horizontalSlop: CGFloat = 10
-        let beforeHeight = max(18, DesktopEditorMetrics.tableTopGap + 10)
-        let afterHeight: CGFloat = 22
+        if let hit = blockBoundaryHit(at: point, in: renderedTableBlockHits) {
+            return hit
+        }
+        return blockBoundaryHit(at: point, in: computedBlockHitRects())
+    }
 
-        for recorded in renderedTableBlockHits.reversed() {
-            let x = recorded.rect.minX - horizontalSlop
-            let width = recorded.rect.width + horizontalSlop * 2
-            let beforeRect = CGRect(
-                x: x,
-                y: recorded.rect.minY - beforeHeight,
-                width: width,
-                height: beforeHeight
-            )
-            if beforeRect.contains(point) {
-                return EditorTableBoundaryHit(paragraphRange: recorded.paragraphRange, side: .before)
-            }
-
-            let afterRect = CGRect(
-                x: x,
-                y: recorded.rect.maxY,
-                width: width,
-                height: afterHeight
-            )
-            if afterRect.contains(point), shouldUseAfterTableBoundary(for: recorded.paragraphRange) {
-                return EditorTableBoundaryHit(paragraphRange: recorded.paragraphRange, side: .after)
+    private func blockBoundaryHit(at point: CGPoint, in records: [EditorTableBlockHitRect]) -> EditorTableBoundaryHit? {
+        for recorded in records.reversed() {
+            if let hit = blockBoundaryHit(at: point, for: recorded) {
+                return hit
             }
         }
         return nil
+    }
+
+    private func blockBoundaryHit(at point: CGPoint, for recorded: EditorTableBlockHitRect) -> EditorTableBoundaryHit? {
+        let horizontalSlop: CGFloat = 10
+        let beforeHeight = max(18, DesktopEditorMetrics.tableTopGap + 10)
+        let afterHeight: CGFloat = 22
+        let sideWidth: CGFloat = 34
+        let x = recorded.rect.minX - horizontalSlop
+        let width = recorded.rect.width + horizontalSlop * 2
+        let beforeRect = CGRect(
+            x: x,
+            y: recorded.rect.minY - beforeHeight,
+            width: width,
+            height: beforeHeight
+        )
+        let beforeSideRect = CGRect(
+            x: recorded.rect.minX - sideWidth,
+            y: recorded.rect.minY,
+            width: sideWidth,
+            height: recorded.rect.height
+        )
+        if beforeRect.contains(point) || beforeSideRect.contains(point) {
+            return EditorTableBoundaryHit(paragraphRange: recorded.paragraphRange, side: .before)
+        }
+
+        let afterRect = CGRect(
+            x: x,
+            y: recorded.rect.maxY,
+            width: width,
+            height: afterHeight
+        )
+        let afterSideRect = CGRect(
+            x: recorded.rect.maxX,
+            y: recorded.rect.minY,
+            width: sideWidth,
+            height: recorded.rect.height
+        )
+        if (afterRect.contains(point) || afterSideRect.contains(point)),
+           shouldUseAfterTableBoundary(for: recorded.paragraphRange) {
+            return EditorTableBoundaryHit(paragraphRange: recorded.paragraphRange, side: .after)
+        }
+        return nil
+    }
+
+    private func computedBlockHitRects() -> [EditorTableBlockHitRect] {
+        layoutManager.ensureLayout(for: textContainer)
+        let ns = textStorage.string as NSString
+        let origin = CGPoint(x: textContainerInset.left, y: textContainerInset.top)
+        var records: [EditorTableBlockHitRect] = []
+        for paragraph in paragraphRanges(in: ns) {
+            guard bodyText(paragraphRange: paragraph.fullRange, in: textStorage).isEmpty,
+                  let geometry = paragraphGeometry(for: paragraph, origin: origin) else { continue }
+            let meta = lineMeta(at: paragraph.fullRange.location, in: textStorage)
+            guard meta.hasBlockContent else { continue }
+            guard let firstFragment = geometry.fragments.first else { continue }
+            let textLeft = firstFragment.minX
+            let maxWidth = editorInlineBlockMaxWidth(textLeft: textLeft)
+            guard maxWidth > 0 else { continue }
+            let annotationHeight = meta.annotation == nil ? CGFloat(0) : DesktopEditorMetrics.annotationHeight
+            var y = geometry.bounds.maxY + annotationHeight
+            var previous: EditorBlock?
+            for block in orderedBlocks(for: meta) {
+                y += blockLeadingGap(block, previous: previous)
+                let rect: CGRect
+                switch block {
+                case let .image(media):
+                    let size = mediaDisplaySize(media, maxWidth: maxWidth)
+                    rect = CGRect(x: textLeft, y: y, width: size.width, height: size.height)
+                    y += size.height
+                case let .table(table):
+                    let height = tableHeight(table, maxWidth: maxWidth)
+                    rect = CGRect(x: textLeft, y: y, width: maxWidth, height: height)
+                    y += height
+                }
+                if rect.width > 0, rect.height > 0 {
+                    records.append(EditorTableBlockHitRect(
+                        rect: rect,
+                        paragraphRange: paragraph.fullRange
+                    ))
+                }
+                previous = block
+            }
+        }
+        return records
     }
 
     @discardableResult
@@ -1977,7 +2153,7 @@ final class EditorTextView: UITextView {
             guard let geometry = paragraphGeometry(for: paragraph, origin: origin) else { continue }
             let meta = lineMeta(at: paragraph.fullRange.location, in: textStorage)
             guard let itemID = meta.itemID, !meta.tables.isEmpty else { continue }
-            let firstFragment = geometry.fragments[0]
+            guard let firstFragment = geometry.fragments.first else { continue }
             let textLeft = firstFragment.minX
             let maxWidth = editorInlineBlockMaxWidth(textLeft: textLeft)
             guard maxWidth > 0 else { continue }
@@ -2071,6 +2247,7 @@ final class EditorTextView: UITextView {
         editor.onFlush = { [weak self] hit, text in
             // Persist only — never tears the editor down (the caller is reusing it).
             self?.onTableCellCommit?(hit, text)
+            self?.applyTableCellEditOptimistically(hit, text: text)
         }
         editor.onRequestEnd = { [weak self] in
             // Dismiss already flushed; tear the overlay down without re-committing.

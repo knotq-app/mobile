@@ -299,11 +299,22 @@ final class EditorCoordinator: NSObject, UITextViewDelegate, @preconcurrency NST
         if text == "\n" && range.length == 0 {
             return !handleEnter(in: view, at: range.location)
         }
+        if text.isEmpty,
+           range.length > 0,
+           view.selectedRange.length > 0,
+           NSEqualRanges(view.selectedRange, range),
+           view.deleteSelectionIntersectingBlocksIfPossible(range: range) {
+            autoBulletUndo = nil
+            return false
+        }
         if text.isEmpty && range.length == 1 {
             if handleAutoBulletUndo(in: view, deletionRange: range) {
                 return false
             }
             if handleClearMarkerBackspace(in: view, deletionRange: range) {
+                return false
+            }
+            if handleDeletePreviousBlockFromEmptyBoundaryLine(in: view, deletionRange: range) {
                 return false
             }
             if handleDeleteEmptyTableBoundaryLine(in: view, deletionRange: range) {
@@ -438,6 +449,77 @@ final class EditorCoordinator: NSObject, UITextViewDelegate, @preconcurrency NST
 
         deleteEmptyTableBoundaryLine(at: currentIndex, paragraphs: paragraphs, in: view)
         return true
+    }
+
+    /// Backspace from an empty line immediately after a block-only paragraph
+    /// removes that block. This is the block equivalent of deleting the previous
+    /// character when the caret is visually just after it.
+    private func handleDeletePreviousBlockFromEmptyBoundaryLine(in view: EditorTextView, deletionRange: NSRange) -> Bool {
+        let storage = view.textStorage
+        let ns = storage.string as NSString
+        guard deletionRange.length == 1,
+              deletionRange.location < ns.length,
+              ns.character(at: deletionRange.location) == 10 else { return false }
+
+        let paragraphs = paragraphRanges(in: ns)
+        var candidateIndexes: [Int] = []
+        if let lowerIndex = paragraphs.firstIndex(where: { $0.fullRange.location == deletionRange.location + 1 }) {
+            candidateIndexes.append(lowerIndex)
+        }
+        if let endingIndex = paragraphs.firstIndex(where: { NSMaxRange($0.fullRange) == deletionRange.location + 1 }),
+           !candidateIndexes.contains(endingIndex) {
+            candidateIndexes.append(endingIndex)
+        }
+
+        guard let boundaryIndex = candidateIndexes.first(where: {
+            isEmptyLineImmediatelyAfterBlock(at: $0, paragraphs: paragraphs, storage: storage)
+        }) else { return false }
+        deleteBlockBeforeBoundaryLine(at: boundaryIndex, paragraphs: paragraphs, in: view)
+        return true
+    }
+
+    private func isEmptyLineImmediatelyAfterBlock(at currentIndex: Int, paragraphs: [EditorParagraphRange], storage: NSTextStorage) -> Bool {
+        guard paragraphs.indices.contains(currentIndex),
+              currentIndex > 0 else { return false }
+
+        let current = paragraphs[currentIndex]
+        let currentMeta = lineMeta(at: current.fullRange.location, in: storage)
+        guard bodyText(paragraphRange: current.fullRange, in: storage).isEmpty,
+              currentMeta.marker == .blank,
+              currentMeta.annotation == nil,
+              currentMeta.media.isEmpty,
+              currentMeta.tables.isEmpty else { return false }
+
+        let previous = paragraphs[currentIndex - 1]
+        let previousMeta = lineMeta(at: previous.fullRange.location, in: storage)
+        return previousMeta.hasBlockContent
+            && bodyText(paragraphRange: previous.fullRange, in: storage).isEmpty
+    }
+
+    private func deleteBlockBeforeBoundaryLine(at boundaryIndex: Int, paragraphs: [EditorParagraphRange], in view: EditorTextView) {
+        let storage = view.textStorage
+        let block = paragraphs[boundaryIndex - 1]
+        let boundary = paragraphs[boundaryIndex]
+        let deleteRange = NSRange(
+            location: block.fullRange.location,
+            length: NSMaxRange(boundary.fullRange) - block.fullRange.location
+        )
+        suppress {
+            storage.beginEditing()
+            storage.replaceCharacters(in: deleteRange, with: NSAttributedString(string: ""))
+            ensureWellFormed(storage, theme: theme)
+            storage.endEditing()
+        }
+        let newCaret = clampedCaret(deleteRange.location, in: storage)
+        view.selectedRange = NSRange(location: newCaret, length: 0)
+        view.typingAttributes = EditorAttributes.bodyAttributes(
+            meta: lineMeta(at: newCaret, in: storage),
+            theme: theme
+        )
+        autoBulletUndo = nil
+        markDirty()
+        refreshEmpty()
+        view.invalidateEmbeddedBlockDisplay(reflow: true)
     }
 
     private func isEmptyTableBoundaryLine(at currentIndex: Int, paragraphs: [EditorParagraphRange], storage: NSTextStorage) -> Bool {
