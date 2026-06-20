@@ -25,6 +25,7 @@ struct SyncSettingsCard: View {
     @EnvironmentObject private var model: AppModel
     let theme: KnotQTheme
     @Binding var showingCancelConfirm: Bool
+    @State private var showingDeleteAccount = false
 
     private var state: SyncPanelState {
         if model.syncSession != nil && model.syncOffline {
@@ -90,6 +91,10 @@ struct SyncSettingsCard: View {
         .onChange(of: model.syncSession?.supportsSync) { _, supportsSync in
             guard supportsSync == false else { return }
             Task { await model.loadSyncProducts() }
+        }
+        .sheet(isPresented: $showingDeleteAccount) {
+            DeleteSyncAccountSheet(theme: theme)
+                .environmentObject(model)
         }
     }
 
@@ -225,7 +230,7 @@ struct SyncSettingsCard: View {
                 }
             }
             Button("Delete Account", role: .destructive) {
-                model.openOnlineAccountManagement()
+                showingDeleteAccount = true
             }
         } label: {
             HStack(spacing: 4) {
@@ -277,6 +282,109 @@ struct SyncSettingsCard: View {
             await model.refreshAccountStatus()
         } else {
             await model.loadSyncProducts()
+        }
+    }
+}
+
+private struct DeleteSyncAccountSheet: View {
+    @EnvironmentObject private var model: AppModel
+    @Environment(\.dismiss) private var dismiss
+    let theme: KnotQTheme
+    @State private var emailConfirmation = ""
+    @State private var password = ""
+    @FocusState private var focusedField: Field?
+
+    private enum Field {
+        case email
+        case password
+    }
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section {
+                    if let email = model.syncSession?.email {
+                        LabeledContent("Account", value: email)
+                    }
+                    TextField("Email", text: $emailConfirmation)
+                        .keyboardType(.emailAddress)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+                        .focused($focusedField, equals: .email)
+                    SecureField("Password", text: $password)
+                        .textContentType(.password)
+                        .focused($focusedField, equals: .password)
+                } header: {
+                    Text("Confirm Deletion")
+                } footer: {
+                    Text("This schedules deletion of your sync account and cloud data. Local workspace files stay on this device. Cancel any active store subscription before deleting; billing continues through the store until you cancel it.")
+                }
+
+                if model.syncSession?.supportsSync == true && !model.subscriptionCancelled {
+                    Section {
+                        Button(subscriptionActionTitle) {
+                            Task { await manageSubscription() }
+                        }
+                        .disabled(model.syncAccountActionInProgress)
+                    }
+                }
+
+                if model.syncAccountActionInProgress {
+                    Section {
+                        ProgressView("Deleting account...")
+                    }
+                }
+            }
+            .navigationTitle("Delete Account")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") {
+                        dismiss()
+                    }
+                    .disabled(model.syncAccountActionInProgress)
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Delete", role: .destructive) {
+                        Task { await deleteAccount() }
+                    }
+                    .disabled(!canDelete)
+                }
+            }
+        }
+        .tint(theme.accent)
+        .onAppear {
+            focusedField = .email
+        }
+    }
+
+    private var canDelete: Bool {
+        guard !model.syncAccountActionInProgress else { return false }
+        guard !password.isEmpty else { return false }
+        guard let accountEmail = model.syncSession?.email else { return false }
+        let expected = accountEmail.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        return emailConfirmation.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() == expected
+    }
+
+    private func deleteAccount() async {
+        await model.deleteSyncAccount(confirmEmail: emailConfirmation, password: password)
+        if model.syncSession == nil {
+            dismiss()
+        }
+    }
+
+    private var subscriptionActionTitle: String {
+        (model.subscriptionProvider ?? "").lowercased() == "web" ? "Cancel Subscription" : "Manage Subscription"
+    }
+
+    private func manageSubscription() async {
+        let provider = (model.subscriptionProvider ?? "").lowercased()
+        if provider == "web" {
+            await model.cancelSyncSubscription()
+        } else if provider == "google" {
+            model.openManagePlaySubscription()
+        } else {
+            await model.openManageAppleSubscription()
         }
     }
 }

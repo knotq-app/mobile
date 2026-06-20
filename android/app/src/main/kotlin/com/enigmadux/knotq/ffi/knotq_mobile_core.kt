@@ -822,7 +822,7 @@ external fun uniffi_knotq_mobile_core_fn_method_mobilecore_ensure_daily_queue(`p
 ): Unit
 external fun uniffi_knotq_mobile_core_fn_method_mobilecore_google_auth_request(`ptr`: Long,`clientId`: RustBuffer.ByValue,`redirectUri`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
 ): RustBuffer.ByValue
-external fun uniffi_knotq_mobile_core_fn_method_mobilecore_insert_table(`ptr`: Long,`schemeId`: RustBuffer.ByValue,`afterItemId`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+external fun uniffi_knotq_mobile_core_fn_method_mobilecore_insert_table(`ptr`: Long,`schemeId`: RustBuffer.ByValue,`afterItemId`: RustBuffer.ByValue,`itemId`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
 ): Unit
 external fun uniffi_knotq_mobile_core_fn_method_mobilecore_insert_table_column(`ptr`: Long,`schemeId`: RustBuffer.ByValue,`itemId`: RustBuffer.ByValue,`column`: Int,uniffi_out_err: UniffiRustCallStatus, 
 ): Unit
@@ -880,7 +880,7 @@ external fun uniffi_knotq_mobile_core_fn_method_mobilecore_set_table_cell_line_t
 ): Unit
 external fun uniffi_knotq_mobile_core_fn_method_mobilecore_set_table_cell_text(`ptr`: Long,`schemeId`: RustBuffer.ByValue,`itemId`: RustBuffer.ByValue,`row`: Int,`column`: Int,`text`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
 ): Unit
-external fun uniffi_knotq_mobile_core_fn_method_mobilecore_set_table_column_name(`ptr`: Long,`schemeId`: RustBuffer.ByValue,`itemId`: RustBuffer.ByValue,`column`: Int,`name`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus,
+external fun uniffi_knotq_mobile_core_fn_method_mobilecore_set_table_column_name(`ptr`: Long,`schemeId`: RustBuffer.ByValue,`itemId`: RustBuffer.ByValue,`column`: Int,`name`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
 ): Unit
 external fun uniffi_knotq_mobile_core_fn_method_mobilecore_set_theme_mode(`ptr`: Long,`themeMode`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
 ): Unit
@@ -1080,7 +1080,7 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
     if (lib.uniffi_knotq_mobile_core_checksum_method_mobilecore_google_auth_request() != 56614.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
-    if (lib.uniffi_knotq_mobile_core_checksum_method_mobilecore_insert_table() != 56727.toShort()) {
+    if (lib.uniffi_knotq_mobile_core_checksum_method_mobilecore_insert_table() != 50709.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_knotq_mobile_core_checksum_method_mobilecore_insert_table_column() != 25374.toShort()) {
@@ -1625,7 +1625,7 @@ public interface MobileCoreInterface {
     
     fun `googleAuthRequest`(`clientId`: kotlin.String, `redirectUri`: kotlin.String): MobileGoogleAuthRequest
     
-    fun `insertTable`(`schemeId`: kotlin.String, `afterItemId`: kotlin.String?)
+    fun `insertTable`(`schemeId`: kotlin.String, `afterItemId`: kotlin.String?, `itemId`: kotlin.String)
     
     fun `insertTableColumn`(`schemeId`: kotlin.String, `itemId`: kotlin.String, `column`: kotlin.Int)
     
@@ -1684,7 +1684,7 @@ public interface MobileCoreInterface {
     fun `setTableCellText`(`schemeId`: kotlin.String, `itemId`: kotlin.String, `row`: kotlin.Int, `column`: kotlin.Int, `text`: kotlin.String)
     
     fun `setTableColumnName`(`schemeId`: kotlin.String, `itemId`: kotlin.String, `column`: kotlin.Int, `name`: kotlin.String)
-
+    
     fun `setThemeMode`(`themeMode`: kotlin.String)
     
     fun `setTimeFormat`(`timeFormat`: kotlin.String)
@@ -2065,13 +2065,13 @@ open class MobileCore: Disposable, AutoCloseable, MobileCoreInterface
     
 
     
-    @Throws(MobileException::class)override fun `insertTable`(`schemeId`: kotlin.String, `afterItemId`: kotlin.String?)
+    @Throws(MobileException::class)override fun `insertTable`(`schemeId`: kotlin.String, `afterItemId`: kotlin.String?, `itemId`: kotlin.String)
         = 
     callWithHandle {
     uniffiRustCallWithError(MobileException) { _status ->
     UniffiLib.uniffi_knotq_mobile_core_fn_method_mobilecore_insert_table(
         it,
-        FfiConverterString.lower(`schemeId`),FfiConverterOptionalString.lower(`afterItemId`),_status)
+        FfiConverterString.lower(`schemeId`),FfiConverterOptionalString.lower(`afterItemId`),FfiConverterString.lower(`itemId`),_status)
 }
     }
     
@@ -2446,7 +2446,7 @@ open class MobileCore: Disposable, AutoCloseable, MobileCoreInterface
 
     
     @Throws(MobileException::class)override fun `setTableColumnName`(`schemeId`: kotlin.String, `itemId`: kotlin.String, `column`: kotlin.Int, `name`: kotlin.String)
-        =
+        = 
     callWithHandle {
     uniffiRustCallWithError(MobileException) { _status ->
     UniffiLib.uniffi_knotq_mobile_core_fn_method_mobilecore_set_table_column_name(
@@ -2454,10 +2454,10 @@ open class MobileCore: Disposable, AutoCloseable, MobileCoreInterface
         FfiConverterString.lower(`schemeId`),FfiConverterString.lower(`itemId`),FfiConverterInt.lower(`column`),FfiConverterString.lower(`name`),_status)
 }
     }
+    
+    
 
-
-
-
+    
     @Throws(MobileException::class)override fun `setThemeMode`(`themeMode`: kotlin.String)
         = 
     callWithHandle {
@@ -3099,6 +3099,8 @@ data class MobileItemEdit (
     var `repeatRule`: kotlin.String?
     , 
     var `media`: List<MobileItemMedia>
+    , 
+    var `content`: List<MobileInline>
     
 ){
     
@@ -3125,6 +3127,7 @@ public object FfiConverterTypeMobileItemEdit: FfiConverterRustBuffer<MobileItemE
             FfiConverterOptionalInt.read(buf),
             FfiConverterOptionalString.read(buf),
             FfiConverterSequenceTypeMobileItemMedia.read(buf),
+            FfiConverterSequenceTypeMobileInline.read(buf),
         )
     }
 
@@ -3138,7 +3141,8 @@ public object FfiConverterTypeMobileItemEdit: FfiConverterRustBuffer<MobileItemE
             FfiConverterOptionalString.allocationSize(value.`end`) +
             FfiConverterOptionalInt.allocationSize(value.`notificationOffsetSecs`) +
             FfiConverterOptionalString.allocationSize(value.`repeatRule`) +
-            FfiConverterSequenceTypeMobileItemMedia.allocationSize(value.`media`)
+            FfiConverterSequenceTypeMobileItemMedia.allocationSize(value.`media`) +
+            FfiConverterSequenceTypeMobileInline.allocationSize(value.`content`)
     )
 
     override fun write(value: MobileItemEdit, buf: ByteBuffer) {
@@ -3152,6 +3156,7 @@ public object FfiConverterTypeMobileItemEdit: FfiConverterRustBuffer<MobileItemE
             FfiConverterOptionalInt.write(value.`notificationOffsetSecs`, buf)
             FfiConverterOptionalString.write(value.`repeatRule`, buf)
             FfiConverterSequenceTypeMobileItemMedia.write(value.`media`, buf)
+            FfiConverterSequenceTypeMobileInline.write(value.`content`, buf)
     }
 }
 
@@ -3282,6 +3287,8 @@ data class MobileNotificationRequest (
     , 
     var `expiresAt`: kotlin.String?
     , 
+    var `endAt`: kotlin.String?
+    , 
     var `title`: kotlin.String
     , 
     var `body`: kotlin.String
@@ -3315,6 +3322,7 @@ public object FfiConverterTypeMobileNotificationRequest: FfiConverterRustBuffer<
             FfiConverterString.read(buf),
             FfiConverterString.read(buf),
             FfiConverterOptionalString.read(buf),
+            FfiConverterOptionalString.read(buf),
             FfiConverterString.read(buf),
             FfiConverterString.read(buf),
             FfiConverterString.read(buf),
@@ -3330,6 +3338,7 @@ public object FfiConverterTypeMobileNotificationRequest: FfiConverterRustBuffer<
             FfiConverterString.allocationSize(value.`notificationKey`) +
             FfiConverterString.allocationSize(value.`fireAt`) +
             FfiConverterOptionalString.allocationSize(value.`expiresAt`) +
+            FfiConverterOptionalString.allocationSize(value.`endAt`) +
             FfiConverterString.allocationSize(value.`title`) +
             FfiConverterString.allocationSize(value.`body`) +
             FfiConverterString.allocationSize(value.`kind`) +
@@ -3344,6 +3353,7 @@ public object FfiConverterTypeMobileNotificationRequest: FfiConverterRustBuffer<
             FfiConverterString.write(value.`notificationKey`, buf)
             FfiConverterString.write(value.`fireAt`, buf)
             FfiConverterOptionalString.write(value.`expiresAt`, buf)
+            FfiConverterOptionalString.write(value.`endAt`, buf)
             FfiConverterString.write(value.`title`, buf)
             FfiConverterString.write(value.`body`, buf)
             FfiConverterString.write(value.`kind`, buf)
@@ -4589,3 +4599,4 @@ public object FfiConverterSequenceTypeMobileInline: FfiConverterRustBuffer<List<
         }
     }
 }
+

@@ -186,6 +186,7 @@ final class EditorCoordinator: NSObject, UITextViewDelegate, @preconcurrency NST
     private var suppressDelegateDepth = 0
     private var autoBulletizePending = false
     private var blockIsolationPending = false
+    private var embeddedDisplayRefreshPending = false
     fileprivate var autoBulletUndo: (lineLocation: Int, originalBody: String)?
 
     // Toolbar marker buttons keyed by Marker, so we can tint the active one.
@@ -260,7 +261,13 @@ final class EditorCoordinator: NSObject, UITextViewDelegate, @preconcurrency NST
         if view.isEditingTableCell {
             view.endTableCellEditing(commit: true)
         }
-        _ = view.toggleCheckboxAt(point: point)
+        if view.toggleCheckboxAt(point: point) {
+            return
+        }
+        // A tap in a block's gutter (beside it) or the seam just above/below
+        // places the caret before/after the block. UITextView ignores taps in
+        // that empty margin, so do it ourselves.
+        _ = view.placeCaretAtBlockEdge(at: point)
     }
 
     func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldReceive touch: UITouch) -> Bool {
@@ -287,6 +294,11 @@ final class EditorCoordinator: NSObject, UITextViewDelegate, @preconcurrency NST
         if view.tableCellHit(at: point) != nil {
             return false
         }
+        // Everywhere else (plain text AND a block's gutter/seam) stay simultaneous
+        // so our recognizer reliably reaches `.ended` and runs `handleEditorTap`.
+        // Going exclusive here would make *our* tap lose to UITextView's built-in
+        // tap (a cell tap only "wins" because it steals first responder), so the
+        // explicit gutter caret placement would never fire.
         return true
     }
 
@@ -469,17 +481,30 @@ final class EditorCoordinator: NSObject, UITextViewDelegate, @preconcurrency NST
         return true
     }
 
-    /// The image/table a block glyph in `paragraphRange` carries (read off its
-    /// `KnotQBlockAttachment`), used to recover block meta after a merge moved the
-    /// glyph onto a paragraph whose meta lost the block.
-    private func blockAttachmentInline(in storage: NSTextStorage, paragraphRange: NSRange) -> MobileInline? {
+    /// The line meta a block glyph in `paragraphRange` carries — its own
+    /// `.knotqLine` (which in-place cell edits keep current), used to recover a
+    /// block after a merge moved the glyph onto a paragraph whose meta lost it.
+    /// Preferring the live line meta over the frozen `KnotQBlockAttachment`
+    /// snapshot keeps both the latest cell text AND the block's item id (cell
+    /// hit-testing is keyed by item id). Falls back to a meta synthesised from the
+    /// attachment only if the glyph somehow lost its line meta.
+    private func glyphLineMeta(in storage: NSTextStorage, paragraphRange: NSRange) -> LineMeta? {
         let ns = storage.string as NSString
         let end = min(NSMaxRange(paragraphRange), ns.length)
         var index = paragraphRange.location
         while index < end {
-            if ns.character(at: index) == blockObjectScalar,
-               let attachment = storage.attribute(.attachment, at: index, effectiveRange: nil) as? KnotQBlockAttachment {
-                return attachment.block
+            if ns.character(at: index) == blockObjectScalar {
+                if let meta = storage.attribute(.knotqLine, at: index, effectiveRange: nil) as? LineMeta,
+                   meta.blockInline != nil {
+                    return meta
+                }
+                if let attachment = storage.attribute(.attachment, at: index, effectiveRange: nil) as? KnotQBlockAttachment {
+                    switch attachment.block {
+                    case let .image(media): return LineMeta(media: [media], content: [attachment.block])
+                    case let .table(table): return LineMeta(tables: [table], content: [attachment.block])
+                    case .text: return nil
+                    }
+                }
             }
             index += 1
         }
@@ -488,17 +513,24 @@ final class EditorCoordinator: NSObject, UITextViewDelegate, @preconcurrency NST
 
     /// Reconciles a paragraph's meta to invariant I4: a paragraph that contains
     /// the block glyph must carry that block in its meta (recovered from the
-    /// attachment if a merge dropped it); a paragraph without the glyph must carry
-    /// no block. Keeps the editor's view of a line and what it draws/extracts in
-    /// sync after native edits.
+    /// glyph's own line meta if a merge dropped it); a paragraph without the glyph
+    /// must carry no block. Keeps the editor's view of a line and what it
+    /// draws/extracts in sync after native edits.
     private func reconciledBlockMeta(_ meta: LineMeta, paragraphRange: NSRange, in storage: NSTextStorage) -> LineMeta {
         let hasGlyph = containsBlockObject(bodyText(paragraphRange: paragraphRange, in: storage))
         if hasGlyph {
             if meta.hasBlockContent { return meta }
-            guard let block = blockAttachmentInline(in: storage, paragraphRange: paragraphRange) else { return meta }
+            guard let glyphMeta = glyphLineMeta(in: storage, paragraphRange: paragraphRange),
+                  let block = glyphMeta.blockInline else { return meta }
+            // Carry over the block's OWN item id from the glyph's line meta. A
+            // merge moved the glyph onto this line; keeping `meta`'s id (the upper
+            // line's, often nil for a fresh line) leaves the table with no id, and
+            // cell hit-testing — keyed by item id — silently fails, so cell taps
+            // land the document caret before/after the table instead of in a cell.
+            let base = meta.with(itemID: glyphMeta.itemID ?? meta.itemID)
             switch block {
-            case let .image(media): return meta.with(media: [media], tables: [], content: [block])
-            case let .table(table): return meta.with(media: [], tables: [table], content: [block])
+            case let .image(media): return base.with(media: [media], tables: [], content: [block])
+            case let .table(table): return base.with(media: [], tables: [table], content: [block])
             case .text: return meta
             }
         }
@@ -675,7 +707,20 @@ final class EditorCoordinator: NSObject, UITextViewDelegate, @preconcurrency NST
             normalizeAffectedParagraphs(in: storage, around: editedRange)
             storage.endEditing()
         }
-        view?.invalidateEmbeddedBlockDisplay()
+
+        // Refresh embedded block (table/image) rendering, but DEFERRED. Doing it
+        // here invalidates display against a layout manager that hasn't yet
+        // processed this edit; its `_boundingRectForGlyphRange` then reads
+        // `characterAtIndex` past the new length (NSRangeException) — UIKit's
+        // autocorrection replace is the reliable trigger. The whole call must
+        // wait until the edit cycle finishes, like the isolate pass below.
+        if !embeddedDisplayRefreshPending {
+            embeddedDisplayRefreshPending = true
+            DispatchQueue.main.async { [weak self] in
+                self?.embeddedDisplayRefreshPending = false
+                self?.view?.invalidateEmbeddedBlockDisplay()
+            }
+        }
 
         // I4 backstop runs deferred (length changes are unsafe inside this
         // callback — they corrupt the layout manager and crash a later pass).

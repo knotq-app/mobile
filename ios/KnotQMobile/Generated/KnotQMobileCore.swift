@@ -556,7 +556,7 @@ public protocol MobileCoreProtocol: AnyObject, Sendable {
     
     func googleAuthRequest(clientId: String, redirectUri: String) throws  -> MobileGoogleAuthRequest
     
-    func insertTable(schemeId: String, afterItemId: String?) throws 
+    func insertTable(schemeId: String, afterItemId: String?, itemId: String) throws 
     
     func insertTableColumn(schemeId: String, itemId: String, column: Int32) throws 
     
@@ -908,11 +908,12 @@ open func googleAuthRequest(clientId: String, redirectUri: String)throws  -> Mob
 })
 }
     
-open func insertTable(schemeId: String, afterItemId: String?)throws   {try rustCallWithError(FfiConverterTypeMobileError_lift) {
+open func insertTable(schemeId: String, afterItemId: String?, itemId: String)throws   {try rustCallWithError(FfiConverterTypeMobileError_lift) {
     uniffi_knotq_mobile_core_fn_method_mobilecore_insert_table(
             self.uniffiCloneHandle(),
         FfiConverterString.lower(schemeId),
-        FfiConverterOptionString.lower(afterItemId),$0
+        FfiConverterOptionString.lower(afterItemId),
+        FfiConverterString.lower(itemId),$0
     )
 }
 }
@@ -2116,6 +2117,7 @@ public struct MobileNotificationRequest: Equatable, Hashable {
     public var notificationKey: String
     public var fireAt: String
     public var expiresAt: String?
+    public var endAt: String?
     public var title: String
     public var body: String
     public var kind: String
@@ -2126,11 +2128,12 @@ public struct MobileNotificationRequest: Equatable, Hashable {
 
     // Default memberwise initializers are never public by default, so we
     // declare one manually.
-    public init(id: String, notificationKey: String, fireAt: String, expiresAt: String?, title: String, body: String, kind: String, schemeId: String, itemId: String, occurrenceJson: String, triggerAt: String) {
+    public init(id: String, notificationKey: String, fireAt: String, expiresAt: String?, endAt: String?, title: String, body: String, kind: String, schemeId: String, itemId: String, occurrenceJson: String, triggerAt: String) {
         self.id = id
         self.notificationKey = notificationKey
         self.fireAt = fireAt
         self.expiresAt = expiresAt
+        self.endAt = endAt
         self.title = title
         self.body = body
         self.kind = kind
@@ -2160,6 +2163,7 @@ public struct FfiConverterTypeMobileNotificationRequest: FfiConverterRustBuffer 
                 notificationKey: FfiConverterString.read(from: &buf), 
                 fireAt: FfiConverterString.read(from: &buf), 
                 expiresAt: FfiConverterOptionString.read(from: &buf), 
+                endAt: FfiConverterOptionString.read(from: &buf), 
                 title: FfiConverterString.read(from: &buf), 
                 body: FfiConverterString.read(from: &buf), 
                 kind: FfiConverterString.read(from: &buf), 
@@ -2175,6 +2179,7 @@ public struct FfiConverterTypeMobileNotificationRequest: FfiConverterRustBuffer 
         FfiConverterString.write(value.notificationKey, into: &buf)
         FfiConverterString.write(value.fireAt, into: &buf)
         FfiConverterOptionString.write(value.expiresAt, into: &buf)
+        FfiConverterOptionString.write(value.endAt, into: &buf)
         FfiConverterString.write(value.title, into: &buf)
         FfiConverterString.write(value.body, into: &buf)
         FfiConverterString.write(value.kind, into: &buf)
@@ -3536,7 +3541,7 @@ private let initializationResult: InitializationResult = {
     if (uniffi_knotq_mobile_core_checksum_method_mobilecore_google_auth_request() != 56614) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_knotq_mobile_core_checksum_method_mobilecore_insert_table() != 56727) {
+    if (uniffi_knotq_mobile_core_checksum_method_mobilecore_insert_table() != 50709) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_knotq_mobile_core_checksum_method_mobilecore_insert_table_column() != 25374) {

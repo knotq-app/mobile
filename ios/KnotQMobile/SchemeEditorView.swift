@@ -283,6 +283,39 @@ struct EditorRichClipboardCellLine: Codable {
     }
 }
 
+extension MobileTable {
+    /// A fresh table matching the core's `Table::new(rows, cols)`: `columns`
+    /// columns named "Column N", `rows` data rows, each cell a single blank
+    /// line. Every id is a freshly minted UUID string so the table round-trips
+    /// cleanly through the core (which parses each id) when the editor commits.
+    static func freshEmpty(rows: Int = 2, columns: Int = 2) -> MobileTable {
+        let columnCount = max(1, columns)
+        let columnDefs = (0..<columnCount).map { index in
+            MobileTableColumn(id: UUID().uuidString, name: "Column \(index + 1)")
+        }
+        let rowDefs = (0..<max(1, rows)).map { _ in
+            MobileTableRow(
+                id: UUID().uuidString,
+                cells: (0..<columnCount).map { _ in
+                    MobileTableCell(
+                        text: "",
+                        lines: [MobileCellLine(
+                            id: UUID().uuidString,
+                            text: "",
+                            marker: "blank",
+                            done: false,
+                            start: nil,
+                            end: nil,
+                            media: []
+                        )]
+                    )
+                }
+            )
+        }
+        return MobileTable(columns: columnDefs, rows: rowDefs)
+    }
+}
+
 // MARK: - Metrics
 
 enum DesktopEditorMetrics {

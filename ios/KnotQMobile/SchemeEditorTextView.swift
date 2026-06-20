@@ -736,15 +736,110 @@ final class EditorTextView: UITextView {
         return CGSize(width: UIView.noIntrinsicMetric, height: fitted.height)
     }
 
+    /// How far past a block's line-fragment edges a tap still resolves to the
+    /// caret right before/after the block — the slack that extends the target into
+    /// the neighbouring text lines on top of `blockVerticalPadding`.
+    static let blockEdgeTapMargin: CGFloat = 12
+
+    /// Empty space reserved above and below a block (image/table) inside its own
+    /// line fragment. It gives the block breathing room AND, crucially, a real
+    /// full-width strip to tap for the caret before/after it: without it the block
+    /// fills its line edge-to-edge and the only "before/after" target is a sliver.
+    /// Most of the before/after tap target comes from this (genuinely empty) space
+    /// rather than `blockEdgeTapMargin`, which steals from the neighbouring lines.
+    static let blockVerticalPadding: CGFloat = 16
+
+    /// Resolve a tap near a block (image/table) line to the caret right before or
+    /// after the block, mirroring desktop: the block fills its line, so a tap in
+    /// the gutter left of it lands *before* it, right of it lands *after* it; a
+    /// tap just above lands before, just below lands after (the last block owns
+    /// all the empty space beneath it, where there is no text line to catch the
+    /// tap). Cell taps fall through to the in-place cell editor instead.
+    override func closestPosition(to point: CGPoint) -> UITextPosition? {
+        if let edge = blockEdgeCaret(point) {
+            return edge
+        }
+        return super.closestPosition(to: point)
+    }
+
+    /// Move the document caret to the block edge a gutter/seam tap addresses, and
+    /// return true when the tap was one. UITextView's own tap recognizer ignores
+    /// taps that land in the empty margin beside the text (the whole left/right
+    /// gutter of a near-full-width block), so `closestPosition` is never consulted
+    /// there — the tap handler calls this to place the caret explicitly instead.
+    @discardableResult
+    func placeCaretAtBlockEdge(at point: CGPoint) -> Bool {
+        guard let position = blockEdgeCaret(point) else { return false }
+        if !isFirstResponder { becomeFirstResponder() }
+        let offset = offset(from: beginningOfDocument, to: position)
+        selectedRange = NSRange(location: offset, length: 0)
+        return true
+    }
+
+    func blockEdgeCaret(_ point: CGPoint) -> UITextPosition? {
+        let length = textStorage.length
+        guard length > 0 else { return nil }
+        // A tap on a table cell must reach the in-place cell editor, not the caret.
+        guard tableCellHit(at: point) == nil else { return nil }
+        layoutManager.ensureLayout(for: textContainer)
+        let ns = textStorage.string as NSString
+        let margin = Self.blockEdgeTapMargin
+        let origin = CGPoint(x: textContainerInset.left, y: textContainerInset.top)
+        let paragraphs = paragraphRanges(in: ns)
+        for (index, paragraph) in paragraphs.enumerated() {
+            let meta = lineMeta(at: paragraph.fullRange.location, in: textStorage)
+            guard meta.hasBlockContent,
+                  let geometry = paragraphGeometry(for: paragraph, origin: origin),
+                  let firstFragment = geometry.fragments.first,
+                  let rect = blockRect(for: meta, firstFragment: firstFragment) else { continue }
+            // The vertical band this block answers for: its whole line fragment
+            // (which includes the padding above/below the block) plus a margin into
+            // the neighbouring text lines — or everything below it for the last
+            // block (no text line beneath to catch the tap). `rect` is the block's
+            // drawn box (inset within the fragment by the padding); the padding
+            // strips between the fragment edges and `rect` are the generous,
+            // full-width before/after target the user taps.
+            let fragment = geometry.bounds
+            let isLast = index == paragraphs.count - 1
+            let bandTop = fragment.minY - margin
+            let bandBottom = isLast ? .greatestFiniteMagnitude : fragment.maxY + margin
+            guard point.y >= bandTop, point.y <= bandBottom else { continue }
+            let beforeGlyph: Bool
+            if point.y < rect.minY {
+                beforeGlyph = true                  // above the block (or top padding)
+            } else if point.y > rect.maxY {
+                beforeGlyph = false                 // below the block (or bottom padding)
+            } else {
+                beforeGlyph = point.x < rect.midX   // in a side gutter: nearest edge
+            }
+            let offset = beforeGlyph
+                ? paragraph.fullRange.location
+                : min(paragraph.fullRange.location + 1, length)
+            return position(from: beginningOfDocument, offset: offset)
+        }
+        return nil
+    }
+
     override func caretRect(for position: UITextPosition) -> CGRect {
         let offset = offset(from: beginningOfDocument, to: position)
         var rect = super.caretRect(for: position)
         rect.size.width = 2
-        // A block line's fragment is as tall as its image/table; let the caret
-        // span it so the block reads as active/selected when the caret sits on
-        // its line. Text lines clamp the caret to the line's text height (a
-        // heading keeps its taller caret).
-        if lineMeta(at: clampedCaret(offset, in: textStorage), in: textStorage).hasBlockContent {
+        // On a block line, span the caret over the image/table itself — its drawn
+        // box, NOT the full line fragment, which now also includes the empty
+        // tap padding above and below. Without this the caret would extend well
+        // past the block into that padding.
+        let caret = clampedCaret(offset, in: textStorage)
+        if lineMeta(at: caret, in: textStorage).hasBlockContent {
+            let ns = textStorage.string as NSString
+            let paragraph = ns.paragraphRange(for: NSRange(location: min(caret, ns.length - 1), length: 0))
+            let origin = CGPoint(x: textContainerInset.left, y: textContainerInset.top)
+            if let para = paragraphRanges(in: ns).first(where: { $0.fullRange.location == paragraph.location }),
+               let geometry = paragraphGeometry(for: para, origin: origin),
+               let firstFragment = geometry.fragments.first,
+               let box = blockRect(for: lineMeta(at: paragraph.location, in: textStorage), firstFragment: firstFragment) {
+                rect.origin.y = box.minY
+                rect.size.height = box.height
+            }
             return rect
         }
         let textHeight = caretLineIsHeading(at: offset)
@@ -963,6 +1058,60 @@ final class EditorTextView: UITextView {
         invalidateIntrinsicContentSize()
     }
 
+    /// Inserts a fresh table block at the caret, rendered immediately so the
+    /// table is visible the instant the toolbar button is tapped — no snapshot
+    /// round-trip. `itemID` is the caller-minted id the eager `insert_table`
+    /// command persists under, so the in-place cell editor can address this
+    /// table's cells/rows right away. Mirrors `attachImageMedia`; the block
+    /// persists through the normal document commit (`extractEdits` →
+    /// `replaceSchemeItems`), which matches the item by `itemID`.
+    func insertTableBlock(itemID: String, theme: KnotQTheme) {
+        let table = MobileTable.freshEmpty()
+        let caret = clampedCaret(selectedRange.location, in: textStorage)
+        let paragraph = editableParagraphRange(in: textStorage.string as NSString, at: caret)
+        let old = lineMeta(at: paragraph.location, in: textStorage)
+        let blockMeta = LineMeta(
+            marker: .blank,
+            indent: old.indent,
+            itemID: itemID,
+            tables: [table],
+            content: [.table(table: table)]
+        )
+        let blockParagraph = makeBlockAttributedParagraph(meta: blockMeta, theme: theme)
+        let body = bodyText(paragraphRange: paragraph, in: textStorage)
+        let replacesEmptyLine = body.isEmpty
+            && !old.hasBlockContent
+            && old.marker == .blank
+            && old.annotation == nil
+        let insertionLocation = replacesEmptyLine ? paragraph.location : NSMaxRange(paragraph)
+
+        coordinator?.suppress {
+            textStorage.beginEditing()
+            if replacesEmptyLine {
+                textStorage.replaceCharacters(in: paragraph, with: blockParagraph)
+            } else {
+                textStorage.replaceCharacters(
+                    in: NSRange(location: insertionLocation, length: 0),
+                    with: blockParagraph
+                )
+            }
+            ensureWellFormed(textStorage, theme: theme)
+            assignBlockAttachmentOwners()
+            textStorage.endEditing()
+        }
+
+        let caretTarget = clampedCaret(insertionLocation + blockParagraph.length, in: textStorage)
+        selectedRange = NSRange(location: caretTarget, length: 0)
+        typingAttributes = EditorAttributes.bodyAttributes(
+            meta: lineMeta(at: caretTarget, in: textStorage),
+            theme: theme
+        )
+        coordinator?.markDirty()
+        coordinator?.refreshEmpty()
+        invalidateEmbeddedBlockDisplay(reflow: true)
+        invalidateIntrinsicContentSize()
+    }
+
     /// Points every `KnotQBlockAttachment` in the storage at this view so it can
     /// size its layout box against the live container width. Called after any
     /// edit that introduces block glyphs (load, paste, image insert).
@@ -979,14 +1128,17 @@ final class EditorTextView: UITextView {
     /// Layout-box size for an image block at the given indent (scaled to fit the
     /// available content width). Used by `KnotQBlockAttachment.attachmentBounds`.
     func blockDisplaySize(forImage media: MobileItemMedia, indent: Int) -> CGSize {
-        mediaDisplaySize(media, maxWidth: blockMaxWidth(indent: indent))
+        let size = mediaDisplaySize(media, maxWidth: blockMaxWidth(indent: indent))
+        return CGSize(width: size.width, height: size.height + 2 * Self.blockVerticalPadding)
     }
 
     /// Layout-box size for a table block at the given indent (full content width,
     /// height from wrapped rows). Used by `KnotQBlockAttachment.attachmentBounds`.
+    /// Includes `blockVerticalPadding` above and below so the block sits in its
+    /// line with breathing room (and a tappable before/after strip).
     func blockDisplaySize(forTable table: MobileTable, indent: Int) -> CGSize {
         let maxWidth = blockMaxWidth(indent: indent)
-        return CGSize(width: maxWidth, height: tableHeight(table, maxWidth: maxWidth))
+        return CGSize(width: maxWidth, height: tableHeight(table, maxWidth: maxWidth) + 2 * Self.blockVerticalPadding)
     }
 
     private func blockMaxWidth(indent: Int) -> CGFloat {
@@ -1031,7 +1183,43 @@ final class EditorTextView: UITextView {
         if coordinator?.handleClearMarkerAtDocumentStart(in: self) == true {
             return
         }
+        if applySelfSizingBackspace() {
+            return
+        }
         super.deleteBackward()
+    }
+
+    private func applySelfSizingBackspace() -> Bool {
+        guard !isScrollEnabled, markedTextRange == nil, let coordinator else { return false }
+        let selection = selectedRange
+        guard selection.length == 0, selection.location > 0 else { return false }
+        let deletionRange = NSRange(location: selection.location - 1, length: 1)
+        let ns = textStorage.string as NSString
+        guard deletionRange.location < ns.length else { return false }
+        let deletedCharacter = ns.character(at: deletionRange.location)
+
+        if coordinator.textView(self, shouldChangeTextIn: deletionRange, replacementText: "") == false {
+            return true
+        }
+        guard deletedCharacter != 10, deletedCharacter != blockObjectScalar else { return false }
+
+        coordinator.suppress {
+            textStorage.beginEditing()
+            textStorage.replaceCharacters(in: deletionRange, with: "")
+            ensureWellFormed(textStorage, theme: theme)
+            textStorage.endEditing()
+        }
+        let caret = clampedCaret(deletionRange.location, in: textStorage)
+        selectedRange = NSRange(location: caret, length: 0)
+        typingAttributes = EditorAttributes.bodyAttributes(
+            meta: lineMeta(at: caret, in: textStorage),
+            theme: theme
+        )
+        coordinator.markDirty()
+        coordinator.refreshEmpty()
+        refreshMarkerVisibility(force: true)
+        invalidateEmbeddedBlockDisplay(reflow: true)
+        return true
     }
 
     // MARK: - Hardware-keyboard shortcuts
@@ -1448,13 +1636,18 @@ final class EditorTextView: UITextView {
         let textLeft = firstFragment.minX
         let maxWidth = editorInlineBlockMaxWidth(textLeft: textLeft)
         guard maxWidth > 0 else { return nil }
+        // The block is drawn inset below the fragment top by `blockVerticalPadding`
+        // (its box height reserved that padding above and below); the gaps are the
+        // before/after tap target. `attachmentBounds` and `blockEdgeCaret` mirror
+        // this exactly.
+        let top = firstFragment.minY + Self.blockVerticalPadding
         switch block {
         case let .image(media):
             let size = mediaDisplaySize(media, maxWidth: maxWidth)
-            return CGRect(x: textLeft, y: firstFragment.minY, width: size.width, height: size.height)
+            return CGRect(x: textLeft, y: top, width: size.width, height: size.height)
         case let .table(table):
             let height = tableHeight(table, maxWidth: maxWidth)
-            return CGRect(x: textLeft, y: firstFragment.minY, width: maxWidth, height: height)
+            return CGRect(x: textLeft, y: top, width: maxWidth, height: height)
         case .text:
             return nil
         }
@@ -1904,13 +2097,17 @@ final class EditorTextView: UITextView {
     }
 
     func tableCellHit(at point: CGPoint) -> EditorTableCellHit? {
-        if let recorded = renderedTableCellHits.last(where: { $0.rect.insetBy(dx: -4, dy: -4).contains(point) }) {
+        // No slack: cells tile their grid exactly, and a tap just past the grid's
+        // outer edge belongs to the caret before/after the table (`blockEdgeCaret`),
+        // not to the nearest cell. Growing the cell rects here would swallow those
+        // gutter taps and make placing the caret beside a table unreliable.
+        if let recorded = renderedTableCellHits.last(where: { $0.rect.contains(point) }) {
             return recorded.hit
         }
         // Fallback: recompute the grid geometry when the cell hasn't been drawn
         // yet (e.g. off-screen). Mirrors `drawBlock`/`drawTable`.
         return enumerateTableCells { hit in
-            hit.frame.insetBy(dx: -4, dy: -4).contains(point) ? hit : nil
+            hit.frame.contains(point) ? hit : nil
         }
     }
 

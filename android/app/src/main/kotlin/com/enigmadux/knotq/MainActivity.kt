@@ -100,285 +100,115 @@ import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.roundToInt
 
-internal const val SYNC_SESSION_PREF = "knotq.localSyncSession"
-private const val BACKGROUND_SYNC_WORK = "knotq-background-sync"
-private const val DEFAULT_SYNC_API_BASE = "https://api.knotq.com"
-private const val SYNC_SIGN_IN_PAGE_URL = "https://www.knotq.com/signin.html"
-private const val SYNC_ACCOUNT_PAGE_URL = "https://www.knotq.com/account.html#signin"
-private const val SYNC_SIGN_IN_REDIRECT_SCHEME = "knotq"
-private const val SYNC_SIGN_IN_REDIRECT_HOST = "auth-callback"
-private const val SYNC_SIGN_IN_REDIRECT_URI = "$SYNC_SIGN_IN_REDIRECT_SCHEME://$SYNC_SIGN_IN_REDIRECT_HOST"
-private const val SYNC_AUTH_API_BASE_PREF = "knotq.syncBrowserAuth.apiBase"
-private const val SYNC_AUTH_STATE_PREF = "knotq.syncBrowserAuth.state"
-private const val SYNC_AUTH_VERIFIER_PREF = "knotq.syncBrowserAuth.verifier"
-// The Google Play subscription product id for hosted sync (Play Console).
-private const val SYNC_SUBSCRIPTION_PRODUCT_ID = "knotq.sync.monthly"
-// Where store-managed subscriptions are re-enabled (auto-renew turned back on);
-// neither the app nor our backend can flip that for Google/Apple.
-private const val PLAY_SUBSCRIPTIONS_URL = "https://play.google.com/store/account/subscriptions"
-private const val APPLE_SUBSCRIPTIONS_URL = "https://apps.apple.com/account/subscriptions"
-private const val GOOGLE_CLIENT_ID = "419826075228-gn6gj1l20nltil67odvf00u3i7n8a2ld.apps.googleusercontent.com"
-private const val GOOGLE_REDIRECT_SCHEME = "com.googleusercontent.apps.419826075228-gn6gj1l20nltil67odvf00u3i7n8a2ld"
-private const val GOOGLE_REDIRECT_URI = "$GOOGLE_REDIRECT_SCHEME:/oauth2redirect"
-private const val GOOGLE_SYNC_INTERVAL_MS = 120_000L
-private const val TAB_CALENDAR = 0
-private const val TAB_SCHEMES = 1
-private const val TAB_DAILY = 2
-private const val TAB_SEARCH = 3
-private const val TAB_SETTINGS = 4
-private const val TAB_HOME = 5
-
-private const val ICON_DOCK_SIZE_SP = 20f
-private const val ICON_CHIP_SIZE_SP = 13f
-private const val ICON_CHIP_WIDTH_DP = 32
-private const val ICON_CHIP_HEIGHT_DP = 28
-private const val ICON_SQUARE_SIZE_SP = 15f
-private const val ICON_TOOL_SIZE_SP = 13f
-private const val ICON_FORMAT_SIZE_SP = 12f
-private const val ICON_FORMAT_WIDTH_DP = 29
-private const val ICON_FORMAT_HEIGHT_DP = 27
-private const val ICON_FLOATING_SIZE_SP = 22f
-private const val ICON_FLOATING_WIDTH_DP = 56
-private const val ICON_FLOATING_VECTOR_SIZE_DP = 25
-private const val ICON_ROW_SIZE_SP = 16f
-private const val ICON_SEARCH_SIZE_SP = 17f
-private const val ICON_SEARCH_VECTOR_SIZE_DP = 19
-private const val ICON_DOCK_BUTTON_WIDTH_DP = 46
-private const val ICON_DOCK_BUTTON_HEIGHT_DP = 48
-private const val ICON_DOCK_VECTOR_SIZE_DP = 23
-
-private const val CALENDAR_INTERACTION_NONE = 0
-private const val CALENDAR_INTERACTION_DRAG = 1
-private const val CALENDAR_INTERACTION_CREATE = 2
-
-private const val REQUEST_ATTACH_IMAGE = 7311
-private const val REVIEW_FIRST_LAUNCH_AT_PREF = "knotq.reviewFirstLaunchAt.v1"
-private const val REVIEW_PROMPTED_PREF = "knotq.reviewPrompted.v1"
-private const val REVIEW_MIN_USAGE_MS = 14L * 24L * 60L * 60L * 1000L
-
-internal fun refreshApiErrorCode(connection: HttpURLConnection): String {
-    val raw = connection.errorStream?.bufferedReader()?.use { it.readText() }.orEmpty()
-    return runCatching { JSONObject(raw).optString("code") }.getOrDefault("")
-}
-
-internal fun isTerminalRefreshErrorCode(code: String): Boolean =
-    code == "invalid_refresh_token" ||
-        code == "refresh_token_reused" ||
-        code == "account_closed"
-
-private const val GLYPH_HOME = "⌂"
-private const val GLYPH_CALENDAR = "◷"
-private const val GLYPH_SETTINGS = "⚙"
-private const val GLYPH_SEARCH = "⌕"
-private const val GLYPH_ADD = "＋"
-private const val GLYPH_EDIT = "✎"
-private const val GLYPH_TICK = "✓"
-private const val GLYPH_MORE = "⋯"
-private const val GLYPH_BULLET = "•"
-private const val GLYPH_NUMBERED = "1."
-private const val GLYPH_TEXT = "▢"
-private const val GLYPH_FOLDER = "🗀"
-private const val GLYPH_OUTDENT = "⇤"
-private const val GLYPH_INDENT = "⇥"
-private const val GLYPH_LEFT = "‹"
-private const val GLYPH_RIGHT = "›"
-private const val GLYPH_CHEVRON_LEFT = "‹"
-private const val GLYPH_CHEVRON_RIGHT = "›"
-private const val GLYPH_DOWN = "▾"
-private const val GLYPH_COMMIT = "⏎"
-private const val GLYPH_THEME_LIGHT = "☀"
-private const val GLYPH_THEME_DARK = "◐"
-private const val GLYPH_CLOCK = "◷"
-private const val GLYPH_BELL = "🔔"
-private const val GLYPH_CLOUD = "☁"
-
-// First-run onboarding (mirrors the desktop/iOS spotlight tour). The flow has an
-// account-choice phase followed by a guided tour that navigates into each pane and
-// rings its content, rather than pointing at chrome.
-private const val ONBOARDING_PREF = "knotq.onboardingCompleted.v1"
-private const val ONBOARDING_ACCOUNT = 0
-private const val ONBOARDING_GUIDE = 1
-
-// A guided-tour step: navigates to `tab` (opening the first scheme for SCHEMES,
-// ensuring today's queue for DAILY) and, when `ringsContent`, spotlights the main
-// content area behind the scrim. Welcome is a centered intro with no cutout.
-private data class OnboardingStepDef(
-    val title: String,
-    val body: String,
-    val tab: Int,
-    val ringsContent: Boolean
-)
-
-private val ONBOARDING_STEPS = listOf(
-    OnboardingStepDef(
-        "Welcome to KnotQ",
-        "KnotQ is a single app for calendar events, reminders, assignments, and general notes. It aims to be simple yet functional.",
-        TAB_HOME,
-        ringsContent = false
-    ),
-    OnboardingStepDef(
-        "Calendar",
-        "Your calendar holds events, assignments, and reminders. Tap to add a reminder, long-press for an assignment, or drag to block out an event.",
-        TAB_CALENDAR,
-        ringsContent = true
-    ),
-    OnboardingStepDef(
-        "Schemes",
-        "Schemes are editable outlines for projects, notes, and plans. Add start and end times to any line to turn it into a calendar item.",
-        TAB_SCHEMES,
-        ringsContent = true
-    ),
-    OnboardingStepDef(
-        "Daily",
-        "Daily is a special, default scheme. Write an optimistic task list each day and check off the ones you complete.",
-        TAB_DAILY,
-        ringsContent = true
-    ),
-    OnboardingStepDef(
-        "Upcoming",
-        "Upcoming gathers nearby events, assignments, and reminders. You can mark tasks complete right from here.",
-        TAB_HOME,
-        ringsContent = true
-    )
-)
-
-private data class SyncSession(
-    val apiBase: String,
-    val userId: String,
-    val email: String,
-    val supportsSync: Boolean,
-    // Short-lived access token; `expiresAt` is its expiry.
-    val bearerToken: String,
-    val expiresAt: String,
-    // Long-lived, rotated-on-refresh credential and its (sliding) expiry.
-    val refreshToken: String,
-    val refreshExpiresAt: String? = null
-)
-
-private data class SyncLoginChallenge(
-    val apiBase: String,
-    val email: String,
-    val challengeId: String,
-    val devCode: String?
-)
-
-private data class SyncLoginStart(
-    val challenge: SyncLoginChallenge?,
-    val session: SyncSession?
-)
-
-private sealed interface SyncRefreshResult {
-    class Ready(val session: SyncSession) : SyncRefreshResult
-    object Deferred : SyncRefreshResult
-    object SessionDead : SyncRefreshResult
-}
-
-private data class PendingSyncBrowserAuth(
-    val apiBase: String,
-    val state: String,
-    val codeVerifier: String
-)
-
-private data class FolderDestination(val id: String, val name: String, val depth: Int)
-private data class NavRowMeta(
-    val node: JSONObject,
-    val id: String,
-    val kind: String,
-    val parentId: String,
-    val siblingIndex: Int,
-    val depth: Int,
-    val childCount: Int
-)
-private data class DialogField(val view: View, val label: TextView, val value: TextView)
 
 class MainActivity : Activity() {
-    private lateinit var bridge: RustBridge
-    private lateinit var rootFrame: FrameLayout
-    private lateinit var shell: LinearLayout
-    private lateinit var titleBar: LinearLayout
-    private lateinit var content: FrameLayout
-    private lateinit var dock: LinearLayout
-    private lateinit var theme: UiTheme
+    internal lateinit var bridge: RustBridge
+    internal lateinit var rootFrame: FrameLayout
+    internal lateinit var shell: LinearLayout
+    internal lateinit var titleBar: LinearLayout
+    internal lateinit var content: FrameLayout
+    internal lateinit var dock: LinearLayout
+    internal lateinit var theme: UiTheme
 
     // First-run onboarding overlay state. The overlay lives in `rootFrame` as a
     // sibling of `shell`, so it survives `render()` (which only rebuilds shell).
-    private var onboardingActive = false
-    private var onboardingPhase = ONBOARDING_ACCOUNT
-    private var onboardingStep = 0
-    private var onboardingOverlay: View? = null
+    internal var onboardingActive = false
+    internal var onboardingPhase = ONBOARDING_ACCOUNT
+    internal var onboardingStep = 0
+    internal var onboardingOverlay: View? = null
 
-    private var snapshot = JSONObject()
-    private var selectedTab = TAB_HOME
-    private var weekOffset = 0
-    private var selectedDate: LocalDate = LocalDate.now()
-    private var selectedSchemeId: String? = null
+    internal var snapshot = JSONObject()
+    internal var selectedTab = TAB_HOME
+    internal var weekOffset = 0
+    internal var selectedDate: LocalDate = LocalDate.now()
+    internal var selectedSchemeId: String? = null
     // Tab the scheme editor was entered from, so its back button returns there.
-    private var schemeReturnTab = TAB_HOME
-    private var keyboardActive = false
+    internal var schemeReturnTab = TAB_HOME
+    internal var keyboardActive = false
     // Preserve the calendar timeline scroll position across incidental re-renders
     // (e.g. toggling an item done); reset to the now/morning anchor on day change.
-    private var calendarScrollY = 0
-    private var calendarScrollDate: String? = null
+    internal var calendarScrollY = 0
+    internal var calendarScrollDate: String? = null
     // Folders the user collapsed in the scheme navigator (new folders default
     // to expanded, like iOS).
-    private val collapsedFolderIds = HashSet<String>()
+    internal val collapsedFolderIds = HashSet<String>()
     // Settings sub-page showing the hierarchical archive (iOS "Archived Items").
-    private var settingsShowingArchive = false
+    internal var settingsShowingArchive = false
     // Daily feed paging + scroll anchoring, mirroring the iOS bottom-pinned
     // feed: history grows by a month each time the user scrolls to the top.
-    private var dailyHistoryDays = 3
-    private var dailyHistoryLoadTriggerDate: String? = null
-    private var dailyScrollY = 0
-    private var dailyScrollDate: String? = null
-    private var pendingDailyAnchorDate: String? = null
-    private val editorSchemeIds = WeakHashMap<EditText, String>()
+    internal var dailyHistoryDays = 3
+    internal var dailyHistoryLoadTriggerDate: String? = null
+    internal var dailyScrollY = 0
+    internal var dailyScrollDate: String? = null
+    internal var pendingDailyAnchorDate: String? = null
+    internal var pendingDailyAutoFocusDate: String? = null
+    internal var lastRenderedTab: Int? = null
+    internal val editorSchemeIds = WeakHashMap<EditText, String>()
     // The FrameLayout wrapping each editor, used to float the inline table-cell
     // editor over a tapped cell.
-    private val editorHosts = WeakHashMap<EditText, FrameLayout>()
+    internal val editorHosts = WeakHashMap<EditText, FrameLayout>()
+    internal var lastActiveEditor: EditText? = null
+    internal var suppressEditorBlurCommit = false
     // The inline cell editor currently shown (if any), so a second tap commits
     // the first before moving on.
-    private var activeCellEdit: ActiveCellEdit? = null
+    internal var activeCellEdit: ActiveCellEdit? = null
+    internal var tableStructureDialogOpen = false
 
     /// The floating inline table-cell editor currently shown, with everything
     /// needed to commit its per-line diff back to the core.
-    private class ActiveCellEdit(
+    internal class ActiveCellEdit(
+        val editor: SchemeEditText,
         val field: EditText,
         val schemeId: String,
         val itemId: String,
         val hit: TableCellHit,
         val oldLines: List<String>,
     )
+    internal enum class TableStructureAction {
+        INSERT_ROW_ABOVE,
+        INSERT_ROW_BELOW,
+        DELETE_ROW,
+        INSERT_COLUMN_LEFT,
+        INSERT_COLUMN_RIGHT,
+        DELETE_COLUMN
+    }
     // Re-tints the format bar's marker buttons for the caret's line; rebuilt
     // with each rendered format bar and invoked from editor selection changes.
-    private var formatBarMarkerRefresh: (() -> Unit)? = null
+    internal var formatBarMarkerRefresh: (() -> Unit)? = null
     // Keep the format bar's horizontal scroll position across re-renders.
-    private var formatBarScrollX = 0
+    internal var formatBarScrollX = 0
+    // The bottom format bar's FrameLayout host plus its two interchangeable
+    // contents: the normal format controls and (while a table cell is open) the
+    // cell controls that replace them, matching iOS.
+    internal var formatBarHost: FrameLayout? = null
+    internal var formatBarNormalContent: View? = null
+    internal var formatBarCellContent: View? = null
     // Scheme + line awaiting an image pick from the system photo chooser.
-    private var pendingImageAttach: Pair<String, Int>? = null
-    private var syncSession: SyncSession? = null
-    private var syncLoginChallenge: SyncLoginChallenge? = null
-    private var syncAuthInProgress = false
-    private var syncAccountActionInProgress = false
-    private var syncInProgress = false
+    internal var pendingImageAttach: Pair<String, Int>? = null
+    internal var syncSession: SyncSession? = null
+    internal var syncLoginChallenge: SyncLoginChallenge? = null
+    internal var syncAuthInProgress = false
+    internal var syncAccountActionInProgress = false
+    internal var syncInProgress = false
     // From /v1/auth/account/status: the subscription is cancelled (won't renew) but
     // still entitling, so Settings offers to re-enable instead of cancel. The
     // provider routes re-enable to the store (Google/Apple) or our backend (web).
-    private var syncSubscriptionCancelled = false
-    private var syncSubscriptionProvider: String? = null
-    private var syncFailureNotified = false
-    private var syncOffline = false
-    private var safeAreaTop = 0
-    private var safeAreaBottom = 0
-    private var billingClient: BillingClient? = null
-    private var purchaseInProgress = false
-    private var googleAuthInProgress = false
-    private var googleSyncInProgress = false
-    private var googleSyncPollingActive = false
-    private var googleCalendarStatus: String? = null
-    private var pendingGoogleAuthRequest: JSONObject? = null
-    private var pendingGoogleParentId: String? = null
-    private val syncPollHandler = Handler(Looper.getMainLooper())
-    private val syncPollRunnable = object : Runnable {
+    internal var syncSubscriptionCancelled = false
+    internal var syncSubscriptionProvider: String? = null
+    internal var syncFailureNotified = false
+    internal var syncOffline = false
+    internal var safeAreaTop = 0
+    internal var safeAreaBottom = 0
+    internal var billingClient: BillingClient? = null
+    internal var purchaseInProgress = false
+    internal var googleAuthInProgress = false
+    internal var googleSyncInProgress = false
+    internal var googleSyncPollingActive = false
+    internal var googleCalendarStatus: String? = null
+    internal var pendingGoogleAuthRequest: JSONObject? = null
+    internal var pendingGoogleParentId: String? = null
+    internal val syncPollHandler = Handler(Looper.getMainLooper())
+    internal val syncPollRunnable = object : Runnable {
         override fun run() {
             syncOnce()
             syncPollHandler.postDelayed(this, 30_000)
@@ -386,9 +216,9 @@ class MainActivity : Activity() {
     }
     // Coalesces the sync triggered right after each local edit (iOS pushes on
     // every mutate; the short delay batches rapid editing bursts).
-    private val syncEditRunnable = Runnable { syncOnce() }
-    private val googleSyncHandler = Handler(Looper.getMainLooper())
-    private val googleSyncRunnable = object : Runnable {
+    internal val syncEditRunnable = Runnable { syncOnce() }
+    internal val googleSyncHandler = Handler(Looper.getMainLooper())
+    internal val googleSyncRunnable = object : Runnable {
         override fun run() {
             syncGoogleCalendars(silent = true)
             googleSyncHandler.postDelayed(this, GOOGLE_SYNC_INTERVAL_MS)
@@ -401,6 +231,25 @@ class MainActivity : Activity() {
         // other's in-memory workspace) and skips work while in the foreground.
         @Volatile internal var sharedBridge: RustBridge? = null
         @Volatile internal var isInForeground = false
+    }
+
+    internal val purchasesUpdatedListener = PurchasesUpdatedListener { result, purchases ->
+        when (result.responseCode) {
+            BillingClient.BillingResponseCode.OK -> {
+                val purchase = purchases?.firstOrNull { it.purchaseState == Purchase.PurchaseState.PURCHASED }
+                if (purchase != null) {
+                    verifyGooglePlayPurchase(purchase)
+                } else {
+                    runOnUiThread { purchaseInProgress = false }
+                }
+            }
+            BillingClient.BillingResponseCode.USER_CANCELED ->
+                runOnUiThread { purchaseInProgress = false }
+            else -> runOnUiThread {
+                purchaseInProgress = false
+                showError("Purchase failed", result.debugMessage.ifEmpty { "Could not complete the purchase." })
+            }
+        }
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -478,7 +327,7 @@ class MainActivity : Activity() {
         handleIncomingAuthIntent(intent?.data)
     }
 
-    private fun maybeRequestStoreReview() {
+    internal fun maybeRequestStoreReview() {
         val prefs = getSharedPreferences("knotq", MODE_PRIVATE)
         val now = System.currentTimeMillis()
         val firstLaunchAt = reviewUsageStartAt(prefs, now)
@@ -498,7 +347,7 @@ class MainActivity : Activity() {
         }
     }
 
-    private fun reviewUsageStartAt(prefs: android.content.SharedPreferences, now: Long): Long {
+    internal fun reviewUsageStartAt(prefs: android.content.SharedPreferences, now: Long): Long {
         val stored = prefs.getLong(REVIEW_FIRST_LAUNCH_AT_PREF, 0L)
         if (stored > 0L) return stored
 
@@ -543,7 +392,7 @@ class MainActivity : Activity() {
         }
     }
 
-    private fun buildShell() {
+    internal fun buildShell() {
         shell = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setBackgroundColor(theme.bgApp)
@@ -576,8 +425,12 @@ class MainActivity : Activity() {
         installKeyboardVisibilityWatcher()
     }
 
-    private fun render() {
+    internal fun render() {
         if (!::content.isInitialized) return
+        if (lastRenderedTab != TAB_DAILY && selectedTab == TAB_DAILY) {
+            pendingDailyAutoFocusDate = selectedDate.toString()
+        }
+        lastRenderedTab = selectedTab
         // The whole view tree (including any floating inline cell editor) is
         // rebuilt below; drop the stale reference without re-committing.
         activeCellEdit = null
@@ -592,6 +445,9 @@ class MainActivity : Activity() {
         currentFocus?.clearFocus()
         content.clearFocus()
         content.removeAllViews()
+        editorSchemeIds.clear()
+        editorHosts.clear()
+        lastActiveEditor = null
         val wide = isWideLayout()
         updateChromeVisibility()
         val view = if (wide) renderWideShell() else renderPhoneMain()
@@ -610,7 +466,13 @@ class MainActivity : Activity() {
         updateChromeVisibility()
     }
 
-    private fun renderTitleBar() {
+    internal fun renderAfterEditorMutation() {
+        suppressEditorBlurCommit = true
+        render()
+        rootFrame.post { suppressEditorBlurCommit = false }
+    }
+
+    internal fun renderTitleBar() {
         titleBar.removeAllViews()
         titleBar.addView(
             if (selectedTab == TAB_HOME) brandMark(20) else colorSquare(titleColor(), 18),
@@ -632,7 +494,7 @@ class MainActivity : Activity() {
         titleBar.addView(chip(GLYPH_ADD) { showNewMenu() }, LinearLayout.LayoutParams(dp(32), dp(28)))
     }
 
-    private fun renderDock() {
+    internal fun renderDock() {
         dock.removeAllViews()
         dock.background = rounded(theme.bgToolbar, dp(30), theme.borderOverlay, max(1, (0.5f * resources.displayMetrics.density).roundToInt()))
         dock.elevation = dp(if (theme.isDark) 8 else 2).toFloat()
@@ -660,7 +522,7 @@ class MainActivity : Activity() {
     }
 
     @Suppress("DEPRECATION")
-    private fun installSafeAreaInsets() {
+    internal fun installSafeAreaInsets() {
         rootFrame.setOnApplyWindowInsetsListener { _, insets ->
             val cutoutTop = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
                 insets.displayCutout?.safeInsetTop ?: 0
@@ -685,22 +547,22 @@ class MainActivity : Activity() {
         applySafeAreaPadding()
     }
 
-    private fun applySafeAreaPadding() {
+    internal fun applySafeAreaPadding() {
         if (!::shell.isInitialized) return
         shell.setPadding(0, safeAreaTop, 0, safeAreaBottom)
     }
 
-    private fun hidePhoneDockForEditing() {
+    internal fun hidePhoneDockForEditing() {
         keyboardActive = true
         updateChromeVisibility()
     }
 
-    private fun showPhoneDockAfterEditing() {
+    internal fun showPhoneDockAfterEditing() {
         keyboardActive = false
         updateChromeVisibility()
     }
 
-    private fun dismissKeyboard() {
+    internal fun dismissKeyboard() {
         val focus = currentFocus
         if (focus is EditText) {
             focus.clearFocus()
@@ -711,14 +573,14 @@ class MainActivity : Activity() {
         updateChromeVisibility()
     }
 
-    private fun exitSearch() {
+    internal fun exitSearch() {
         dismissKeyboard()
         selectedTab = TAB_HOME
         selectedSchemeId = null
         render()
     }
 
-    private fun installKeyboardVisibilityWatcher() {
+    internal fun installKeyboardVisibilityWatcher() {
         shell.viewTreeObserver.addOnGlobalLayoutListener {
             if (!::shell.isInitialized) return@addOnGlobalLayoutListener
             val frame = Rect()
@@ -734,24 +596,24 @@ class MainActivity : Activity() {
         }
     }
 
-    private fun updateChromeVisibility() {
+    internal fun updateChromeVisibility() {
         if (!::titleBar.isInitialized || !::dock.isInitialized) return
         titleBar.visibility = if (isWideLayout()) View.VISIBLE else View.GONE
         dock.visibility = if (shouldShowPhoneDock()) View.VISIBLE else View.GONE
     }
 
-    private fun isWideLayout(): Boolean =
+    internal fun isWideLayout(): Boolean =
         resources.configuration.screenWidthDp >= 760
 
-    private fun shouldShowPhoneDock(): Boolean =
+    internal fun shouldShowPhoneDock(): Boolean =
         !isWideLayout() && !keyboardActive && selectedTab in listOf(TAB_HOME, TAB_CALENDAR, TAB_SETTINGS)
 
-    private fun shouldShowPhoneQuickActions(): Boolean =
+    internal fun shouldShowPhoneQuickActions(): Boolean =
         !isWideLayout() && !keyboardActive && selectedTab == TAB_HOME
 
     // ── First-run onboarding ────────────────────────────────────────────────
 
-    private fun maybeStartOnboarding() {
+    internal fun maybeStartOnboarding() {
         if (onboardingActive) return
         if (getSharedPreferences("knotq", MODE_PRIVATE).getBoolean(ONBOARDING_PREF, false)) return
         if (snapshot.optJSONObject("root") == null) return
@@ -767,14 +629,14 @@ class MainActivity : Activity() {
         }
     }
 
-    private fun startOnboardingGuide() {
+    internal fun startOnboardingGuide() {
         onboardingPhase = ONBOARDING_GUIDE
         applyOnboardingStep(0)
     }
 
     /// Navigates to the step's pane (mirrors desktop) and then redraws the overlay
     /// once the new content has been laid out so the cutout hugs it.
-    private fun applyOnboardingStep(step: Int) {
+    internal fun applyOnboardingStep(step: Int) {
         onboardingStep = step.coerceIn(0, ONBOARDING_STEPS.size - 1)
         when (ONBOARDING_STEPS[onboardingStep].tab) {
             TAB_SCHEMES -> {
@@ -802,7 +664,7 @@ class MainActivity : Activity() {
         rootFrame.post { showOnboardingOverlay() }
     }
 
-    private fun onboardingAdvance() {
+    internal fun onboardingAdvance() {
         if (onboardingStep >= ONBOARDING_STEPS.size - 1) {
             finishOnboarding()
         } else {
@@ -810,7 +672,7 @@ class MainActivity : Activity() {
         }
     }
 
-    private fun onboardingBack() {
+    internal fun onboardingBack() {
         if (onboardingStep <= 0) {
             if (syncSession == null) {
                 onboardingPhase = ONBOARDING_ACCOUNT
@@ -821,7 +683,7 @@ class MainActivity : Activity() {
         applyOnboardingStep(onboardingStep - 1)
     }
 
-    private fun finishOnboarding() {
+    internal fun finishOnboarding() {
         onboardingActive = false
         getSharedPreferences("knotq", MODE_PRIVATE).edit().putBoolean(ONBOARDING_PREF, true).apply()
         removeOnboardingOverlay()
@@ -830,7 +692,7 @@ class MainActivity : Activity() {
         render()
     }
 
-    private fun showOnboardingOverlay() {
+    internal fun showOnboardingOverlay() {
         if (!onboardingActive || !::rootFrame.isInitialized) return
         removeOnboardingOverlay()
         val overlay = if (onboardingPhase == ONBOARDING_ACCOUNT) buildAccountOverlay() else buildGuideOverlay()
@@ -838,12 +700,12 @@ class MainActivity : Activity() {
         onboardingOverlay = overlay
     }
 
-    private fun removeOnboardingOverlay() {
+    internal fun removeOnboardingOverlay() {
         onboardingOverlay?.let { if (::rootFrame.isInitialized) rootFrame.removeView(it) }
         onboardingOverlay = null
     }
 
-    private fun buildAccountOverlay(): View {
+    internal fun buildAccountOverlay(): View {
         val overlay = FrameLayout(this).apply {
             isClickable = true
             setOnClickListener { } // swallow taps to the app behind the scrim
@@ -882,7 +744,7 @@ class MainActivity : Activity() {
         return overlay
     }
 
-    private fun buildGuideOverlay(): View {
+    internal fun buildGuideOverlay(): View {
         val def = ONBOARDING_STEPS[onboardingStep]
         val cutout = if (def.ringsContent) {
             val r = contentRectInRoot()
@@ -914,7 +776,7 @@ class MainActivity : Activity() {
         return overlay
     }
 
-    private fun buildSpotlightScrim(cutout: Rect?): View {
+    internal fun buildSpotlightScrim(cutout: Rect?): View {
         val dimColor = Color.argb(158, 0, 0, 0)
         val ringColor = theme.accent
         val radius = dp(14).toFloat()
@@ -944,7 +806,7 @@ class MainActivity : Activity() {
         }
     }
 
-    private fun buildGuideCard(): View {
+    internal fun buildGuideCard(): View {
         val def = ONBOARDING_STEPS[onboardingStep]
         val isLast = onboardingStep >= ONBOARDING_STEPS.size - 1
         val card = LinearLayout(this).apply {
@@ -998,7 +860,7 @@ class MainActivity : Activity() {
         return card
     }
 
-    private fun onboardingButton(label: String, prominent: Boolean, listener: () -> Unit): TextView =
+    internal fun onboardingButton(label: String, prominent: Boolean, listener: () -> Unit): TextView =
         text(label, if (prominent) Color.WHITE else theme.textPrimary, 14f, true).apply {
             gravity = Gravity.CENTER
             setPadding(dp(16), dp(11), dp(16), dp(11))
@@ -1010,7 +872,7 @@ class MainActivity : Activity() {
             setOnClickListener { listener() }
         }
 
-    private fun contentRectInRoot(): Rect {
+    internal fun contentRectInRoot(): Rect {
         val rootLoc = IntArray(2)
         rootFrame.getLocationInWindow(rootLoc)
         val cLoc = IntArray(2)
@@ -1020,10 +882,10 @@ class MainActivity : Activity() {
         return Rect(left, top, left + content.width, top + content.height)
     }
 
-    private fun firstRegularSchemeId(): String? =
+    internal fun firstRegularSchemeId(): String? =
         snapshot.optJSONObject("root")?.let { firstRegularSchemeId(it) }
 
-    private fun firstRegularSchemeId(node: JSONObject): String? {
+    internal fun firstRegularSchemeId(node: JSONObject): String? {
         val children = node.optJSONArray("children") ?: return null
         for (index in 0 until children.length()) {
             val child = children.optJSONObject(index) ?: continue
@@ -1039,7 +901,7 @@ class MainActivity : Activity() {
         return null
     }
 
-    private fun renderWideShell(): View {
+    internal fun renderWideShell(): View {
         return LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             setBackgroundColor(theme.bgApp)
@@ -1052,13 +914,13 @@ class MainActivity : Activity() {
         }
     }
 
-    private fun renderPhoneMain(): View =
+    internal fun renderPhoneMain(): View =
         when (selectedTab) {
             TAB_SEARCH, TAB_SETTINGS -> scroll(renderMain())
             else -> renderMain()
         }
 
-    private fun renderMain(): View {
+    internal fun renderMain(): View {
         return when (selectedTab) {
             TAB_HOME -> renderHome()
             TAB_CALENDAR -> renderCalendar()
@@ -1070,7 +932,7 @@ class MainActivity : Activity() {
         }
     }
 
-    private fun renderNavigator(): View {
+    internal fun renderNavigator(): View {
         val panel = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(8), dp(10), dp(8), dp(8))
@@ -1111,7 +973,7 @@ class MainActivity : Activity() {
         return panel
     }
 
-    private fun renderHome(): LinearLayout {
+    internal fun renderHome(): LinearLayout {
         if (!isWideLayout()) return renderPhoneHome()
 
         val root = LinearLayout(this).apply {
@@ -1155,7 +1017,7 @@ class MainActivity : Activity() {
         return root
     }
 
-    private fun renderPhoneHome(): LinearLayout {
+    internal fun renderPhoneHome(): LinearLayout {
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setBackgroundColor(theme.bgApp)
@@ -1174,7 +1036,7 @@ class MainActivity : Activity() {
         return root
     }
 
-    private fun homeSearchEntry(): View =
+    internal fun homeSearchEntry(): View =
         LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
@@ -1189,7 +1051,7 @@ class MainActivity : Activity() {
             }
         }
 
-    private fun phoneSchemesSection(): View {
+    internal fun phoneSchemesSection(): View {
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
         }
@@ -1220,7 +1082,7 @@ class MainActivity : Activity() {
     /// expand/collapse, long-press (0.3s) lifts a row, drag shows a drop line
     /// between rows (or highlights a folder to drop inside), release commits
     /// the move. Releasing a lifted row without dragging opens its actions.
-    private inner class NavigatorPanel(context: Context) : FrameLayout(context) {
+    internal inner class NavigatorPanel(context: Context) : FrameLayout(context) {
         private val list = LinearLayout(context).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(0, dp(2), 0, dp(2))
@@ -1580,7 +1442,7 @@ class MainActivity : Activity() {
         }
     }
 
-    private fun homeDailySchemeRow(): View {
+    internal fun homeDailySchemeRow(): View {
         val entry = dailyEntryForHome()
         val scheme = entry?.optJSONObject("scheme")
         val openCount = countOpenItems(scheme)
@@ -1610,7 +1472,7 @@ class MainActivity : Activity() {
         }
     }
 
-    private fun homeHeader(): View =
+    internal fun homeHeader(): View =
         LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
@@ -1624,7 +1486,7 @@ class MainActivity : Activity() {
             }, LinearLayout.LayoutParams(0, -2, 1f))
         }
 
-    private fun homeQuickActions(): View =
+    internal fun homeQuickActions(): View =
         HorizontalScrollView(this).apply {
             isHorizontalScrollBarEnabled = false
             addView(LinearLayout(this@MainActivity).apply {
@@ -1646,7 +1508,7 @@ class MainActivity : Activity() {
             })
         }
 
-    private fun homeDailySummaryRow(): View {
+    internal fun homeDailySummaryRow(): View {
         val entry = dailyEntryForHome()
         val scheme = entry?.optJSONObject("scheme")
         val itemCount = scheme?.optJSONArray("items")?.length() ?: 0
@@ -1679,7 +1541,7 @@ class MainActivity : Activity() {
         }
     }
 
-    private fun countDoneItems(scheme: JSONObject?): Int {
+    internal fun countDoneItems(scheme: JSONObject?): Int {
         var done = 0
         scheme?.optJSONArray("items")?.forEachObject { item ->
             if (item.optBoolean("done")) done++
@@ -1688,7 +1550,7 @@ class MainActivity : Activity() {
     }
 
     // Matches iOS HomeDailySchemeRow.openCount: not done, non-blank text.
-    private fun countOpenItems(scheme: JSONObject?): Int {
+    internal fun countOpenItems(scheme: JSONObject?): Int {
         var open = 0
         scheme?.optJSONArray("items")?.forEachObject { item ->
             if (!item.optBoolean("done") && item.optString("text").trim().isNotEmpty()) open++
@@ -1696,7 +1558,7 @@ class MainActivity : Activity() {
         return open
     }
 
-    private fun renderListsPage(): LinearLayout {
+    internal fun renderListsPage(): LinearLayout {
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setBackgroundColor(theme.bgApp)
@@ -1718,7 +1580,7 @@ class MainActivity : Activity() {
         return root
     }
 
-    private fun dailyShortcutRow(): View =
+    internal fun dailyShortcutRow(): View =
         LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
@@ -1736,7 +1598,7 @@ class MainActivity : Activity() {
             }
         }
 
-    private fun archiveNavigatorSection(compact: Boolean): View {
+    internal fun archiveNavigatorSection(compact: Boolean): View {
         val schemes = archivedSchemes()
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -1763,7 +1625,7 @@ class MainActivity : Activity() {
         return root
     }
 
-    private fun archivedSchemeRow(scheme: JSONObject, compact: Boolean): View =
+    internal fun archivedSchemeRow(scheme: JSONObject, compact: Boolean): View =
         LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
@@ -1786,7 +1648,7 @@ class MainActivity : Activity() {
             }
         }
 
-    private fun renderUpcomingRail(): View {
+    internal fun renderUpcomingRail(): View {
         val root = page(compact = true)
         addOccurrenceSection(root, "Overdue", "None", calendar().optJSONArray("overdue"))
         addOccurrenceSection(root, "Today", "None today", todayOccurrences())
@@ -1794,7 +1656,7 @@ class MainActivity : Activity() {
         return scroll(root)
     }
 
-    private fun renderCalendar(): LinearLayout {
+    internal fun renderCalendar(): LinearLayout {
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setBackgroundColor(theme.bgApp)
@@ -1856,13 +1718,13 @@ class MainActivity : Activity() {
         return root
     }
 
-    private fun calendarVisibleDayCount(): Int = when {
+    internal fun calendarVisibleDayCount(): Int = when {
         resources.configuration.screenWidthDp >= 760 -> 5
         resources.configuration.screenWidthDp >= 600 -> 3
         else -> 2
     }
 
-    private fun calendarDayObjects(): List<JSONObject> {
+    internal fun calendarDayObjects(): List<JSONObject> {
         val out = ArrayList<JSONObject>()
         calendar().optJSONArray("days")?.let { arr ->
             for (i in 0 until arr.length()) arr.optJSONObject(i)?.let(out::add)
@@ -1873,13 +1735,13 @@ class MainActivity : Activity() {
     /// First column index into the fetched week: the selected day, clamped so the
     /// visible run always stays within the available days. Both the timeline and
     /// the week strip use this so their highlights stay in sync.
-    private fun calendarVisibleStartIndex(days: List<JSONObject>): Int {
+    internal fun calendarVisibleStartIndex(days: List<JSONObject>): Int {
         val count = calendarVisibleDayCount()
         val selectedIndex = days.indexOfFirst { it.optString("date") == selectedDate.toString() }.coerceAtLeast(0)
         return selectedIndex.coerceIn(0, max(0, days.size - count))
     }
 
-    private fun calendarToolbar(): View {
+    internal fun calendarToolbar(): View {
         return LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             background = underline(theme.bgApp)
@@ -1890,7 +1752,7 @@ class MainActivity : Activity() {
         }
     }
 
-    private fun calendarQuickAddRow(): View =
+    internal fun calendarQuickAddRow(): View =
         HorizontalScrollView(this).apply {
             isHorizontalScrollBarEnabled = false
             addView(LinearLayout(this@MainActivity).apply {
@@ -1909,7 +1771,7 @@ class MainActivity : Activity() {
             })
         }
 
-    private fun quickCreateCalendarItem(kind: String) {
+    internal fun quickCreateCalendarItem(kind: String) {
         val initialKind = when (kind) {
             "event", "reminder", "assignment" -> kind
             else -> "task"
@@ -1924,7 +1786,7 @@ class MainActivity : Activity() {
         )
     }
 
-    private fun calendarTitleView(): View =
+    internal fun calendarTitleView(): View =
         FrameLayout(this).apply {
             addView(LinearLayout(this@MainActivity).apply {
                 orientation = LinearLayout.HORIZONTAL
@@ -1944,7 +1806,7 @@ class MainActivity : Activity() {
             }, FrameLayout.LayoutParams(-2, dp(34), Gravity.CENTER))
         }
 
-    private fun calendarWeekStrip(): View =
+    internal fun calendarWeekStrip(): View =
         FrameLayout(this).apply {
             val stripDates = (0 until 7).map { weekStart(selectedDate).plusDays(it.toLong()) }
             val count = calendarVisibleDayCount()
@@ -1981,7 +1843,7 @@ class MainActivity : Activity() {
             }, FrameLayout.LayoutParams(-1, -1))
         }
 
-    private inner class CalendarWeekHighlightView(
+    internal inner class CalendarWeekHighlightView(
         context: Context,
         private val dates: List<LocalDate>,
         private val visibleDates: Set<String>
@@ -2047,7 +1909,7 @@ class MainActivity : Activity() {
     /// plus N day columns (2 on phone), with events drawn at their actual times
     /// and overlapping events split into side-by-side sub-columns. Tap an event to
     /// edit it; long-press to jump to its scheme.
-    private inner class CalendarTimelineView(context: Context) : View(context) {
+    internal inner class CalendarTimelineView(context: Context) : View(context) {
         // One JSONObject per visible day column (date + occurrences); `columns` is
         // the slot count used for column widths even if fewer days are available.
         private var dayObjects: List<JSONObject> = emptyList()
@@ -3057,10 +2919,11 @@ class MainActivity : Activity() {
         }
     }
 
-    private fun renderSchemeEditor(scheme: JSONObject): LinearLayout {
+    internal fun renderSchemeEditor(scheme: JSONObject): LinearLayout {
         val schemeId = scheme.optString("id")
         val readOnly = scheme.optBoolean("is_read_only", false)
         val originalLines = documentLines(scheme)
+        lateinit var editor: SchemeEditText
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setBackgroundColor(theme.bgApp)
@@ -3077,6 +2940,11 @@ class MainActivity : Activity() {
                 exitSchemeEditor()
             })
             addView(View(this@MainActivity), LinearLayout.LayoutParams(0, 1, 1f))
+            if (!readOnly) {
+                addView(iconChipImage(R.drawable.ic_knotq_table_24, "Insert table", iconSize = 17) {
+                    insertTableFromEditor(schemeId, editor)
+                }, LinearLayout.LayoutParams(dp(32), dp(28)).apply { setMargins(0, 0, dp(6), 0) })
+            }
             addView(FrameLayout(this@MainActivity).apply {
                 contentDescription = "Color"
                 background = rounded(theme.buttonBg, dp(7))
@@ -3100,7 +2968,7 @@ class MainActivity : Activity() {
             }
         }, LinearLayout.LayoutParams(-1, dp(44)))
 
-        val editor = SchemeEditText(this).apply {
+        editor = SchemeEditText(this).apply {
             setText(renderDocument(originalLines))
             placeCursorAtDocumentEnd(this)
             tag = originalLines
@@ -3112,7 +2980,6 @@ class MainActivity : Activity() {
             selectionChangedHandler = { formatBarMarkerRefresh?.invoke() }
             if (!readOnly) {
                 tableCellTapHandler = { hit -> beginInlineCellEdit(schemeId, this, hit) }
-                tableControlTapHandler = { hit -> handleTableControl(schemeId, hit) }
             }
             isEnabled = !readOnly
             gravity = Gravity.TOP or Gravity.START
@@ -3132,12 +2999,15 @@ class MainActivity : Activity() {
             setOnFocusChangeListener { _, hasFocus ->
                 if (readOnly) return@setOnFocusChangeListener
                 if (hasFocus) {
+                    lastActiveEditor = this
                     hidePhoneDockForEditing()
                 } else {
                     // Quiet commit: a full re-render here would destroy
                     // whatever the user just tapped (e.g. the title field).
                     showPhoneDockAfterEditing()
-                    commitSchemeDocument(schemeId, this, rerender = false)
+                    if (!suppressEditorBlurCommit) {
+                        commitSchemeDocument(schemeId, this, rerender = false)
+                    }
                 }
             }
         }
@@ -3175,7 +3045,7 @@ class MainActivity : Activity() {
         return root
     }
 
-    private fun schemeTitleBlock(scheme: JSONObject): View {
+    internal fun schemeTitleBlock(scheme: JSONObject): View {
         val schemeId = scheme.optString("id")
         val committed = scheme.optString("display_name", scheme.optString("name"))
         val input = edit(committed).apply {
@@ -3249,7 +3119,7 @@ class MainActivity : Activity() {
         }
     }
 
-    private fun renderDaily(): LinearLayout {
+    internal fun renderDaily(): LinearLayout {
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setBackgroundColor(theme.bgApp)
@@ -3337,7 +3207,7 @@ class MainActivity : Activity() {
 
     /// iOS `isEffectivelyEmpty`: a day whose items carry no text, scheduling,
     /// metadata, or media doesn't earn a row in the feed.
-    private fun isDailyEntryEmpty(day: JSONObject): Boolean {
+    internal fun isDailyEntryEmpty(day: JSONObject): Boolean {
         val items = day.optJSONObject("scheme")?.optJSONArray("items") ?: return true
         for (index in 0 until items.length()) {
             val item = items.optJSONObject(index) ?: continue
@@ -3345,11 +3215,11 @@ class MainActivity : Activity() {
             val hasStart = item.optionalString("start") != null
             val hasEnd = item.optionalString("end") != null
             val hasRule = item.optionalString("repeat_rule") != null
-            val hasMedia = (item.optJSONArray("media")?.length() ?: 0) > 0
+            val hasBlockContent = item.hasBlockContent()
             if (item.optString("text").trim().isNotEmpty() ||
                 (marker != "blank" && marker != "checkbox") ||
                 item.optInt("indent") != 0 ||
-                hasStart || hasEnd || hasRule || hasMedia ||
+                hasStart || hasEnd || hasRule || hasBlockContent ||
                 !item.isNull("notification_offset_secs") ||
                 item.optBoolean("done")
             ) {
@@ -3362,7 +3232,7 @@ class MainActivity : Activity() {
     /// iOS `DailyDayEditorSection`: each day is a scheme editor with the date
     /// as its inline title, the selected day softly highlighted; tapping an
     /// unselected day selects it.
-    private fun dailyDayEditor(day: JSONObject): View {
+    internal fun dailyDayEditor(day: JSONObject): View {
         val date = day.optString("date")
         val scheme = day.optJSONObject("scheme") ?: return emptyState(MobileDateFormatting.fullDay(date), "Daily not ready")
         val schemeId = scheme.optString("id")
@@ -3390,7 +3260,6 @@ class MainActivity : Activity() {
                 markerTapHandler = { lineIndex -> toggleEditorLineMarker(this, lineIndex) }
                 selectionChangedHandler = { formatBarMarkerRefresh?.invoke() }
                 tableCellTapHandler = { hit -> beginInlineCellEdit(schemeId, this, hit) }
-                tableControlTapHandler = { hit -> handleTableControl(schemeId, hit) }
                 gravity = Gravity.TOP or Gravity.START
                 setTextColor(theme.textPrimary)
                 setHintTextColor(theme.textMuted)
@@ -3407,10 +3276,13 @@ class MainActivity : Activity() {
                 background = null
                 setOnFocusChangeListener { _, hasFocus ->
                     if (hasFocus) {
+                        lastActiveEditor = this
                         hidePhoneDockForEditing()
                     } else {
                         showPhoneDockAfterEditing()
-                        commitSchemeDocument(schemeId, this, rerender = false)
+                        if (!suppressEditorBlurCommit) {
+                            commitSchemeDocument(schemeId, this, rerender = false)
+                        }
                     }
                 }
             }
@@ -3422,6 +3294,7 @@ class MainActivity : Activity() {
                 val select = View.OnClickListener {
                     runCatching { LocalDate.parse(date) }.getOrNull()?.let {
                         selectedDate = it
+                        pendingDailyAutoFocusDate = date
                         loadSnapshot()
                         render()
                     }
@@ -3429,7 +3302,13 @@ class MainActivity : Activity() {
                 setOnClickListener(select)
                 editor.setOnClickListener(select)
             } else {
-                editor.post { placeCursorAtDocumentEnd(editor) }
+                editor.post {
+                    placeCursorAtDocumentEnd(editor)
+                    if (pendingDailyAutoFocusDate == date) {
+                        pendingDailyAutoFocusDate = null
+                        focusEditorForTyping(editor)
+                    }
+                }
             }
             val editorHost = FrameLayout(this@MainActivity).apply {
                 addView(editor, FrameLayout.LayoutParams(-1, -2))
@@ -3439,7 +3318,7 @@ class MainActivity : Activity() {
         }
     }
 
-    private fun dailyEditorHeight(scheme: JSONObject): Int {
+    internal fun dailyEditorHeight(scheme: JSONObject): Int {
         val items = scheme.optJSONArray("items")
         var visualLines = 1
         var annotations = 0
@@ -3458,9 +3337,9 @@ class MainActivity : Activity() {
         return dp(max(48, visualLines * 24 + annotations * 14 + 16))
     }
 
-    private fun dailyAccent(): Int = if (theme.isDark) rgb(0xb8c9e8) else rgb(0x5a7aad)
+    internal fun dailyAccent(): Int = if (theme.isDark) rgb(0xb8c9e8) else rgb(0x5a7aad)
 
-    private fun renderSearch(): View {
+    internal fun renderSearch(): View {
         val root = page()
         val query = edit("").apply {
             hint = "Search KnotQ"
@@ -3510,7 +3389,7 @@ class MainActivity : Activity() {
         return root
     }
 
-    private fun renderSearchResults(results: LinearLayout, query: String) {
+    internal fun renderSearchResults(results: LinearLayout, query: String) {
         results.removeAllViews()
         if (query.isBlank()) {
             results.addView(emptyState("Search KnotQ", "Find anything across all your schemes."))
@@ -3550,1249 +3429,7 @@ class MainActivity : Activity() {
         }
     }
 
-    private fun showSyncAccountDialog() {
-        if (syncSession != null) {
-            val session = syncSession ?: return
-            // Lead with the action that matters for the current state: syncing when
-            // it is on, subscribing when it is off. Destructive actions stay last.
-            val subscriptionAction =
-                if (syncSubscriptionCancelled) "Re-enable subscription" else "Cancel subscription"
-            val actions = if (session.supportsSync) {
-                mutableListOf("Sync now", subscriptionAction, "Sign out", "Delete account on website")
-            } else {
-                mutableListOf(
-                    "Subscribe with Google Play",
-                    "Restore purchases",
-                    "Sign out",
-                    "Delete account on website"
-                )
-            }
-            val stateLine = when {
-                syncOffline -> "Offline - sync will retry when your connection is back."
-                session.supportsSync && syncSubscriptionCancelled ->
-                    "Cancelled - sync stays active until the billing period ends."
-                session.supportsSync -> "Sync is on for this account."
-                else -> "Sync is off - subscribe to turn it on."
-            }
-            AlertDialog.Builder(this)
-                .setTitle("Sync account")
-                .setMessage("Signed in as ${session.email}\n$stateLine")
-                .setItems(actions.toTypedArray()) { _, which ->
-                    when (actions[which]) {
-                        "Sync now" -> syncOnce()
-                        "Subscribe with Google Play" -> startGooglePlaySubscribe()
-                        "Restore purchases" -> restoreGooglePlayPurchases()
-                        "Cancel subscription" -> cancelSubscriptionAction()
-                        "Re-enable subscription" -> reEnableSyncSubscription()
-                        "Sign out" -> signOutSync()
-                        "Delete account on website" -> openSyncAccountPage()
-                    }
-                }
-                .setNegativeButton("Close", null)
-                .show()
-            // Re-check the lifecycle so a cancellation made elsewhere is reflected.
-            refreshAccountStatus()
-            return
-        }
-
-        syncLoginChallenge = null
-
-        AlertDialog.Builder(this)
-            .setTitle("Sync account")
-            .setMessage("KnotQ will open your browser to sign in, then return here automatically.")
-            .setNegativeButton("Cancel", null)
-            .setNeutralButton("Create account") { _, _ -> beginBrowserSyncAuth(createAccount = true) }
-            .setPositiveButton("Sign in") { _, _ -> beginBrowserSyncAuth(createAccount = false) }
-            .show()
-    }
-
-    private fun beginBrowserSyncAuth(createAccount: Boolean) {
-        if (syncAuthInProgress) return
-        val apiBase = normalizeApiBase(syncSession?.apiBase ?: DEFAULT_SYNC_API_BASE)
-        val state = randomUrlToken(24)
-        val verifier = pkceVerifier()
-        val challenge = pkceChallenge(verifier)
-        val authUrl = Uri.parse(SYNC_SIGN_IN_PAGE_URL).buildUpon()
-            .appendQueryParameter("redirect_uri", SYNC_SIGN_IN_REDIRECT_URI)
-            .appendQueryParameter("state", state)
-            .appendQueryParameter("mode", if (createAccount) "create" else "signin")
-            .appendQueryParameter("api", apiBase)
-            .appendQueryParameter("code_challenge", challenge)
-            .appendQueryParameter("code_challenge_method", "S256")
-            .build()
-
-        savePendingSyncBrowserAuth(PendingSyncBrowserAuth(apiBase, state, verifier))
-        syncAuthInProgress = true
-        try {
-            startActivity(Intent(Intent.ACTION_VIEW, authUrl))
-            Toast.makeText(this, "Continue in your browser.", Toast.LENGTH_SHORT).show()
-        } catch (error: ActivityNotFoundException) {
-            clearPendingSyncBrowserAuth()
-            showError("Sign in failed", error.message)
-        } finally {
-            syncAuthInProgress = false
-        }
-    }
-
-    private fun handleIncomingAuthIntent(uri: Uri?) {
-        if (handleSyncBrowserCallback(uri)) return
-        handleGoogleCallback(uri)
-    }
-
-    private fun handleSyncBrowserCallback(uri: Uri?): Boolean {
-        if (uri == null || uri.scheme != SYNC_SIGN_IN_REDIRECT_SCHEME || uri.host != SYNC_SIGN_IN_REDIRECT_HOST) {
-            return false
-        }
-        val pending = loadPendingSyncBrowserAuth()
-        if (pending == null) {
-            showError("Sign in failed", "Sign-in callback arrived without a pending request.")
-            return true
-        }
-        val state = uri.getQueryParameter("state").orEmpty()
-        if (state != pending.state) {
-            clearPendingSyncBrowserAuth()
-            showError("Sign in failed", "Sign-in could not be verified. Please try again.")
-            return true
-        }
-        val errorCode = uri.getQueryParameter("error").orEmpty()
-        if (errorCode.isNotEmpty()) {
-            clearPendingSyncBrowserAuth()
-            showError("Sign in failed", authorizeErrorMessage(errorCode))
-            return true
-        }
-        val code = uri.getQueryParameter("code").orEmpty()
-        if (code.isEmpty()) {
-            clearPendingSyncBrowserAuth()
-            showError("Sign in failed", "Sign-in did not complete.")
-            return true
-        }
-
-        syncAuthInProgress = true
-        Thread {
-            val result = runCatching {
-                parseSyncSession(
-                    httpJson(
-                        "${pending.apiBase}/v1/auth/authorize/exchange",
-                        "POST",
-                        JSONObject()
-                            .put("code", code)
-                            .put("code_verifier", pending.codeVerifier),
-                        authorizeAction = true
-                    ),
-                    pending.apiBase
-                )
-            }
-            runOnUiThread {
-                syncAuthInProgress = false
-                clearPendingSyncBrowserAuth()
-                result.onSuccess { session ->
-                    syncLoginChallenge = null
-                    installSyncSession(session)
-                    Toast.makeText(this, "Signed in as ${session.email}", Toast.LENGTH_SHORT).show()
-                    syncOnce()
-                }.onFailure { error ->
-                    showError("Sign in failed", error.message)
-                }
-            }
-        }.start()
-        return true
-    }
-
-    private fun savePendingSyncBrowserAuth(auth: PendingSyncBrowserAuth) {
-        getSharedPreferences("knotq", MODE_PRIVATE).edit()
-            .putString(SYNC_AUTH_API_BASE_PREF, auth.apiBase)
-            .putString(SYNC_AUTH_STATE_PREF, auth.state)
-            .putString(SYNC_AUTH_VERIFIER_PREF, auth.codeVerifier)
-            .apply()
-    }
-
-    private fun loadPendingSyncBrowserAuth(): PendingSyncBrowserAuth? {
-        val prefs = getSharedPreferences("knotq", MODE_PRIVATE)
-        val apiBase = prefs.getString(SYNC_AUTH_API_BASE_PREF, null)?.takeIf { it.isNotBlank() }
-            ?: return null
-        val state = prefs.getString(SYNC_AUTH_STATE_PREF, null)?.takeIf { it.isNotBlank() }
-            ?: return null
-        val verifier = prefs.getString(SYNC_AUTH_VERIFIER_PREF, null)?.takeIf { it.isNotBlank() }
-            ?: return null
-        return PendingSyncBrowserAuth(apiBase, state, verifier)
-    }
-
-    private fun clearPendingSyncBrowserAuth() {
-        getSharedPreferences("knotq", MODE_PRIVATE).edit()
-            .remove(SYNC_AUTH_API_BASE_PREF)
-            .remove(SYNC_AUTH_STATE_PREF)
-            .remove(SYNC_AUTH_VERIFIER_PREF)
-            .apply()
-    }
-
-    private fun pkceVerifier(): String =
-        randomUrlToken(32)
-
-    private fun pkceChallenge(verifier: String): String {
-        val digest = MessageDigest.getInstance("SHA-256").digest(verifier.toByteArray(Charsets.UTF_8))
-        return base64UrlNoPad(digest)
-    }
-
-    private fun randomUrlToken(byteCount: Int): String {
-        val bytes = ByteArray(byteCount)
-        SecureRandom().nextBytes(bytes)
-        return base64UrlNoPad(bytes)
-    }
-
-    private fun base64UrlNoPad(bytes: ByteArray): String =
-        Base64.encodeToString(bytes, Base64.URL_SAFE or Base64.NO_WRAP or Base64.NO_PADDING)
-
-    private fun signInToSync(apiBaseRaw: String, emailRaw: String, password: String) {
-        if (syncAuthInProgress) return
-        val apiBase = normalizeApiBase(apiBaseRaw)
-        val email = emailRaw.trim()
-        if (apiBase.isEmpty() || email.isEmpty() || password.isEmpty()) {
-            showError("Sign in failed", "Enter your sync API, email, and password")
-            return
-        }
-        syncAuthInProgress = true
-        Thread {
-            val result = runCatching { requestSyncLoginStart(apiBase, email, password) }
-            runOnUiThread {
-                syncAuthInProgress = false
-                result.onSuccess { start ->
-                    val session = start.session
-                    if (session != null) {
-                        installSyncSession(session)
-                        Toast.makeText(this, "Signed in as ${session.email}", Toast.LENGTH_SHORT).show()
-                    } else if (start.challenge != null) {
-                        syncLoginChallenge = start.challenge
-                        showLoginCodeDialog(start.challenge)
-                    }
-                }.onFailure { error ->
-                    showError("Sign in failed", error.message)
-                }
-            }
-        }.start()
-    }
-
-    private fun createSyncAccount(apiBaseRaw: String, emailRaw: String, password: String) {
-        if (syncAuthInProgress) return
-        val apiBase = normalizeApiBase(apiBaseRaw)
-        val email = emailRaw.trim()
-        if (apiBase.isEmpty() || email.isEmpty() || password.isEmpty()) {
-            showError("Account creation failed", "Enter your sync API, email, and password")
-            return
-        }
-        syncAuthInProgress = true
-        Thread {
-            val result = runCatching {
-                parseSyncSession(
-                    httpJson("$apiBase/v1/auth/signup", "POST", JSONObject().put("email", email).put("password", password)),
-                    apiBase
-                )
-            }
-            runOnUiThread {
-                syncAuthInProgress = false
-                result.onSuccess { session ->
-                    syncLoginChallenge = null
-                    installSyncSession(session)
-                    Toast.makeText(this, "Signed in as ${session.email}", Toast.LENGTH_SHORT).show()
-                    syncOnce()
-                }.onFailure { error ->
-                    showError("Account creation failed", error.message)
-                }
-            }
-        }.start()
-    }
-
-    private fun showLoginCodeDialog(challenge: SyncLoginChallenge) {
-        val form = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(dp(20), dp(8), dp(20), 0)
-        }
-        form.addView(text("Enter the code sent to ${challenge.email}.", theme.textDim, 13f, false), spaced())
-        val code = EditText(this).apply {
-            hint = "Code"
-            setText(challenge.devCode.orEmpty())
-            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_CAP_CHARACTERS
-            setSingleLine(true)
-        }
-        form.addView(code)
-        val dialog = AlertDialog.Builder(this)
-            .setTitle("Verify sign in")
-            .setView(form)
-            .setNegativeButton("Cancel", null)
-            .setNeutralButton("Different account", null)
-            .setPositiveButton("Verify", null)
-            .create()
-        dialog.setOnShowListener {
-            dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
-                dialog.dismiss()
-                verifyLoginCode(code.text.toString())
-            }
-            dialog.getButton(AlertDialog.BUTTON_NEUTRAL).setOnClickListener {
-                syncLoginChallenge = null
-                dialog.dismiss()
-                showSyncAccountDialog()
-            }
-        }
-        dialog.show()
-    }
-
-    private fun verifyLoginCode(codeRaw: String) {
-        val challenge = syncLoginChallenge ?: return
-        val code = codeRaw.trim()
-        if (code.isEmpty()) {
-            showError("Verification failed", "Enter the code we emailed you.")
-            return
-        }
-        syncAuthInProgress = true
-        Thread {
-            val result = runCatching {
-                parseSyncSession(
-                    httpJson(
-                        "${challenge.apiBase}/v1/auth/login/verify",
-                        "POST",
-                        JSONObject().put("challenge_id", challenge.challengeId).put("code", code)
-                    ),
-                    challenge.apiBase
-                )
-            }
-            runOnUiThread {
-                syncAuthInProgress = false
-                result.onSuccess { session ->
-                    syncLoginChallenge = null
-                    installSyncSession(session)
-                    Toast.makeText(this, "Signed in as ${session.email}", Toast.LENGTH_SHORT).show()
-                    syncOnce()
-                }.onFailure { error ->
-                    showError("Verification failed", error.message)
-                }
-            }
-        }.start()
-    }
-
-    private fun installSyncSession(session: SyncSession) {
-        syncSession = session
-        syncOffline = false
-        syncFailureNotified = false
-        saveSyncSession(session)
-        startSyncPolling()
-        scheduleBackgroundSyncWork()
-        render()
-        if (session.supportsSync) refreshAccountStatus()
-        // Signing in during the onboarding account step advances to the tour.
-        if (onboardingActive && onboardingPhase == ONBOARDING_ACCOUNT) {
-            startOnboardingGuide()
-        }
-    }
-
-    private fun signOutSync() {
-        syncSession = null
-        syncLoginChallenge = null
-        syncSubscriptionCancelled = false
-        syncSubscriptionProvider = null
-        syncOffline = false
-        syncFailureNotified = false
-        saveSyncSession(null)
-        syncPollHandler.removeCallbacks(syncPollRunnable)
-        syncPollHandler.removeCallbacks(syncEditRunnable)
-        cancelBackgroundSyncWork()
-        render()
-    }
-
-    /// Read the authoritative subscription lifecycle so Settings can reflect a
-    /// cancelled-but-active subscription and offer to re-enable it.
-    private fun refreshAccountStatus() {
-        if (syncInProgress) return
-        val session = syncSession ?: return
-        syncInProgress = true
-        Thread {
-            val statusResult = runCatching {
-                val active = when (val refreshed = refreshSyncSessionIfNeeded(session)) {
-                    is SyncRefreshResult.Ready -> {
-                        persistRotatedSyncSession(session, refreshed.session)
-                        refreshed.session
-                    }
-                    SyncRefreshResult.Deferred -> {
-                        runOnUiThread {
-                            syncOffline = true
-                            render()
-                        }
-                        return@runCatching null
-                    }
-                    SyncRefreshResult.SessionDead -> {
-                        runOnUiThread { expireSyncSession() }
-                        return@runCatching null
-                    }
-                }
-                httpJson(
-                    "${active.apiBase}/v1/auth/account/status",
-                    "GET",
-                    JSONObject(),
-                    bearerToken = active.bearerToken
-                )
-            }
-            runOnUiThread {
-                syncInProgress = false
-                statusResult.exceptionOrNull()?.let { error ->
-                    if (isLikelyNetworkError(error)) {
-                        syncOffline = true
-                        render()
-                    }
-                    return@runOnUiThread
-                }
-                val result = statusResult.getOrNull() ?: return@runOnUiThread
-                syncOffline = false
-                syncSubscriptionProvider = result.optString("subscription_provider").ifEmpty { null }
-                syncSubscriptionCancelled =
-                    result.optBoolean("supports_sync", true) &&
-                        result.optString("subscription_state").equals("cancelled", ignoreCase = true)
-                render()
-            }
-        }.start()
-    }
-
-    /// Re-check the sync entitlement + subscription lifecycle from the backend so a
-    /// subscription bought (or changed) while the app was closed — the common
-    /// "subscribe, reopen the app, see it" flow — shows up without waiting for the
-    /// access token to expire. One forced token refresh re-reads supports_sync; the
-    /// status read then runs on the rotated token, all on a single thread, so the
-    /// single-use refresh token is never replayed concurrently. Guarded by the poll
-    /// loop's in-progress flag for the same reason.
-    private fun refreshSubscriptionStatus() {
-        if (syncInProgress) return
-        val session = syncSession ?: return
-        if (session.refreshToken.isEmpty()) return
-        syncInProgress = true
-        Thread {
-            val refresh = refreshSyncSessionIfNeeded(session, force = true)
-            val active = (refresh as? SyncRefreshResult.Ready)?.session
-            val status = active?.let {
-                runCatching {
-                    httpJson(
-                        "${it.apiBase}/v1/auth/account/status",
-                        "GET",
-                        JSONObject(),
-                        bearerToken = it.bearerToken
-                    )
-                }.getOrNull()
-            }
-            runOnUiThread {
-                syncInProgress = false
-                if (refresh is SyncRefreshResult.Deferred) {
-                    syncOffline = true
-                    render()
-                    return@runOnUiThread
-                }
-                if (refresh is SyncRefreshResult.SessionDead) {
-                    // Refresh token revoked/expired: drop the session like the poll loop.
-                    expireSyncSession()
-                    return@runOnUiThread
-                }
-                if (active != null && active !== session) {
-                    syncSession = active
-                    syncOffline = false
-                    syncFailureNotified = false
-                    saveSyncSession(active)
-                    scheduleBackgroundSyncWork()
-                    // A just-granted entitlement: pull the workspace promptly instead
-                    // of waiting on the 30s poll.
-                    if (active.supportsSync) requestSyncSoon()
-                }
-                if (status != null) {
-                    syncSubscriptionProvider = status.optString("subscription_provider").ifEmpty { null }
-                    syncSubscriptionCancelled =
-                        status.optBoolean("supports_sync", true) &&
-                            status.optString("subscription_state").equals("cancelled", ignoreCase = true)
-                }
-                render()
-            }
-        }.start()
-    }
-
-    /// Undo a pending cancellation so the subscription renews again. Web
-    /// subscriptions un-cancel through our backend; Google/Apple renewals can only be
-    /// turned back on in their stores, so for those we open the store's
-    /// manage-subscriptions page. On Android the subscription is normally a Google
-    /// Play one, so an unknown provider routes to Google Play.
-    private fun reEnableSyncSubscription() {
-        when ((syncSubscriptionProvider ?: "").lowercase()) {
-            "apple" -> {
-                openSubscriptionStorePage(APPLE_SUBSCRIPTIONS_URL)
-                return
-            }
-            "web" -> {}
-            else -> {
-                openSubscriptionStorePage(PLAY_SUBSCRIPTIONS_URL)
-                return
-            }
-        }
-        val session = syncSession ?: return
-        if (syncAccountActionInProgress || syncInProgress) return
-        syncAccountActionInProgress = true
-        syncInProgress = true
-        Thread {
-            val result = runCatching {
-                val active = activeSyncSessionForAccountAction(session)
-                parseSyncSession(
-                    httpJson(
-                        "${active.apiBase}/v1/auth/subscription/resume",
-                        "POST",
-                        JSONObject(),
-                        bearerToken = active.bearerToken,
-                        accountAction = true
-                    ),
-                    active.apiBase
-                )
-            }
-            runOnUiThread {
-                syncAccountActionInProgress = false
-                syncInProgress = false
-                result.onSuccess { updated ->
-                    installSyncSession(updated)
-                    showError("Subscription re-enabled", "Your subscription will renew again.")
-                }.onFailure { error ->
-                    showError("Could not update account", error.message)
-                }
-            }
-        }.start()
-    }
-
-    private fun openSubscriptionStorePage(url: String) {
-        try {
-            startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
-        } catch (error: ActivityNotFoundException) {
-            showError("Could not open subscriptions", error.message)
-        }
-    }
-
-    private fun openSyncAccountPage() {
-        try {
-            startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(SYNC_ACCOUNT_PAGE_URL)))
-            Toast.makeText(this, "Continue on knotq.com.", Toast.LENGTH_SHORT).show()
-        } catch (error: ActivityNotFoundException) {
-            showError("Could not open account page", error.message)
-        }
-    }
-
-    /// Store-managed (Apple/Google) subscriptions can't be cancelled server-side —
-    /// Apple has no cancel API — so open the store's manage page directly instead of
-    /// a backend call that fails. Web subscriptions cancel through the backend.
-    private fun cancelSubscriptionAction() {
-        when ((syncSubscriptionProvider ?: "").lowercase()) {
-            "apple" -> openSubscriptionStorePage(APPLE_SUBSCRIPTIONS_URL)
-            "google" -> openSubscriptionStorePage(PLAY_SUBSCRIPTIONS_URL)
-            else -> confirmCancelSyncSubscription()
-        }
-    }
-
-    private fun confirmCancelSyncSubscription() {
-        AlertDialog.Builder(this)
-            .setTitle("Cancel sync subscription?")
-            .setMessage("Your local workspace stays on this device. Paid sync may remain available until the current billing period ends.")
-            .setNegativeButton("Keep sync", null)
-            .setPositiveButton("Cancel subscription") { _, _ -> cancelSyncSubscription() }
-            .show()
-    }
-
-    private fun cancelSyncSubscription() {
-        val session = syncSession ?: return
-        if (syncAccountActionInProgress || syncInProgress) return
-        syncAccountActionInProgress = true
-        syncInProgress = true
-        Thread {
-            val result = runCatching {
-                val active = activeSyncSessionForAccountAction(session)
-                parseSyncSession(
-                    httpJson(
-                        "${active.apiBase}/v1/auth/subscription/cancel",
-                        "POST",
-                        JSONObject(),
-                        bearerToken = active.bearerToken,
-                        accountAction = true
-                    ),
-                    active.apiBase
-                )
-            }
-            runOnUiThread {
-                syncAccountActionInProgress = false
-                syncInProgress = false
-                result.onSuccess { updated ->
-                    installSyncSession(updated)
-                    if (updated.supportsSync) {
-                        showError("Subscription cancelled", "Sync remains available until the current billing period ends.")
-                    } else {
-                        showError("Sync turned off", "Your local workspace stays on this device, and you can sign in again later to re-enable sync.")
-                    }
-                    refreshAccountStatus()
-                }.onFailure { error ->
-                    showError("Could not update account", error.message)
-                }
-            }
-        }.start()
-    }
-
-    // --- Google Play billing ---
-
-    private val purchasesUpdatedListener = PurchasesUpdatedListener { result, purchases ->
-        when (result.responseCode) {
-            BillingClient.BillingResponseCode.OK -> {
-                val purchase = purchases?.firstOrNull { it.purchaseState == Purchase.PurchaseState.PURCHASED }
-                if (purchase != null) {
-                    verifyGooglePlayPurchase(purchase)
-                } else {
-                    runOnUiThread { purchaseInProgress = false }
-                }
-            }
-            BillingClient.BillingResponseCode.USER_CANCELED ->
-                runOnUiThread { purchaseInProgress = false }
-            else -> runOnUiThread {
-                purchaseInProgress = false
-                showError("Purchase failed", result.debugMessage.ifEmpty { "Could not complete the purchase." })
-            }
-        }
-    }
-
-    private fun ensureBillingClient(onReady: (BillingClient) -> Unit) {
-        val existing = billingClient
-        if (existing != null && existing.isReady) {
-            onReady(existing)
-            return
-        }
-        val client = existing ?: BillingClient.newBuilder(this)
-            .setListener(purchasesUpdatedListener)
-            .enablePendingPurchases(
-                PendingPurchasesParams.newBuilder().enableOneTimeProducts().build()
-            )
-            .build()
-        billingClient = client
-        client.startConnection(object : BillingClientStateListener {
-            override fun onBillingSetupFinished(result: BillingResult) {
-                if (result.responseCode == BillingClient.BillingResponseCode.OK) {
-                    onReady(client)
-                } else {
-                    runOnUiThread {
-                        purchaseInProgress = false
-                        showError("Store unavailable", result.debugMessage.ifEmpty { "Google Play billing is unavailable." })
-                    }
-                }
-            }
-
-            override fun onBillingServiceDisconnected() {
-                // Reconnected lazily on the next billing action.
-            }
-        })
-    }
-
-    private fun startGooglePlaySubscribe() {
-        val session = syncSession ?: return
-        if (purchaseInProgress) return
-        purchaseInProgress = true
-        ensureBillingClient { client ->
-            val product = QueryProductDetailsParams.Product.newBuilder()
-                .setProductId(SYNC_SUBSCRIPTION_PRODUCT_ID)
-                .setProductType(BillingClient.ProductType.SUBS)
-                .build()
-            val params = QueryProductDetailsParams.newBuilder()
-                .setProductList(listOf(product))
-                .build()
-            client.queryProductDetailsAsync(params) { result, productDetailsList ->
-                val details = productDetailsList.firstOrNull()
-                val offerToken = details?.subscriptionOfferDetails?.firstOrNull()?.offerToken
-                if (result.responseCode != BillingClient.BillingResponseCode.OK || details == null || offerToken == null) {
-                    runOnUiThread {
-                        purchaseInProgress = false
-                        showError("Subscription unavailable", "The sync subscription isn't available on this device yet.")
-                    }
-                    return@queryProductDetailsAsync
-                }
-                val productParams = BillingFlowParams.ProductDetailsParams.newBuilder()
-                    .setProductDetails(details)
-                    .setOfferToken(offerToken)
-                    .build()
-                val flowParams = BillingFlowParams.newBuilder()
-                    .setProductDetailsParamsList(listOf(productParams))
-                    // Maps the purchase back to this account server-side (= our user id).
-                    .setObfuscatedAccountId(session.userId)
-                    .build()
-                runOnUiThread { client.launchBillingFlow(this, flowParams) }
-            }
-        }
-    }
-
-    private fun restoreGooglePlayPurchases() {
-        if (syncSession == null || purchaseInProgress) return
-        ensureBillingClient { client ->
-            val params = QueryPurchasesParams.newBuilder()
-                .setProductType(BillingClient.ProductType.SUBS)
-                .build()
-            client.queryPurchasesAsync(params) { result, purchases ->
-                val active = purchases.firstOrNull { it.purchaseState == Purchase.PurchaseState.PURCHASED }
-                if (result.responseCode == BillingClient.BillingResponseCode.OK && active != null) {
-                    purchaseInProgress = true
-                    verifyGooglePlayPurchase(active)
-                } else {
-                    runOnUiThread {
-                        showError("Nothing to restore", "No active Google Play subscription was found for this Google account.")
-                    }
-                }
-            }
-        }
-    }
-
-    // Send a completed Play purchase to the backend, which reads authoritative state
-    // from the Play Developer API, grants the entitlement, and acknowledges the
-    // purchase. The returned (now sync-enabled) session replaces the current one.
-    private fun verifyGooglePlayPurchase(purchase: Purchase) {
-        val session = syncSession
-        if (session == null) {
-            runOnUiThread { purchaseInProgress = false }
-            return
-        }
-        Thread {
-            val result = runCatching {
-                val active = activeSyncSessionForAccountAction(session)
-                val productId = purchase.products.firstOrNull() ?: SYNC_SUBSCRIPTION_PRODUCT_ID
-                parseSyncSession(
-                    httpJson(
-                        "${active.apiBase}/v1/billing/google/verify",
-                        "POST",
-                        JSONObject()
-                            .put("purchase_token", purchase.purchaseToken)
-                            .put("product_id", productId),
-                        bearerToken = active.bearerToken,
-                        accountAction = true
-                    ),
-                    active.apiBase
-                )
-            }
-            runOnUiThread {
-                purchaseInProgress = false
-                result.onSuccess { updated ->
-                    installSyncSession(updated)
-                    if (updated.supportsSync) {
-                        showError("Subscribed", "Sync is now enabled on this account.")
-                    }
-                }.onFailure { error ->
-                    showError("Could not verify purchase", error.message)
-                }
-            }
-        }.start()
-    }
-
-    private fun startSyncPolling() {
-        syncPollHandler.removeCallbacks(syncPollRunnable)
-        if (syncSession != null) {
-            syncOnce()
-            syncPollHandler.postDelayed(syncPollRunnable, 30_000)
-        }
-    }
-
-    /// iOS pushes a sync right after every local edit; the short delay coalesces
-    /// rapid bursts (the in-progress guard handles overlap with the 30s poll).
-    private fun requestSyncSoon() {
-        if (syncSession == null) return
-        syncPollHandler.removeCallbacks(syncEditRunnable)
-        syncPollHandler.postDelayed(syncEditRunnable, 350)
-    }
-
-    /// Periodic background refresh while signed in — the Android counterpart of
-    /// the iOS BGAppRefreshTask (3h cadence, network required).
-    private fun scheduleBackgroundSyncWork() {
-        val workManager = runCatching { WorkManager.getInstance(this) }.getOrNull() ?: return
-        val session = syncSession
-        if (session == null || !session.supportsSync) {
-            workManager.cancelUniqueWork(BACKGROUND_SYNC_WORK)
-            return
-        }
-        val request = PeriodicWorkRequest.Builder(BackgroundSyncWorker::class.java, 3, TimeUnit.HOURS)
-            .setConstraints(
-                Constraints.Builder()
-                    .setRequiredNetworkType(NetworkType.CONNECTED)
-                    .build()
-            )
-            .build()
-        workManager.enqueueUniquePeriodicWork(BACKGROUND_SYNC_WORK, ExistingPeriodicWorkPolicy.KEEP, request)
-    }
-
-    private fun cancelBackgroundSyncWork() {
-        runCatching { WorkManager.getInstance(this).cancelUniqueWork(BACKGROUND_SYNC_WORK) }
-    }
-
-    private fun syncOnce() {
-        // The in-progress guard also serializes refresh: two concurrent refreshes
-        // would replay the same single-use refresh token and trip the server's
-        // reuse detection, revoking the session.
-        if (syncInProgress) return
-        val session = syncSession ?: return
-        if (!session.supportsSync) return
-        syncInProgress = true
-        Thread {
-            // Refresh the short-lived access token if near expiry (rotating +
-            // persisting the new credentials). If refresh is temporarily unavailable,
-            // skip this tick instead of syncing with an expired bearer token.
-            val active = when (val refresh = refreshSyncSessionIfNeeded(session)) {
-                is SyncRefreshResult.Ready -> refresh.session
-                SyncRefreshResult.Deferred -> {
-                    runOnUiThread {
-                        syncInProgress = false
-                        syncOffline = true
-                        render()
-                    }
-                    return@Thread
-                }
-                SyncRefreshResult.SessionDead -> {
-                    runOnUiThread {
-                        syncInProgress = false
-                        expireSyncSession()
-                    }
-                    return@Thread
-                }
-            }
-            if (active !== session) {
-                runOnUiThread {
-                    syncSession = active
-                    syncOffline = false
-                    syncFailureNotified = false
-                    saveSyncSession(active)
-                }
-            }
-            val result = runCatching {
-                bridge.request(
-                    obj(
-                        "type" to "sync_once",
-                        "api_base" to active.apiBase,
-                        "bearer_token" to active.bearerToken
-                    )
-                )
-            }
-            runOnUiThread {
-                syncInProgress = false
-                result.onSuccess { response ->
-                    syncFailureNotified = false
-                    syncOffline = false
-                    val changed = response.optBoolean("changed", false)
-                    if (changed) {
-                        loadSnapshot()
-                        rescheduleNotifications()
-                        render()
-                    }
-                    val notice = response.optString("notice", "")
-                    if (notice.isNotEmpty()) {
-                        toast(notice)
-                    }
-                }.onFailure { error ->
-                    // Non-blocking like the iOS banner, and only on the first
-                    // failure so an offline session isn't toasted every poll.
-                    if (isLikelyNetworkError(error)) {
-                        syncOffline = true
-                        render()
-                        return@onFailure
-                    }
-                    if (!syncFailureNotified) {
-                        syncFailureNotified = true
-                        toast(error.message ?: "Sync failed")
-                    }
-                }
-            }
-        }.start()
-    }
-
-    private fun activeSyncSessionForAccountAction(session: SyncSession): SyncSession {
-        return when (val refresh = refreshSyncSessionIfNeeded(session)) {
-            is SyncRefreshResult.Ready -> {
-                persistRotatedSyncSession(session, refresh.session)
-                refresh.session
-            }
-            SyncRefreshResult.Deferred -> throw RuntimeException("Sync is offline. Try again when your connection is back.")
-            SyncRefreshResult.SessionDead -> {
-                runOnUiThread { expireSyncSession(showMessage = false) }
-                throw RuntimeException(accountActionErrorMessage("unauthorized"))
-            }
-        }
-    }
-
-    private fun persistRotatedSyncSession(previous: SyncSession, active: SyncSession) {
-        if (active === previous || active.refreshToken == previous.refreshToken) return
-        saveSyncSession(active)
-        runOnUiThread {
-            if (syncSession?.refreshToken == previous.refreshToken) {
-                syncSession = active
-                syncOffline = false
-                syncFailureNotified = false
-                scheduleBackgroundSyncWork()
-                render()
-            }
-        }
-    }
-
-    private fun expireSyncSession(showMessage: Boolean = true) {
-        syncSession = null
-        syncOffline = false
-        saveSyncSession(null)
-        syncPollHandler.removeCallbacks(syncPollRunnable)
-        syncPollHandler.removeCallbacks(syncEditRunnable)
-        cancelBackgroundSyncWork()
-        if (showMessage) {
-            showError("Sync session expired", "Please sign in again.")
-        }
-        render()
-    }
-
-    // Runs on a background thread (blocking HTTP). SessionDead is only returned
-    // when the refresh token is explicitly rejected by the auth endpoint. Deferred
-    // means the current token may be expired but the refresh could not be completed yet.
-    private fun refreshSyncSessionIfNeeded(session: SyncSession, force: Boolean = false): SyncRefreshResult {
-        val refreshToken = session.refreshToken
-        if (refreshToken.isEmpty()) return SyncRefreshResult.Deferred
-        if (!force && !tokenNeedsRefresh(session.expiresAt)) return SyncRefreshResult.Ready(session)
-        try {
-            val connection =
-                (URL("${session.apiBase}/v1/auth/refresh").openConnection() as HttpURLConnection).apply {
-                    requestMethod = "POST"
-                    connectTimeout = 10_000
-                    readTimeout = 10_000
-                    doOutput = true
-                    setRequestProperty("Content-Type", "application/json")
-                }
-            val body = JSONObject().put("refresh_token", refreshToken).toString().toByteArray(Charsets.UTF_8)
-            connection.outputStream.use { it.write(body) }
-            val status = connection.responseCode
-            if (isTerminalRefreshErrorCode(refreshApiErrorCode(connection))) {
-                return SyncRefreshResult.SessionDead
-            }
-            if (status !in 200..299) return SyncRefreshResult.Deferred
-            val raw = connection.inputStream.bufferedReader().use { it.readText() }
-            val json = JSONObject(raw)
-            return SyncRefreshResult.Ready(session.copy(
-                bearerToken = requiredString(json, "bearer_token"),
-                expiresAt = requiredString(json, "expires_at"),
-                refreshToken = requiredString(json, "refresh_token"),
-                refreshExpiresAt = json.optString("refresh_expires_at").ifEmpty { null },
-                supportsSync = json.optBoolean("supports_sync", true)
-            ))
-        } catch (error: Exception) {
-            // Network/parse hiccup: keep the current token, retry next tick.
-            return SyncRefreshResult.Deferred
-        }
-    }
-
-    private fun isLikelyNetworkError(error: Throwable): Boolean {
-        var current: Throwable? = error
-        while (current != null) {
-            if (current is java.io.IOException) return true
-            current = current.cause
-        }
-        val message = error.message.orEmpty().lowercase()
-        return listOf(
-            "network",
-            "request failed",
-            "timeout",
-            "timed out",
-            "unable to resolve",
-            "failed to connect",
-            "no address associated with hostname"
-        ).any(message::contains)
-    }
-
-    private fun tokenNeedsRefresh(expiresAt: String): Boolean {
-        val expiry = runCatching { java.time.Instant.parse(expiresAt) }.getOrNull() ?: return true
-        return expiry.isBefore(java.time.Instant.now().plusSeconds(120))
-    }
-
-    private fun requestSyncLoginStart(apiBase: String, email: String, password: String): SyncLoginStart {
-        val json = httpJson(
-            "$apiBase/v1/auth/login",
-            "POST",
-            JSONObject().put("email", email).put("password", password)
-        )
-        val challengeId = json.optString("challenge_id")
-        if (challengeId.isNotEmpty()) {
-            return SyncLoginStart(
-                challenge = SyncLoginChallenge(
-                    apiBase = apiBase,
-                    email = email,
-                    challengeId = challengeId,
-                    devCode = json.optString("dev_code").ifEmpty { null }
-                ),
-                session = null
-            )
-        }
-        return SyncLoginStart(challenge = null, session = parseSyncSession(json, apiBase))
-    }
-
-    private fun parseSyncSession(json: JSONObject, apiBase: String): SyncSession =
-        SyncSession(
-            apiBase = apiBase,
-            userId = requiredString(json, "user_id"),
-            email = requiredString(json, "email"),
-            supportsSync = json.optBoolean("supports_sync", true),
-            bearerToken = requiredString(json, "bearer_token"),
-            expiresAt = requiredString(json, "expires_at"),
-            refreshToken = requiredString(json, "refresh_token"),
-            refreshExpiresAt = json.optString("refresh_expires_at").ifEmpty { null }
-        )
-
-    private fun requiredString(json: JSONObject, key: String): String =
-        json.optString(key).takeIf { it.isNotEmpty() }
-            ?: throw RuntimeException("Sync API response missing $key.")
-
-    private fun httpJson(
-        urlString: String,
-        method: String,
-        body: JSONObject,
-        bearerToken: String? = null,
-        accountAction: Boolean = false,
-        authorizeAction: Boolean = false
-    ): JSONObject {
-        val connection = (URL(urlString).openConnection() as HttpURLConnection).apply {
-            requestMethod = method
-            connectTimeout = 10_000
-            readTimeout = 10_000
-            doInput = true
-            doOutput = method != "GET"
-            setRequestProperty("Content-Type", "application/json")
-            bearerToken?.let { setRequestProperty("Authorization", "Bearer $it") }
-        }
-        if (method != "GET") {
-            connection.outputStream.use { it.write(body.toString().toByteArray(Charsets.UTF_8)) }
-        }
-        val status = connection.responseCode
-        val raw = if (status in 200..299) {
-            connection.inputStream.bufferedReader().use { it.readText() }
-        } else {
-            connection.errorStream?.bufferedReader()?.use { it.readText() }.orEmpty()
-        }
-        if (status !in 200..299) {
-            val code = runCatching { JSONObject(raw).optString("code") }.getOrDefault("")
-            throw RuntimeException(
-                when {
-                    accountAction -> accountActionErrorMessage(code)
-                    authorizeAction -> authorizeErrorMessage(code)
-                    else -> syncErrorMessage(code)
-                }
-            )
-        }
-        return if (raw.isBlank()) JSONObject() else JSONObject(raw)
-    }
-
-    private fun loadSyncSession(): SyncSession? {
-        val raw = getSharedPreferences("knotq", MODE_PRIVATE).getString(SYNC_SESSION_PREF, null)
-            ?: return null
-        return runCatching {
-            val json = JSONObject(raw)
-            SyncSession(
-                apiBase = normalizeApiBase(json.optString("api_base")),
-                userId = json.optString("user_id"),
-                email = json.optString("email"),
-                supportsSync = json.optBoolean("supports_sync", true),
-                bearerToken = json.optString("bearer_token"),
-                expiresAt = json.optString("expires_at"),
-                refreshToken = json.optString("refresh_token").takeIf { it.isNotEmpty() }
-                    ?: throw RuntimeException("stored sync session missing refresh token"),
-                refreshExpiresAt = json.optString("refresh_expires_at").ifEmpty { null }
-            )
-        }.getOrNull()
-    }
-
-    private fun saveSyncSession(session: SyncSession?) {
-        val prefs = getSharedPreferences("knotq", MODE_PRIVATE).edit()
-        if (session == null) {
-            prefs.remove(SYNC_SESSION_PREF)
-        } else {
-            prefs.putString(
-                SYNC_SESSION_PREF,
-                JSONObject()
-                    .put("api_base", session.apiBase)
-                    .put("user_id", session.userId)
-                    .put("email", session.email)
-                    .put("supports_sync", session.supportsSync)
-                    .put("bearer_token", session.bearerToken)
-                    .put("expires_at", session.expiresAt)
-                    .put("refresh_token", session.refreshToken)
-                    .put("refresh_expires_at", session.refreshExpiresAt ?: JSONObject.NULL)
-                    .toString()
-            )
-        }
-        prefs.apply()
-    }
-
-    private fun normalizeApiBase(raw: String): String =
-        raw.trim().trimEnd('/')
-
-    private fun syncErrorMessage(code: String): String = when (code) {
-        "account_exists" -> "An account already exists for that email."
-        "invalid_email" -> "Enter a valid email address."
-        "password_too_short" -> "Use a password with at least 12 characters."
-        "unauthorized" -> "Email or password is incorrect."
-        "password_too_long" -> "Password is too long."
-        "invalid_code" -> "That code is incorrect."
-        "code_expired", "invalid_or_expired_code" -> "That code has expired. Sign in again to get a new one."
-        "too_many_attempts" -> "Too many incorrect codes. Sign in again to get a new one."
-        else -> "Sync account request failed."
-    }
-
-    private fun authorizeErrorMessage(code: String): String = when (code) {
-        "invalid_authorization_code", "authorization_code_expired", "invalid_code_challenge" ->
-            "Sign-in could not be completed. Please try signing in again."
-        else -> "Sign in failed."
-    }
-
-    private fun accountActionErrorMessage(code: String): String = when (code) {
-        "unauthorized" -> "Your sync session expired. Sign in again, then retry."
-        "delete_confirmation_mismatch" -> "Could not confirm the account. Please try again."
-        "billing_api_not_configured" -> "Subscription cancellation is not configured yet."
-        "cancel_in_app_store" -> "Manage this App Store subscription from your account subscriptions."
-        "cancel_in_play_store" -> "Manage this subscription from your Google Play subscriptions."
-        "resume_in_app_store" -> "Re-enable this subscription from your Apple account subscriptions."
-        "resume_in_play_store" -> "Re-enable this subscription from your Google Play subscriptions."
-        "no_active_subscription" -> "There's no active web subscription to change."
-        else -> "The request to the sync API failed."
-    }
-
-    private fun startGoogleCalendarImport(parentId: String? = null) {
-        if (googleAuthInProgress) return
-        googleAuthInProgress = true
-        Thread {
-            val result = runCatching {
-                bridge.request(
-                    obj(
-                        "type" to "google_auth_request",
-                        "client_id" to GOOGLE_CLIENT_ID,
-                        "redirect_uri" to GOOGLE_REDIRECT_URI
-                    )
-                )
-            }
-            runOnUiThread {
-                result.onSuccess { request ->
-                    pendingGoogleAuthRequest = request
-                    pendingGoogleParentId = parentId
-                    savePendingGoogleAuth(request, parentId)
-                    try {
-                        startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(request.getString("auth_url"))))
-                    } catch (error: ActivityNotFoundException) {
-                        googleAuthInProgress = false
-                        clearPendingGoogleAuth()
-                        showError("Google Calendar", error.message)
-                    }
-                }.onFailure { error ->
-                    googleAuthInProgress = false
-                    showError("Google Calendar", error.message)
-                }
-            }
-        }.start()
-    }
-
-    private fun handleGoogleCallback(uri: Uri?) {
-        if (uri == null || uri.scheme != GOOGLE_REDIRECT_SCHEME) return
-        val request = pendingGoogleAuthRequest ?: loadPendingGoogleAuthRequest()
-        val parentId = pendingGoogleParentId ?: loadPendingGoogleParentId()
-        if (request == null) {
-            googleAuthInProgress = false
-            showError("Google Calendar", "Google OAuth callback arrived without a pending request.")
-            return
-        }
-        completeGoogleCalendarImport(request, uri.toString(), parentId)
-    }
-
-    private fun completeGoogleCalendarImport(request: JSONObject, callbackUrl: String, parentId: String?) {
-        googleAuthInProgress = true
-        Thread {
-            val result = runCatching {
-                bridge.request(
-                    obj(
-                        "type" to "complete_google_calendar_import",
-                        "client_id" to request.getString("client_id"),
-                        "redirect_uri" to request.getString("redirect_uri"),
-                        "state" to request.getString("state"),
-                        "code_verifier" to request.getString("code_verifier"),
-                        "callback_url" to callbackUrl,
-                        "parent_id" to parentId
-                    )
-                )
-            }
-            runOnUiThread {
-                googleAuthInProgress = false
-                clearPendingGoogleAuth()
-                result.onSuccess { response ->
-                    googleCalendarStatus = response.optString("message")
-                    loadSnapshot()
-                    rescheduleNotifications()
-                    render()
-                    if (syncSession != null) syncOnce()
-                }.onFailure { error ->
-                    showError("Google Calendar", error.message)
-                }
-            }
-        }.start()
-    }
-
-    private fun syncGoogleCalendars(silent: Boolean = false) {
-        if (googleSyncInProgress) return
-        if ((snapshot.optJSONObject("settings")?.optInt("google_account_count", 0) ?: 0) <= 0) return
-        googleSyncInProgress = true
-        Thread {
-            val result = runCatching {
-                bridge.request(
-                    obj(
-                        "type" to "sync_google_calendars"
-                    )
-                )
-            }
-            runOnUiThread {
-                googleSyncInProgress = false
-                result.onSuccess { response ->
-                    googleCalendarStatus = response.optString("message")
-                    loadSnapshot()
-                    rescheduleNotifications()
-                    render()
-                    if (syncSession != null) syncOnce()
-                }.onFailure { error ->
-                    if (silent) {
-                        googleCalendarStatus = error.message
-                    } else {
-                        showError("Google Calendar", error.message)
-                    }
-                }
-            }
-        }.start()
-    }
-
-    private fun configureGoogleSyncPolling() {
-        val accountCount = snapshot.optJSONObject("settings")?.optInt("google_account_count", 0) ?: 0
-        if (accountCount <= 0) {
-            googleSyncPollingActive = false
-            googleSyncHandler.removeCallbacks(googleSyncRunnable)
-            return
-        }
-        if (googleSyncPollingActive) return
-        googleSyncPollingActive = true
-        googleSyncHandler.postDelayed(googleSyncRunnable, GOOGLE_SYNC_INTERVAL_MS)
-    }
-
-    private fun savePendingGoogleAuth(request: JSONObject, parentId: String?) {
-        getSharedPreferences("knotq", MODE_PRIVATE).edit()
-            .putString("knotq.googleAuthRequest", request.toString())
-            .putString("knotq.googleAuthParentId", parentId)
-            .apply()
-    }
-
-    private fun loadPendingGoogleAuthRequest(): JSONObject? {
-        val raw = getSharedPreferences("knotq", MODE_PRIVATE).getString("knotq.googleAuthRequest", null)
-            ?: return null
-        return runCatching { JSONObject(raw) }.getOrNull()
-    }
-
-    private fun loadPendingGoogleParentId(): String? =
-        getSharedPreferences("knotq", MODE_PRIVATE).getString("knotq.googleAuthParentId", null)
-
-    private fun clearPendingGoogleAuth() {
-        pendingGoogleAuthRequest = null
-        pendingGoogleParentId = null
-        getSharedPreferences("knotq", MODE_PRIVATE).edit()
-            .remove("knotq.googleAuthRequest")
-            .remove("knotq.googleAuthParentId")
-            .apply()
-    }
-
-    private fun renderSettings(): LinearLayout {
+    internal fun renderSettings(): LinearLayout {
         if (settingsShowingArchive) return renderArchivePage()
         val root = page()
         root.addView(sectionHeader("Settings"))
@@ -4861,7 +3498,7 @@ class MainActivity : Activity() {
         return root
     }
 
-    private fun syncSettingsCard(): View {
+    internal fun syncSettingsCard(): View {
         val session = syncSession
         // Cancelled (won't renew) but still entitling: amber "Cancelled" badge, like
         // the not-yet-subscribed state, with a re-enable action below.
@@ -4926,15 +3563,26 @@ class MainActivity : Activity() {
                 if (session == null) {
                     addView(syncCardButton("Sign in", primary = true) { showSyncAccountDialog() }, LinearLayout.LayoutParams(0, dp(32), 1f))
                 } else {
-                    if (cancelled) {
-                        addView(syncCardButton("Re-enable", primary = true) { reEnableSyncSubscription() },
-                            LinearLayout.LayoutParams(0, dp(32), 1f).apply { setMargins(0, 0, dp(8), 0) })
-                    } else {
-                        addView(syncCardButton(if (syncInProgress) "Checking..." else if (session.supportsSync) "Check status" else "I've subscribed", primary = !session.supportsSync) {
-                            if (session.supportsSync) syncOnce() else restoreGooglePlayPurchases()
-                        }, LinearLayout.LayoutParams(0, dp(32), 1f).apply { setMargins(0, 0, dp(8), 0) })
+                    // iOS layout: a primary action on the left (Resync when enabled,
+                    // Re-enable/Subscribe otherwise) and account housekeeping behind a
+                    // single "Manage" menu so destructive options don't dominate.
+                    val leftLabel: String
+                    val leftPrimary: Boolean
+                    val leftAction: () -> Unit
+                    when {
+                        cancelled -> {
+                            leftLabel = "Re-enable"; leftPrimary = true; leftAction = { reEnableSyncSubscription() }
+                        }
+                        !session.supportsSync -> {
+                            leftLabel = "I've subscribed"; leftPrimary = true; leftAction = { restoreGooglePlayPurchases() }
+                        }
+                        else -> {
+                            leftLabel = if (syncInProgress) "Resyncing..." else "Resync"; leftPrimary = false; leftAction = { syncOnce() }
+                        }
                     }
-                    addView(syncCardButton("Sign out") { signOutSync() }, LinearLayout.LayoutParams(-2, dp(32)))
+                    addView(syncCardButton(leftLabel, primary = leftPrimary, listener = leftAction),
+                        LinearLayout.LayoutParams(0, dp(32), 1f).apply { setMargins(0, 0, dp(8), 0) })
+                    addView(syncCardButton("Manage") { showSyncAccountDialog() }, LinearLayout.LayoutParams(-2, dp(32)))
                 }
             }, LinearLayout.LayoutParams(-1, dp(32)).apply {
                 setMargins(0, dp(8), 0, 0)
@@ -4942,7 +3590,7 @@ class MainActivity : Activity() {
         }
     }
 
-    private fun showNotificationDefaultDialog(
+    internal fun showNotificationDefaultDialog(
         title: String,
         current: Int,
         options: List<NotificationLeadTimeOption>,
@@ -4957,7 +3605,7 @@ class MainActivity : Activity() {
             .show()
     }
 
-    private fun addNode(parent: LinearLayout, node: JSONObject, depth: Int, spacious: Boolean = false) {
+    internal fun addNode(parent: LinearLayout, node: JSONObject, depth: Int, spacious: Boolean = false) {
         val kind = node.optString("kind")
         if (kind == "folder") {
             parent.addView(folderRow(node, depth, spacious), if (spacious) LinearLayout.LayoutParams(-1, dp(30)) else rowParams())
@@ -4991,7 +3639,7 @@ class MainActivity : Activity() {
         parent.addView(row, LinearLayout.LayoutParams(-1, rowHeight))
     }
 
-    private fun folderRow(node: JSONObject, depth: Int, spacious: Boolean = false): View {
+    internal fun folderRow(node: JSONObject, depth: Int, spacious: Boolean = false): View {
         val slot = if (spacious) 18 else 16
         return LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
@@ -5015,7 +3663,7 @@ class MainActivity : Activity() {
         }
     }
 
-    private fun itemRow(schemeId: String, item: JSONObject, index: Int, count: Int): View {
+    internal fun itemRow(schemeId: String, item: JSONObject, index: Int, count: Int): View {
         return LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.TOP
@@ -5062,7 +3710,7 @@ class MainActivity : Activity() {
         }
     }
 
-    private fun editorFormatBar(schemeId: String? = null, editor: EditText? = null): View {
+    internal fun editorFormatBar(schemeId: String? = null, editor: EditText? = null): View {
         fun targetEditor(): EditText? = editor ?: activeEditor()
         fun targetSchemeId(): String? = schemeId ?: targetEditor()?.let { editorSchemeIds[it] }
         // iOS toolbar order: dismiss | markers (active highlighted) | indent |
@@ -5080,7 +3728,7 @@ class MainActivity : Activity() {
             }
         }
         formatBarMarkerRefresh = ::refreshActiveMarker
-        return HorizontalScrollView(this).apply {
+        val normalBar = HorizontalScrollView(this).apply {
             isHorizontalScrollBarEnabled = false
             setBackgroundColor(theme.bgToolbar)
             // Restore the scroll position from the previous render (before the
@@ -5139,7 +3787,7 @@ class MainActivity : Activity() {
                     if (target != null && targetId != null) openDateForEditorLine(targetId, target)
                 })
                 addView(formatDivider())
-                addView(formatButton("B") { targetEditor()?.let { toggleWrappedMarkdown(it, "*") } })
+                addView(formatButton("B") { targetEditor()?.let { toggleWrappedMarkdown(it, "**") } })
                 addView(formatButton("I") { targetEditor()?.let { toggleWrappedMarkdown(it, "_") } })
                 addView(formatButton("H") { targetEditor()?.let { toggleHeading(it) } })
                 addView(formatDivider())
@@ -5148,12 +3796,80 @@ class MainActivity : Activity() {
                     val targetId = targetSchemeId()
                     if (target != null && targetId != null) startImageAttach(targetId, target)
                 })
+                addView(formatIconButton(R.drawable.ic_knotq_table_24, "Insert table") {
+                    val target = targetEditor()
+                    val targetId = targetSchemeId()
+                    if (target != null && targetId != null) insertTableFromEditor(targetId, target)
+                })
             })
             refreshActiveMarker()
         }
+        // The bar hosts either the normal format controls or, while a table cell
+        // is being edited, the cell controls swapped in their place (matching
+        // iOS, where the cell toolbar replaces the keyboard accessory rather than
+        // floating a second bar).
+        return FrameLayout(this).apply {
+            setBackgroundColor(theme.bgToolbar)
+            addView(normalBar, FrameLayout.LayoutParams(-1, -1))
+            formatBarHost = this
+            formatBarNormalContent = normalBar
+            formatBarCellContent = null
+            activeCellEdit?.let { showCellEditFormatBar(it.hit) }
+        }
     }
 
-    private fun activeMarkerForEditor(editor: EditText): String {
+    /// Swaps the bottom format bar to the table-cell controls (dismiss / Rows /
+    /// Columns), hiding the normal format controls — the iOS cell-toolbar model.
+    internal fun showCellEditFormatBar(hit: TableCellHit) {
+        val host = formatBarHost ?: return
+        formatBarCellContent?.let { host.removeView(it) }
+        val bar = cellEditFormatBar(hit)
+        host.addView(bar, FrameLayout.LayoutParams(-1, -1))
+        formatBarCellContent = bar
+        formatBarNormalContent?.visibility = View.GONE
+    }
+
+    internal fun hideCellEditFormatBar() {
+        val host = formatBarHost ?: return
+        formatBarCellContent?.let { host.removeView(it) }
+        formatBarCellContent = null
+        formatBarNormalContent?.visibility = View.VISIBLE
+    }
+
+    internal fun cellEditFormatBar(hit: TableCellHit): View =
+        HorizontalScrollView(this).apply {
+            isHorizontalScrollBarEnabled = false
+            setBackgroundColor(theme.bgToolbar)
+            addView(LinearLayout(this@MainActivity).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+                setPadding(dp(7), dp(5), dp(7), dp(5))
+                addView(formatIconButton(R.drawable.ic_knotq_keyboard_down_24, "Done editing cell") {
+                    commitActiveCellEdit(rerender = true)
+                    dismissKeyboard()
+                })
+                addView(formatDivider())
+                addView(cellBarButton("Rows", enabled = !hit.isHeader) { showTableStructureDialog(rowActions = true) })
+                addView(cellBarButton("Columns", enabled = true) { showTableStructureDialog(rowActions = false) })
+            })
+        }
+
+    internal fun cellBarButton(label: String, enabled: Boolean, action: () -> Unit): TextView =
+        text(label, if (enabled) theme.textPrimary else theme.textMuted, ICON_FORMAT_SIZE_SP, true).apply {
+            gravity = Gravity.CENTER
+            isEnabled = enabled
+            alpha = if (enabled) 1f else 0.45f
+            background = rounded(if (enabled) theme.buttonBg else Color.TRANSPARENT, dp(5))
+            isFocusable = false
+            isFocusableInTouchMode = false
+            setOnClickListener { if (enabled) action() }
+            setPadding(dp(12), 0, dp(12), 0)
+            layoutParams = LinearLayout.LayoutParams(-2, dp(ICON_FORMAT_HEIGHT_DP)).apply {
+                setMargins(0, 0, dp(5), 0)
+            }
+        }
+
+    internal fun activeMarkerForEditor(editor: EditText): String {
         val value = editor.text?.toString().orEmpty()
         val cursor = editor.logicalSelectionStart().coerceIn(0, value.length)
         val start = value.lastIndexOf('\n', (cursor - 1).coerceAtLeast(0)).let { if (it < 0) 0 else it + 1 }
@@ -5163,19 +3879,37 @@ class MainActivity : Activity() {
         return parseEditorLine(value.substring(start, end)).marker
     }
 
-    private fun activeEditor(): EditText? = currentFocus as? EditText
+    internal fun activeEditor(): EditText? {
+        val focused = currentFocus as? EditText
+        if (focused != null && editorSchemeIds.containsKey(focused)) return focused
+        return lastActiveEditor?.takeIf { editorSchemeIds.containsKey(it) && it.isAttachedToWindow }
+    }
 
-    private fun formatButton(label: String, action: () -> Unit): TextView =
+    internal fun focusEditorForTyping(editor: EditText) {
+        if (!editor.isAttachedToWindow) return
+        editor.isFocusable = true
+        editor.isFocusableInTouchMode = true
+        editor.requestFocus()
+        lastActiveEditor = editor
+        keyboardActive = true
+        updateChromeVisibility()
+        val imm = getSystemService(INPUT_METHOD_SERVICE) as? InputMethodManager
+        imm?.showSoftInput(editor, InputMethodManager.SHOW_IMPLICIT)
+    }
+
+    internal fun formatButton(label: String, action: () -> Unit): TextView =
         text(label, theme.textPrimary, ICON_FORMAT_SIZE_SP, true).apply {
             gravity = Gravity.CENTER
             background = rounded(theme.buttonBg, dp(5))
+            isFocusable = false
+            isFocusableInTouchMode = false
             setOnClickListener { action() }
             layoutParams = LinearLayout.LayoutParams(dp(ICON_FORMAT_WIDTH_DP), dp(ICON_FORMAT_HEIGHT_DP)).apply {
                 setMargins(0, 0, dp(5), 0)
             }
         }
 
-    private fun formatIconButton(iconRes: Int, description: String, action: () -> Unit): View =
+    internal fun formatIconButton(iconRes: Int, description: String, action: () -> Unit): View =
         FrameLayout(this).apply {
             contentDescription = description
             background = rounded(theme.buttonBg, dp(5))
@@ -5183,21 +3917,22 @@ class MainActivity : Activity() {
                 iconImage(iconRes, theme.textPrimary, description),
                 FrameLayout.LayoutParams(dp(17), dp(17), Gravity.CENTER)
             )
-            isFocusable = true
+            isFocusable = false
+            isFocusableInTouchMode = false
             setOnClickListener { action() }
             layoutParams = LinearLayout.LayoutParams(dp(ICON_FORMAT_WIDTH_DP), dp(ICON_FORMAT_HEIGHT_DP)).apply {
                 setMargins(0, 0, dp(5), 0)
             }
         }
 
-    private fun formatDivider(): View = View(this).apply {
+    internal fun formatDivider(): View = View(this).apply {
         setBackgroundColor(theme.dividerSoft)
         layoutParams = LinearLayout.LayoutParams(dp(1), dp(18)).apply {
             setMargins(dp(1), 0, dp(6), 0)
         }
     }
 
-    private fun setCurrentLineMarker(editor: EditText, marker: String) {
+    internal fun setCurrentLineMarker(editor: EditText, marker: String) {
         editCurrentLine(editor) { raw ->
             val line = parseEditorLine(raw)
             val nextDone = marker == "checkbox" && line.marker == "checkbox" && !line.done
@@ -5205,7 +3940,7 @@ class MainActivity : Activity() {
         }
     }
 
-    private fun toggleEditorLineMarker(editor: EditText, lineIndex: Int) {
+    internal fun toggleEditorLineMarker(editor: EditText, lineIndex: Int) {
         // iOS: only checkbox markers respond to taps (toggling done); other
         // markers never get converted by a tap.
         editLine(editor, lineIndex) { raw ->
@@ -5218,7 +3953,7 @@ class MainActivity : Activity() {
         }
     }
 
-    private fun toggleWrappedMarkdown(editor: EditText, delimiter: String) {
+    internal fun toggleWrappedMarkdown(editor: EditText, delimiter: String) {
         val editable = editor.editableText ?: return
         val value = editable.toString()
         val selStart = editor.selectionStart.coerceIn(0, value.length)
@@ -5249,7 +3984,7 @@ class MainActivity : Activity() {
         editor.setSelection(cursor.coerceIn(0, editor.text.length))
     }
 
-    private fun toggleHeading(editor: EditText) {
+    internal fun toggleHeading(editor: EditText) {
         editCurrentLine(editor) { raw ->
             val line = parseEditorLine(raw)
             val body = line.text
@@ -5270,14 +4005,14 @@ class MainActivity : Activity() {
         }
     }
 
-    private fun shiftCurrentLineIndent(editor: EditText, delta: Int) {
+    internal fun shiftCurrentLineIndent(editor: EditText, delta: Int) {
         editCurrentLine(editor) { raw ->
             val line = parseEditorLine(raw)
             renderEditorLine(line.copy(indent = (line.indent + delta).coerceIn(0, 8)), 1)
         }
     }
 
-    private fun insertTaskLine(editor: EditText) {
+    internal fun insertTaskLine(editor: EditText) {
         val start = editor.logicalSelectionStart()
         val end = max(start, editor.selectionEnd)
         val prefix = if (start == 0 || editor.text.isEmpty()) "" else "\n"
@@ -5285,7 +4020,7 @@ class MainActivity : Activity() {
         ensureTerminalNewline(editor.text, editor.selectionStart)
     }
 
-    private fun editCurrentLine(editor: EditText, transform: (String) -> String) {
+    internal fun editCurrentLine(editor: EditText, transform: (String) -> String) {
         val value = editor.text.toString()
         val cursor = editor.logicalSelectionStart().coerceIn(0, value.length)
         val start = value.lastIndexOf('\n', (cursor - 1).coerceAtLeast(0)).let { if (it < 0) 0 else it + 1 }
@@ -5296,7 +4031,7 @@ class MainActivity : Activity() {
         editor.setSelection((start + replacement.length).coerceAtMost(editor.text.length))
     }
 
-    private fun editLine(editor: EditText, lineIndex: Int, transform: (String) -> String) {
+    internal fun editLine(editor: EditText, lineIndex: Int, transform: (String) -> String) {
         val value = editor.text.toString()
         var start = 0
         var current = 0
@@ -5312,16 +4047,119 @@ class MainActivity : Activity() {
         editor.setSelection((start + replacement.length).coerceAtMost(editor.text.length))
     }
 
-    private fun openDateForEditorLine(schemeId: String, editor: EditText) {
+    internal fun openDateForEditorLine(schemeId: String, editor: EditText) {
         commitSchemeDocument(schemeId, editor, rerender = false)
         val line = currentLineIndex(editor)
         val item = findScheme(schemeId)?.optJSONArray("items")?.optJSONObject(line) ?: return
         showDateKindDialog(schemeId, item.optString("id"))
     }
 
+    internal fun insertTableFromEditor(schemeId: String, editor: EditText) {
+        val line = currentLineIndex(editor)
+        commitSchemeDocument(schemeId, editor, rerender = false)
+        val scheme = findScheme(schemeId) ?: return
+        val items = scheme.optJSONArray("items") ?: JSONArray()
+        val tableItemId = UUID.randomUUID().toString()
+        val table = freshTableJson()
+        val content = JSONArray().put(obj("kind" to "table", "table" to table))
+        val array = JSONArray()
+        var inserted = false
+        var insertedIndex = items.length()
+        for (index in 0 until items.length()) {
+            val item = items.optJSONObject(index) ?: continue
+            if (index == line) {
+                if (canReplaceLineWithBlock(item)) {
+                    array.put(blockItemEdit(tableItemId, item.optInt("indent", 0), JSONArray(), content))
+                    insertedIndex = index
+                } else {
+                    array.put(itemEditObject(item))
+                    array.put(blockItemEdit(tableItemId, item.optInt("indent", 0), JSONArray(), content))
+                    insertedIndex = index + 1
+                }
+                inserted = true
+                continue
+            }
+            array.put(itemEditObject(item))
+        }
+        if (!inserted) {
+            array.put(blockItemEdit(tableItemId, 0, JSONArray(), content))
+        }
+        try {
+            bridge.request(obj("type" to "replace_scheme_items", "scheme_id" to schemeId, "items" to array))
+            loadSnapshot()
+            renderAfterEditorMutation()
+            focusInsertedTableCell(schemeId, tableItemId, insertedIndex)
+            requestSyncSoon()
+        } catch (error: RuntimeException) {
+            toast(error.message)
+        }
+    }
+
+    internal fun freshTableJson(rows: Int = 2, columns: Int = 2): JSONObject {
+        val columnCount = max(1, columns)
+        val rowCount = max(1, rows)
+        val columnDefs = JSONArray()
+        repeat(columnCount) { index ->
+            columnDefs.put(obj("id" to UUID.randomUUID().toString(), "name" to "Column ${index + 1}"))
+        }
+        val rowDefs = JSONArray()
+        repeat(rowCount) {
+            val cells = JSONArray()
+            repeat(columnCount) { cells.put(freshTableCellJson()) }
+            rowDefs.put(obj("id" to UUID.randomUUID().toString(), "cells" to cells))
+        }
+        return obj("columns" to columnDefs, "rows" to rowDefs)
+    }
+
+    internal fun freshTableCellJson(): JSONObject =
+        obj(
+            "text" to "",
+            "lines" to JSONArray().put(obj(
+                "id" to UUID.randomUUID().toString(),
+                "text" to "",
+                "marker" to "blank",
+                "done" to false,
+                "start" to null,
+                "end" to null,
+                "media" to JSONArray()
+            ))
+        )
+
+    internal fun focusInsertedTableCell(schemeId: String, itemId: String, lineIndexHint: Int) {
+        val editor = editorForScheme(schemeId) ?: return
+        val items = findScheme(schemeId)?.optJSONArray("items")
+        var lineIndex = lineIndexHint
+        if (items != null) {
+            for (index in 0 until items.length()) {
+                if (items.optJSONObject(index)?.optString("id") == itemId) {
+                    lineIndex = index
+                    break
+                }
+            }
+        }
+        editor.post {
+            editor.invalidate()
+            editor.post {
+                val rect = editor.cellRectFor(lineIndex, 0, 0, 0) ?: return@post
+                beginInlineCellEdit(
+                    schemeId,
+                    editor,
+                    TableCellHit(
+                        lineIndex = lineIndex,
+                        tableIndex = 0,
+                        row = 0,
+                        column = 0,
+                        rect = rect,
+                        text = ""
+                    )
+                )
+            }
+        }
+    }
+
     /// Commits the document so the caret's line has a real item, then opens the
     /// system photo chooser; the pick lands in `onActivityResult`.
-    private fun startImageAttach(schemeId: String, editor: EditText) {
+    internal fun startImageAttach(schemeId: String, editor: EditText) {
         commitSchemeDocument(schemeId, editor, rerender = false)
         val line = currentLineIndex(editor)
         findScheme(schemeId)?.optJSONArray("items")?.optJSONObject(line) ?: return
@@ -5350,7 +4188,7 @@ class MainActivity : Activity() {
         completeImageAttach(uri)
     }
 
-    private fun completeImageAttach(uri: Uri) {
+    internal fun completeImageAttach(uri: Uri) {
         val (schemeId, lineIndex) = pendingImageAttach ?: return
         pendingImageAttach = null
         try {
@@ -5398,35 +4236,37 @@ class MainActivity : Activity() {
 
             val scheme = findScheme(schemeId) ?: return
             val items = scheme.optJSONArray("items") ?: return
+            val mediaJson = obj(
+                "kind" to "image",
+                "path" to file.absolutePath,
+                "format" to format,
+                "width" to bounds.outWidth,
+                "height" to bounds.outHeight
+            )
+            val media = JSONArray().put(mediaJson)
+            val content = JSONArray().put(obj("kind" to "image", "media" to mediaJson))
             val array = JSONArray()
+            var inserted = false
             for (index in 0 until items.length()) {
                 val item = items.optJSONObject(index) ?: continue
-                val media = item.optJSONArray("media") ?: JSONArray()
                 if (index == lineIndex) {
-                    media.put(obj(
-                        "kind" to "image",
-                        "path" to file.absolutePath,
-                        "format" to format,
-                        "width" to bounds.outWidth,
-                        "height" to bounds.outHeight
-                    ))
+                    if (canReplaceLineWithBlock(item)) {
+                        array.put(blockItemEdit(item.optString("id"), item.optInt("indent"), media, content))
+                    } else {
+                        array.put(itemEditObject(item))
+                        array.put(blockItemEdit(null, item.optInt("indent"), media, content))
+                    }
+                    inserted = true
+                    continue
                 }
-                array.put(obj(
-                    "id" to item.optString("id"),
-                    "text" to item.optString("text"),
-                    "marker" to item.optString("marker", "blank"),
-                    "indent" to item.optInt("indent"),
-                    "done" to item.optBoolean("done"),
-                    "start" to item.optionalString("start"),
-                    "end" to item.optionalString("end"),
-                    "notification_offset_secs" to item.takeUnless { it.isNull("notification_offset_secs") }?.optInt("notification_offset_secs"),
-                    "repeat_rule" to item.optionalString("repeat_rule"),
-                    "media" to media
-                ))
+                array.put(itemEditObject(item))
+            }
+            if (!inserted) {
+                array.put(blockItemEdit(null, 0, media, content))
             }
             bridge.request(obj("type" to "replace_scheme_items", "scheme_id" to schemeId, "items" to array))
             loadSnapshot()
-            render()
+            renderAfterEditorMutation()
             requestSyncSoon()
         } catch (error: RuntimeException) {
             toast(error.message)
@@ -5435,50 +4275,151 @@ class MainActivity : Activity() {
         }
     }
 
-    private fun currentLineIndex(editor: EditText): Int {
+    internal fun canReplaceLineWithBlock(item: JSONObject): Boolean =
+        item.optString("text").isEmpty() &&
+            item.optString("marker", "blank") == "blank" &&
+            item.optInt("indent", 0) >= 0 &&
+            !item.optBoolean("done", false) &&
+            item.optionalString("start") == null &&
+            item.optionalString("end") == null &&
+            item.optionalString("repeat_rule") == null &&
+            item.isNull("notification_offset_secs") &&
+            !item.hasBlockContent()
+
+    internal fun blockItemEdit(itemId: String?, indent: Int, media: JSONArray, content: JSONArray): JSONObject =
+        obj(
+            "id" to itemId,
+            "text" to "",
+            "marker" to "blank",
+            "indent" to indent.coerceIn(0, 8),
+            "done" to false,
+            "start" to null,
+            "end" to null,
+            "notification_offset_secs" to null,
+            "repeat_rule" to null,
+            "media" to media,
+            "content" to content
+        )
+
+    internal fun itemEditObject(item: JSONObject, line: SchemeEditorLine? = null): JSONObject {
+        // The object char is the block marker: a line keeps its image/table only
+        // while it is still a block line. Deleting the char (or typing alongside
+        // it) demotes the item to plain text, matching desktop/iOS.
+        val isBlockLine = if (line != null) line.hasBlock else item.optString("text").isEmpty() && item.hasBlockContent()
+        val textValue = if (isBlockLine) "" else (line?.text ?: item.optString("text"))
+        val wasBlock = item.hasBlockContent()
+        val blockContent: JSONArray? = when {
+            isBlockLine -> item.blockContentForEdit()
+            // Demoting a block line to text: the core's `replace_scheme_items`
+            // preserves an existing block whenever the draft's content AND media
+            // are both empty (so a normal save that omits block content doesn't
+            // clobber it). To actually drop the block when its object char is
+            // gone, send an explicit text inline so the incoming content wins.
+            wasBlock -> JSONArray().put(obj("kind" to "text", "text" to textValue))
+            else -> null
+        }
+        val media = when {
+            blockContent != null -> blockContent.mediaFromInlineContent()
+            line != null -> JSONArray()
+            else -> item.optJSONArray("media") ?: JSONArray()
+        }
+        return obj(
+            "id" to (line?.id ?: item.optString("id")),
+            "text" to textValue,
+            "marker" to (line?.marker ?: item.optString("marker", "blank")),
+            "indent" to (line?.indent ?: item.optInt("indent")),
+            "done" to (line?.done ?: item.optBoolean("done")),
+            "start" to item.optionalString("start"),
+            "end" to item.optionalString("end"),
+            "notification_offset_secs" to item.takeUnless { it.isNull("notification_offset_secs") }?.optInt("notification_offset_secs"),
+            "repeat_rule" to item.optionalString("repeat_rule"),
+            "media" to media,
+            "content" to blockContent
+        )
+    }
+
+    internal fun JSONObject.hasBlockContent(): Boolean =
+        (optJSONArray("media")?.length() ?: 0) > 0 ||
+            (optJSONArray("tables")?.length() ?: 0) > 0 ||
+            optJSONArray("content")?.containsBlockInline() == true
+
+    internal fun JSONObject.blockContentForEdit(): JSONArray? {
+        val content = optJSONArray("content")
+        if (content != null && content.containsBlockInline()) return content
+        val out = JSONArray()
+        optJSONArray("media")?.forEachObject { out.put(obj("kind" to "image", "media" to it)) }
+        optJSONArray("tables")?.forEachObject { out.put(obj("kind" to "table", "table" to it)) }
+        return if (out.length() > 0) out else null
+    }
+
+    internal fun JSONArray.containsBlockInline(): Boolean {
+        for (index in 0 until length()) {
+            val kind = optJSONObject(index)?.optString("kind")
+            if (kind == "image" || kind == "table") return true
+        }
+        return false
+    }
+
+    internal fun JSONArray.mediaFromInlineContent(): JSONArray {
+        val out = JSONArray()
+        for (index in 0 until length()) {
+            val inline = optJSONObject(index) ?: continue
+            if (inline.optString("kind") == "image") {
+                inline.optJSONObject("media")?.let { out.put(it) }
+            }
+        }
+        return out
+    }
+
+    internal fun currentLineIndex(editor: EditText): Int {
         val value = editor.text.toString()
         val cursor = editor.logicalSelectionStart().coerceIn(0, value.length)
         return value.substring(0, cursor).count { it == '\n' }
     }
 
-    private fun EditText.logicalSelectionStart(): Int {
+    internal fun EditText.logicalSelectionStart(): Int {
         val value = text?.toString().orEmpty()
         val raw = max(0, selectionStart).coerceAtMost(value.length)
         return if (raw == value.length && value.endsWith("\n")) max(0, raw - 1) else raw
     }
 
-    private fun ensureTerminalNewline(editable: Editable, preferredSelection: Int? = null) {
+    internal fun ensureTerminalNewline(editable: Editable, preferredSelection: Int? = null) {
         if (editable.isNotEmpty() && editable.last() == '\n') return
         val selection = (preferredSelection ?: editable.length).coerceIn(0, editable.length)
         editable.append("\n")
         activeEditor()?.setSelection(selection.coerceAtMost(editable.length))
     }
 
-    private fun placeCursorAtDocumentEnd(editor: EditText) {
+    internal fun placeCursorAtDocumentEnd(editor: EditText) {
         val value = editor.text?.toString().orEmpty()
         val location = if (value.endsWith("\n")) max(0, value.length - 1) else value.length
         editor.setSelection(location.coerceIn(0, editor.text?.length ?: 0))
     }
 
-    private fun commitSchemeDocument(schemeId: String, editor: EditText, rerender: Boolean) {
+    internal fun commitSchemeDocument(schemeId: String, editor: EditText, rerender: Boolean) {
         ensureTerminalNewline(editor.text, editor.selectionStart)
         val oldLines = (editor.tag as? List<*>)?.filterIsInstance<SchemeEditorLine>().orEmpty()
         val nextLines = reconcileEditorLines(oldLines, parseEditorDocument(editor.text.toString(), preserveBlankDocument = oldLines.isNotEmpty()))
         val array = JSONArray()
         nextLines.forEach { line ->
             val existing = line.id?.let { findItem(schemeId, it) }
-            array.put(obj(
-                "id" to line.id,
-                "text" to line.text,
-                "marker" to line.marker,
-                "indent" to line.indent,
-                "done" to line.done,
-                "start" to existing?.optionalString("start"),
-                "end" to existing?.optionalString("end"),
-                "notification_offset_secs" to existing?.takeUnless { it.isNull("notification_offset_secs") }?.optInt("notification_offset_secs"),
-                "repeat_rule" to existing?.optionalString("repeat_rule"),
-                "media" to (existing?.optJSONArray("media") ?: JSONArray())
-            ))
+            if (existing != null) {
+                array.put(itemEditObject(existing, line))
+            } else {
+                array.put(obj(
+                    "id" to line.id,
+                    "text" to line.text,
+                    "marker" to line.marker,
+                    "indent" to line.indent,
+                    "done" to line.done,
+                    "start" to null,
+                    "end" to null,
+                    "notification_offset_secs" to null,
+                    "repeat_rule" to null,
+                    "media" to JSONArray(),
+                    "content" to JSONArray()
+                ))
+            }
         }
         try {
             bridge.request(obj("type" to "replace_scheme_items", "scheme_id" to schemeId, "items" to array))
@@ -5499,11 +4440,11 @@ class MainActivity : Activity() {
     // ---- Inline table cell editing -------------------------------------------------
 
     /// Resolves the item that owns a logical editor line (each line is one item).
-    private fun itemIdForLine(schemeId: String, lineIndex: Int): String? =
+    internal fun itemIdForLine(schemeId: String, lineIndex: Int): String? =
         findScheme(schemeId)?.optJSONArray("items")?.optJSONObject(lineIndex)?.optString("id")?.takeIf { it.isNotEmpty() }
 
     /// Returns the live cell texts (one entry per line) for diffing on commit.
-    private fun cellLines(schemeId: String, itemId: String, tableIndex: Int, row: Int, column: Int): List<String> {
+    internal fun cellLines(schemeId: String, itemId: String, tableIndex: Int, row: Int, column: Int): List<String> {
         val item = findItem(schemeId, itemId) ?: return emptyList()
         // Prefer the ordered `content` tables; fall back to the flat `tables`.
         val table = tableFromItem(item, tableIndex) ?: return emptyList()
@@ -5515,7 +4456,7 @@ class MainActivity : Activity() {
         return lines
     }
 
-    private fun tableFromItem(item: JSONObject, tableIndex: Int): JSONObject? {
+    internal fun tableFromItem(item: JSONObject, tableIndex: Int): JSONObject? {
         val content = item.optJSONArray("content")
         if (content != null && content.length() > 0) {
             var seen = 0
@@ -5532,14 +4473,14 @@ class MainActivity : Activity() {
 
     /// Floats a real text field over the tapped cell so it is edited in place.
     /// Commits the per-line diff through the core's cell-line APIs.
-    private fun beginInlineCellEdit(schemeId: String, editor: SchemeEditText, hit: TableCellHit) {
+    internal fun beginInlineCellEdit(schemeId: String, editor: SchemeEditText, hit: TableCellHit) {
         // Commit any field already open before opening a new one. Commit in place
         // (no full re-render) so this same editor survives to host the new field.
         commitActiveCellEdit(rerender = false)
         val host = editorHosts[editor] ?: return
         val itemId = itemIdForLine(schemeId, hit.lineIndex) ?: return
-        val existingLines = cellLines(schemeId, itemId, hit.tableIndex, hit.row, hit.column)
-        val rect = hit.rect
+        val existingLines = if (hit.isHeader) listOf(hit.text) else cellLines(schemeId, itemId, hit.tableIndex, hit.row, hit.column)
+        val rect = tableOverlayRect(host, editor, hit.rect)
         val field = EditText(this).apply {
             setText(existingLines.joinToString("\n").ifEmpty { hit.text })
             setTextColor(theme.textPrimary)
@@ -5548,12 +4489,19 @@ class MainActivity : Activity() {
             setPadding(dp(6), dp(4), dp(6), dp(4))
             setTextSize(13f)
             gravity = Gravity.TOP or Gravity.START
+            elevation = dp(8).toFloat()
             // Multi-line: Enter adds a cell line; Tab moves to the next cell.
-            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_MULTI_LINE or InputType.TYPE_TEXT_FLAG_CAP_SENTENCES
-            imeOptions = EditorInfo.IME_ACTION_NEXT
+            inputType = if (hit.isHeader) {
+                InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_CAP_SENTENCES
+            } else {
+                InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_MULTI_LINE or InputType.TYPE_TEXT_FLAG_CAP_SENTENCES
+            }
+            setSingleLine(hit.isHeader)
+            imeOptions = if (hit.isHeader) EditorInfo.IME_ACTION_DONE else EditorInfo.IME_ACTION_NEXT
             setHorizontallyScrolling(false)
         }
-        val state = ActiveCellEdit(field, schemeId, itemId, hit, existingLines)
+        val state = ActiveCellEdit(editor, field, schemeId, itemId, hit, existingLines)
+        editor.activeTableCellEdit = hit
         // Tab moves to the next/previous cell; Shift+Tab goes back.
         field.setOnKeyListener { _, keyCode, event ->
             if (keyCode == KeyEvent.KEYCODE_TAB && event.action == KeyEvent.ACTION_DOWN) {
@@ -5565,15 +4513,21 @@ class MainActivity : Activity() {
         }
         // The IME "Next" action moves down to the cell below (or commits if last).
         field.setOnEditorActionListener { _, actionId, _ ->
-            if (actionId == EditorInfo.IME_ACTION_NEXT) {
-                moveInlineCellEditVertical(editor)
-                true
-            } else {
-                false
+            when (actionId) {
+                EditorInfo.IME_ACTION_NEXT -> {
+                    moveInlineCellEditVertical(editor)
+                    true
+                }
+                EditorInfo.IME_ACTION_DONE -> {
+                    commitActiveCellEdit(rerender = true)
+                    dismissKeyboard()
+                    true
+                }
+                else -> false
             }
         }
         field.setOnFocusChangeListener { _, hasFocus ->
-            if (!hasFocus && activeCellEdit?.field === field) dismissInlineCellEditor()
+            if (!hasFocus && activeCellEdit?.field === field && !tableStructureDialogOpen) dismissInlineCellEditor()
         }
         // The cell rect already encodes the editor's own scroll (it is drawn
         // with `- scrollY`); the editor is full-height inside the page scroller,
@@ -5587,6 +4541,9 @@ class MainActivity : Activity() {
         }
         host.addView(field, lp)
         activeCellEdit = state
+        // Swap the bottom format bar to the cell controls (iOS replaces the
+        // keyboard accessory rather than floating a second toolbar).
+        showCellEditFormatBar(hit)
         field.requestFocus()
         field.setSelection(field.text.length)
         (getSystemService(INPUT_METHOD_SERVICE) as? InputMethodManager)
@@ -5594,9 +4551,97 @@ class MainActivity : Activity() {
         keyboardActive = true
     }
 
+    internal fun tableOverlayRect(host: FrameLayout, editor: SchemeEditText, rect: RectF): RectF {
+        val out = RectF(rect)
+        out.offset(editor.left.toFloat(), editor.top.toFloat())
+        if (host.width > 0) {
+            val overflow = out.right - host.width
+            if (overflow > 0) out.offset(-overflow, 0f)
+            if (out.left < 0f) out.offset(-out.left, 0f)
+        }
+        if (host.height > 0 && out.top < 0f) out.offset(0f, -out.top)
+        return out
+    }
+
+    internal fun showTableStructureDialog(rowActions: Boolean) {
+        val state = activeCellEdit ?: return
+        if (rowActions && state.hit.isHeader) return
+        tableStructureDialogOpen = true
+        val entries = if (rowActions) {
+            listOf(
+                "Insert Row Above" to TableStructureAction.INSERT_ROW_ABOVE,
+                "Insert Row Below" to TableStructureAction.INSERT_ROW_BELOW,
+                "Delete Row" to TableStructureAction.DELETE_ROW
+            )
+        } else {
+            listOf(
+                "Insert Column Left" to TableStructureAction.INSERT_COLUMN_LEFT,
+                "Insert Column Right" to TableStructureAction.INSERT_COLUMN_RIGHT,
+                "Delete Column" to TableStructureAction.DELETE_COLUMN
+            )
+        }
+        AlertDialog.Builder(this)
+            .setTitle(if (rowActions) "Rows" else "Columns")
+            .setItems(entries.map { it.first }.toTypedArray()) { _, which ->
+                performTableStructureAction(entries[which].second)
+            }
+            .setOnDismissListener {
+                tableStructureDialogOpen = false
+                activeCellEdit?.field?.requestFocus()
+            }
+            .show()
+    }
+
+    internal fun performTableStructureAction(action: TableStructureAction) {
+        val state = activeCellEdit ?: return
+        val editor = editorForScheme(state.schemeId)
+        val target = tableStructureFocusTarget(state.hit, action)
+        commitActiveCellEdit(rerender = false)
+        try {
+            when (action) {
+                TableStructureAction.INSERT_ROW_ABOVE ->
+                    bridge.insertTableRow(state.schemeId, state.itemId, state.hit.row.coerceAtLeast(0))
+                TableStructureAction.INSERT_ROW_BELOW ->
+                    bridge.insertTableRow(state.schemeId, state.itemId, state.hit.row + 1)
+                TableStructureAction.DELETE_ROW ->
+                    bridge.deleteTableRow(state.schemeId, state.itemId, state.hit.row)
+                TableStructureAction.INSERT_COLUMN_LEFT ->
+                    bridge.insertTableColumn(state.schemeId, state.itemId, state.hit.column)
+                TableStructureAction.INSERT_COLUMN_RIGHT ->
+                    bridge.insertTableColumn(state.schemeId, state.itemId, state.hit.column + 1)
+                TableStructureAction.DELETE_COLUMN ->
+                    bridge.deleteTableColumn(state.schemeId, state.itemId, state.hit.column)
+            }
+            loadSnapshot()
+            requestSyncSoon()
+            val refreshed = findScheme(state.schemeId)
+            if (editor != null && refreshed != null) {
+                editor.lineAdornments = editorLineAdornments(refreshed, timeFormat24())
+                editor.invalidate()
+                openCellAfterLayout(state.schemeId, editor, state.hit, target.first, target.second)
+            } else {
+                renderAfterEditorMutation()
+            }
+        } catch (error: RuntimeException) {
+            toast(error.message)
+            loadSnapshot()
+            renderAfterEditorMutation()
+        }
+    }
+
+    internal fun tableStructureFocusTarget(hit: TableCellHit, action: TableStructureAction): Pair<Int, Int> =
+        when (action) {
+            TableStructureAction.INSERT_ROW_ABOVE -> hit.row to hit.column
+            TableStructureAction.INSERT_ROW_BELOW -> (hit.row + 1) to hit.column
+            TableStructureAction.DELETE_ROW -> hit.row to hit.column
+            TableStructureAction.INSERT_COLUMN_LEFT -> hit.row to hit.column
+            TableStructureAction.INSERT_COLUMN_RIGHT -> hit.row to (hit.column + 1)
+            TableStructureAction.DELETE_COLUMN -> hit.row to hit.column
+        }
+
     /// Commits the current cell, then opens the next/previous cell to its
     /// left/right, wrapping across rows.
-    private fun moveInlineCellEdit(editor: SchemeEditText, forward: Boolean) {
+    internal fun moveInlineCellEdit(editor: SchemeEditText, forward: Boolean) {
         val state = activeCellEdit ?: return
         val hit = state.hit
         val schemeId = state.schemeId
@@ -5609,12 +4654,12 @@ class MainActivity : Activity() {
         var col = hit.column + if (forward) 1 else -1
         if (col >= columns) { col = 0; row++ }
         if (col < 0) { col = columns - 1; row-- }
-        if (row < 0 || row >= rows) return
+        if (row < -1 || row >= rows) return
         openCellAfterLayout(schemeId, editor, hit, row, col)
     }
 
     /// Moves to the cell directly below (used for the IME "Next" action).
-    private fun moveInlineCellEditVertical(editor: SchemeEditText) {
+    internal fun moveInlineCellEditVertical(editor: SchemeEditText) {
         val state = activeCellEdit ?: return
         val hit = state.hit
         val schemeId = state.schemeId
@@ -5627,7 +4672,7 @@ class MainActivity : Activity() {
         openCellAfterLayout(schemeId, editor, hit, row, hit.column)
     }
 
-    private fun tableDimensions(table: JSONObject): Pair<Int, Int> {
+    internal fun tableDimensions(table: JSONObject): Pair<Int, Int> {
         val rows = table.optJSONArray("rows")?.length() ?: 0
         val columns = max(
             table.optJSONArray("columns")?.length() ?: 0,
@@ -5638,9 +4683,9 @@ class MainActivity : Activity() {
 
     /// Re-opens the inline editor on a target cell once the editor has redrawn
     /// (its cell rects are recomputed on the next draw pass).
-    private fun openCellAfterLayout(schemeId: String, editor: SchemeEditText, hit: TableCellHit, row: Int, col: Int) {
+    internal fun openCellAfterLayout(schemeId: String, editor: SchemeEditText, hit: TableCellHit, row: Int, col: Int) {
         editor.post {
-            editor.cellRectFor(hit.tableIndex, row, col)?.let { nextRect ->
+            editor.cellRectFor(hit.lineIndex, hit.tableIndex, row, col)?.let { nextRect ->
                 beginInlineCellEdit(
                     schemeId,
                     editor,
@@ -5653,15 +4698,37 @@ class MainActivity : Activity() {
     /// Commits the active inline cell editor (if any), applying the per-line diff
     /// between its starting lines and the edited text. With `rerender` the whole
     /// UI is rebuilt; otherwise only the owning editor's adornments are refreshed.
-    private fun commitActiveCellEdit(rerender: Boolean) {
+    internal fun commitActiveCellEdit(rerender: Boolean) {
         val state = activeCellEdit ?: return
         activeCellEdit = null
+        state.editor.activeTableCellEdit = null
         (state.field.parent as? ViewGroup)?.removeView(state.field)
+        hideCellEditFormatBar()
         val draft = state.field.text.toString()
+        if (state.hit.isHeader) {
+            if (draft == state.hit.text) {
+                if (rerender) { loadSnapshot(); renderAfterEditorMutation() }
+                return
+            }
+            try {
+                bridge.setTableColumnName(state.schemeId, state.itemId, state.hit.column, draft)
+                loadSnapshot()
+                requestSyncSoon()
+                if (rerender) {
+                    renderAfterEditorMutation()
+                } else {
+                    val editor = editorForScheme(state.schemeId)
+                    findScheme(state.schemeId)?.let { scheme -> editor?.lineAdornments = editorLineAdornments(scheme, timeFormat24()) }
+                }
+            } catch (error: RuntimeException) {
+                toast(error.message)
+            }
+            return
+        }
         val oldLines = state.oldLines
         val newLines = if (draft.isEmpty()) emptyList() else draft.split("\n")
         if (newLines == oldLines) {
-            if (rerender) { loadSnapshot(); render() }
+            if (rerender) { loadSnapshot(); renderAfterEditorMutation() }
             return
         }
         val schemeId = state.schemeId
@@ -5692,7 +4759,7 @@ class MainActivity : Activity() {
             loadSnapshot()
             requestSyncSoon()
             if (rerender) {
-                render()
+                renderAfterEditorMutation()
             } else {
                 // Refresh just the owning editor's table/image adornments in place.
                 val editor = editorForScheme(schemeId)
@@ -5703,31 +4770,14 @@ class MainActivity : Activity() {
         }
     }
 
-    private fun editorForScheme(schemeId: String): SchemeEditText? =
+    internal fun editorForScheme(schemeId: String): SchemeEditText? =
         editorSchemeIds.entries.firstOrNull { it.value == schemeId }?.key as? SchemeEditText
 
-    /// Handles a tap on an inline +/- table control.
-    private fun handleTableControl(schemeId: String, hit: TableControlHit) {
-        commitActiveCellEdit(rerender = false)
-        val itemId = itemIdForLine(schemeId, hit.lineIndex) ?: return
-        try {
-            when (hit.kind) {
-                TableControlKind.ADD_ROW -> bridge.insertTableRow(schemeId, itemId, hit.rowCount)
-                TableControlKind.ADD_COLUMN -> bridge.insertTableColumn(schemeId, itemId, hit.columnCount)
-            }
-            loadSnapshot()
-            render()
-            requestSyncSoon()
-        } catch (error: RuntimeException) {
-            toast(error.message)
-        }
-    }
-
-    private fun dismissInlineCellEditor() {
+    internal fun dismissInlineCellEditor() {
         commitActiveCellEdit(rerender = true)
     }
 
-    private fun occurrenceRow(occurrence: JSONObject, striped: Boolean): View {
+    internal fun occurrenceRow(occurrence: JSONObject, striped: Boolean): View {
         val accent = occurrenceSchemeColor(occurrence)
         return LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
@@ -5773,13 +4823,13 @@ class MainActivity : Activity() {
 
     /// iOS `occurrenceSchemeColor`: the Daily queue gets its own steel-blue
     /// accent instead of the scheme palette.
-    private fun occurrenceSchemeColor(occurrence: JSONObject): Int =
+    internal fun occurrenceSchemeColor(occurrence: JSONObject): Int =
         if (occurrence.optString("scheme_name") == "Daily") dailyAccent()
         else schemeColor(occurrence.optInt("color_index"))
 
     /// iOS `occurrenceStatusTimeColor`: urgency-tinted time labels (red when
     /// overdue, blue when current/today, lavender for tomorrow).
-    private fun occurrenceStatusTimeColor(occurrence: JSONObject): Int {
+    internal fun occurrenceStatusTimeColor(occurrence: JSONObject): Int {
         if (occurrence.optBoolean("done")) return theme.textMuted
         val anchorRaw = if (occurrence.optString("kind") == "assignment") {
             occurrence.optionalString("end")
@@ -5803,7 +4853,7 @@ class MainActivity : Activity() {
     }
 
     // Matches the iOS home "+" menu: New Scheme, New Folder, Google Calendar.
-    private fun showNewMenu() {
+    internal fun showNewMenu() {
         AlertDialog.Builder(this)
             .setTitle("New")
             .setItems(arrayOf("New Scheme", "New Folder", "Google Calendar")) { _, which ->
@@ -5827,7 +4877,7 @@ class MainActivity : Activity() {
             .show()
     }
 
-    private fun showItemDialog(schemeId: String, item: JSONObject?) {
+    internal fun showItemDialog(schemeId: String, item: JSONObject?) {
         val editing = item != null
         val form = page(compact = true)
         val text = edit(item?.optString("text") ?: "").apply { hint = "Item" }
@@ -5851,11 +4901,11 @@ class MainActivity : Activity() {
             .show()
     }
 
-    private fun showCalendarItemDialog() {
+    internal fun showCalendarItemDialog() {
         showEventEditorDialog(null)
     }
 
-    private fun showEventEditorDialog(
+    internal fun showEventEditorDialog(
         occurrence: JSONObject?,
         initialDate: LocalDate? = null,
         initialMinute: Float? = null,
@@ -6255,7 +5305,7 @@ class MainActivity : Activity() {
         dialog.window?.setLayout(min(resources.displayMetrics.widthPixels - dp(32), dp(500)), ViewGroup.LayoutParams.WRAP_CONTENT)
     }
 
-    private fun commitEventEdit(
+    internal fun commitEventEdit(
         occurrence: JSONObject,
         title: String,
         start: String?,
@@ -6287,7 +5337,7 @@ class MainActivity : Activity() {
         )
     }
 
-    private fun deleteEventOccurrence(occurrence: JSONObject, scope: String) {
+    internal fun deleteEventOccurrence(occurrence: JSONObject, scope: String) {
         mutate(
             obj(
                 "type" to "delete_event_occurrence",
@@ -6300,7 +5350,7 @@ class MainActivity : Activity() {
         )
     }
 
-    private fun showOccurrenceScopeDialog(
+    internal fun showOccurrenceScopeDialog(
         title: String,
         occurrence: JSONObject,
         forDelete: Boolean,
@@ -6326,7 +5376,7 @@ class MainActivity : Activity() {
             .show()
     }
 
-    private fun createCalendarItemReturningID(
+    internal fun createCalendarItemReturningID(
         kind: String,
         text: String,
         date: LocalDate,
@@ -6358,7 +5408,7 @@ class MainActivity : Activity() {
         return schemeItemIds(targetId).firstOrNull { !before.contains(it) }
     }
 
-    private fun schemeItemIds(schemeId: String): Set<String> {
+    internal fun schemeItemIds(schemeId: String): Set<String> {
         val ids = mutableSetOf<String>()
         findScheme(schemeId)?.optJSONArray("items")?.forEachObject { item ->
             ids.add(item.optString("id"))
@@ -6366,7 +5416,7 @@ class MainActivity : Activity() {
         return ids
     }
 
-    private fun todayDailySchemeId(): String? {
+    internal fun todayDailySchemeId(): String? {
         val today = LocalDate.now().toString()
         val daily = snapshot.optJSONArray("daily") ?: return null
         for (index in 0 until daily.length()) {
@@ -6376,7 +5426,7 @@ class MainActivity : Activity() {
         return null
     }
 
-    private fun defaultNotificationOffset(kind: String): Int {
+    internal fun defaultNotificationOffset(kind: String): Int {
         val settings = snapshot.optJSONObject("settings")
         return when (kind) {
             "event" -> settings?.optInt("event_notification_offset_secs", DEFAULT_EVENT_NOTIFICATION_OFFSET_SECS)
@@ -6387,7 +5437,7 @@ class MainActivity : Activity() {
         }
     }
 
-    private fun showMarkerDialog(schemeId: String, itemId: String) {
+    internal fun showMarkerDialog(schemeId: String, itemId: String) {
         val markers = arrayOf("checkbox", "blank", "bullet", "numbered")
         AlertDialog.Builder(this)
             .setTitle("Marker")
@@ -6399,7 +5449,7 @@ class MainActivity : Activity() {
 
     /// iOS `ItemDateSheet` equivalent: the full schedule editor (type chips,
     /// date/time fields, notification, repeat) instead of a Set/Clear list.
-    private fun showDateKindDialog(schemeId: String, itemId: String) {
+    internal fun showDateKindDialog(schemeId: String, itemId: String) {
         val item = findItem(schemeId, itemId) ?: return
         val scheme = findScheme(schemeId)
         val hasStart = item.optionalString("start") != null
@@ -6427,7 +5477,7 @@ class MainActivity : Activity() {
         ))
     }
 
-    private fun showItemDateDialog(schemeId: String, itemId: String, kind: String) {
+    internal fun showItemDateDialog(schemeId: String, itemId: String, kind: String) {
         val form = page(compact = true)
         val initial = MobileDateFormatting.localDateTime(findItem(schemeId, itemId)?.optionalString(kind))
         val pickerCtx = inlinePickerContext()
@@ -6454,7 +5504,7 @@ class MainActivity : Activity() {
             .show()
     }
 
-    private fun showItemActions(schemeId: String, item: JSONObject, index: Int, count: Int) {
+    internal fun showItemActions(schemeId: String, item: JSONObject, index: Int, count: Int) {
         val actions = arrayOf("Move Up", "Move Down", "Indent", "Outdent", "Edit", "Delete")
         AlertDialog.Builder(this)
             .setTitle(item.optString("text").ifEmpty { "Item" })
@@ -6471,7 +5521,7 @@ class MainActivity : Activity() {
             .show()
     }
 
-    private fun showSchemeActions(nodeOrScheme: JSONObject) {
+    internal fun showSchemeActions(nodeOrScheme: JSONObject) {
         val id = nodeOrScheme.optString("id")
         val isDaily = nodeOrScheme.optBoolean("is_daily_queue", false)
         if (nodeOrScheme.optBoolean("is_read_only", false)) {
@@ -6501,7 +5551,7 @@ class MainActivity : Activity() {
 
     /// iOS-style swatch grid (3x2, same color order as the iOS popover) instead
     /// of a text list.
-    private fun showColorDialog(schemeId: String) {
+    internal fun showColorDialog(schemeId: String) {
         val currentIndex = findScheme(schemeId)?.optInt("color_index") ?: 0
         lateinit var dialog: AlertDialog
         val order = intArrayOf(0, 1, 5, 2, 3, 4)
@@ -6550,7 +5600,7 @@ class MainActivity : Activity() {
         dialog.window?.setLayout(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT)
     }
 
-    private fun showFolderActions(node: JSONObject) {
+    internal fun showFolderActions(node: JSONObject) {
         AlertDialog.Builder(this)
             .setTitle(node.optString("name"))
             .setItems(arrayOf("New Scheme", "New Folder", "Rename", "Reorder", "Move to Folder", "Archive")) { _, which ->
@@ -6579,7 +5629,7 @@ class MainActivity : Activity() {
             .show()
     }
 
-    private fun showArchiveActions() {
+    internal fun showArchiveActions() {
         AlertDialog.Builder(this)
             .setTitle("Archive")
             .setItems(arrayOf("Empty Archive")) { _, which ->
@@ -6591,7 +5641,7 @@ class MainActivity : Activity() {
     /// iOS `SettingsArchiveList`: the archive tree always expanded (folders by
     /// icon, schemes by color square), each row restorable inline; deletes are
     /// permanent and confirmed.
-    private fun renderArchivePage(): LinearLayout {
+    internal fun renderArchivePage(): LinearLayout {
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setBackgroundColor(theme.bgApp)
@@ -6643,7 +5693,7 @@ class MainActivity : Activity() {
         return root
     }
 
-    private fun archiveNodeRow(node: JSONObject, depth: Int): View {
+    internal fun archiveNodeRow(node: JSONObject, depth: Int): View {
         val isFolder = node.optString("kind") == "folder"
         val id = node.optString("id")
         val name = node.optString("name").ifEmpty { if (isFolder) "Folder" else "Untitled" }
@@ -6705,7 +5755,7 @@ class MainActivity : Activity() {
         }
     }
 
-    private fun showArchivedSchemeActions(scheme: JSONObject) {
+    internal fun showArchivedSchemeActions(scheme: JSONObject) {
         AlertDialog.Builder(this)
             .setTitle(scheme.optString("display_name"))
             .setItems(arrayOf("Restore", "Delete Permanently")) { _, which ->
@@ -6717,7 +5767,7 @@ class MainActivity : Activity() {
             .show()
     }
 
-    private fun showNameDialog(title: String, initial: String, validator: (String) -> String?, callback: (String) -> Unit) {
+    internal fun showNameDialog(title: String, initial: String, validator: (String) -> String?, callback: (String) -> Unit) {
         val input = edit(initial).apply {
             setSingleLine(true)
             background = rounded(theme.bgModal, dp(5), theme.borderOverlay)
@@ -6763,14 +5813,14 @@ class MainActivity : Activity() {
         dialog.show()
     }
 
-    private fun showDatePicker() {
+    internal fun showDatePicker() {
         DatePickerDialog(this, dateDialogTheme(), { _, year, month, day ->
             selectedDate = LocalDate.of(year, month + 1, day)
             ensureDaily()
         }, selectedDate.year, selectedDate.monthValue - 1, selectedDate.dayOfMonth).show()
     }
 
-    private fun showMonthPickerDialog() {
+    internal fun showMonthPickerDialog() {
         var displayMonth = selectedDate.withDayOfMonth(1)
         val container = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -6841,7 +5891,7 @@ class MainActivity : Activity() {
         dialog.window?.setLayout(min(resources.displayMetrics.widthPixels - dp(24), dp(520)), ViewGroup.LayoutParams.WRAP_CONTENT)
     }
 
-    private fun monthWeekdayRow(): View =
+    internal fun monthWeekdayRow(): View =
         LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             listOf("S", "M", "T", "W", "T", "F", "S").forEach { label ->
@@ -6851,7 +5901,7 @@ class MainActivity : Activity() {
             }
         }
 
-    private fun monthDayCell(date: LocalDate, displayMonth: LocalDate, occurrences: JSONArray, onSelect: () -> Unit): View {
+    internal fun monthDayCell(date: LocalDate, displayMonth: LocalDate, occurrences: JSONArray, onSelect: () -> Unit): View {
         val inMonth = date.monthValue == displayMonth.monthValue && date.year == displayMonth.year
         val isToday = date == LocalDate.now()
         val isSelected = date == selectedDate
@@ -6870,7 +5920,7 @@ class MainActivity : Activity() {
         }
     }
 
-    private fun monthOccurrenceDots(occurrences: JSONArray): View =
+    internal fun monthOccurrenceDots(occurrences: JSONArray): View =
         LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER
@@ -6889,14 +5939,14 @@ class MainActivity : Activity() {
             }
         }
 
-    private fun monthDayTextColor(inMonth: Boolean, highlighted: Boolean): Int =
+    internal fun monthDayTextColor(inMonth: Boolean, highlighted: Boolean): Int =
         when {
             highlighted -> Color.WHITE
             inMonth -> theme.textPrimary
             else -> theme.textMuted
         }
 
-    private fun monthDayOccurrences(month: LocalDate): Map<String, JSONArray> {
+    internal fun monthDayOccurrences(month: LocalDate): Map<String, JSONArray> {
         return runCatching {
             val byDate = LinkedHashMap<String, JSONArray>()
             bridge.requestArray(obj("type" to "month_days", "year" to month.year, "month" to month.monthValue))
@@ -6910,7 +5960,7 @@ class MainActivity : Activity() {
         }
     }
 
-    private fun openScheme(id: String) {
+    internal fun openScheme(id: String) {
         // Remember where the editor was opened from so the back button returns
         // there (Home on phone), rather than the otherwise-unreachable lists page.
         if (selectedTab != TAB_SCHEMES) schemeReturnTab = selectedTab
@@ -6919,24 +5969,27 @@ class MainActivity : Activity() {
         render()
     }
 
-    private fun exitSchemeEditor() {
+    internal fun exitSchemeEditor() {
         selectedSchemeId = null
         selectedTab = if (schemeReturnTab == TAB_SCHEMES) TAB_HOME else schemeReturnTab
         render()
     }
 
-    private fun addDailyItemFromHome() {
+    internal fun addDailyItemFromHome() {
         ensureDaily()
         dailyScheme()?.let { scheme ->
             showItemDialog(scheme.optString("id"), null)
         } ?: toast("Daily not ready")
     }
 
-    private fun ensureDaily() {
+    internal fun ensureDaily() {
+        if (selectedTab == TAB_DAILY) {
+            pendingDailyAutoFocusDate = selectedDate.toString()
+        }
         mutate(obj("type" to "ensure_daily_queue", "date" to selectedDate.toString()))
     }
 
-    private fun ensureTodayDailyQueue() {
+    internal fun ensureTodayDailyQueue() {
         val today = LocalDate.now().toString()
         val existing = snapshot.optJSONArray("daily")
         if (existing != null) {
@@ -6948,7 +6001,7 @@ class MainActivity : Activity() {
         loadSnapshot()
     }
 
-    private fun mutate(body: JSONObject) {
+    internal fun mutate(body: JSONObject) {
         try {
             bridge.request(body)
             loadSnapshot()
@@ -6960,7 +6013,7 @@ class MainActivity : Activity() {
         }
     }
 
-    private fun loadSnapshot() {
+    internal fun loadSnapshot() {
         snapshot = bridge.request(obj(
             "type" to "snapshot",
             "today" to selectedDate.toString(),
@@ -6972,7 +6025,7 @@ class MainActivity : Activity() {
 
     /// Mirrors iOS `loadOlderDailyEntries`: extend the daily history window by a
     /// month when the feed is scrolled to its oldest entry.
-    private fun loadOlderDailyEntries(oldestDate: String) {
+    internal fun loadOlderDailyEntries(oldestDate: String) {
         if (dailyHistoryLoadTriggerDate == oldestDate) return
         if (dailyHistoryDays >= 3650) return
         dailyHistoryLoadTriggerDate = oldestDate
@@ -6982,7 +6035,7 @@ class MainActivity : Activity() {
         render()
     }
 
-    private fun rescheduleNotifications() {
+    internal fun rescheduleNotifications() {
         if (!::bridge.isInitialized) return
         try {
             MobileNotificationScheduler.reschedule(
@@ -6994,7 +6047,7 @@ class MainActivity : Activity() {
         }
     }
 
-    private fun applyTheme() {
+    internal fun applyTheme() {
         val mode = snapshot.optJSONObject("settings")?.optString("theme_mode", "system") ?: "system"
         val darkSystem = (resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK) == Configuration.UI_MODE_NIGHT_YES
         theme = when (mode) {
@@ -7006,16 +6059,16 @@ class MainActivity : Activity() {
     }
 
     @Suppress("DEPRECATION")
-    private fun applySystemBarColors() {
+    internal fun applySystemBarColors() {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.VANILLA_ICE_CREAM) {
             window.statusBarColor = theme.bgToolbar
             window.navigationBarColor = theme.bgSidebar
         }
     }
 
-    private fun calendar(): JSONObject = snapshot.optJSONObject("calendar") ?: JSONObject()
+    internal fun calendar(): JSONObject = snapshot.optJSONObject("calendar") ?: JSONObject()
 
-    private fun dailyScheme(): JSONObject? {
+    internal fun dailyScheme(): JSONObject? {
         val days = snapshot.optJSONArray("daily") ?: return null
         for (index in 0 until days.length()) {
             val day = days.optJSONObject(index)
@@ -7026,7 +6079,7 @@ class MainActivity : Activity() {
         return null
     }
 
-    private fun dailyEntries(): List<JSONObject> {
+    internal fun dailyEntries(): List<JSONObject> {
         val days = snapshot.optJSONArray("daily") ?: return emptyList()
         val entries = ArrayList<JSONObject>(days.length())
         for (index in 0 until days.length()) {
@@ -7036,7 +6089,7 @@ class MainActivity : Activity() {
         return entries
     }
 
-    private fun dailyEntryForHome(): JSONObject? {
+    internal fun dailyEntryForHome(): JSONObject? {
         val days = snapshot.optJSONArray("daily") ?: return null
         val selected = selectedDate.toString()
         val today = LocalDate.now().toString()
@@ -7051,9 +6104,9 @@ class MainActivity : Activity() {
         return todayEntry
     }
 
-    private fun archivedSchemes(): JSONArray = snapshot.optJSONArray("archived_schemes") ?: JSONArray()
+    internal fun archivedSchemes(): JSONArray = snapshot.optJSONArray("archived_schemes") ?: JSONArray()
 
-    private fun findScheme(id: String): JSONObject? {
+    internal fun findScheme(id: String): JSONObject? {
         listOf(snapshot.optJSONArray("schemes"), snapshot.optJSONArray("archived_schemes")).forEach { schemes ->
             if (schemes != null) {
                 for (index in 0 until schemes.length()) {
@@ -7072,7 +6125,7 @@ class MainActivity : Activity() {
         return null
     }
 
-    private fun findItem(schemeId: String, itemId: String): JSONObject? {
+    internal fun findItem(schemeId: String, itemId: String): JSONObject? {
         val items = findScheme(schemeId)?.optJSONArray("items") ?: return null
         for (index in 0 until items.length()) {
             val item = items.optJSONObject(index)
@@ -7081,14 +6134,14 @@ class MainActivity : Activity() {
         return null
     }
 
-    private fun rootFolderId(): String? = snapshot.optJSONObject("root")?.optString("id")
+    internal fun rootFolderId(): String? = snapshot.optJSONObject("root")?.optString("id")
 
-    private fun parentFolderIdForScheme(schemeId: String): String? {
+    internal fun parentFolderIdForScheme(schemeId: String): String? {
         val root = snapshot.optJSONObject("root") ?: return null
         return parentFolderIdForScheme(schemeId, root)
     }
 
-    private fun parentFolderIdForScheme(schemeId: String, node: JSONObject): String? {
+    internal fun parentFolderIdForScheme(schemeId: String, node: JSONObject): String? {
         val children = node.optJSONArray("children") ?: return null
         for (index in 0 until children.length()) {
             val child = children.optJSONObject(index) ?: continue
@@ -7102,12 +6155,12 @@ class MainActivity : Activity() {
         return null
     }
 
-    private fun parentFolderIdForNode(nodeId: String): String? {
+    internal fun parentFolderIdForNode(nodeId: String): String? {
         val root = snapshot.optJSONObject("root") ?: return null
         return parentFolderIdForNode(nodeId, root)
     }
 
-    private fun parentFolderIdForNode(nodeId: String, node: JSONObject): String? {
+    internal fun parentFolderIdForNode(nodeId: String, node: JSONObject): String? {
         val children = node.optJSONArray("children") ?: return null
         for (index in 0 until children.length()) {
             val child = children.optJSONObject(index) ?: continue
@@ -7121,7 +6174,7 @@ class MainActivity : Activity() {
         return null
     }
 
-    private fun moveNavigatorNode(kind: String, nodeId: String, delta: Int) {
+    internal fun moveNavigatorNode(kind: String, nodeId: String, delta: Int) {
         when (applyNodeMove(kind, nodeId, delta)) {
             true -> { rescheduleNotifications(); render() }
             false -> toast("Already there")
@@ -7131,7 +6184,7 @@ class MainActivity : Activity() {
     // Shifts a node one slot within its parent; returns false at a boundary. Applies
     // the change and reloads the snapshot but does NOT re-render, so callers (e.g. the
     // reorder sheet) can apply several moves and refresh their own UI cheaply.
-    private fun applyNodeMove(kind: String, nodeId: String, delta: Int): Boolean {
+    internal fun applyNodeMove(kind: String, nodeId: String, delta: Int): Boolean {
         val parentId = parentFolderIdForNode(nodeId) ?: return false
         val parent = nodeById(parentId, snapshot.optJSONObject("root")) ?: return false
         val children = parent.optJSONArray("children") ?: return false
@@ -7156,7 +6209,7 @@ class MainActivity : Activity() {
     // A live reorder sheet for a node's siblings: stays open while you nudge items
     // up/down (instead of reopening the context menu for each single step, as iOS
     // drag-to-reorder avoids). Highlights the item the sheet was opened for.
-    private fun showReorderDialog(nodeId: String) {
+    internal fun showReorderDialog(nodeId: String) {
         val parentId = parentFolderIdForNode(nodeId) ?: return toast("Cannot reorder this item")
         val parentName = nodeById(parentId, snapshot.optJSONObject("root"))?.optString("name")?.takeIf { it.isNotBlank() && parentId != rootFolderId() } ?: "Home"
         val list = LinearLayout(this).apply {
@@ -7221,7 +6274,7 @@ class MainActivity : Activity() {
         dialog.show()
     }
 
-    private fun showMoveToFolderDialog(kind: String, nodeId: String, excludedFolderId: String? = null) {
+    internal fun showMoveToFolderDialog(kind: String, nodeId: String, excludedFolderId: String? = null) {
         val root = snapshot.optJSONObject("root") ?: return toast("Cannot move this item")
         val currentParentId = parentFolderIdForNode(nodeId) ?: return toast("Cannot move this item")
         val destinations = mutableListOf(FolderDestination(root.optString("id"), "Home", 0))
@@ -7240,7 +6293,7 @@ class MainActivity : Activity() {
             .show()
     }
 
-    private fun collectFolderDestinations(nodes: JSONArray?, depth: Int, excludedFolderId: String?, destinations: MutableList<FolderDestination>) {
+    internal fun collectFolderDestinations(nodes: JSONArray?, depth: Int, excludedFolderId: String?, destinations: MutableList<FolderDestination>) {
         nodes?.forEachObject { node ->
             if (node.optString("kind") == "folder" && node.optString("id") != excludedFolderId) {
                 destinations.add(FolderDestination(node.optString("id"), node.optString("name"), depth))
@@ -7249,15 +6302,15 @@ class MainActivity : Activity() {
         }
     }
 
-    private fun validateSchemeName(name: String, folderId: String? = null, excludingId: String? = null, checkDuplicates: Boolean = true): String? {
+    internal fun validateSchemeName(name: String, folderId: String? = null, excludingId: String? = null, checkDuplicates: Boolean = true): String? {
         return null
     }
 
-    private fun validateFolderName(name: String, excludingId: String? = null): String? {
+    internal fun validateFolderName(name: String, excludingId: String? = null): String? {
         return null
     }
 
-    private fun nodeById(id: String?, node: JSONObject?): JSONObject? {
+    internal fun nodeById(id: String?, node: JSONObject?): JSONObject? {
         if (id == null || node == null) return null
         if (node.optString("id") == id) return node
         val children = node.optJSONArray("children") ?: return null
@@ -7267,7 +6320,7 @@ class MainActivity : Activity() {
         return null
     }
 
-    private fun todayOccurrences(): JSONArray {
+    internal fun todayOccurrences(): JSONArray {
         val out = JSONArray()
         calendar().optJSONArray("days")?.forEachObject { day ->
             if (day.optString("date") == LocalDate.now().toString()) {
@@ -7275,652 +6328,6 @@ class MainActivity : Activity() {
             }
         }
         return out
-    }
-
-    private fun dayForDate(date: LocalDate): JSONObject? {
-        val days = calendar().optJSONArray("days") ?: return null
-        for (index in 0 until days.length()) {
-            val day = days.optJSONObject(index) ?: continue
-            if (day.optString("date") == date.toString()) return day
-        }
-        return null
-    }
-
-    private fun weekStart(date: LocalDate): LocalDate =
-        date.minusDays((date.dayOfWeek.value % 7).toLong())
-
-    private fun selectedDateTitle(): String =
-        calendar().let { calendar ->
-            val start = calendar.optString("start_date")
-            val end = calendar.optString("end_date")
-            if (start.isNotEmpty() && end.isNotEmpty()) {
-                "${MobileDateFormatting.shortDay(start)} - ${MobileDateFormatting.shortDay(end)}"
-            } else {
-                "${selectedDate.month.getDisplayName(TextStyle.FULL, Locale.getDefault())} ${selectedDate.dayOfMonth}, ${selectedDate.year}"
-            }
-        }
-
-    private fun monthTitle(date: LocalDate): String =
-        "${date.month.getDisplayName(TextStyle.FULL, Locale.getDefault())} ${date.year}"
-
-    private fun addOccurrenceSection(root: LinearLayout, title: String, empty: String, occurrences: JSONArray?) {
-        // iOS section heading: large bold title, not a small caps label.
-        root.addView(text(title, theme.textPrimary, 22f, true).apply {
-            setPadding(dp(2), dp(2), dp(2), dp(6))
-        })
-        if (occurrences == null || occurrences.length() == 0) {
-            root.addView(text(empty, theme.textMuted, 14f, false).apply {
-                setPadding(dp(2), dp(4), 0, dp(10))
-            })
-            return
-        }
-        occurrences.forEachIndexedObject { idx, occurrence -> root.addView(occurrenceRow(occurrence, idx % 2 == 1), rowParams()) }
-    }
-
-    private fun titleText(): String {
-        return if (selectedTab == TAB_SCHEMES && selectedSchemeId != null) {
-            findScheme(selectedSchemeId!!)?.optString("display_name") ?: "Scheme"
-        } else {
-            when (selectedTab) {
-                TAB_HOME -> "Home"
-                TAB_CALENDAR -> "Calendar"
-                TAB_SCHEMES -> "Schemes"
-                TAB_DAILY -> "Daily"
-                TAB_SEARCH -> "Search"
-                TAB_SETTINGS -> "Settings"
-                else -> "KnotQ"
-            }
-        }
-    }
-
-    private fun titleColor(): Int {
-        if (selectedTab == TAB_SCHEMES && selectedSchemeId != null) {
-            return findScheme(selectedSchemeId!!)?.optInt("color_index")?.let(::schemeColor) ?: theme.textDim
-        }
-        return when (selectedTab) {
-            TAB_HOME -> theme.accent
-            TAB_CALENDAR -> theme.textPrimary
-            TAB_DAILY -> if (theme.isDark) rgb(0xb8c9e8) else rgb(0x5a7aad)
-            else -> theme.textDim
-        }
-    }
-
-    private fun page(compact: Boolean = false): LinearLayout = LinearLayout(this).apply {
-        orientation = LinearLayout.VERTICAL
-        setPadding(
-            if (compact) 0 else dp(14),
-            if (compact) 0 else dp(14),
-            if (compact) 0 else dp(14),
-            if (compact) 0 else phonePageBottomPadding()
-        )
-        setBackgroundColor(theme.bgApp)
-    }
-
-    private fun phonePageBottomPadding(): Int =
-        if (!isWideLayout() && selectedTab in listOf(TAB_HOME, TAB_CALENDAR, TAB_SETTINGS)) dp(166) else dp(20)
-
-    private fun scroll(view: View): ScrollView = ScrollView(this).apply {
-        isFillViewport = true
-        setBackgroundColor(theme.bgApp)
-        addView(view)
-    }
-
-    private fun sectionHeader(value: String): TextView = text(value, theme.textPrimary, 18f, true).apply {
-        setPadding(0, dp(4), 0, dp(8))
-    }
-
-    private fun sectionLabel(value: String): TextView = text(value, theme.textDim, 12f, true).apply {
-        setPadding(dp(4), dp(8), dp(4), dp(4))
-    }
-
-    private fun settingsSection(value: String): TextView = text(value, theme.textSoft, 12f, true).apply {
-        setPadding(dp(4), dp(16), 0, dp(5))
-    }
-
-    // Groups settings rows into a single rounded card with hairline separators,
-    // mirroring the iOS grouped-list look.
-    private fun settingsGroup(vararg rows: View): View =
-        LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            background = rounded(if (theme.isDark) theme.bgToolbar else theme.bgModal, dp(10), theme.borderOverlay)
-            setPadding(dp(4), dp(3), dp(4), dp(3))
-            rows.forEachIndexed { index, row ->
-                if (index > 0) {
-                    addView(View(this@MainActivity).apply { setBackgroundColor(theme.dividerSoft) }, LinearLayout.LayoutParams(-1, max(1, (0.5f * resources.displayMetrics.density).roundToInt())).apply {
-                        setMargins(dp(8), dp(1), dp(8), dp(1))
-                    })
-                }
-                addView(row, LinearLayout.LayoutParams(-1, -2))
-            }
-        }
-
-    // A tappable settings row showing an optional right-aligned value and a chevron.
-    private fun settingsLinkRow(label: String, value: String? = null, onClick: () -> Unit): View =
-        LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-            setPadding(dp(8), 0, dp(4), 0)
-            addView(text(label, theme.textPrimary, 14f, false), LinearLayout.LayoutParams(0, dp(44), 1f))
-            if (!value.isNullOrEmpty()) {
-                addView(text(value, theme.textMuted, 13f, false).apply {
-                    gravity = Gravity.CENTER_VERTICAL
-                    maxLines = 1
-                    ellipsize = TextUtils.TruncateAt.END
-                }, LinearLayout.LayoutParams(-2, dp(44)).apply { setMargins(dp(6), 0, dp(2), 0) })
-            }
-            addView(inlineIcon(R.drawable.ic_knotq_chevron_right_24, theme.textMuted, widthDp = 20, iconSize = 15))
-            setOnClickListener { onClick() }
-        }
-
-    private fun dialogLabel(value: String): TextView =
-        text(value, theme.textMuted, 11f, true).apply {
-            setPadding(dp(2), 0, dp(2), dp(4))
-        }
-
-    private fun dialogDateLabel(date: LocalDate): String =
-        "${date.dayOfWeek.getDisplayName(TextStyle.SHORT, Locale.getDefault())}, " +
-            "${date.month.getDisplayName(TextStyle.SHORT, Locale.getDefault())} ${date.dayOfMonth}, ${date.year}"
-
-    private fun dialogTimeLabel(time: LocalTime): String {
-        if (timeFormat24()) return "%02d:%02d".format(Locale.US, time.hour, time.minute)
-        val hour = time.hour
-        val hour12 = (hour % 12).let { if (it == 0) 12 else it }
-        val period = if (hour < 12) "AM" else "PM"
-        return "%d:%02d %s".format(Locale.US, hour12, time.minute, period)
-    }
-
-    // Wheel-mode time picker dialog tinted to the active theme (iOS-like, fewer taps
-    // than the default clock face).
-    private fun timeDialogTheme(): Int = if (theme.isDark) R.style.KnotQTimeDialogDark else R.style.KnotQTimeDialogLight
-
-    private fun dateDialogTheme(): Int = if (theme.isDark) R.style.KnotQDateDialogDark else R.style.KnotQDateDialogLight
-
-    // Context that renders embedded DatePicker/TimePicker widgets as compact wheels.
-    private fun inlinePickerContext(): Context =
-        ContextThemeWrapper(this, if (theme.isDark) R.style.KnotQInlinePickerDark else R.style.KnotQInlinePickerLight)
-
-    private fun styleDialogSpinner(spinner: Spinner) {
-        spinner.background = rounded(theme.buttonBg, dp(8), theme.borderOverlay)
-        spinner.setPadding(dp(10), 0, dp(34), 0)
-        spinner.minimumHeight = dp(42)
-    }
-
-    private fun dialogSpinnerField(label: String, spinner: Spinner): View =
-        LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            addView(dialogLabel(label))
-            addView(FrameLayout(this@MainActivity).apply {
-                addView(spinner, FrameLayout.LayoutParams(-1, dp(42)))
-                addView(iconImage(R.drawable.ic_knotq_chevron_down_24, theme.textMuted, null), FrameLayout.LayoutParams(dp(15), dp(15), Gravity.RIGHT or Gravity.CENTER_VERTICAL).apply { rightMargin = dp(11) })
-            }, LinearLayout.LayoutParams(-1, dp(42)))
-            alpha = if (spinner.isEnabled) 1f else 0.55f
-        }
-
-    private fun dialogField(
-        label: String,
-        value: String,
-        enabled: Boolean = true,
-        listener: (() -> Unit)? = null
-    ): DialogField {
-        val labelView = text(label, theme.textMuted, 11f, true)
-        val valueView = text(value, theme.textPrimary, 15f, false).apply {
-            maxLines = 1
-            ellipsize = TextUtils.TruncateAt.END
-        }
-        val row = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-            setPadding(dp(12), 0, dp(10), 0)
-            background = rounded(theme.buttonBg, dp(8), theme.borderOverlay)
-            alpha = if (enabled) 1f else 0.55f
-            addView(LinearLayout(this@MainActivity).apply {
-                orientation = LinearLayout.VERTICAL
-                gravity = Gravity.CENTER_VERTICAL
-                addView(labelView, LinearLayout.LayoutParams(-1, dp(15)))
-                addView(valueView, LinearLayout.LayoutParams(-1, dp(21)))
-            }, LinearLayout.LayoutParams(0, -1, 1f))
-            if (enabled && listener != null) {
-                addView(inlineIcon(R.drawable.ic_knotq_chevron_right_24, theme.textMuted, widthDp = 20, iconSize = 14))
-                setOnClickListener { listener() }
-                isFocusable = true
-            }
-        }.also {
-            it.layoutParams = LinearLayout.LayoutParams(-1, dp(48))
-        }
-        return DialogField(row, labelView, valueView)
-    }
-
-    private fun dialogActionButton(
-        value: String,
-        primary: Boolean = false,
-        danger: Boolean = false,
-        listener: () -> Unit
-    ): TextView =
-        text(
-            value,
-            when {
-                danger -> theme.danger
-                primary -> Color.WHITE
-                else -> theme.textPrimary
-            },
-            13f,
-            true
-        ).apply {
-            gravity = Gravity.CENTER
-            setPadding(dp(14), 0, dp(14), 0)
-            background = rounded(
-                when {
-                    primary -> theme.accent
-                    danger -> adjustAlpha(theme.danger, if (theme.isDark) 0.12f else 0.08f)
-                    else -> theme.buttonBg
-                },
-                dp(8),
-                if (danger) adjustAlpha(theme.danger, 0.32f) else theme.borderOverlay
-            )
-            setOnClickListener { listener() }
-        }
-
-    private fun choiceRow(
-        value: String,
-        icon: String? = null,
-        selected: Boolean,
-        action: () -> Unit
-    ): View {
-        return LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-            setPadding(dp(8), 0, dp(8), 0)
-            background = rounded(if (selected) theme.rowSelected else Color.TRANSPARENT, dp(5))
-            if (icon != null) {
-                addView(text(icon, theme.textPrimary, 14f, true), LinearLayout.LayoutParams(dp(16), dp(36)))
-            }
-            addView(text(value, theme.textPrimary, 14f, false), LinearLayout.LayoutParams(0, dp(36), 1f).apply {
-                if (icon != null) setMargins(dp(4), 0, 0, 0)
-            })
-            if (selected) addView(inlineIcon(R.drawable.ic_knotq_check_24, theme.accent, widthDp = 22, iconSize = 16))
-            setOnClickListener { action() }
-        }
-    }
-
-    private fun iconActionChip(value: String, label: String, listener: () -> Unit): TextView {
-        return text("$value $label", theme.textPrimary, 12f, true).apply {
-            gravity = Gravity.CENTER
-            setPadding(dp(10), 0, dp(10), 0)
-            background = rounded(theme.buttonBg, dp(5))
-            setOnClickListener { listener() }
-            contentDescription = label
-            maxLines = 1
-            ellipsize = TextUtils.TruncateAt.END
-            includeFontPadding = false
-            isSingleLine = true
-        }
-    }
-
-    private fun textChip(label: String, listener: () -> Unit): TextView {
-        return text(label, theme.textPrimary, 12f, true).apply {
-            gravity = Gravity.CENTER
-            setPadding(dp(10), 0, dp(10), 0)
-            background = rounded(theme.buttonBg, dp(7), theme.borderOverlay)
-            setOnClickListener { listener() }
-            contentDescription = label
-            maxLines = 1
-            ellipsize = TextUtils.TruncateAt.END
-            includeFontPadding = false
-            isSingleLine = true
-        }
-    }
-
-    private fun emptyState(title: String, detail: String): View {
-        return LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            gravity = Gravity.CENTER
-            setPadding(dp(16), dp(80), dp(16), dp(80))
-            addView(text(title, theme.textDim, 15f, true).apply { gravity = Gravity.CENTER })
-            addView(text(detail, theme.textMuted, 13f, false).apply { gravity = Gravity.CENTER })
-        }
-    }
-
-    private fun text(value: String, color: Int, sp: Float, bold: Boolean): TextView = TextView(this).apply {
-        text = value
-        setTextColor(color)
-        textSize = sp
-        includeFontPadding = false
-        gravity = Gravity.CENTER_VERTICAL
-        if (bold) setTypeface(typeface, Typeface.BOLD)
-    }
-
-    private fun navSpecial(value: String, color: Int, selected: Boolean, listener: () -> Unit): View {
-        return LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-            setPadding(dp(6), 0, dp(6), 0)
-            background = rounded(if (selected) theme.rowSelected else Color.TRANSPARENT, dp(4))
-            addView(colorSquare(color, 9), LinearLayout.LayoutParams(dp(9), dp(9)))
-            addView(text(value, theme.textPrimary, 12f, false), LinearLayout.LayoutParams(0, -1, 1f).apply {
-                setMargins(dp(7), 0, 0, 0)
-            })
-            setOnClickListener { listener() }
-        }.also { it.layoutParams = LinearLayout.LayoutParams(-1, dp(22)) }
-    }
-
-    private fun chip(value: String, listener: () -> Unit): TextView = text(value, theme.textPrimary, 12f, true).apply {
-        gravity = Gravity.CENTER
-        setPadding(dp(10), 0, dp(10), 0)
-        background = rounded(theme.buttonBg, dp(5))
-        setOnClickListener { listener() }
-    }
-
-    private fun iconChip(value: String, listener: () -> Unit): TextView = chip(value, listener).apply {
-        textSize = ICON_CHIP_SIZE_SP
-    }.also {
-        it.layoutParams = LinearLayout.LayoutParams(dp(ICON_CHIP_WIDTH_DP), dp(ICON_CHIP_HEIGHT_DP))
-    }
-
-    private fun iconSquare(value: String, listener: () -> Unit): TextView = text(value, theme.textPrimary, ICON_SQUARE_SIZE_SP, true).apply {
-        gravity = Gravity.CENTER
-        background = rounded(theme.buttonBg, dp(7), theme.borderOverlay)
-        setOnClickListener { listener() }
-    }
-
-    // Square tappable icon button (drawable) used in toolbars/headers — the
-    // vector-drawable replacement for the old text-glyph `iconSquare`.
-    private fun iconSquareImage(iconRes: Int, description: String, iconSize: Int = 18, listener: () -> Unit): View =
-        FrameLayout(this).apply {
-            contentDescription = description
-            background = rounded(theme.buttonBg, dp(7), theme.borderOverlay)
-            addView(iconImage(iconRes, theme.textPrimary, description), FrameLayout.LayoutParams(dp(iconSize), dp(iconSize), Gravity.CENTER))
-            isFocusable = true
-            setOnClickListener { listener() }
-        }
-
-    // Chrome chip with a vector icon (replaces glyph-based `iconChip`).
-    private fun iconChipImage(iconRes: Int, description: String, tint: Int = theme.textPrimary, iconSize: Int = 18, listener: () -> Unit): View =
-        FrameLayout(this).apply {
-            contentDescription = description
-            background = rounded(theme.buttonBg, dp(5))
-            addView(iconImage(iconRes, tint, description), FrameLayout.LayoutParams(dp(iconSize), dp(iconSize), Gravity.CENTER))
-            isFocusable = true
-            setOnClickListener { listener() }
-            layoutParams = LinearLayout.LayoutParams(dp(ICON_CHIP_WIDTH_DP), dp(ICON_CHIP_HEIGHT_DP))
-        }
-
-    // Inline chevron / small directional icon (replaces text glyphs in rows & dialogs).
-    private fun inlineIcon(iconRes: Int, color: Int, widthDp: Int = 24, iconSize: Int = 16): View =
-        FrameLayout(this).apply {
-            addView(iconImage(iconRes, color, null), FrameLayout.LayoutParams(dp(iconSize), dp(iconSize), Gravity.CENTER))
-            layoutParams = LinearLayout.LayoutParams(dp(widthDp), -1)
-        }
-
-    private fun dockButton(iconRes: Int, description: String, selected: Boolean, listener: () -> Unit): View =
-        FrameLayout(this).apply {
-            contentDescription = description
-            background = if (selected) rounded(theme.rowSelected, dp(20)) else rounded(Color.TRANSPARENT, dp(20))
-            addView(
-                iconImage(iconRes, if (selected) theme.textPrimary else theme.textMuted, description),
-                FrameLayout.LayoutParams(dp(ICON_DOCK_VECTOR_SIZE_DP), dp(ICON_DOCK_VECTOR_SIZE_DP), Gravity.CENTER)
-            )
-            isFocusable = true
-            setOnClickListener { listener() }
-        }
-
-    private fun homeFloatingActions(): View =
-        LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER
-            addView(floatingAction(R.drawable.ic_knotq_check_square_24, "Daily") {
-                selectedTab = TAB_DAILY
-                selectedSchemeId = null
-                ensureDaily()
-            }, LinearLayout.LayoutParams(dp(ICON_FLOATING_WIDTH_DP), dp(ICON_FLOATING_WIDTH_DP)).apply {
-                setMargins(0, 0, dp(10), 0)
-            })
-            addView(floatingAction(R.drawable.ic_knotq_edit_24, "New Scheme") {
-                showNameDialog("New Scheme", "", { validateSchemeName(it, folderId = rootFolderId()) }) { name ->
-                    mutate(obj("type" to "create_scheme", "name" to name, "position" to 0))
-                    snapshot.optJSONArray("schemes")?.let { schemes ->
-                        for (index in schemes.length() - 1 downTo 0) {
-                            val scheme = schemes.optJSONObject(index) ?: continue
-                            if (scheme.optString("display_name") == name || scheme.optString("name") == name) {
-                                openScheme(scheme.optString("id"))
-                                return@showNameDialog
-                            }
-                        }
-                    }
-                }
-            }, LinearLayout.LayoutParams(dp(ICON_FLOATING_WIDTH_DP), dp(ICON_FLOATING_WIDTH_DP)))
-        }
-
-    private fun floatingAction(iconRes: Int, description: String, listener: () -> Unit): View =
-        FrameLayout(this).apply {
-            contentDescription = description
-            background = rounded(theme.bgToolbar, dp(28), theme.borderOverlay)
-            elevation = dp(if (theme.isDark) 10 else 4).toFloat()
-            addView(
-                iconImage(iconRes, theme.textPrimary, description),
-                FrameLayout.LayoutParams(dp(ICON_FLOATING_VECTOR_SIZE_DP), dp(ICON_FLOATING_VECTOR_SIZE_DP), Gravity.CENTER)
-            )
-            isFocusable = true
-            setOnClickListener { listener() }
-        }
-
-    private fun iconImage(iconRes: Int, color: Int, description: String? = null): ImageView =
-        ImageView(this).apply {
-            setImageResource(iconRes)
-            setColorFilter(color, PorterDuff.Mode.SRC_IN)
-            scaleType = ImageView.ScaleType.CENTER_INSIDE
-            contentDescription = description
-        }
-
-    private fun syncCardButton(value: String, primary: Boolean = false, listener: () -> Unit): TextView =
-        text(value, if (primary) Color.WHITE else theme.textPrimary, 12f, primary).apply {
-            gravity = Gravity.CENTER
-            setPadding(dp(10), 0, dp(10), 0)
-            background = rounded(if (primary) rgb(0x2563eb) else theme.buttonBg, dp(5))
-            setOnClickListener { listener() }
-        }
-
-    private fun smallAction(value: String, listener: () -> Unit): TextView = text(value, theme.textDim, 11f, true).apply {
-        setPadding(0, dp(5), dp(12), dp(2))
-        setOnClickListener { listener() }
-    }
-
-    private fun edit(value: String): EditText = EditText(this).apply {
-        setText(value)
-        setTextColor(theme.textPrimary)
-        setHintTextColor(theme.textMuted)
-        inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_MULTI_LINE or InputType.TYPE_TEXT_FLAG_CAP_SENTENCES
-        setSingleLine(false)
-        imeOptions = EditorInfo.IME_ACTION_DONE
-        textSize = 14f
-    }
-
-    private fun spinner(values: Array<String>): Spinner {
-        val adapter = ArrayAdapter(this, android.R.layout.simple_spinner_dropdown_item, values)
-        return Spinner(this).apply { this.adapter = adapter }
-    }
-
-    private fun colorSquare(color: Int, size: Int): View = View(this).apply {
-        background = rounded(color, dp(3))
-        layoutParams = LinearLayout.LayoutParams(dp(size), dp(size))
-    }
-
-    private fun brandMark(size: Int): ImageView = ImageView(this).apply {
-        setImageResource(applicationInfo.icon)
-        scaleType = ImageView.ScaleType.CENTER_CROP
-        background = rounded(theme.rowSelected, dp(6), theme.borderOverlay)
-        clipToOutline = Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP
-        setPadding(dp(2), dp(2), dp(2), dp(2))
-        layoutParams = LinearLayout.LayoutParams(dp(size), dp(size))
-    }
-
-    private fun colorSwatch(index: Int, active: Int): View = View(this).apply {
-        background = rounded(schemeColor(index), dp(3), if (index == active) theme.accent else Color.TRANSPARENT, dp(1))
-        setOnClickListener {
-            selectedSchemeId?.let { mutate(obj("type" to "set_scheme_color", "scheme_id" to it, "color_index" to index)) }
-        }
-    }
-
-    private fun divider(): View = View(this).apply { setBackgroundColor(theme.divider) }
-
-    private fun spaced(): LinearLayout.LayoutParams = LinearLayout.LayoutParams(-1, -2).apply {
-        setMargins(0, 0, 0, dp(8))
-    }
-
-    private fun rowParams(): LinearLayout.LayoutParams = LinearLayout.LayoutParams(-1, -2).apply {
-        setMargins(0, 0, 0, dp(1))
-    }
-
-    private fun marginRight(right: Int, width: Int, height: Int): LinearLayout.LayoutParams =
-        LinearLayout.LayoutParams(width, height).apply { setMargins(0, 0, right, 0) }
-
-    private fun markerLabel(marker: String): String = when (marker) {
-        "bullet" -> "*"
-        "numbered" -> "#"
-        "blank" -> "T"
-        else -> " "
-    }
-
-    private fun calendarTimeColor(occurrence: JSONObject): Int {
-        val default = if (theme.isDark) adjustAlpha(rgb(0xe8edf2), 0.90f) else adjustAlpha(rgb(0x2e291f), 0.90f)
-        if (occurrence.optBoolean("done")) return default
-        val start = MobileDateFormatting.parseInstant(occurrence.optionalString("start") ?: occurrence.optionalString("end")) ?: return default
-        val now = Instant.now()
-        val end = MobileDateFormatting.parseInstant(occurrence.optionalString("end"))
-        if (end != null && !start.isAfter(now) && end.isAfter(now)) return todayTimeColor()
-        if (start.isBefore(now)) return if (theme.isDark) rgb(0xff5a53) else rgb(0xd20f39)
-        val startDay = start.atZone(ZoneId.systemDefault()).toLocalDate()
-        val dayDiff = java.time.temporal.ChronoUnit.DAYS.between(LocalDate.now(), startDay)
-        return when {
-            dayDiff <= 0 -> todayTimeColor()
-            dayDiff <= 1 -> if (theme.isDark) rgb(0xe5e5ff) else rgb(0x4f5f8f)
-            else -> default
-        }
-    }
-
-    private fun todayTimeColor(): Int =
-        if (theme.isDark) rgb(0xbfbfff) else rgb(0x2f67cf)
-
-    private fun calendarItemTextColor(occurrence: JSONObject): Int {
-        val color = schemeColor(occurrence.optInt("color_index"))
-        val hsv = FloatArray(3)
-        Color.colorToHSV(color, hsv)
-        val done = occurrence.optBoolean("done")
-        hsv[1] *= if (done) {
-            if (theme.isDark) 0.35f else 0.45f
-        } else {
-            if (theme.isDark) 0.70f else 0.90f
-        }
-        val alpha = if (done) (255 * 0.78f).roundToInt() else 255
-        return Color.HSVToColor(alpha, hsv)
-    }
-
-    private fun timeFormat24(): Boolean =
-        snapshot.optJSONObject("settings")?.optString("time_format") == "twenty_four_hour"
-
-    private fun schemeColor(index: Int): Int {
-        val darkPalette = intArrayOf(rgb(0xff453a), rgb(0xff9f0a), rgb(0x30d158), rgb(0x0a84ff), rgb(0xbf5af2), rgb(0xffd60a))
-        val lightPalette = intArrayOf(rgb(0xb84433), rgb(0xc47400), rgb(0x28764f), rgb(0x2563a6), rgb(0x735aa6), rgb(0xe0a800))
-        val palette = if (theme.isDark) darkPalette else lightPalette
-        return palette[index.floorMod(palette.size)]
-    }
-
-    private fun editorChromeColor(): Int =
-        if (theme.isDark) rgb(0xb8c9e8) else rgb(0x536a8f)
-
-    private fun eventBg(): Int =
-        if (theme.isDark) adjustAlpha(rgb(0x333333), 0.62f) else adjustAlpha(rgb(0xe6e8ec), 0.62f)
-
-    private fun eventBorder(): Int =
-        if (theme.isDark) adjustAlpha(Color.WHITE, 0.84f) else adjustAlpha(rgb(0x24272d), 0.80f)
-
-    private fun calendarPillStrokeWidth(): Int =
-        max(1, (1.5f * resources.displayMetrics.density).roundToInt())
-
-    private fun calendarEventBorderWidth(): Int =
-        max(1, (1.8f * resources.displayMetrics.density).roundToInt())
-
-    private fun calendarDayStrokeWidth(visible: Boolean): Int {
-        val width = if (visible) 1.8f else 1.4f
-        return max(1, (width * resources.displayMetrics.density).roundToInt())
-    }
-
-    private fun calendarDayHighlightColor(): Int =
-        if (theme.isDark) rgb(0x0a84ff) else rgb(0x007aff)
-
-    private fun calendarWeekSecondaryHighlightColor(): Int =
-        if (theme.isDark) rgb(0x052547) else rgb(0xbacada)
-
-    private fun calendarWeekConnectorColor(): Int =
-        if (theme.isDark) rgb(0x46515f) else rgb(0x9faebb)
-
-    private fun calendarWeekSecondaryTextColor(): Int =
-        if (theme.isDark) rgb(0xb9dcff) else rgb(0x0059b8)
-
-    private fun calendarWeekDayTextColor(today: Boolean, visible: Boolean): Int =
-        when {
-            visible && today -> Color.WHITE
-            visible -> calendarWeekSecondaryTextColor()
-            today -> calendarDayHighlightColor()
-            else -> theme.textPrimary
-        }
-
-    private fun calendarRangeFill(): Int =
-        if (theme.isDark) adjustAlpha(Color.WHITE, 0.09f) else adjustAlpha(rgb(0x3f6fd5), 0.08f)
-
-    private fun rounded(color: Int, radius: Int, strokeColor: Int = Color.TRANSPARENT, strokeWidth: Int = dp(1)): GradientDrawable =
-        GradientDrawable().apply {
-            setColor(color)
-            cornerRadius = radius.toFloat()
-            if (strokeColor != Color.TRANSPARENT) setStroke(strokeWidth, strokeColor)
-        }
-
-    private fun roundedHorizontalSegment(color: Int, leadingRounded: Boolean, trailingRounded: Boolean): GradientDrawable =
-        GradientDrawable().apply {
-            val radius = dp(8).toFloat()
-            setColor(color)
-            cornerRadii = floatArrayOf(
-                if (leadingRounded) radius else 0f,
-                if (leadingRounded) radius else 0f,
-                if (trailingRounded) radius else 0f,
-                if (trailingRounded) radius else 0f,
-                if (trailingRounded) radius else 0f,
-                if (trailingRounded) radius else 0f,
-                if (leadingRounded) radius else 0f,
-                if (leadingRounded) radius else 0f,
-            )
-        }
-
-    private fun underline(color: Int): GradientDrawable =
-        GradientDrawable().apply {
-            setColor(color)
-            setStroke(dp(1), theme.dividerSoft)
-        }
-
-    private fun adjust(color: Int, alpha: Float): Int = adjustAlpha(color, alpha)
-
-    private fun rgb(hex: Int): Int = rgbColor(hex)
-
-    private fun Int.floorMod(mod: Int): Int = ((this % mod) + mod) % mod
-
-    private fun dp(value: Int): Int = (value * resources.displayMetrics.density).roundToInt()
-
-    private fun toast(value: String?) {
-        Toast.makeText(this, value ?: "Error", Toast.LENGTH_LONG).show()
-    }
-
-    private fun showError(title: String, message: String?) {
-        AlertDialog.Builder(this)
-            .setTitle(title)
-            .setMessage(message ?: "Unknown error")
-            .setPositiveButton("OK", null)
-            .show()
-    }
-
-    private fun showFatal(message: String?) {
-        setContentView(text(message ?: "KnotQ failed to start", theme.textPrimary, 16f, true).apply {
-            gravity = Gravity.CENTER
-            setBackgroundColor(theme.bgApp)
-        })
     }
 
 }

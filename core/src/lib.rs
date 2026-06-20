@@ -2,14 +2,13 @@ use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::io::Read;
 use std::path::{Path, PathBuf};
-use std::str::FromStr;
 use std::sync::{Mutex, MutexGuard};
 
 use anyhow::{anyhow, Context, Result};
-use chrono::{DateTime, Duration, Local, NaiveDate, TimeZone, Utc};
+use chrono::{DateTime, Duration, Local, NaiveDate, Utc};
 use knotq_commands::{
     event_popup_commit_commands, event_popup_delete_command, recurrence_can_delete_future, Command,
-    DateEditScope, DateKind, EventDeleteScope, EventPopupDraft, WorkspaceCommandExt,
+    DateEditScope, EventDeleteScope, EventPopupDraft, WorkspaceCommandExt,
 };
 use knotq_date_util::{upcoming_range, UPCOMING_LIMIT};
 use knotq_index::query::{SearchHitStatus, SearchOptions, SearchTarget};
@@ -49,6 +48,9 @@ use sha2::{Digest, Sha256};
 
 mod google_calendar;
 use google_calendar::{GoogleCalendarImportResult, GoogleOAuthConfig};
+
+mod parsing;
+use parsing::*;
 
 const DAILY_QUEUE_MARKER_COLOR: u32 = 0x42a5f5;
 const MOBILE_DAILY_DEFAULT_HISTORY_DAYS: i32 = 3;
@@ -465,14 +467,16 @@ impl MobileCore {
         &self,
         scheme_id: String,
         after_item_id: Option<String>,
+        item_id: String,
     ) -> Result<(), MobileError> {
         let scheme_id = parse_id(&scheme_id)?;
         let after_item_id = after_item_id
             .as_deref()
             .map(parse_id::<ItemId>)
             .transpose()?;
+        let item_id = parse_id::<ItemId>(&item_id)?;
         self.lock()?
-            .insert_table(scheme_id, after_item_id)
+            .insert_table(scheme_id, after_item_id, item_id)
             .map_err(Into::into)
     }
 
@@ -2554,7 +2558,12 @@ impl MobileCoreInner {
                 .is_node_in_deleted_folder_subtree(NodeRef::Folder(folder))
     }
 
-    fn insert_table(&mut self, scheme_id: SchemeId, after_item_id: Option<ItemId>) -> Result<()> {
+    fn insert_table(
+        &mut self,
+        scheme_id: SchemeId,
+        after_item_id: Option<ItemId>,
+        item_id: ItemId,
+    ) -> Result<()> {
         if self.workspace.is_scheme_read_only(scheme_id) {
             return Err(anyhow!("scheme is read-only"));
         }
@@ -2569,7 +2578,10 @@ impl MobileCoreInner {
                 .unwrap_or(scheme.items.len())
         };
 
+        // Use the caller-supplied id so the editor's optimistically-rendered
+        // table and the persisted item share identity from the first frame.
         let mut item = Item::new("");
+        item.id = item_id;
         item.set_table(Table::new(2, 2));
         self.apply(Command::InsertItem {
             scheme: scheme_id,
@@ -3808,6 +3820,7 @@ pub struct MobileNotificationRequest {
     pub notification_key: String,
     pub fire_at: String,
     pub expires_at: Option<String>,
+    pub end_at: Option<String>,
     pub title: String,
     pub body: String,
     pub kind: String,
@@ -3826,6 +3839,7 @@ impl MobileNotificationRequest {
             notification_key,
             fire_at: format_datetime(notification.fire_at),
             expires_at: notification.expires_at.map(format_datetime),
+            end_at: notification.end_at.map(format_datetime),
             title: notification.title,
             body: notification.body,
             kind: match notification.kind {
@@ -3854,136 +3868,6 @@ pub struct MobileSearchHit {
     pub status: String,
 }
 
-fn parse_id<T>(raw: &str) -> Result<T>
-where
-    T: FromStr,
-    T::Err: std::error::Error + Send + Sync + 'static,
-{
-    raw.parse::<T>().with_context(|| format!("parse id {raw}"))
-}
-
-fn parse_marker(raw: Option<&str>) -> Result<ItemMarker> {
-    Ok(match raw.unwrap_or("blank") {
-        "blank" => ItemMarker::Blank,
-        "bullet" => ItemMarker::Bullet,
-        "numbered" => ItemMarker::Numbered,
-        "checkbox" => ItemMarker::Checkbox,
-        other => return Err(anyhow!("unknown marker {other}")),
-    })
-}
-
-fn parse_date_kind(raw: &str) -> Result<DateKind> {
-    Ok(match raw {
-        "start" => DateKind::Start,
-        "end" => DateKind::End,
-        other => return Err(anyhow!("unknown date kind {other}")),
-    })
-}
-
-fn parse_date_edit_scope(raw: &str) -> Result<DateEditScope> {
-    Ok(match raw {
-        "this_event" => DateEditScope::ThisEvent,
-        "all_future" => DateEditScope::AllFuture,
-        "all_events" => DateEditScope::AllEvents,
-        other => return Err(anyhow!("unknown event edit scope {other}")),
-    })
-}
-
-fn parse_event_delete_scope(raw: &str) -> Result<EventDeleteScope> {
-    Ok(match raw {
-        "this_event" => EventDeleteScope::ThisEvent,
-        "all_future" => EventDeleteScope::AllFuture,
-        "all_events" => EventDeleteScope::AllEvents,
-        other => return Err(anyhow!("unknown event delete scope {other}")),
-    })
-}
-
-fn parse_occurrence_json(raw: &str) -> Result<OccurrenceId> {
-    serde_json::from_str(raw).with_context(|| "parse occurrence")
-}
-
-fn recurrence_from_rrule(rrule: Option<String>) -> Option<Recurrence> {
-    match rrule {
-        Some(rule) if !rule.trim().is_empty() => Some(Recurrence {
-            rrules: vec![rule.trim().to_string()],
-            ..Recurrence::default()
-        }),
-        _ => None,
-    }
-}
-
-fn parse_theme_mode(raw: &str) -> Result<ThemeMode> {
-    Ok(match raw {
-        "system" => ThemeMode::System,
-        "dark" => ThemeMode::Dark,
-        "light" => ThemeMode::Light,
-        other => return Err(anyhow!("unknown theme mode {other}")),
-    })
-}
-
-fn parse_time_format(raw: &str) -> Result<TimeFormat> {
-    Ok(match raw {
-        "twelve_hour" => TimeFormat::TwelveHour,
-        "twenty_four_hour" => TimeFormat::TwentyFourHour,
-        other => return Err(anyhow!("unknown time format {other}")),
-    })
-}
-
-fn parse_date_or_today(raw: Option<&str>) -> Result<NaiveDate> {
-    match raw {
-        Some(raw) if !raw.is_empty() => Ok(NaiveDate::parse_from_str(raw, "%Y-%m-%d")?),
-        _ => Ok(default_today()),
-    }
-}
-
-fn normalize_daily_history_days(days: i32) -> i64 {
-    i64::from(days.clamp(
-        MOBILE_DAILY_DEFAULT_HISTORY_DAYS,
-        MOBILE_DAILY_MAX_HISTORY_DAYS,
-    ))
-}
-
-fn parse_datetime_opt(raw: Option<&str>) -> Result<Option<DateTime<Utc>>> {
-    match raw {
-        Some(raw) if !raw.is_empty() => Ok(Some(parse_datetime(raw)?)),
-        _ => Ok(None),
-    }
-}
-
-fn parse_datetime(raw: &str) -> Result<DateTime<Utc>> {
-    Ok(DateTime::parse_from_rfc3339(raw)?.with_timezone(&Utc))
-}
-
-fn default_today() -> NaiveDate {
-    Local::now().date_naive()
-}
-
-fn local_midnight_utc(date: NaiveDate) -> Result<DateTime<Utc>> {
-    let naive = date
-        .and_hms_opt(0, 0, 0)
-        .ok_or_else(|| anyhow!("invalid midnight for {date}"))?;
-    let local = Local
-        .from_local_datetime(&naive)
-        .single()
-        .or_else(|| Local.from_local_datetime(&naive).earliest())
-        .or_else(|| Local.from_local_datetime(&naive).latest())
-        .ok_or_else(|| anyhow!("invalid local midnight for {date}"))?;
-    Ok(local.with_timezone(&Utc))
-}
-
-fn notification_tomorrow_morning_utc() -> DateTime<Utc> {
-    let tomorrow = Local::now().date_naive() + Duration::days(1);
-    let Some(naive) = tomorrow.and_hms_opt(9, 0, 0) else {
-        return Utc::now() + Duration::days(1);
-    };
-    let local = Local
-        .from_local_datetime(&naive)
-        .single()
-        .or_else(|| Local.from_local_datetime(&naive).earliest())
-        .or_else(|| Local.from_local_datetime(&naive).latest())
-        .unwrap_or_else(|| Local::now() + Duration::days(1));
-    local.with_timezone(&Utc)
-}
 
 fn mobile_upcoming(
     indexed: &IndexedWorkspace,
@@ -4955,7 +4839,8 @@ mod tests {
             .expect("created scheme")
             .id;
 
-        core.insert_table(scheme_id.clone(), None)
+        let table_item_id = uuid::Uuid::new_v4().to_string();
+        core.insert_table(scheme_id.clone(), None, table_item_id.clone())
             .expect("insert table");
         let table_item = core
             .snapshot(Some("2026-05-26".to_string()), 0)
@@ -4968,6 +4853,9 @@ mod tests {
             .into_iter()
             .find(|item| !item.tables.is_empty())
             .expect("table item");
+        // The persisted item carries the caller-supplied id, so the editor can
+        // address it immediately without a snapshot round-trip.
+        assert_eq!(table_item.id, table_item_id);
         assert_eq!(table_item.tables[0].columns.len(), 2);
         assert_eq!(table_item.tables[0].rows.len(), 2);
 
@@ -5484,6 +5372,7 @@ mod tests {
             .expect("new reminder notification");
         assert!(request.id.starts_with("knotq-"));
         assert_eq!(request.kind, "reminder");
+        assert_eq!(request.end_at, None);
 
         let changed = core
             .apply_notification_action(
@@ -5500,6 +5389,39 @@ mod tests {
             .pending_notifications(Some("2026-05-27T12:00:00Z".to_string()), 14)
             .expect("pending notifications after action");
         assert!(!requests.iter().any(|request| request.title == "Send deck"));
+
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn pending_event_notifications_include_end_at() {
+        let dir = std::env::temp_dir().join(format!("knotq-mobile-test-{}", uuid::Uuid::new_v4()));
+        let core = MobileCore::new(dir.display().to_string()).expect("open mobile core");
+        let now = Utc.with_ymd_and_hms(2026, 5, 27, 12, 0, 0).unwrap();
+        let start = now + Duration::hours(2);
+        let end = start + Duration::minutes(45);
+
+        core.add_calendar_item(
+            None,
+            Some(start.date_naive().to_string()),
+            "Design review".to_string(),
+            "event".to_string(),
+            Some(format_datetime(start)),
+            Some(format_datetime(end)),
+        )
+        .expect("add event");
+
+        let request = core
+            .pending_notifications(Some(format_datetime(now)), 14)
+            .expect("pending notifications")
+            .into_iter()
+            .find(|request| request.title == "Design review")
+            .expect("event notification");
+
+        assert_eq!(request.kind, "event");
+        let expected_end = format_datetime(end);
+        assert_eq!(request.end_at.as_deref(), Some(expected_end.as_str()));
+        assert_eq!(request.expires_at.as_deref(), Some(expected_end.as_str()));
 
         let _ = std::fs::remove_dir_all(dir);
     }

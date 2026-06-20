@@ -102,7 +102,8 @@ final class MobileNotificationScheduler: NSObject, UNUserNotificationCenterDeleg
             "occurrence_json": request.occurrenceJson,
             "trigger_at": request.triggerAt,
             "kind": request.kind,
-            "expires_at": request.expiresAt ?? ""
+            "expires_at": request.expiresAt ?? "",
+            "end_at": request.endAt ?? ""
         ]
 
         let trigger = UNTimeIntervalNotificationTrigger(timeInterval: interval, repeats: false)

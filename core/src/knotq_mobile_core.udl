@@ -201,6 +201,7 @@ dictionary MobileNotificationRequest {
   string notification_key;
   string fire_at;
   string? expires_at;
+  string? end_at;
   string title;
   string body;
   string kind;
@@ -303,8 +304,11 @@ interface MobileCore {
   [Throws=MobileError]
   void update_item_text(string scheme_id, string item_id, string text);
 
+  // `item_id` is minted by the caller so the editor can render the table
+  // locally and address its cells/rows immediately, without waiting for a
+  // snapshot round-trip to learn a server-assigned id.
   [Throws=MobileError]
-  void insert_table(string scheme_id, string? after_item_id);
+  void insert_table(string scheme_id, string? after_item_id, string item_id);
 
   [Throws=MobileError]
   void set_table_cell_text(string scheme_id, string item_id, i32 row, i32 column, string text);

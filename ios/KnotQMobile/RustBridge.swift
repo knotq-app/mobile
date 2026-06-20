@@ -129,8 +129,8 @@ final class RustBridge: @unchecked Sendable {
         try core.updateItemText(schemeId: schemeID, itemId: itemID, text: text)
     }
 
-    func insertTable(schemeID: String, afterItemID: String?) throws {
-        try core.insertTable(schemeId: schemeID, afterItemId: afterItemID)
+    func insertTable(schemeID: String, afterItemID: String?, itemID: String) throws {
+        try core.insertTable(schemeId: schemeID, afterItemId: afterItemID, itemId: itemID)
     }
 
     func setTableCellText(schemeID: String, itemID: String, row: Int32, column: Int32, text: String) throws {

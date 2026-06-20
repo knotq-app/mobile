@@ -357,8 +357,8 @@ final class AppModel: ObservableObject {
         mutate { try $0.updateItemText(schemeID: schemeID, itemID: itemID, text: text) }
     }
 
-    func insertTable(schemeID: String, afterItemID: String?) {
-        mutate { try $0.insertTable(schemeID: schemeID, afterItemID: afterItemID) }
+    func insertTable(schemeID: String, afterItemID: String?, itemID: String) {
+        mutate { try $0.insertTable(schemeID: schemeID, afterItemID: afterItemID, itemID: itemID) }
     }
 
     func setTableCellText(schemeID: String, itemID: String, row: Int32, column: Int32, text: String) {
@@ -751,7 +751,6 @@ final class AppModel: ObservableObject {
     }
 
     private static let signInPageURL = "https://www.knotq.com/signin.html"
-    private static let accountPageURL = "https://www.knotq.com/account.html#signin"
     private static let signInRedirectScheme = "knotq"
     private static let signInRedirectURI = "knotq://auth-callback"
     private static let defaultSyncApiBase = "https://api.knotq.com"
@@ -902,18 +901,12 @@ final class AppModel: ObservableObject {
     func signOutSync() {
         syncSession = nil
         syncOffline = false
+        subscriptionCancelled = false
+        subscriptionProvider = nil
         syncPollTask?.cancel()
         syncPollTask = nil
         BackgroundSyncCoordinator.shared.scheduleIfEligible(backgroundRefreshEligible)
         UserDefaults.standard.removeObject(forKey: syncSessionKey)
-    }
-
-    func openOnlineAccountManagement() {
-        guard let url = URL(string: Self.accountPageURL) else { return }
-        UIApplication.shared.open(url) { [weak self] success in
-            guard !success else { return }
-            self?.errorMessage = "Could not open the account page."
-        }
     }
 
     /// Open Apple's Manage Subscriptions sheet. An auto-renewable subscription
@@ -982,6 +975,48 @@ final class AppModel: ObservableObject {
                 errorMessage = "Sync has been turned off for this account. Your local workspace stays on this device, and you can sign in again later to re-enable sync."
             }
             await refreshAccountStatus()
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    /// Schedule deletion of the sync account and cloud data from inside the app.
+    /// Local workspace files stay on device; the backend revokes all sessions after
+    /// accepting the deletion request, so the app signs out immediately.
+    func deleteSyncAccount(confirmEmail: String, password: String) async {
+        guard syncSession != nil, !syncInProgress else { return }
+        syncAccountActionInProgress = true
+        syncInProgress = true
+        defer {
+            syncInProgress = false
+            syncAccountActionInProgress = false
+        }
+        guard await refreshSyncSessionForAccountAction(),
+              let session = syncSession,
+              let url = URL(string: "\(session.apiBase)/v1/auth/account") else {
+            return
+        }
+        do {
+            var request = URLRequest(url: url)
+            request.httpMethod = "DELETE"
+            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            request.setValue("Bearer \(session.bearerToken)", forHTTPHeaderField: "Authorization")
+            request.httpBody = try JSONSerialization.data(withJSONObject: [
+                "confirm_email": confirmEmail.trimmingCharacters(in: .whitespacesAndNewlines),
+                "password": password,
+            ])
+            let (data, response) = try await URLSession.shared.data(for: request)
+            guard let http = response as? HTTPURLResponse else {
+                throw SyncAuthError.message("Sync backend returned an invalid response.")
+            }
+            guard (200..<300).contains(http.statusCode) else {
+                let body = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
+                let code = body?["code"] as? String
+                throw SyncAuthError.message(Self.accountActionErrorMessage(code))
+            }
+            _ = try? JSONDecoder().decode(DeleteAccountResponse.self, from: data)
+            signOutSync()
+            errorMessage = "Your account deletion request was accepted. Your local workspace stays on this device."
         } catch {
             errorMessage = error.localizedDescription
         }
@@ -1605,6 +1640,12 @@ final class AppModel: ObservableObject {
             return "Your sync session expired. Sign in again, then retry."
         case "delete_confirmation_mismatch":
             return "Could not confirm the account. Please try again."
+        case "password_required":
+            return "Enter your current password."
+        case "password_too_long":
+            return "That password is too long."
+        case "invalid_credentials":
+            return "That password is incorrect."
         case "billing_api_not_configured":
             return "Subscription cancellation is not configured yet."
         case "cancel_in_app_store":
@@ -2043,6 +2084,16 @@ private struct AccountStatusPayload: Decodable {
         supportsSync = try container.decodeIfPresent(Bool.self, forKey: .supportsSync) ?? true
         subscriptionState = try container.decodeIfPresent(String.self, forKey: .subscriptionState)
         subscriptionProvider = try container.decodeIfPresent(String.self, forKey: .subscriptionProvider)
+    }
+}
+
+private struct DeleteAccountResponse: Decodable {
+    let deletionScheduled: Bool
+    let purgeAfter: String?
+
+    enum CodingKeys: String, CodingKey {
+        case deletionScheduled = "deletion_scheduled"
+        case purgeAfter = "purge_after"
     }
 }
 

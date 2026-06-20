@@ -15,9 +15,14 @@ import android.graphics.Typeface
 import android.graphics.drawable.Drawable
 import android.os.Build
 import android.text.Editable
+import android.text.Layout
 import android.text.Spannable
+import android.text.SpannableStringBuilder
+import android.text.StaticLayout
 import android.text.TextWatcher
+import android.text.TextPaint
 import android.text.style.AbsoluteSizeSpan
+import android.text.style.BackgroundColorSpan
 import android.text.style.ForegroundColorSpan
 import android.text.style.LineBackgroundSpan
 import android.text.style.LineHeightSpan
@@ -25,6 +30,7 @@ import android.text.style.LeadingMarginSpan
 import android.text.style.ReplacementSpan
 import android.text.style.StyleSpan
 import android.text.style.StrikethroughSpan
+import android.view.KeyEvent
 import android.view.MotionEvent
 import android.view.View
 import android.view.inputmethod.BaseInputConnection
@@ -36,30 +42,41 @@ import kotlin.math.min
 import kotlin.math.roundToInt
 
 internal const val EDITOR_TEXT_LEFT_PAD_DP = 35
-private const val EDITOR_MARKER_SLOT_DP = 21
-private const val EDITOR_INDENT_WIDTH_DP = 15
-private const val EDITOR_CHECKBOX_SIZE_DP = 14
-private const val EDITOR_ANNOTATION_HEIGHT_DP = 14
-private const val EDITOR_ANNOTATION_BAR_GAP_DP = 8
-private const val EDITOR_ANNOTATION_TEXT_GAP_DP = 7
-private const val EDITOR_INDENT_GUIDE_X_SHIFT_DP = 2
-private const val EDITOR_IMAGE_TOP_GAP_DP = 8
-private const val EDITOR_IMAGE_STACK_GAP_DP = 7
-private const val EDITOR_IMAGE_MAX_HEIGHT_DP = 300
-private const val EDITOR_IMAGE_FALLBACK_WIDTH_DP = 320
-private const val EDITOR_IMAGE_FALLBACK_HEIGHT_DP = 180
-private const val EDITOR_TABLE_TOP_GAP_DP = 8
-private const val EDITOR_TABLE_ROW_HEIGHT_DP = 34
-private const val EDITOR_TABLE_HEADER_HEIGHT_DP = 30
-private const val EDITOR_TABLE_MIN_COL_WIDTH_DP = 64
-private const val EDITOR_TABLE_CELL_PAD_DP = 8
-private const val EDITOR_TABLE_CTRL_DP = 20
+internal const val EDITOR_MARKER_SLOT_DP = 21
+internal const val EDITOR_INDENT_WIDTH_DP = 15
+internal const val EDITOR_CHECKBOX_SIZE_DP = 14
+internal const val EDITOR_ANNOTATION_HEIGHT_DP = 14
+internal const val EDITOR_ANNOTATION_BAR_GAP_DP = 8
+internal const val EDITOR_ANNOTATION_TEXT_GAP_DP = 7
+internal const val EDITOR_INDENT_GUIDE_X_SHIFT_DP = 2
+internal const val EDITOR_IMAGE_TOP_GAP_DP = 8
+internal const val EDITOR_IMAGE_STACK_GAP_DP = 7
+internal const val EDITOR_IMAGE_MAX_HEIGHT_DP = 300
+internal const val EDITOR_IMAGE_FALLBACK_WIDTH_DP = 320
+internal const val EDITOR_IMAGE_FALLBACK_HEIGHT_DP = 180
+internal const val EDITOR_TABLE_TOP_GAP_DP = 8
+// iOS `tableCellHeight` (min body-row height) and `tableHeaderHeight`.
+internal const val EDITOR_TABLE_ROW_HEIGHT_DP = 36
+internal const val EDITOR_TABLE_HEADER_HEIGHT_DP = 30
+internal const val EDITOR_TABLE_CELL_PAD_DP = 8
 // How much vertical space a collapsed block-only text line gives back. Roughly
 // one text line so the block draws in place rather than below a blank row.
-private const val EDITOR_COLLAPSE_TEXT_HEIGHT_DP = 22
-private class FixedHeightCursorDrawable(
+internal const val EDITOR_COLLAPSE_TEXT_HEIGHT_DP = 22
+// Object Replacement Character: a block line's body is exactly this one char, so
+// the cursor can sit on/around the block and select+delete removes it. Mirrors
+// the desktop editor's `TABLE_OBJECT_CHAR` and iOS's `blockObjectChar` (both
+// `\u{fffc}`). It is an editor-buffer-only sentinel — the model stores empty
+// text for block items and rebuilds the char on render.
+internal const val BLOCK_OBJECT_CHAR = '￼'
+internal const val BLOCK_OBJECT_STRING = "￼"
+// Caret heights matching iOS `caretRect`: a plain text line clamps the caret to
+// the text line height, a heading to its taller line, and a block line lets the
+// caret span the whole block (so it reads as active/selected).
+internal const val EDITOR_TEXT_LINE_HEIGHT_DP = 22
+internal const val EDITOR_HEADING_LINE_HEIGHT_DP = 30
+internal class FixedHeightCursorDrawable(
     color: Int,
-    private val maxHeightPx: Int,
+    var maxHeightPx: Int,
     private val widthPx: Int
 ) : Drawable() {
     private val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply { this.color = color }
@@ -113,16 +130,49 @@ internal class SchemeEditText(context: android.content.Context) : EditText(conte
             invalidate()
         }
 
-    /// Lines with media/annotations reserve extra height below the text, and
-    /// the stock cursor stretches across all of it. Cap the caret at one text
-    /// line (iOS keeps a text-sized caret there too; selection stays rough).
+    private var caretDrawable: FixedHeightCursorDrawable? = null
+
+    /// Lines reserve extra height below the text for blocks/annotations, which
+    /// the stock caret would stretch across. The caret height is set per line in
+    /// `updateCaretHeight` to mirror iOS `caretRect`: text/heading lines clamp to
+    /// their line height; a block line lets the caret span the whole block.
     private fun applyCursorDrawable() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            textCursorDrawable = FixedHeightCursorDrawable(
+            val drawable = FixedHeightCursorDrawable(
                 color = editorTheme.accent,
-                maxHeightPx = dp(26),
+                maxHeightPx = dp(EDITOR_TEXT_LINE_HEIGHT_DP),
                 widthPx = max(2, dp(2))
             )
+            caretDrawable = drawable
+            textCursorDrawable = drawable
+            updateCaretHeight()
+        }
+    }
+
+    /// Sizes the caret to the line it sits on (mirrors iOS `caretRect`): a block
+    /// line lets the caret span the whole block (so it reads as active/selected
+    /// before/after the block); a heading uses the taller heading height; a plain
+    /// text line clamps to the regular text height so the caret never stretches
+    /// across a block's reserved area.
+    private fun updateCaretHeight() {
+        val drawable = caretDrawable ?: return
+        val value = text?.toString().orEmpty()
+        val caret = selectionStart.coerceIn(0, value.length)
+        val lineStart = if (caret == 0) 0 else value.lastIndexOf('\n', caret - 1).let { if (it < 0) 0 else it + 1 }
+        val nl = value.indexOf('\n', caret)
+        val lineEnd = if (nl < 0) value.length else nl
+        val raw = value.substring(lineStart, lineEnd.coerceAtLeast(lineStart))
+        val body = raw.drop(chromePrefixLength(raw).coerceAtMost(raw.length))
+        val next = when {
+            // A block line: don't clamp — the drawable spans the line's full
+            // height (the block box), so the caret runs the block's left/right edge.
+            body == BLOCK_OBJECT_STRING -> Int.MAX_VALUE / 4
+            isMarkdownHeading(body) -> dp(EDITOR_HEADING_LINE_HEIGHT_DP)
+            else -> dp(EDITOR_TEXT_LINE_HEIGHT_DP)
+        }
+        if (drawable.maxHeightPx != next) {
+            drawable.maxHeightPx = next
+            invalidate()
         }
     }
     var accentColor: Int = Color.BLUE
@@ -132,33 +182,160 @@ internal class SchemeEditText(context: android.content.Context) : EditText(conte
             invalidate()
         }
     private var chromeAdornments: List<EditorLineAdornment>? = emptyList()
+    // True once AdornmentSpans have been attached to the live buffer. While true,
+    // spans are the sole source of truth; the index-based list is only consulted
+    // before spans exist (initial draw, or when set with no editable buffer).
+    private var hasAdornmentSpans = false
     var lineAdornments: List<EditorLineAdornment>
         get() = chromeAdornments.orEmpty()
         set(value) {
             chromeAdornments = value
-            editableText?.let { applyPrefixSpans(it, fullDocument = true) }
+            hasAdornmentSpans = false
+            editableText?.let { editable ->
+                // Attach AdornmentSpans to each line's trailing '\n' so they move
+                // with text edits (pure index-based lookup goes stale when lines
+                // are inserted/deleted above a block during live editing).
+                editable.getSpans(0, editable.length, AdornmentSpan::class.java).forEach { editable.removeSpan(it) }
+                val text = editable.toString()
+                var lineStart = 0
+                for (adornment in value) {
+                    val nl = text.indexOf('\n', lineStart)
+                    if (nl < 0) break
+                    // Anchor a block line's adornment to its object char (the stable
+                    // block marker) rather than the trailing '\n': editing the line
+                    // below (Enter / backspace to delete an empty line) shifts or
+                    // deletes that '\n', which would otherwise drop the block.
+                    val objPos = text.indexOf(BLOCK_OBJECT_CHAR, lineStart)
+                    val anchor = if (objPos in lineStart until nl) objPos else nl
+                    editable.setSpan(AdornmentSpan(adornment), anchor, anchor + 1, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE)
+                    lineStart = nl + 1
+                    hasAdornmentSpans = true
+                }
+                applyPrefixSpans(editable, fullDocument = true)
+            }
+            updateCaretHeight()
         }
+
+    // Looks up the adornment for the line whose '\n' is at `nlOffset`. Once spans
+    // are attached they are authoritative: a line whose '\n' carries no span has
+    // no adornment, even if the stale index-based list still references one (which
+    // would otherwise draw the block a second time on a diverged physical line).
+    private fun adornmentForLine(lineIndex: Int, lineStart: Int, nlOffset: Int): EditorLineAdornment? {
+        if (hasAdornmentSpans) {
+            val editable = editableText ?: return null
+            // The span sits on the line's object char (block lines) or its trailing
+            // '\n' (everything else), so search the whole line, not just the '\n'.
+            val from = lineStart.coerceIn(0, editable.length)
+            val to = (nlOffset + 1).coerceIn(from, editable.length)
+            val spans = editable.getSpans(from, to, AdornmentSpan::class.java)
+            if (spans.isNotEmpty()) return spans[0].adornment
+            return null
+        }
+        return chromeAdornments?.getOrNull(lineIndex)
+    }
     var markerTapHandler: ((Int) -> Unit)? = null
     var selectionChangedHandler: (() -> Unit)? = null
     // Inline table interactions. `tableCellTapHandler` is invoked with the
     // logical line (item), the cell's row/column, and the cell's on-screen rect
-    // so the host can float an editable field over it. `tableControlTapHandler`
-    // is invoked for the compact +/- row/column controls.
+    // so the host can float an editable field over it. Row/column add+delete
+    // happen through the floated cell editor's Rows/Columns menu (as on iOS).
     var tableCellTapHandler: ((TableCellHit) -> Unit)? = null
-    var tableControlTapHandler: ((TableControlHit) -> Unit)? = null
+    var activeTableCellEdit: TableCellHit? = null
+        set(value) {
+            field = value
+            invalidate()
+        }
     // Populated on every draw pass; consumed by touch hit-testing.
     private val tableCellHits = ArrayList<TableCellHit>()
-    private val tableControlHits = ArrayList<TableControlHit>()
 
     override fun onSelectionChanged(selStart: Int, selEnd: Int) {
         super.onSelectionChanged(selStart, selEnd)
+        // A line's indent + marker is literal prefix text, but it is chrome (drawn
+        // in the gutter and hidden in the run), not content: the caret must never
+        // sit inside it. Snap a collapsed caret (e.g. from a tap in the gutter)
+        // forward to the body start. Arrow-key crossings are handled in onKeyDown,
+        // before the movement method runs, since a setSelection here would be
+        // overridden by it. Matches iOS/desktop, where the prefix isn't text.
+        if (!styling && !clampingCaret && selStart == selEnd) {
+            val bodyStart = bodyStartFor(selStart)
+            if (selStart < bodyStart) {
+                clampingCaret = true
+                setSelection(bodyStart)
+                clampingCaret = false
+                return
+            }
+        }
+        if (!styling) {
+            editableText?.let { editable ->
+                if (updateRevealedMarkdownRange(editable.toString())) {
+                    applyPrefixSpans(editable, fullDocument = true)
+                }
+            }
+        }
+        updateCaretHeight()
         selectionChangedHandler?.invoke()
+    }
+
+    override fun onKeyDown(keyCode: Int, event: KeyEvent): Boolean {
+        // Make horizontal arrows treat the indent+marker prefix as if it weren't
+        // there: left off the body start jumps to the previous line's end, and
+        // right off a line end lands on the next line's body start — never inside a
+        // gutter. Handled here (not in onSelectionChanged) so the movement method
+        // doesn't clobber the adjusted selection.
+        if (selectionStart == selectionEnd) {
+            val value = text?.toString().orEmpty()
+            val p = selectionStart.coerceIn(0, value.length)
+            when (keyCode) {
+                KeyEvent.KEYCODE_DPAD_LEFT -> {
+                    val bodyStart = bodyStartFor(p)
+                    if (p <= bodyStart && bodyStart > 0) {
+                        val lineStart = if (p == 0) 0 else value.lastIndexOf('\n', p - 1) + 1
+                        setSelection(if (lineStart > 0) lineStart - 1 else bodyStart)
+                        return true
+                    }
+                }
+                KeyEvent.KEYCODE_DPAD_RIGHT -> {
+                    if (p + 1 < value.length && value[p] == '\n') {
+                        setSelection(bodyStartFor(p + 1))
+                        return true
+                    }
+                }
+            }
+        }
+        return super.onKeyDown(keyCode, event)
+    }
+
+    /// The first caret offset past a line's indent+marker prefix (the body start)
+    /// for the line containing `pos`.
+    private fun bodyStartFor(pos: Int): Int {
+        val value = text?.toString().orEmpty()
+        if (value.isEmpty()) return 0
+        val p = pos.coerceIn(0, value.length)
+        val lineStart = if (p == 0) 0 else value.lastIndexOf('\n', p - 1) + 1
+        val lineEnd = value.indexOf('\n', lineStart).let { if (it < 0) value.length else it }
+        val prefixLen = chromePrefixLength(value.substring(lineStart, lineEnd))
+            .coerceAtMost(lineEnd - lineStart)
+        return lineStart + prefixLen
+    }
+
+    override fun onFocusChanged(focused: Boolean, direction: Int, previouslyFocusedRect: Rect?) {
+        super.onFocusChanged(focused, direction, previouslyFocusedRect)
+        if (!styling) {
+            editableText?.let { editable ->
+                updateRevealedMarkdownRange(editable.toString())
+                applyPrefixSpans(editable, fullDocument = true)
+            }
+        }
     }
 
     private var styling = false
     private var pendingEditStart = -1
     private var pendingEditEnd = -1
     private var deletionBrokePrefix = false
+    private var revealedMarkdownStart = -1
+    private var revealedMarkdownEnd = -1
+    // Guards the re-entrant setSelection used to snap the caret out of a prefix.
+    private var clampingCaret = false
 
     init {
         addTextChangedListener(object : TextWatcher {
@@ -182,6 +359,10 @@ internal class SchemeEditText(context: android.content.Context) : EditText(conte
                         deletionBrokePrefix = false
                         repairBrokenPrefix(s)
                     }
+                    // Keep a block's object char alone on its line (iOS invariant
+                    // I4): typing on / merging into a block line moves the text to a
+                    // fresh adjacent line so the block survives instead of demoting.
+                    enforceBlockObjectIsolation(s)
                     handleEnterContinuation(s)
                     applyPrefixSpans(s, fullDocument = true)
                 }
@@ -265,18 +446,49 @@ internal class SchemeEditText(context: android.content.Context) : EditText(conte
     }
 
     override fun onDraw(canvas: Canvas) {
+        // Highlights are painted *behind* the glyphs (before the text layer) and
+        // sized to the text run, not the line box. Lines that reserve extra
+        // height for blocks/annotations would otherwise make a stock
+        // BackgroundColorSpan bleed down across the whole reserved area (iOS
+        // draws the highlight on the run, so it stays tight).
+        drawMarkdownHighlights(canvas)
         super.onDraw(canvas)
         drawEditorChrome(canvas)
     }
 
+    /// Paints the translucent gold background behind every `==…==` run, clipped
+    /// to the text's own ascent/descent so it never spills into a line's
+    /// reserved block/annotation height. Mirrors iOS's run-level highlight.
+    private fun drawMarkdownHighlights(canvas: Canvas) {
+        val layout = layout ?: return
+        val editable = editableText ?: return
+        val spans = editable.getSpans(0, editable.length, EditorMarkdownHighlightSpan::class.java)
+        if (spans.isEmpty()) return
+        val fm = paint.fontMetricsInt
+        chromePaint.style = Paint.Style.FILL
+        chromePaint.color = EDITOR_HIGHLIGHT_COLOR
+        for (span in spans) {
+            val spanStart = editable.getSpanStart(span)
+            val spanEnd = editable.getSpanEnd(span)
+            if (spanEnd <= spanStart) continue
+            val firstLine = layout.getLineForOffset(spanStart)
+            val lastLine = layout.getLineForOffset(spanEnd)
+            for (line in firstLine..lastLine) {
+                val segStart = if (line == firstLine) spanStart else layout.getLineStart(line)
+                val segEnd = if (line == lastLine) spanEnd else layout.getLineEnd(line)
+                if (segEnd <= segStart) continue
+                val x1 = layout.getPrimaryHorizontal(segStart) + totalPaddingLeft
+                val x2 = layout.getPrimaryHorizontal(segEnd) + totalPaddingLeft
+                val baseline = (layout.getLineBaseline(line) + totalPaddingTop - scrollY).toFloat()
+                canvas.drawRect(min(x1, x2), baseline + fm.ascent, max(x1, x2), baseline + fm.descent, chromePaint)
+            }
+        }
+    }
+
     override fun onTouchEvent(event: MotionEvent): Boolean {
         if (event.action == MotionEvent.ACTION_UP) {
-            // Table chrome is hit-tested first: a tap on a +/- control or a cell
-            // takes priority over caret placement / marker toggles.
-            tableControlHits.firstOrNull { it.rect.contains(event.x, event.y) }?.let { hit ->
-                tableControlTapHandler?.invoke(hit)
-                return true
-            }
+            // Table chrome is hit-tested first: a tap on a cell takes priority
+            // over caret placement / marker toggles.
             tableCellHits.firstOrNull { it.rect.contains(event.x, event.y) }?.let { hit ->
                 tableCellTapHandler?.invoke(hit)
                 return true
@@ -291,8 +503,10 @@ internal class SchemeEditText(context: android.content.Context) : EditText(conte
 
     /// Looks up the on-screen rect of a table cell recorded in the last draw
     /// pass, used to re-open the inline editor on Tab/next navigation.
-    fun cellRectFor(tableIndex: Int, row: Int, column: Int): RectF? =
-        tableCellHits.firstOrNull { it.tableIndex == tableIndex && it.row == row && it.column == column }?.let { RectF(it.rect) }
+    fun cellRectFor(lineIndex: Int, tableIndex: Int, row: Int, column: Int): RectF? =
+        tableCellHits.firstOrNull {
+            it.lineIndex == lineIndex && it.tableIndex == tableIndex && it.row == row && it.column == column
+        }?.let { RectF(it.rect) }
 
     private fun markerLineAt(x: Float, y: Float): Int? {
         // iOS `checkboxLineRange`: only checkbox markers respond to taps (a
@@ -309,9 +523,11 @@ internal class SchemeEditText(context: android.content.Context) : EditText(conte
             val parsed = parseChromeLine(raw)
             if (parsed.marker != "checkbox") continue
             val prefixWidth = prefixVisualWidth(parsed, parsed.marker)
-            val adornment = lineAdornments.getOrNull(logicalLine)
+            val nlOffset = value.indexOf('\n', lineStart).let { if (it < 0) value.length else it }
+            val adornment = adornmentForLine(logicalLine, lineStart, nlOffset)
             val body = raw.drop(chromePrefixLength(raw).coerceAtMost(raw.length))
-            val extraHeight = extraHeightFor(adornment, prefixWidth, collapsesText(body, adornment?.blocks.orEmpty()))
+            val blocks = blocksForBody(body, adornment)
+            val extraHeight = extraHeightFor(adornment, blocks, prefixWidth, collapsesText(blocks))
             val rect = markerRect(
                 parsed.indent,
                 totalPaddingTop + layout.getLineTop(visualLine) - scrollY,
@@ -344,28 +560,36 @@ internal class SchemeEditText(context: android.content.Context) : EditText(conte
         pendingEditEnd = -1
 
         removeSpansInRange(editable, rangeStart, rangeEnd, HiddenPrefixSpan::class.java)
+        removeSpansInRange(editable, rangeStart, rangeEnd, BlockObjectSpan::class.java)
         removeSpansInRange(editable, rangeStart, rangeEnd, DoneTextSpan::class.java)
         removeSpansInRange(editable, rangeStart, rangeEnd, DoneTextColorSpan::class.java)
         removeSpansInRange(editable, rangeStart, rangeEnd, EditorChromeSpan::class.java)
         removeSpansInRange(editable, rangeStart, rangeEnd, EditorHangingIndentSpan::class.java)
         removeSpansInRange(editable, rangeStart, rangeEnd, EditorMarkdownSpan::class.java)
+        removeSpansInRange(editable, rangeStart, rangeEnd, EditorMarkdownHighlightSpan::class.java)
+        removeSpansInRange(editable, rangeStart, rangeEnd, EditorMarkdownMarkerSpan::class.java)
+        removeSpansInRange(editable, rangeStart, rangeEnd, EditorMarkdownStrikeSpan::class.java)
         removeSpansInRange(editable, rangeStart, rangeEnd, EditorTextSizeSpan::class.java)
+        updateRevealedMarkdownRange(value)
 
         var start = rangeStart
         var lineIndex = lineIndexAtStart
         while (start <= rangeEnd) {
             if (start == value.length && value.endsWith("\n")) break
-            val end = value.indexOf('\n', start).let { if (it < 0 || it > rangeEnd) rangeEnd else it }
+            val nlInText = value.indexOf('\n', start)
+            val end = if (nlInText < 0 || nlInText > rangeEnd) rangeEnd else nlInText
             val raw = value.substring(start, end)
             val prefix = chromePrefixLength(raw)
             val parsed = parseChromeLine(raw)
-            val adornment = lineAdornments.getOrNull(lineIndex)
+            val adornment = adornmentForLine(lineIndex, start, if (nlInText < 0) value.length else nlInText)
             val marker = parsed.marker
             val prefixWidth = prefixVisualWidth(parsed, marker)
             val bodyStart = (start + prefix).coerceAtMost(end)
             val body = raw.drop(prefix.coerceAtMost(raw.length))
+            val isBlockLine = body == BLOCK_OBJECT_STRING
+            val blocks = if (isBlockLine) adornment?.blocks.orEmpty() else emptyList()
             val heading = isMarkdownHeading(body)
-            val collapse = collapsesText(body, adornment?.blocks.orEmpty())
+            val collapse = collapsesText(blocks)
             val spanEnd = when {
                 end > start -> end
                 end < value.length -> end + 1
@@ -376,7 +600,7 @@ internal class SchemeEditText(context: android.content.Context) : EditText(conte
                     EditorChromeSpan(
                         lineTextEnd = end,
                         heading = heading,
-                        extraHeight = extraHeightFor(adornment, prefixWidth, collapse),
+                        extraHeight = extraHeightFor(adornment, blocks, prefixWidth, collapse),
                         collapseText = collapse,
                         density = resources.displayMetrics.density
                     ),
@@ -404,9 +628,22 @@ internal class SchemeEditText(context: android.content.Context) : EditText(conte
                 )
             }
             if (bodyStart < end) {
-                if (heading) {
+                if (isBlockLine) {
+                    // Give the object glyph the block's width (so the caret can sit
+                    // before/after the block) but draw nothing — the image/table is
+                    // painted by `drawBlockStack` in the reserved height. No markdown
+                    // styling on a block.
+                    editable.setSpan(BlockObjectSpan(blockObjectWidth(blocks, prefixWidth)), bodyStart, end, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE)
+                } else if (heading) {
                     editable.setSpan(EditorTextSizeSpan(24), bodyStart, end, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE)
                     editable.setSpan(EditorMarkdownSpan(Typeface.BOLD), bodyStart, end, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE)
+                    headingMarkerLength(body)?.let { markerLength ->
+                        applyMarkdownMarkerSpan(
+                            editable,
+                            bodyStart,
+                            bodyStart + markerLength.coerceAtMost(body.length)
+                        )
+                    }
                 } else {
                     applyMarkdownSpans(editable, body, bodyStart, end)
                 }
@@ -420,6 +657,60 @@ internal class SchemeEditText(context: android.content.Context) : EditText(conte
             start = end + 1
         }
         styling = false
+    }
+
+    /// Maintains iOS invariant I4: a block's object char is the only thing on its
+    /// line (besides indent). When the user types on a block line — or a backspace
+    /// merges a text line into it — the extra text is split onto a fresh adjacent
+    /// line (before the glyph if it was typed before it, after otherwise) so the
+    /// image/table keeps its own line instead of being demoted to plain text.
+    /// Fixes one violating line per pass (afterTextChanged fires per edit).
+    private fun enforceBlockObjectIsolation(editable: Editable) {
+        val value = editable.toString()
+        var lineStart = 0
+        while (lineStart <= value.length) {
+            val nl = value.indexOf('\n', lineStart)
+            val lineEnd = if (nl < 0) value.length else nl
+            val line = value.substring(lineStart, lineEnd)
+            val objRel = line.indexOf(BLOCK_OBJECT_CHAR)
+            if (objRel >= 0) {
+                val indentLen = lineIndentLength(line).coerceAtMost(line.length)
+                val indent = line.substring(0, indentLen)
+                // The block line keeps its indent + marker prefix (a table/image can
+                // be checked, bulleted, numbered); only text typed before/after the
+                // glyph is split off. The split-off text lines carry the indent but
+                // not the marker, so the marker stays with the block.
+                val prefixLen = minOf(chromePrefixLength(line).coerceAtMost(line.length), objRel)
+                val prefix = line.substring(0, prefixLen)
+                val alreadyClean = objRel == prefixLen &&
+                    line.length == prefixLen + 1
+                if (!alreadyClean) {
+                    val absObj = lineStart + objRel
+                    val pre = line.substring(prefixLen, objRel)
+                    val post = line.substring(objRel + 1).replace(BLOCK_OBJECT_STRING, "")
+                    val rebuilt = StringBuilder()
+                    if (pre.isNotEmpty()) rebuilt.append(indent).append(pre).append('\n')
+                    rebuilt.append(prefix).append(BLOCK_OBJECT_CHAR)
+                    if (post.isNotEmpty()) rebuilt.append('\n').append(indent).append(post)
+                    val typedBeforeGlyph = pendingEditStart in 0..absObj
+                    val caret = when {
+                        pre.isNotEmpty() && (typedBeforeGlyph || post.isEmpty()) ->
+                            lineStart + indent.length + pre.length
+                        post.isNotEmpty() -> lineStart + rebuilt.length
+                        else -> lineStart + prefix.length + 1
+                    }
+                    styling = true
+                    editable.replace(lineStart, lineEnd, rebuilt.toString())
+                    setSelection(caret.coerceIn(0, editable.length))
+                    styling = false
+                    pendingEditStart = -1
+                    pendingEditEnd = -1
+                    return
+                }
+            }
+            if (nl < 0) break
+            lineStart = nl + 1
+        }
     }
 
     private fun handleEnterContinuation(editable: Editable) {
@@ -513,7 +804,6 @@ internal class SchemeEditText(context: android.content.Context) : EditText(conte
         val layout = layout ?: return
         val value = text?.toString().orEmpty()
         tableCellHits.clear()
-        tableControlHits.clear()
         val lines = chromeDrawLines(value)
         lines.forEachIndexed { index, line ->
             if (value.isEmpty()) return@forEachIndexed
@@ -525,7 +815,13 @@ internal class SchemeEditText(context: android.content.Context) : EditText(conte
             val rowBottom = totalPaddingTop + layout.getLineBottom(lastVisual) - scrollY
             val firstBottom = if (firstVisual == lastVisual) firstBottomRaw - line.extraHeight else firstBottomRaw
             val contentBottom = rowBottom - line.extraHeight
-            val markerRect = markerRect(line.indent, firstTop, firstBottom)
+            // A collapsed block line (image/table) shrinks its text row to a
+            // sliver, so centering the marker in it would land it on the block's
+            // top edge — half of it poking into the line above. Anchor the marker
+            // to a full text-row height at the block top so it sits at the
+            // table/image's top-left instead.
+            val markerBottom = if (line.collapseText) firstTop + dp(EDITOR_TEXT_LINE_HEIGHT_DP) else firstBottom
+            val markerRect = markerRect(line.indent, firstTop, markerBottom)
             val previous = lines.getOrNull(index - 1)
             val next = lines.getOrNull(index + 1)
 
@@ -563,8 +859,10 @@ internal class SchemeEditText(context: android.content.Context) : EditText(conte
             val marker = parsed.marker
             val prefixWidth = prefixVisualWidth(parsed, marker)
             val body = raw.drop(chromePrefixLength(raw).coerceAtMost(raw.length))
-            val adornment = lineAdornments.getOrNull(lineIndex)
-            val blocks = adornment?.blocks.orEmpty()
+            val adornment = adornmentForLine(lineIndex, start, end)
+            // Blocks draw + reserve height only on the object-char line itself, so
+            // a stale adornment can never paint a block onto the wrong line.
+            val blocks = blocksForBody(body, adornment)
             out.add(
                 ChromeDrawLine(
                     start = start,
@@ -576,8 +874,8 @@ internal class SchemeEditText(context: android.content.Context) : EditText(conte
                     blocks = blocks,
                     prefixWidth = prefixWidth,
                     heading = isMarkdownHeading(body),
-                    extraHeight = extraHeightFor(adornment, prefixWidth, collapseText = collapsesText(body, blocks)),
-                    collapseText = collapsesText(body, blocks)
+                    extraHeight = extraHeightFor(adornment, blocks, prefixWidth, collapseText = collapsesText(blocks)),
+                    collapseText = collapsesText(blocks)
                 )
             )
             lineIndex++
@@ -705,36 +1003,68 @@ internal class SchemeEditText(context: android.content.Context) : EditText(conte
     /// Renders a table grid on the canvas and registers per-cell and +/- control
     /// hit rects. Returns the y just below the table.
     private fun drawTable(canvas: Canvas, table: EditorTable, left: Float, top: Float, maxWidth: Int, lineIndex: Int, tableIndex: Int): Float {
-        val columnCount = max(table.columns.size, table.rows.maxOfOrNull { it.size } ?: 0)
-        if (columnCount <= 0) return top
-        val ctrl = dp(EDITOR_TABLE_CTRL_DP).toFloat()
-        // Reserve a thin gutter on the right/bottom for the add controls.
-        val gridWidth = (maxWidth - dp(EDITOR_TABLE_CTRL_DP) - dp(4)).coerceAtLeast(dp(EDITOR_TABLE_MIN_COL_WIDTH_DP) * 1)
-        val colWidth = max(dp(EDITOR_TABLE_MIN_COL_WIDTH_DP).toFloat(), gridWidth.toFloat() / columnCount)
+        val columnCount = max(1, max(table.columns.size, table.rows.maxOfOrNull { it.size } ?: 0))
+        // Columns split the full block width evenly, matching iOS
+        // (`colWidth = rect.width / columnCount`). Row/column add+delete live in
+        // the cell editor's Rows/Columns menu, so no gutter is reserved here.
+        val colWidth = (maxWidth.toFloat() / columnCount).coerceAtLeast(1f)
         val headerHeight = dp(EDITOR_TABLE_HEADER_HEIGHT_DP).toFloat()
-        val rowHeight = dp(EDITOR_TABLE_ROW_HEIGHT_DP).toFloat()
+        val rowHeights = tableRowHeights(table, colWidth)
         val gridRight = left + colWidth * columnCount
+
+        // The grid box: a rounded, filled, outlined panel, then clipped so the
+        // header tint and inner rules stay inside the corners (mirrors iOS
+        // `drawTable`: buttonBg fill, divider border, bgModal header).
+        val gridBottom = top + headerHeight + rowHeights.sum()
+        val tablePath = Path().apply {
+            addRoundRect(RectF(left, top, gridRight, gridBottom), dp(6f), dp(6f), Path.Direction.CW)
+        }
+        canvas.save()
+        chromePaint.style = Paint.Style.FILL
+        chromePaint.color = editorTheme.buttonBg
+        canvas.drawPath(tablePath, chromePaint)
+        chromePaint.style = Paint.Style.STROKE
+        chromePaint.strokeWidth = dp(1f)
+        chromePaint.color = editorTheme.divider
+        canvas.drawPath(tablePath, chromePaint)
+        canvas.clipPath(tablePath)
 
         // Header row.
         var y = top
         val headerRect = RectF(left, y, gridRight, y + headerHeight)
         chromePaint.style = Paint.Style.FILL
-        chromePaint.color = editorTheme.buttonBg
+        chromePaint.color = editorTheme.bgModal
         canvas.drawRect(headerRect, chromePaint)
+        val headerTextColor = if (editorTheme.isDark) editorTheme.textSoft else editorTheme.textDim
         for (col in 0 until columnCount) {
             val name = table.columns.getOrNull(col)?.name.orEmpty()
-            drawTableText(canvas, name, left + col * colWidth, y, colWidth, headerHeight, editorTheme.textDim, bold = true)
+            if (!isActiveTableEdit(lineIndex, tableIndex, row = -1, column = col)) {
+                drawTableText(canvas, name, left + col * colWidth, y, colWidth, headerHeight, headerTextColor, bold = true)
+            }
+            tableCellHits.add(
+                TableCellHit(
+                    lineIndex = lineIndex,
+                    tableIndex = tableIndex,
+                    row = -1,
+                    column = col,
+                    text = name.ifEmpty { "Column ${col + 1}" },
+                    rect = RectF(left + col * colWidth, y, left + (col + 1) * colWidth, y + headerHeight)
+                )
+            )
         }
         y += headerHeight
 
         // Body rows.
         table.rows.forEachIndexed { rowIndex, row ->
             val rowTop = y
+            val rowHeight = rowHeights.getOrNull(rowIndex) ?: dp(EDITOR_TABLE_ROW_HEIGHT_DP).toFloat()
             for (col in 0 until columnCount) {
                 val cellLeft = left + col * colWidth
                 val cellRect = RectF(cellLeft, rowTop, cellLeft + colWidth, rowTop + rowHeight)
                 val cell = row.getOrNull(col)
-                drawTableText(canvas, cell?.display.orEmpty(), cellLeft, rowTop, colWidth, rowHeight, editorTheme.textPrimary, bold = false)
+                if (!isActiveTableEdit(lineIndex, tableIndex, row = rowIndex, column = col)) {
+                    drawTableText(canvas, cell?.display.orEmpty(), cellLeft, rowTop, colWidth, rowHeight, editorTheme.textPrimary, bold = false)
+                }
                 tableCellHits.add(
                     TableCellHit(
                         lineIndex = lineIndex,
@@ -751,87 +1081,66 @@ internal class SchemeEditText(context: android.content.Context) : EditText(conte
             y += rowHeight
         }
 
-        // Grid lines.
+        // Inner grid rules (the outer edges are the rounded border above).
         chromePaint.style = Paint.Style.STROKE
         chromePaint.strokeWidth = dp(1f)
         chromePaint.color = editorTheme.divider
-        val gridBottom = y
-        for (col in 0..columnCount) {
+        for (col in 1 until columnCount) {
             val x = left + col * colWidth
             canvas.drawLine(x, top, x, gridBottom, chromePaint)
         }
-        var lineY = top
+        var lineY = top + headerHeight
         canvas.drawLine(left, lineY, gridRight, lineY, chromePaint)
-        lineY += headerHeight
-        canvas.drawLine(left, lineY, gridRight, lineY, chromePaint)
-        table.rows.indices.forEach {
+        rowHeights.forEach { rowHeight ->
             lineY += rowHeight
             canvas.drawLine(left, lineY, gridRight, lineY, chromePaint)
         }
 
-        // Compact inline controls: "+" to add a column (right of header) and "+"
-        // to add a row (below the last row). Row/column delete reuse the same
-        // control rects via a long-press path handled by the host.
-        val addColRect = RectF(gridRight + dp(4f), top, gridRight + dp(4f) + ctrl, top + headerHeight)
-        drawTableControl(canvas, addColRect, "+")
-        tableControlHits.add(TableControlHit(lineIndex, tableIndex, TableControlKind.ADD_COLUMN, table.rows.size, columnCount, RectF(addColRect)))
-
-        val addRowRect = RectF(left, gridBottom + dp(4f), left + ctrl, gridBottom + dp(4f) + ctrl)
-        drawTableControl(canvas, addRowRect, "+")
-        tableControlHits.add(TableControlHit(lineIndex, tableIndex, TableControlKind.ADD_ROW, table.rows.size, columnCount, RectF(addRowRect)))
-
+        canvas.restore()
         chromePaint.style = Paint.Style.FILL
-        return gridBottom + dp(EDITOR_TABLE_CTRL_DP) + dp(8)
+        return gridBottom
     }
+
+    private fun isActiveTableEdit(lineIndex: Int, tableIndex: Int, row: Int, column: Int): Boolean =
+        activeTableCellEdit?.let {
+            it.lineIndex == lineIndex && it.tableIndex == tableIndex && it.row == row && it.column == column
+        } == true
 
     private fun drawTableText(canvas: Canvas, value: String, left: Float, top: Float, cellWidth: Float, cellHeight: Float, color: Int, bold: Boolean) {
         if (value.isEmpty()) return
-        chromePaint.style = Paint.Style.FILL
-        chromePaint.color = color
-        chromePaint.textAlign = Paint.Align.LEFT
-        chromePaint.typeface = if (bold) Typeface.create("sans-serif-medium", Typeface.NORMAL) else Typeface.DEFAULT
-        chromePaint.textSize = dp(13f)
         val pad = dp(EDITOR_TABLE_CELL_PAD_DP).toFloat()
-        // First line only on the canvas summary; the inline editor shows all lines.
-        val firstLine = value.substringBefore('\n')
-        val clipped = ellipsizeToWidth(firstLine, cellWidth - pad * 2)
-        val baseline = top + cellHeight / 2f - (chromePaint.ascent() + chromePaint.descent()) / 2f
-        canvas.drawText(clipped, left + pad, baseline, chromePaint)
-        chromePaint.typeface = Typeface.DEFAULT
+        val paint = tableTextPaint(color, bold)
+        val content = tableTextMarkdownSpannable(value, bold)
+        val layout = tableTextLayout(content, paint, (cellWidth - pad * 2).roundToInt().coerceAtLeast(1))
+        canvas.save()
+        canvas.clipRect(left, top, left + cellWidth, top + cellHeight)
+        canvas.translate(left + pad, top + pad)
+        layout.draw(canvas)
+        canvas.restore()
     }
 
-    private fun ellipsizeToWidth(value: String, maxWidth: Float): String {
-        if (maxWidth <= 0f) return ""
-        if (chromePaint.measureText(value) <= maxWidth) return value
-        val ellipsis = "…"
-        var end = value.length
-        while (end > 0 && chromePaint.measureText(value.substring(0, end) + ellipsis) > maxWidth) end--
-        return value.substring(0, end) + ellipsis
-    }
+    /// A block line carries one object char whose text row is reclaimed so the
+    /// block renders in place instead of below a blank row.
+    private fun collapsesText(blocks: List<EditorBlock>): Boolean = blocks.isNotEmpty()
 
-    private fun drawTableControl(canvas: Canvas, rect: RectF, glyph: String) {
-        chromePaint.style = Paint.Style.FILL
-        chromePaint.color = editorTheme.buttonBg
-        canvas.drawRoundRect(rect, dp(4f), dp(4f), chromePaint)
-        chromePaint.style = Paint.Style.STROKE
-        chromePaint.strokeWidth = dp(1f)
-        chromePaint.color = editorTheme.divider
-        canvas.drawRoundRect(rect, dp(4f), dp(4f), chromePaint)
-        chromePaint.style = Paint.Style.FILL
-        chromePaint.color = accentColor
-        chromePaint.textAlign = Paint.Align.CENTER
-        chromePaint.textSize = dp(15f)
-        chromePaint.typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
-        val baseline = rect.centerY() - (chromePaint.ascent() + chromePaint.descent()) / 2f
-        canvas.drawText(glyph, rect.centerX(), baseline, chromePaint)
-        chromePaint.textAlign = Paint.Align.LEFT
-        chromePaint.typeface = Typeface.DEFAULT
-    }
+    /// The blocks a line draws: non-empty only when the line's body is exactly
+    /// the object char, binding block rendering to the sentinel character.
+    private fun blocksForBody(body: String, adornment: EditorLineAdornment?): List<EditorBlock> =
+        if (body == BLOCK_OBJECT_STRING) adornment?.blocks.orEmpty() else emptyList()
 
-    /// A block-only line (empty body text but with image/table blocks) collapses
-    /// its text row so the block renders in place instead of below a blank line.
-    private fun collapsesText(body: String, blocks: List<EditorBlock>): Boolean =
-        body.isEmpty() && blocks.isNotEmpty()
+    /// The on-screen width of a block line's content, used to size the object
+    /// char so the caret-before sits at the block's left edge and caret-after at
+    /// its right edge (matches the block's own drawn width in `drawBlockStack`).
+    private fun blockObjectWidth(blocks: List<EditorBlock>, prefixWidth: Int): Int {
+        val maxWidth = editorImageMaxWidth(prefixWidth)
+        return when (val block = blocks.firstOrNull()) {
+            is EditorBlock.Image ->
+                if (block.media.kind != "image") maxWidth
+                else mediaDisplaySize(block.media, maxWidth).first.roundToInt().coerceIn(1, maxWidth)
+            is EditorBlock.Table -> maxWidth
+            else -> maxWidth
+        }
+    }
 
     private fun drawImageMedia(canvas: Canvas, media: EditorLineMedia, rect: RectF) {
         chromePaint.style = Paint.Style.FILL
@@ -883,9 +1192,9 @@ internal class SchemeEditText(context: android.content.Context) : EditText(conte
         return decoded
     }
 
-    private fun extraHeightFor(adornment: EditorLineAdornment?, prefixWidth: Int, collapseText: Boolean): Int {
+    private fun extraHeightFor(adornment: EditorLineAdornment?, blocks: List<EditorBlock>, prefixWidth: Int, collapseText: Boolean): Int {
         var extra = if (adornment?.annotation == null) 0 else dp(EDITOR_ANNOTATION_HEIGHT_DP)
-        extra += blockStackHeight(adornment?.blocks.orEmpty(), editorImageMaxWidth(prefixWidth))
+        extra += blockStackHeight(blocks, editorImageMaxWidth(prefixWidth))
         // A collapsed line reclaims its own text-row height (added by the chrome
         // span shrink) so the total reserved space still fits the blocks.
         if (collapseText) extra += dp(EDITOR_COLLAPSE_TEXT_HEIGHT_DP)
@@ -907,7 +1216,7 @@ internal class SchemeEditText(context: android.content.Context) : EditText(conte
                 }
                 is EditorBlock.Table -> {
                     height += dp(EDITOR_TABLE_TOP_GAP_DP)
-                    height += tableHeight(block.table)
+                    height += tableHeight(block.table, maxWidth)
                     drewImage = false
                 }
             }
@@ -915,10 +1224,101 @@ internal class SchemeEditText(context: android.content.Context) : EditText(conte
         return height
     }
 
-    private fun tableHeight(table: EditorTable): Int {
-        val rows = table.rows.size
-        return dp(EDITOR_TABLE_HEADER_HEIGHT_DP) + rows * dp(EDITOR_TABLE_ROW_HEIGHT_DP) +
-            dp(EDITOR_TABLE_CTRL_DP) + dp(8)
+    private fun tableHeight(table: EditorTable, maxWidth: Int): Int {
+        val columnCount = max(1, max(table.columns.size, table.rows.maxOfOrNull { it.size } ?: 0))
+        val colWidth = (maxWidth.toFloat() / columnCount).coerceAtLeast(1f)
+        return dp(EDITOR_TABLE_HEADER_HEIGHT_DP) + tableRowHeights(table, colWidth).sumOf { it.roundToInt() }
+    }
+
+    private fun tableRowHeights(table: EditorTable, columnWidth: Float): List<Float> {
+        val minHeight = dp(EDITOR_TABLE_ROW_HEIGHT_DP).toFloat()
+        val pad = dp(EDITOR_TABLE_CELL_PAD_DP).toFloat()
+        val textWidth = (columnWidth - pad * 2).roundToInt().coerceAtLeast(1)
+        val paint = tableTextPaint(editorTheme.textPrimary, bold = false)
+        return table.rows.map { row ->
+            var height = minHeight
+            row.forEach { cell ->
+                // Use raw display text for height calculation (called from the
+                // applyPrefixSpans path which runs on every keystroke); markdown
+                // delimiters are short and don't meaningfully affect line wrapping.
+                val layout = tableTextLayout(cell.display, paint, textWidth)
+                height = max(height, layout.height + pad * 2)
+            }
+            height
+        }
+    }
+
+    private fun tableTextPaint(color: Int, bold: Boolean): TextPaint =
+        TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
+            this.color = color
+            textSize = dp(13f)
+            typeface = if (bold) Typeface.create("sans-serif-medium", Typeface.NORMAL) else Typeface.DEFAULT
+        }
+
+    private fun tableTextLayout(content: CharSequence, paint: TextPaint, width: Int): StaticLayout =
+        StaticLayout.Builder.obtain(content, 0, content.length, paint, width)
+            .setAlignment(Layout.Alignment.ALIGN_NORMAL)
+            .setLineSpacing(0f, 1f)
+            .setIncludePad(false)
+            .build()
+
+    // Renders `value` with inline markdown (bold, italic, highlight, strike)
+    // stripped of delimiter tokens — matching iOS cell rendering. Headers
+    // (bold=true) are returned as plain text; body cells get styled spans.
+    private fun tableTextMarkdownSpannable(value: String, bold: Boolean): CharSequence {
+        if (bold || value.isEmpty()) return value
+        if (value.none { it == '*' || it == '_' || it == '=' || it == '~' }) return value
+        val ssb = SpannableStringBuilder()
+        var lineStart = 0
+        while (lineStart <= value.length) {
+            if (lineStart == value.length) break
+            val lineEnd = value.indexOf('\n', lineStart).let { if (it < 0) value.length else it }
+            if (lineStart > 0) ssb.append('\n')
+            appendCellMarkdownSegment(ssb, value, lineStart, lineEnd, InlineMarkdownStyle())
+            if (lineEnd >= value.length) break
+            lineStart = lineEnd + 1
+        }
+        return ssb
+    }
+
+    private fun appendCellMarkdownSegment(ssb: SpannableStringBuilder, src: String, srcStart: Int, srcEnd: Int, style: InlineMarkdownStyle) {
+        val body = src.substring(srcStart, srcEnd)
+        val limit = body.length
+        var index = 0
+        var plainStart = 0
+        while (index < limit) {
+            val delimiter = openMarkdownDelimiter(body, index, limit)
+            if (delimiter != null) {
+                val tokenLen = delimiter.token.length
+                val innerStart = index + tokenLen
+                val close = findMarkdownClose(body, delimiter.token, innerStart, limit)
+                if (close >= 0) {
+                    if (index > plainStart) appendCellStyledText(ssb, body.substring(plainStart, index), style)
+                    appendCellMarkdownSegment(ssb, src, srcStart + innerStart, srcStart + close, style.with(delimiter.emphasis))
+                    index = close + tokenLen
+                    plainStart = index
+                    continue
+                }
+            }
+            index++
+        }
+        if (limit > plainStart) appendCellStyledText(ssb, body.substring(plainStart, limit), style)
+    }
+
+    private fun appendCellStyledText(ssb: SpannableStringBuilder, text: String, style: InlineMarkdownStyle) {
+        if (text.isEmpty()) return
+        val s = ssb.length
+        ssb.append(text)
+        val e = ssb.length
+        val typeface = when {
+            style.bold && style.italic -> Typeface.BOLD_ITALIC
+            style.bold -> Typeface.BOLD
+            style.italic -> Typeface.ITALIC
+            else -> null
+        }
+        if (typeface != null) ssb.setSpan(StyleSpan(typeface), s, e, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE)
+        if (style.highlight) ssb.setSpan(BackgroundColorSpan(EDITOR_HIGHLIGHT_COLOR), s, e, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE)
+        if (style.strike) ssb.setSpan(StrikethroughSpan(), s, e, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE)
     }
 
     private fun mediaDisplaySize(media: EditorLineMedia, maxWidth: Int): Pair<Float, Float> {
@@ -960,466 +1360,146 @@ internal class SchemeEditText(context: android.content.Context) : EditText(conte
     }
 
     private fun applyMarkdownSpans(editable: Editable, body: String, bodyStart: Int, bodyEnd: Int) {
-        var index = 0
-        while (index < body.length) {
-            val marker = body[index]
-            if (marker != '*' && marker != '_') {
-                index++
-                continue
-            }
-            val close = body.indexOf(marker, startIndex = index + 1)
-            if (close < 0) {
-                index++
-                continue
-            }
-            if (close > index + 1) {
-                val style = if (marker == '*') Typeface.BOLD else Typeface.ITALIC
-                editable.setSpan(
-                    EditorMarkdownSpan(style),
-                    (bodyStart + index + 1).coerceAtMost(bodyEnd),
-                    (bodyStart + close).coerceAtMost(bodyEnd),
-                    Spannable.SPAN_EXCLUSIVE_EXCLUSIVE
-                )
-            }
-            index = close + 1
+        parseInlineMarkdown(
+            editable = editable,
+            body = body,
+            start = 0,
+            end = body.length,
+            bodyStart = bodyStart,
+            bodyEnd = bodyEnd,
+            style = InlineMarkdownStyle()
+        )
+    }
+
+    private fun parseInlineMarkdown(
+        editable: Editable,
+        body: String,
+        start: Int,
+        end: Int,
+        bodyStart: Int,
+        bodyEnd: Int,
+        style: InlineMarkdownStyle
+    ) {
+        var index = start
+        var plainStart = index
+
+        fun flushPlain(upTo: Int) {
+            if (upTo <= plainStart) return
+            applyInlineMarkdownStyle(
+                editable = editable,
+                start = (bodyStart + plainStart).coerceAtMost(bodyEnd),
+                end = (bodyStart + upTo).coerceAtMost(bodyEnd),
+                style = style
+            )
         }
+
+        while (index < end) {
+            val delimiter = openMarkdownDelimiter(body, index, end)
+            if (delimiter != null) {
+                val innerStart = index + delimiter.token.length
+                val close = findMarkdownClose(body, delimiter.token, innerStart, end)
+                if (close >= 0) {
+                    flushPlain(index)
+                    applyMarkdownMarkerSpan(editable, bodyStart + index, bodyStart + innerStart)
+                    applyMarkdownMarkerSpan(editable, bodyStart + close, bodyStart + close + delimiter.token.length)
+                    if (close > innerStart) {
+                        parseInlineMarkdown(
+                            editable = editable,
+                            body = body,
+                            start = innerStart,
+                            end = close,
+                            bodyStart = bodyStart,
+                            bodyEnd = bodyEnd,
+                            style = style.with(delimiter.emphasis)
+                        )
+                    }
+                    index = close + delimiter.token.length
+                    plainStart = index
+                    continue
+                }
+            }
+            index++
+        }
+        flushPlain(end)
+    }
+
+    private fun applyInlineMarkdownStyle(editable: Editable, start: Int, end: Int, style: InlineMarkdownStyle) {
+        if (end <= start) return
+        val typeface = when {
+            style.bold && style.italic -> Typeface.BOLD_ITALIC
+            style.bold -> Typeface.BOLD
+            style.italic -> Typeface.ITALIC
+            else -> null
+        }
+        if (typeface != null) {
+            editable.setSpan(EditorMarkdownSpan(typeface), start, end, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE)
+        }
+        if (style.highlight) {
+            editable.setSpan(EditorMarkdownHighlightSpan(), start, end, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE)
+        }
+        if (style.strike) {
+            editable.setSpan(EditorMarkdownStrikeSpan(), start, end, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE)
+        }
+    }
+
+    private fun applyMarkdownMarkerSpan(editable: Editable, start: Int, end: Int) {
+        val safeStart = start.coerceIn(0, editable.length)
+        val safeEnd = end.coerceIn(safeStart, editable.length)
+        if (safeEnd <= safeStart || markdownRangeIsRevealed(safeStart, safeEnd)) return
+        editable.setSpan(EditorMarkdownMarkerSpan(), safeStart, safeEnd, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE)
+    }
+
+    private fun markdownRangeIsRevealed(start: Int, end: Int): Boolean =
+        revealedMarkdownStart >= 0 && start < revealedMarkdownEnd && end > revealedMarkdownStart
+
+    private fun updateRevealedMarkdownRange(value: String): Boolean {
+        if (!hasFocus() || value.isEmpty()) {
+            val changed = revealedMarkdownStart != -1 || revealedMarkdownEnd != -1
+            revealedMarkdownStart = -1
+            revealedMarkdownEnd = -1
+            return changed
+        }
+        val currentSelectionStart = this.selectionStart.coerceIn(0, value.length)
+        val currentSelectionEnd = this.selectionEnd.coerceIn(0, value.length)
+        val lower = min(currentSelectionStart, currentSelectionEnd)
+        val upper = max(currentSelectionStart, currentSelectionEnd)
+        val startLine = if (lower == 0) 0 else value.lastIndexOf('\n', lower - 1).let { if (it < 0) 0 else it + 1 }
+        val endLine = value.indexOf('\n', upper.coerceAtMost(value.length)).let { if (it < 0) value.length else it }
+        val changed = startLine != revealedMarkdownStart || endLine != revealedMarkdownEnd
+        revealedMarkdownStart = startLine
+        revealedMarkdownEnd = endLine
+        return changed
+    }
+
+    private fun openMarkdownDelimiter(body: String, index: Int, limit: Int): MarkdownDelimiter? {
+        for (candidate in markdownDelimiters) {
+            if (matchesMarkdownToken(body, candidate.token, index, limit)) return candidate
+        }
+        return null
+    }
+
+    private fun matchesMarkdownToken(body: String, token: String, index: Int, limit: Int): Boolean =
+        index + token.length <= limit && body.regionMatches(index, token, 0, token.length)
+
+    private fun findMarkdownClose(body: String, token: String, start: Int, limit: Int): Int {
+        val close = body.indexOf(token, startIndex = start)
+        return if (close >= 0 && close + token.length <= limit) close else -1
+    }
+
+    private fun headingMarkerLength(body: String): Int? {
+        var index = 0
+        while (index < body.length && body[index].isWhitespace()) index++
+        val hashStart = index
+        while (index < body.length && body[index] == '#') index++
+        if (index == hashStart) return null
+        if (index < body.length && body[index].isWhitespace()) index++
+        return index
     }
 
     private fun dp(value: Int): Int = (value * resources.displayMetrics.density).roundToInt()
     private fun dp(value: Float): Float = value * resources.displayMetrics.density
 }
 
-private class EditorChromeSpan(
-    private val lineTextEnd: Int,
-    private val heading: Boolean,
-    private val extraHeight: Int,
-    private val collapseText: Boolean,
-    private val density: Float,
-) : LineBackgroundSpan, LineHeightSpan {
-
-    override fun drawBackground(
-        canvas: Canvas,
-        paint: Paint,
-        left: Int,
-        right: Int,
-        top: Int,
-        baseline: Int,
-        bottom: Int,
-        text: CharSequence,
-        start: Int,
-        end: Int,
-        lineNumber: Int
-    ) = Unit
-
-    override fun chooseHeight(
-        text: CharSequence?,
-        start: Int,
-        end: Int,
-        spanstartv: Int,
-        lineHeight: Int,
-        fm: Paint.FontMetricsInt
-    ) {
-        if (heading) {
-            val target = dp(30f).roundToInt()
-            val current = fm.descent - fm.ascent
-            if (current < target) {
-                val extra = target - current
-                fm.descent += extra / 2
-                fm.ascent -= extra - extra / 2
-                fm.bottom = max(fm.bottom, fm.descent)
-                fm.top = min(fm.top, fm.ascent)
-            }
-        }
-        if (extraHeight > 0 && end >= lineTextEnd) {
-            fm.descent += extraHeight
-            fm.bottom += extraHeight
-        }
-        // Collapse the (empty) text row of a block-only line so the block draws
-        // in place. The shrink is bounded so we never produce a negative line.
-        if (collapseText) {
-            val shrink = min(dp(EDITOR_COLLAPSE_TEXT_HEIGHT_DP.toFloat()).roundToInt(), max(0, (fm.descent - fm.ascent) - dp(2f).roundToInt()))
-            fm.descent -= shrink
-            fm.bottom -= shrink
-        }
-    }
-
-    private fun dp(value: Float): Float = value * density
-}
-
-private class HiddenPrefixSpan(private val width: Int) : ReplacementSpan() {
-    override fun getSize(
-        paint: Paint,
-        text: CharSequence?,
-        start: Int,
-        end: Int,
-        fm: Paint.FontMetricsInt?
-    ): Int = width
-
-    override fun draw(
-        canvas: Canvas,
-        text: CharSequence?,
-        start: Int,
-        end: Int,
-        x: Float,
-        top: Int,
-        y: Int,
-        bottom: Int,
-        paint: Paint
-    ) = Unit
-}
-
-private class EditorHangingIndentSpan(private val width: Int) : LeadingMarginSpan.LeadingMarginSpan2 {
-    override fun getLeadingMargin(first: Boolean): Int = if (first) 0 else width
-    override fun getLeadingMarginLineCount(): Int = 1
-
-    override fun drawLeadingMargin(
-        canvas: Canvas,
-        paint: Paint,
-        x: Int,
-        dir: Int,
-        top: Int,
-        baseline: Int,
-        bottom: Int,
-        text: CharSequence,
-        start: Int,
-        end: Int,
-        first: Boolean,
-        layout: android.text.Layout?
-    ) = Unit
-}
-
-private class DoneTextSpan : StrikethroughSpan()
-
-private class DoneTextColorSpan(color: Int) : ForegroundColorSpan(color)
-
-private class EditorMarkdownSpan(style: Int) : StyleSpan(style)
-
-private class EditorTextSizeSpan(sizeSp: Int) : AbsoluteSizeSpan(sizeSp, true)
-
-internal data class EditorLineAdornment(
-    val marker: String,
-    val done: Boolean,
-    val annotation: String?,
-    // Image/table blocks in document order. Pure text inlines are not blocks;
-    // they stay in the editor's text line. A block-only item (empty body text)
-    // collapses its text line so the block renders in place, not below a blank.
-    val blocks: List<EditorBlock>,
-)
-
-internal sealed class EditorBlock {
-    data class Image(val media: EditorLineMedia) : EditorBlock()
-    data class Table(val table: EditorTable) : EditorBlock()
-}
-
-internal data class EditorLineMedia(
-    val kind: String,
-    val path: String?,
-    val width: Int?,
-    val height: Int?,
-)
-
-internal data class EditorTable(
-    val columns: List<EditorTableColumn>,
-    val rows: List<List<EditorCell>>,
-)
-
-internal data class EditorTableColumn(
-    val id: String,
-    val name: String,
-)
-
-internal data class EditorCell(
-    val text: String,
-    val lines: List<String>,
-) {
-    /// The cell's display text: prefer the structured per-line text (joined),
-    /// falling back to the flat summary the core also provides.
-    val display: String get() = if (lines.isNotEmpty()) lines.joinToString("\n") else text
-}
-
-/// A tapped table cell: the logical line (item index), which table within that
-/// item, the cell's row/column, its current text, and the on-screen rect the
-/// host floats the inline editor over.
-internal data class TableCellHit(
-    val lineIndex: Int,
-    val tableIndex: Int,
-    val row: Int,
-    val column: Int,
-    val text: String,
-    val rect: RectF,
-)
-
-internal enum class TableControlKind { ADD_ROW, ADD_COLUMN }
-
-/// A tapped +/- table control. `rowCount`/`columnCount` describe the table at
-/// draw time so the host can target the trailing row/column.
-internal data class TableControlHit(
-    val lineIndex: Int,
-    val tableIndex: Int,
-    val kind: TableControlKind,
-    val rowCount: Int,
-    val columnCount: Int,
-    val rect: RectF,
-)
-
-private data class ChromeDrawLine(
-    val start: Int,
-    val end: Int,
-    val indent: Int,
-    val marker: String,
-    val done: Boolean,
-    val annotation: String?,
-    val blocks: List<EditorBlock>,
-    val prefixWidth: Int,
-    val heading: Boolean,
-    val extraHeight: Int,
-    val collapseText: Boolean,
-)
-
-internal data class ChromeLine(
-    val marker: String,
-    val indent: Int,
-    val done: Boolean,
-)
-
-internal fun parseChromeLine(raw: String): ChromeLine {
-    var rest = raw
-    var indent = 0
-    while (rest.startsWith("    ") && indent < 8) {
-        rest = rest.drop(4)
-        indent++
-    }
-    while (rest.startsWith("\t") && indent < 8) {
-        rest = rest.drop(1)
-        indent++
-    }
-
-    return when {
-        rest.startsWith("[x] ", ignoreCase = true) -> ChromeLine("checkbox", indent, true)
-        rest.startsWith("[ ] ") -> ChromeLine("checkbox", indent, false)
-        rest.startsWith("- ") || rest.startsWith("* ") -> ChromeLine("bullet", indent, false)
-        numberedPrefix.find(rest) != null -> ChromeLine("numbered", indent, false)
-        else -> ChromeLine("blank", indent, false)
-    }
-}
-
-internal fun chromePrefixLength(raw: String): Int {
-    var rest = raw
-    var length = 0
-    while (rest.startsWith("    ") && length < 32) {
-        rest = rest.drop(4)
-        length += 4
-    }
-    while (rest.startsWith("\t") && length < 8) {
-        rest = rest.drop(1)
-        length += 1
-    }
-    return when {
-        rest.startsWith("[x] ", ignoreCase = true) || rest.startsWith("[ ] ") -> length + 4
-        rest.startsWith("- ") || rest.startsWith("* ") -> length + 2
-        numberedPrefix.find(rest) != null -> length + (numberedPrefix.find(rest)?.value?.length ?: 0)
-        else -> length
-    }
-}
-
-private fun isMarkdownHeading(line: String): Boolean {
-    val trimmed = line.trimStart()
-    if (!trimmed.startsWith("#")) return false
-    val hashes = trimmed.takeWhile { it == '#' }.length
-    return hashes > 0 && (trimmed.length == hashes || trimmed.getOrNull(hashes)?.isWhitespace() == true)
-}
-
-private val numberedPrefix = Regex("^\\d+\\.\\s+")
-// Marker tokens that lost their trailing space (or more) to a deletion.
-private val brokenCheckboxPrefix = Regex("^\\[[xX ]?\\]?")
-private val brokenNumberedPrefix = Regex("^\\d+\\.")
-
-internal fun rgbColor(hex: Int): Int =
-    Color.rgb((hex shr 16) and 0xff, (hex shr 8) and 0xff, hex and 0xff)
-
-internal fun rgbaColor(hex: Int, alpha: Int): Int =
-    Color.argb(alpha, (hex shr 16) and 0xff, (hex shr 8) and 0xff, hex and 0xff)
-
-internal fun adjustAlpha(color: Int, alpha: Float): Int =
-    Color.argb((255 * alpha).roundToInt(), Color.red(color), Color.green(color), Color.blue(color))
-
-internal data class SchemeEditorLine(
-    val id: String?,
-    val text: String,
-    val marker: String,
-    val indent: Int,
-    val done: Boolean,
-) {
-    val rawKey: String = "$marker|$indent|$done|$text"
-}
-
-internal fun documentLines(scheme: JSONObject): List<SchemeEditorLine> {
-    val items = scheme.optJSONArray("items") ?: return emptyList()
-    val out = ArrayList<SchemeEditorLine>(items.length())
-    for (index in 0 until items.length()) {
-        val item = items.optJSONObject(index) ?: continue
-        out.add(
-            SchemeEditorLine(
-                id = item.optString("id").takeIf { it.isNotEmpty() },
-                text = item.optString("text"),
-                marker = item.optString("marker", "blank"),
-                indent = item.optInt("indent", 0).coerceIn(0, 8),
-                done = item.optBoolean("done", false)
-            )
-        )
-    }
-    return out
-}
-
-internal fun editorLineAdornments(scheme: JSONObject, timeFormat24: Boolean): List<EditorLineAdornment> {
-    val items = scheme.optJSONArray("items") ?: return emptyList()
-    val out = ArrayList<EditorLineAdornment>(items.length())
-    for (index in 0 until items.length()) {
-        val item = items.optJSONObject(index) ?: continue
-        val start = item.optString("start").takeIf { it.isNotEmpty() && it != "null" }
-        val end = item.optString("end").takeIf { it.isNotEmpty() && it != "null" }
-        val annotation = MobileDateFormatting.annotationLabel(start, end, timeFormat24)
-        out.add(
-            EditorLineAdornment(
-                marker = item.optString("marker", "blank"),
-                done = item.optBoolean("done", false),
-                annotation = annotation,
-                blocks = editorBlocksForItem(item)
-            )
-        )
-    }
-    return out
-}
-
-/// Builds the ordered image/table blocks for one item. When the core supplies
-/// `content` (inlines in document order) those drive the order; otherwise we
-/// fall back to the flat `media` + `tables` lists for backward compatibility.
-private fun editorBlocksForItem(item: JSONObject): List<EditorBlock> {
-    val content = item.optJSONArray("content")
-    val blocks = ArrayList<EditorBlock>()
-    if (content != null && content.length() > 0) {
-        content.forEachObject { inline ->
-            when (inline.optString("kind")) {
-                "image" -> inline.optJSONObject("media")?.let { blocks.add(EditorBlock.Image(parseEditorMedia(it))) }
-                "table" -> inline.optJSONObject("table")?.let { blocks.add(EditorBlock.Table(parseEditorTable(it))) }
-                // "text" inlines stay in the editor's text line; nothing to draw.
-            }
-        }
-        return blocks
-    }
-    item.optJSONArray("media")?.forEachObject { blocks.add(EditorBlock.Image(parseEditorMedia(it))) }
-    item.optJSONArray("tables")?.forEachObject { blocks.add(EditorBlock.Table(parseEditorTable(it))) }
-    return blocks
-}
-
-private fun parseEditorMedia(raw: JSONObject): EditorLineMedia = EditorLineMedia(
-    kind = raw.optString("kind"),
-    path = raw.optionalString("path"),
-    width = raw.takeUnless { it.isNull("width") }?.optInt("width"),
-    height = raw.takeUnless { it.isNull("height") }?.optInt("height")
-)
-
-private fun parseEditorTable(raw: JSONObject): EditorTable {
-    val columns = ArrayList<EditorTableColumn>()
-    raw.optJSONArray("columns")?.forEachObject { col ->
-        columns.add(EditorTableColumn(id = col.optString("id"), name = col.optString("name")))
-    }
-    val rows = ArrayList<List<EditorCell>>()
-    raw.optJSONArray("rows")?.forEachObject { row ->
-        val cells = ArrayList<EditorCell>()
-        row.optJSONArray("cells")?.forEachObject { cell ->
-            val lines = ArrayList<String>()
-            cell.optJSONArray("lines")?.forEachObject { line -> lines.add(line.optString("text")) }
-            cells.add(EditorCell(text = cell.optString("text"), lines = lines))
-        }
-        rows.add(cells)
-    }
-    return EditorTable(columns = columns, rows = rows)
-}
-
-internal fun parseEditorDocument(text: String, preserveBlankDocument: Boolean): List<SchemeEditorLine> {
-    val body = if (text.endsWith("\n")) text.dropLast(1) else text
-    if (body.isEmpty()) {
-        return if (preserveBlankDocument) listOf(parseEditorLine("")) else emptyList()
-    }
-    return body.split("\n", ignoreCase = false, limit = 0).map(::parseEditorLine)
-}
-
-internal fun parseEditorLine(raw: String): SchemeEditorLine {
-    val parsed = parseChromeLine(raw)
-    val text = raw.drop(chromePrefixLength(raw).coerceAtMost(raw.length))
-    return SchemeEditorLine(id = null, text = text, marker = parsed.marker, indent = parsed.indent, done = parsed.done)
-}
-
-internal fun renderDocument(lines: List<SchemeEditorLine>): String {
-    val body = lines.mapIndexed { index, line ->
-        renderEditorLine(line, documentNumberedOrdinal(lines, index))
-    }.joinToString("\n")
-    return "$body\n"
-}
-
-/// iOS ordinal rule: count consecutive prior numbered siblings at the same
-/// indent; deeper lines are transparent, anything else ends the run.
-private fun documentNumberedOrdinal(lines: List<SchemeEditorLine>, index: Int): Int {
-    if (lines[index].marker != "numbered") return 1
-    val indent = lines[index].indent
-    var ordinal = 1
-    var cursor = index - 1
-    while (cursor >= 0) {
-        val prev = lines[cursor]
-        when {
-            prev.indent > indent -> Unit
-            prev.indent < indent -> return ordinal
-            prev.marker != "numbered" -> return ordinal
-            else -> ordinal++
-        }
-        cursor--
-    }
-    return ordinal
-}
-
-internal fun renderEditorLine(line: SchemeEditorLine, ordinal: Int): String {
-    val indent = "    ".repeat(line.indent.coerceIn(0, 8))
-    val prefix = when (line.marker) {
-        "checkbox" -> if (line.done) "[x] " else "[ ] "
-        "bullet" -> "- "
-        "numbered" -> "$ordinal. "
-        else -> ""
-    }
-    return "$indent$prefix${line.text}"
-}
-
-internal fun reconcileEditorLines(old: List<SchemeEditorLine>, parsed: List<SchemeEditorLine>): List<SchemeEditorLine> {
-    var prefix = 0
-    while (prefix < old.size && prefix < parsed.size && old[prefix].rawKey == parsed[prefix].rawKey) {
-        prefix++
-    }
-
-    var suffix = 0
-    while (suffix + prefix < old.size && suffix + prefix < parsed.size) {
-        val oldIndex = old.size - suffix - 1
-        val newIndex = parsed.size - suffix - 1
-        if (old[oldIndex].rawKey != parsed[newIndex].rawKey) break
-        suffix++
-    }
-
-    val result = ArrayList<SchemeEditorLine>()
-    result.addAll(old.take(prefix))
-
-    val oldMiddle = old.subList(prefix, old.size - suffix)
-    val newMiddle = parsed.subList(prefix, parsed.size - suffix)
-    val matched = min(oldMiddle.size, newMiddle.size)
-    for (index in 0 until matched) {
-        result.add(newMiddle[index].copy(id = oldMiddle[index].id))
-    }
-    if (newMiddle.size > matched) {
-        result.addAll(newMiddle.drop(matched))
-    }
-    if (suffix > 0) {
-        result.addAll(old.takeLast(suffix))
-    }
-    return result
-}
 
 internal data class UiTheme(
     val isDark: Boolean,

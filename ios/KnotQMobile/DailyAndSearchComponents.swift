@@ -90,7 +90,12 @@ struct DailyFeedPane: View {
                                     .id(Self.bottomAnchorID)
                             }
                             .frame(maxWidth: 760, alignment: .leading)
-                            .padding(.horizontal, 10)
+                            // No horizontal padding here: it would sit *outside*
+                            // each day's editor text view, so taps in that strip
+                            // (the side gutter beside a table) never reach the
+                            // editor. The equivalent margin lives in the editor's
+                            // `textContainerInset` instead (see `DailyDayEditorSection`),
+                            // which keeps it inside the tappable text view.
                             .padding(.top, 2)
                             .padding(.bottom, 76)
                             .frame(maxWidth: .infinity, alignment: .leading)
@@ -304,6 +309,25 @@ struct DailyEditorNavigationBar: View {
     }
 }
 
+/// Applies the blanket tap-to-select gesture only to a non-selected day. The
+/// selected day must let taps fall through to the editor — including its
+/// transparent side gutters, which a section-level `contentShape(Rectangle())`
+/// would otherwise capture, swallowing caret-before/after-a-table taps.
+private struct DaySelectTapModifier: ViewModifier {
+    let selected: Bool
+    let onSelect: () -> Void
+
+    func body(content: Content) -> some View {
+        if selected {
+            content
+        } else {
+            content
+                .contentShape(Rectangle())
+                .onTapGesture(perform: onSelect)
+        }
+    }
+}
+
 struct DailyDayEditorSection: View {
     let entry: MobileDailyEntry
     let isEmpty: Bool
@@ -321,7 +345,12 @@ struct DailyDayEditorSection: View {
             usesNativeNavigation: false,
             showsEditorNavigation: false,
             editorScrollEnabled: false,
-            editorInsets: UIEdgeInsets(top: 3, left: 14, bottom: 5, right: 14),
+            // left/right keep the table's original gutter size (the old 10pt feed
+            // padding + 14pt inset = 24), but as `textContainerInset` rather than
+            // SwiftUI padding so the editor spans edge-to-edge: the whole gutter,
+            // right up to the screen edge, is now inside the tappable text view
+            // (the dead outer strip is gone) without narrowing the table.
+            editorInsets: UIEdgeInsets(top: 3, left: 24, bottom: 5, right: 24),
             // Always show the day's title on the selected day, even when it's
             // empty — a freshly created daily queue has no content yet, and
             // hiding the title there leaves the section looking like it never got
@@ -333,6 +362,10 @@ struct DailyDayEditorSection: View {
             // away. `autoFocusSelectedDay` is the real opt-in (off on iPad/screenshots).
             autoFocusOnAppear: selected && autoFocusOnAppear
         )
+        // Fill the row's full width so the editor's own text view (and its
+        // tappable side gutters beside a table) reaches the screen edge, instead
+        // of sitting narrower than the row with dead section margin around it.
+        .frame(maxWidth: .infinity, alignment: .leading)
         // Self-size from the editor's TextKit measurement (SchemeTextView
         // .sizeThatFits) for every day that renders content — including the
         // selected empty day, which now shows its title plus a blank editable
@@ -341,12 +374,11 @@ struct DailyDayEditorSection: View {
         .clipped()
         .background(selected ? theme.rowSelected.opacity(0.42) : Color.clear)
         .clipShape(RoundedRectangle(cornerRadius: 7))
-        .contentShape(Rectangle())
-        .onTapGesture {
-            if !selected {
-                onSelect()
-            }
-        }
+        // Tap-to-select only for *non-selected* days. On the selected day (the one
+        // being edited) a section-wide contentShape+onTapGesture would swallow
+        // taps in the editor's transparent side gutters before they reach the text
+        // view — breaking caret-before/after-a-table taps there.
+        .modifier(DaySelectTapModifier(selected: selected, onSelect: onSelect))
     }
 
     private var displayScheme: MobileScheme {

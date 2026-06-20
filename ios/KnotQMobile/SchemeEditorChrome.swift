@@ -74,6 +74,11 @@ final class EditorController: ObservableObject {
         isEmpty = false
     }
 
+    func insertTableBlock(itemID: String, theme: KnotQTheme) {
+        view?.insertTableBlock(itemID: itemID, theme: theme)
+        isEmpty = false
+    }
+
     /// Activates the text view so the system shows the caret + keyboard.
     func focus() {
         guard let view, !view.isFirstResponder else { return }
@@ -555,8 +560,13 @@ struct IntegratedSchemeEditorPane: View {
     private func insertTableFromToolbar() {
         guard !scheme.isReadOnly else { return }
         let afterItemID = controller.currentLineItemID()
-        commitDocument()
-        model.insertTable(schemeID: scheme.id, afterItemID: afterItemID)
+        // Mint the id up front so the table can render locally *now* (no
+        // snapshot round-trip) and the eager `insertTable` command persists it
+        // under the same id — making its cells immediately editable. The block
+        // also rides the normal document commit, which matches by this id.
+        let itemID = UUID().uuidString
+        controller.insertTableBlock(itemID: itemID, theme: theme)
+        model.insertTable(schemeID: scheme.id, afterItemID: afterItemID, itemID: itemID)
     }
 
     /// Persists an in-place cell edit. Body cell text may contain newlines; the

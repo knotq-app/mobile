@@ -236,6 +236,9 @@ internal class RustBridge(context: Context) : AutoCloseable {
     // Thin table-cell wrappers mirroring the existing typed FFI calls. The
     // editor edits cells line-by-line (each cell holds a list of `lines`), so
     // these are the per-line variants plus the row/column structural edits.
+    fun insertTable(schemeId: String, afterItemId: String?, itemId: String) =
+        core.insertTable(schemeId, afterItemId, itemId)
+
     fun setTableCellLineText(schemeId: String, itemId: String, row: Int, column: Int, lineIndex: Int, text: String) =
         core.setTableCellLineText(schemeId, itemId, row, column, lineIndex, text)
 
@@ -247,6 +250,9 @@ internal class RustBridge(context: Context) : AutoCloseable {
 
     fun setTableCellText(schemeId: String, itemId: String, row: Int, column: Int, text: String) =
         core.setTableCellText(schemeId, itemId, row, column, text)
+
+    fun setTableColumnName(schemeId: String, itemId: String, column: Int, name: String) =
+        core.setTableColumnName(schemeId, itemId, column, name)
 
     fun insertTableRow(schemeId: String, itemId: String, row: Int) =
         core.insertTableRow(schemeId, itemId, row)
@@ -410,6 +416,7 @@ internal class RustBridge(context: Context) : AutoCloseable {
         .put("notification_key", notificationKey)
         .put("fire_at", fireAt)
         .put("expires_at", expiresAt ?: JSONObject.NULL)
+        .put("end_at", endAt ?: JSONObject.NULL)
         .put("title", title)
         .put("body", body)
         .put("kind", kind)
@@ -449,7 +456,8 @@ internal class RustBridge(context: Context) : AutoCloseable {
                     end = item.stringOrNull("end"),
                     notificationOffsetSecs = item.intOrNull("notification_offset_secs") ?: item.intOrNull("notificationOffsetSecs"),
                     repeatRule = item.stringOrNull("repeat_rule") ?: item.stringOrNull("repeatRule"),
-                    media = item.optJSONArray("media")?.toMobileItemMedia() ?: emptyList()
+                    media = item.optJSONArray("media")?.toMobileItemMedia() ?: emptyList(),
+                    content = item.optJSONArray("content")?.toMobileInlines() ?: emptyList()
                 )
             )
         }
@@ -467,6 +475,90 @@ internal class RustBridge(context: Context) : AutoCloseable {
                     format = item.optString("format"),
                     width = item.intOrNull("width"),
                     height = item.intOrNull("height")
+                )
+            )
+        }
+        return out
+    }
+
+    private fun JSONArray.toMobileInlines(): List<MobileInline> {
+        val out = ArrayList<MobileInline>(length())
+        for (index in 0 until length()) {
+            val item = optJSONObject(index) ?: continue
+            when (item.optString("kind")) {
+                "text" -> out.add(MobileInline.Text(item.optString("text")))
+                "image" -> item.optJSONObject("media")?.let { out.add(MobileInline.Image(it.toMobileItemMedia())) }
+                "table" -> item.optJSONObject("table")?.let { out.add(MobileInline.Table(it.toMobileTable())) }
+            }
+        }
+        return out
+    }
+
+    private fun JSONObject.toMobileItemMedia(): MobileItemMedia =
+        MobileItemMedia(
+            kind = optString("kind"),
+            path = stringOrNull("path"),
+            format = optString("format"),
+            width = intOrNull("width"),
+            height = intOrNull("height")
+        )
+
+    private fun JSONObject.toMobileTable(): MobileTable =
+        MobileTable(
+            columns = optJSONArray("columns")?.toMobileTableColumns() ?: emptyList(),
+            rows = optJSONArray("rows")?.toMobileTableRows() ?: emptyList()
+        )
+
+    private fun JSONArray.toMobileTableColumns(): List<MobileTableColumn> {
+        val out = ArrayList<MobileTableColumn>(length())
+        for (index in 0 until length()) {
+            val item = optJSONObject(index) ?: continue
+            out.add(MobileTableColumn(id = item.optString("id"), name = item.optString("name")))
+        }
+        return out
+    }
+
+    private fun JSONArray.toMobileTableRows(): List<MobileTableRow> {
+        val out = ArrayList<MobileTableRow>(length())
+        for (index in 0 until length()) {
+            val item = optJSONObject(index) ?: continue
+            out.add(
+                MobileTableRow(
+                    id = item.optString("id"),
+                    cells = item.optJSONArray("cells")?.toMobileTableCells() ?: emptyList()
+                )
+            )
+        }
+        return out
+    }
+
+    private fun JSONArray.toMobileTableCells(): List<MobileTableCell> {
+        val out = ArrayList<MobileTableCell>(length())
+        for (index in 0 until length()) {
+            val item = optJSONObject(index) ?: continue
+            out.add(
+                MobileTableCell(
+                    text = item.optString("text"),
+                    lines = item.optJSONArray("lines")?.toMobileCellLines() ?: emptyList()
+                )
+            )
+        }
+        return out
+    }
+
+    private fun JSONArray.toMobileCellLines(): List<MobileCellLine> {
+        val out = ArrayList<MobileCellLine>(length())
+        for (index in 0 until length()) {
+            val item = optJSONObject(index) ?: continue
+            out.add(
+                MobileCellLine(
+                    id = item.optString("id"),
+                    text = item.optString("text"),
+                    marker = item.optString("marker", "blank"),
+                    done = item.optBoolean("done", false),
+                    start = item.stringOrNull("start"),
+                    end = item.stringOrNull("end"),
+                    media = item.optJSONArray("media")?.toMobileItemMedia() ?: emptyList()
                 )
             )
         }

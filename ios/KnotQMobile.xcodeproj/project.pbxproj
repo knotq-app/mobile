@@ -51,11 +51,13 @@
 		01000000000000000000002E /* GoogleService-Info.plist in Resources */ = {isa = PBXBuildFile; fileRef = 02000000000000000000002E /* GoogleService-Info.plist */; };
 		01000000000000000000002F /* BackgroundSyncCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 02000000000000000000002F /* BackgroundSyncCoordinator.swift */; };
 		010000000000000000000030 /* BackgroundTasks.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 020000000000000000000030 /* BackgroundTasks.framework */; };
-		010000000000000000000031 /* FirebaseCore in Frameworks */ = {isa = PBXBuildFile; productRef = 0F0000000000000000000002 /* FirebaseCore */; };
-		010000000000000000000032 /* FirebaseMessaging in Frameworks */ = {isa = PBXBuildFile; productRef = 0F0000000000000000000003 /* FirebaseMessaging */; };
-		010000000000000000000033 /* MobileDate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 020000000000000000000033 /* MobileDate.swift */; };
-		010000000000000000000034 /* ScheduleFormComponents.swift in Sources */ = {isa = PBXBuildFile; fileRef = 020000000000000000000034 /* ScheduleFormComponents.swift */; };
-		010000000000000000000040 /* MarkerConcealmentTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 020000000000000000000040 /* MarkerConcealmentTests.swift */; };
+			010000000000000000000031 /* FirebaseCore in Frameworks */ = {isa = PBXBuildFile; productRef = 0F0000000000000000000002 /* FirebaseCore */; };
+			010000000000000000000032 /* FirebaseMessaging in Frameworks */ = {isa = PBXBuildFile; productRef = 0F0000000000000000000003 /* FirebaseMessaging */; };
+			010000000000000000000033 /* MobileDate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 020000000000000000000033 /* MobileDate.swift */; };
+			010000000000000000000034 /* ScheduleFormComponents.swift in Sources */ = {isa = PBXBuildFile; fileRef = 020000000000000000000034 /* ScheduleFormComponents.swift */; };
+			010000000000000000000035 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = 020000000000000000000035 /* PrivacyInfo.xcprivacy */; };
+			010000000000000000000036 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = 020000000000000000000036 /* PrivacyInfo.xcprivacy */; };
+			010000000000000000000040 /* MarkerConcealmentTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 020000000000000000000040 /* MarkerConcealmentTests.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -137,10 +139,12 @@
 		02000000000000000000002D /* SchemeEditorSheets.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SchemeEditorSheets.swift; sourceTree = "<group>"; };
 		02000000000000000000002E /* GoogleService-Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = "GoogleService-Info.plist"; sourceTree = "<group>"; };
 		02000000000000000000002F /* BackgroundSyncCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BackgroundSyncCoordinator.swift; sourceTree = "<group>"; };
-		020000000000000000000030 /* BackgroundTasks.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = BackgroundTasks.framework; path = System/Library/Frameworks/BackgroundTasks.framework; sourceTree = SDKROOT; };
-		020000000000000000000033 /* MobileDate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MobileDate.swift; sourceTree = "<group>"; };
-		020000000000000000000034 /* ScheduleFormComponents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScheduleFormComponents.swift; sourceTree = "<group>"; };
-		020000000000000000000040 /* MarkerConcealmentTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MarkerConcealmentTests.swift; sourceTree = "<group>"; };
+			020000000000000000000030 /* BackgroundTasks.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = BackgroundTasks.framework; path = System/Library/Frameworks/BackgroundTasks.framework; sourceTree = SDKROOT; };
+			020000000000000000000033 /* MobileDate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MobileDate.swift; sourceTree = "<group>"; };
+			020000000000000000000034 /* ScheduleFormComponents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScheduleFormComponents.swift; sourceTree = "<group>"; };
+			020000000000000000000035 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
+			020000000000000000000036 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
+			020000000000000000000040 /* MarkerConcealmentTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MarkerConcealmentTests.swift; sourceTree = "<group>"; };
 		020000000000000000000041 /* KnotQMobileTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = KnotQMobileTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
@@ -226,11 +230,12 @@
 				02000000000000000000000A /* SearchScreen.swift */,
 				02000000000000000000000B /* SettingsScreen.swift */,
 				02000000000000000000000C /* SharedViews.swift */,
-				02000000000000000000000D /* KnotQMobile-Bridging-Header.h */,
-				02000000000000000000000E /* Info.plist */,
-				02000000000000000000002E /* GoogleService-Info.plist */,
-				020000000000000000000014 /* KnotQMobile.entitlements */,
-				020000000000000000000011 /* Assets.xcassets */,
+					02000000000000000000000D /* KnotQMobile-Bridging-Header.h */,
+					02000000000000000000000E /* Info.plist */,
+					020000000000000000000035 /* PrivacyInfo.xcprivacy */,
+					02000000000000000000002E /* GoogleService-Info.plist */,
+					020000000000000000000014 /* KnotQMobile.entitlements */,
+					020000000000000000000011 /* Assets.xcassets */,
 			);
 			path = KnotQMobile;
 			sourceTree = "<group>";
@@ -248,9 +253,10 @@
 		040000000000000000000004 /* KnotQUpcomingWidget */ = {
 			isa = PBXGroup;
 			children = (
-				020000000000000000000019 /* KnotQUpcomingWidget.swift */,
-				02000000000000000000001A /* Info.plist */,
-				02000000000000000000001B /* KnotQUpcomingWidget.entitlements */,
+					020000000000000000000019 /* KnotQUpcomingWidget.swift */,
+					02000000000000000000001A /* Info.plist */,
+					020000000000000000000036 /* PrivacyInfo.xcprivacy */,
+					02000000000000000000001B /* KnotQUpcomingWidget.entitlements */,
 			);
 			path = KnotQUpcomingWidget;
 			sourceTree = "<group>";
@@ -397,17 +403,19 @@
 		070000000000000000000001 /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
-			files = (
-				01000000000000000000000E /* Assets.xcassets in Resources */,
-				01000000000000000000002E /* GoogleService-Info.plist in Resources */,
-			);
+				files = (
+					01000000000000000000000E /* Assets.xcassets in Resources */,
+					01000000000000000000002E /* GoogleService-Info.plist in Resources */,
+					010000000000000000000035 /* PrivacyInfo.xcprivacy in Resources */,
+				);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 		070000000000000000000002 /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
-			files = (
-			);
+				files = (
+					010000000000000000000036 /* PrivacyInfo.xcprivacy in Resources */,
+				);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 		070000000000000000000003 /* Resources */ = {

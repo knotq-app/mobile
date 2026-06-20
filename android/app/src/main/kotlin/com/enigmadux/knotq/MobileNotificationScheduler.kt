@@ -51,6 +51,7 @@ internal object MobileNotificationScheduler {
     private const val EXTRA_NOTIFICATION_ID = "notification_id"
     private const val EXTRA_FIRE_AT = "fire_at"
     private const val EXTRA_EXPIRES_AT = "expires_at"
+    private const val EXTRA_END_AT = "end_at"
     private const val EXTRA_TITLE = "title"
     private const val EXTRA_BODY = "body"
     private const val EXTRA_KIND = "kind"
@@ -122,6 +123,12 @@ internal object MobileNotificationScheduler {
         }
         ensureChannel(appContext)
 
+        val now = Instant.now()
+        val endAt = intent.getStringExtra(EXTRA_END_AT)?.takeIf { it.isNotBlank() }
+            ?.let { runCatching { Instant.parse(it) }.getOrNull() }
+        val kind = intent.getStringExtra(EXTRA_KIND).orEmpty()
+        val fireAt = intent.getStringExtra(EXTRA_FIRE_AT)
+            ?.let { runCatching { Instant.parse(it) }.getOrNull() }
         val title = intent.getStringExtra(EXTRA_TITLE)?.ifBlank { "KnotQ" } ?: "KnotQ"
         val body = intent.getStringExtra(EXTRA_BODY)?.ifBlank { "Scheduled item" } ?: "Scheduled item"
         val manager = appContext.getSystemService(NotificationManager::class.java)
@@ -130,12 +137,22 @@ internal object MobileNotificationScheduler {
             .setContentTitle(title)
             .setContentText(body)
             .setStyle(Notification.BigTextStyle().bigText(body))
-            .setWhen(intent.getStringExtra(EXTRA_FIRE_AT)?.let { Instant.parse(it).toEpochMilli() }
-                ?: System.currentTimeMillis())
+            .setWhen(
+                if (kind == "event" && endAt != null && endAt.isAfter(now)) {
+                    endAt.toEpochMilli()
+                } else {
+                    fireAt?.toEpochMilli() ?: System.currentTimeMillis()
+                }
+            )
             .setShowWhen(true)
             .setAutoCancel(true)
             .setCategory(Notification.CATEGORY_REMINDER)
             .setContentIntent(openAppIntent(appContext, id))
+        if (kind == "event" && endAt != null && endAt.isAfter(now)) {
+            builder
+                .setUsesChronometer(true)
+                .setChronometerCountDown(true)
+        }
         snoozeActions.forEach { (action, title) ->
             builder.addAction(notificationAction(appContext, id, action, title, intent))
         }
@@ -203,6 +220,7 @@ internal object MobileNotificationScheduler {
             putExtra(EXTRA_NOTIFICATION_ID, request.optString("id"))
             putExtra(EXTRA_FIRE_AT, request.optString("fire_at"))
             putExtra(EXTRA_EXPIRES_AT, request.optString("expires_at"))
+            putExtra(EXTRA_END_AT, request.optString("end_at"))
             putExtra(EXTRA_TITLE, request.optString("title"))
             putExtra(EXTRA_BODY, request.optString("body"))
             putExtra(EXTRA_KIND, request.optString("kind"))
