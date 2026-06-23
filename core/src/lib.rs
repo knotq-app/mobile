@@ -1,29 +1,24 @@
-use std::collections::{HashMap, HashSet};
 use std::fs;
-use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::sync::{Mutex, MutexGuard};
 
 use anyhow::{anyhow, Context, Result};
-use chrono::{DateTime, Duration, Local, NaiveDate, Utc};
+use chrono::{DateTime, Duration, NaiveDate, Utc};
 use knotq_commands::{
-    event_popup_commit_commands, event_popup_delete_command, recurrence_can_delete_future, Command,
-    DateEditScope, EventDeleteScope, EventPopupDraft, WorkspaceCommandExt,
+    event_popup_commit_commands, event_popup_delete_command, Command, DateEditScope,
+    EventDeleteScope, EventPopupDraft, WorkspaceCommandExt,
 };
-use knotq_date_util::{upcoming_range, UPCOMING_LIMIT};
+use knotq_date_util::UPCOMING_LIMIT;
 use knotq_index::query::{SearchHitStatus, SearchOptions, SearchTarget};
 use knotq_index::IndexedWorkspace;
 use knotq_model::{
-    daily_queue_scheme_id, daily_queue_sync_metadata, AppSettings, CalendarProvider, ColumnId,
-    DocumentId, FolderId, GoogleOAuthAccount, ImageAssetFormat, ImageInline,
-    ImportedCalendarSource, Inline, Item, ItemContent, ItemId, ItemKind, ItemMarker, NodeRef,
-    NotificationDefaults, OccurrenceId, OperationId, Recurrence, RowId, Scheme, SchemeId,
-    SchemeSource, Table, TableCell, TableColumn, TableRow, ThemeMode, TimeFormat, Workspace,
-    DAILY_QUEUE_COLOR_INDEX,
+    daily_queue_scheme_id, daily_queue_sync_metadata, AppSettings, CalendarProvider, FolderId,
+    GoogleOAuthAccount, ImageAssetFormat, ImageInline, Inline, Item, ItemContent, ItemId,
+    ItemMarker, NodeRef, NotificationDefaults, OccurrenceId, OperationId, Recurrence, Scheme,
+    SchemeId, SchemeSource, Table, Workspace, DAILY_QUEUE_COLOR_INDEX,
 };
 use knotq_notifications::{
-    compute_due_notifications_with_lead_times, NotificationLeadTimes, ScheduledNotification,
-    DEFAULT_DURABLE_NOTIFICATION_LIMIT,
+    compute_due_notifications_with_lead_times, DEFAULT_DURABLE_NOTIFICATION_LIMIT,
 };
 use knotq_state::{
     daily_queue_initial_start, daily_queue_scheme_name, make_default_workspace,
@@ -37,20 +32,32 @@ use knotq_storage_json::{
     save_workspace, WorkspaceLoadOptions,
 };
 use knotq_sync::{
-    batch_pull_and_apply, batch_push_pending, queue_workspace_bootstrap_updates,
-    AccountStatusResponse, BatchPullRequest, BatchPullResponse, BatchPushRequest,
-    BatchPushResponse, DevicePlatform, ErrorResponse, NotificationPermissionState,
-    NotificationScheduleSnapshot, PendingCrdtEdit, PushChannel, PushEnvironment,
-    RegisterDeviceRequest, RegisterDeviceResponse, SyncTransport, WorkspaceCrdtChangeSet,
-    WorkspaceCrdtDocuments, MAX_SYNC_MEDIA_BYTES,
+    batch_pull_and_apply, batch_push_pending, queue_workspace_bootstrap_updates, DevicePlatform,
+    NotificationPermissionState, PendingCrdtEdit, PushChannel, PushEnvironment,
+    RegisterDeviceRequest, WorkspaceCrdtChangeSet, WorkspaceCrdtDocuments,
 };
-use sha2::{Digest, Sha256};
-
 mod google_calendar;
 use google_calendar::{GoogleCalendarImportResult, GoogleOAuthConfig};
 
 mod parsing;
 use parsing::*;
+
+mod crdt_changes;
+use crdt_changes::mobile_crdt_change_set_for_command;
+
+mod media_sync;
+use media_sync::{
+    mobile_download_missing_media_assets, mobile_media_to_item_media,
+    mobile_notification_schedule_snapshot, mobile_upload_local_media_assets, normalize_sync_api_base,
+    MobileSyncHttpClient,
+};
+
+mod conversions;
+use conversions::{
+    archived_scheme_node, as_u8, format_daily_label, google_account_matches_calendar_source,
+    mobile_inlines_to_inlines, mobile_notification_lead_times, mobile_upcoming, next_color_index,
+    non_empty, offset_to_i32, opt_position, position_from_i32, theme_mode_str, time_format_str,
+};
 
 const DAILY_QUEUE_MARKER_COLOR: u32 = 0x42a5f5;
 const MOBILE_DAILY_DEFAULT_HISTORY_DAYS: i32 = 3;
@@ -1553,10 +1560,18 @@ impl MobileCoreInner {
         if self.registered_push_token.as_deref() == Some(token.as_str()) {
             return;
         }
+        // The core is cross-compiled per platform, so the build target tells us
+        // which shell we're running in — no need to thread the platform through
+        // the FFI surface. (Host builds, e.g. cargo test, fall through to Ios.)
+        let platform = if cfg!(target_os = "android") {
+            DevicePlatform::Android
+        } else {
+            DevicePlatform::Ios
+        };
         let request = RegisterDeviceRequest {
             replica_id: self.settings.replica_id,
             display_name: None,
-            platform: DevicePlatform::Ios,
+            platform,
             app_version: None,
             push_channel: Some(PushChannel::Fcm),
             push_token: Some(token.clone()),
@@ -1601,24 +1616,65 @@ impl MobileCoreInner {
             api_base: normalize_sync_api_base(api_base)?,
             bearer_token: bearer_token.to_string(),
         };
-        let server_workspace_id = if self.workspace.sync.id.0 == self.workspace.id.0 {
-            self.workspace.id
-        } else {
-            client.account_status()?.workspace_id
-        };
+        // The account this bearer token belongs to owns the one canonical
+        // personal-workspace document id; always adopt it. The previous shortcut
+        // ("if sync.id == id we're already canonicalized, reuse it") only proved
+        // the workspace was bound to *some* account — signing into a different one
+        // (e.g. prod -> sandbox) left the old id in place and wedged every pull
+        // with a document-id mismatch.
+        let server_workspace_id = client.account_status()?.workspace_id;
         let local_workspace_changed = self
             .workspace
             .canonicalize_personal_sync_identity(server_workspace_id);
         self.workspace.ensure_sync_metadata();
+        // Adopt that identity on the long-lived CRDT too. `self.crdt` was loaded
+        // with the id this device last synced under; if it differs, re-label the
+        // workspace document to the server's id *preserving its content*. The pull
+        // below then merges the local and server workspace histories (union) over
+        // the shared id instead of failing to apply or dropping local schemes. The
+        // returned snapshot is queued for push (below) so the server — which keeps
+        // its own base under this id — unions the local content in as well.
+        let reidentified_workspace = self
+            .crdt
+            .reidentify_workspace_document(self.workspace.sync.id)?;
 
         let mut sync_state = load_local_sync_state(&self.workspace_path).unwrap_or_default();
         // One-time recovery: clear stale pull cursors so this sync re-pulls and
         // re-merges every document, repairing any workspace left diverged by the
         // earlier push-failure desync.
         sync_state.heal_for_recovery_version();
+        // Signing into a different account/server than the persisted cursors were
+        // built against must not reuse the previous account's pull/push cursors: a
+        // stale cursor silently skips pulling the new account's lower document
+        // sequences and makes the bootstrap push a bare delta the new server has no
+        // base for (crdt_schema_invalid). Reset them so the next sync re-pulls from
+        // zero and re-seeds full snapshots (idempotent in Yjs).
+        sync_state.reset_for_account_change(self.workspace.id, &client.api_base);
         sync_state.workspace_id = Some(self.workspace.id);
         sync_state.replica_id = Some(self.settings.replica_id);
         sync_state.server_url = Some(client.api_base.clone());
+
+        // If the workspace document was just re-identified to a new account's id,
+        // queue its content for push. `queue_workspace_bootstrap_updates` only
+        // force-snapshots documents the server has no base for, so a workspace the
+        // server already holds (a prior account's seq > 0) would otherwise never
+        // receive the local content. Pushing the relabeled document's full state is
+        // an idempotent Yjs merge on the server, so it unions the local schemes in.
+        if let Some(update) = reidentified_workspace {
+            let operation_id = OperationId::new();
+            let local_sequence = self.next_sequence;
+            self.next_sequence += 1;
+            sync_state.push_pending(PendingCrdtEdit {
+                operation_id,
+                workspace_id: self.workspace.id,
+                replica_id: self.settings.replica_id,
+                local_sequence,
+                created_at: Utc::now(),
+                document: update.document,
+                kind: update.kind,
+                update_v1: update.update_v1,
+            });
+        }
 
         // Register this device (with its push token, if any) so the backend can
         // wake it via silent push. Best effort — never block sync on it.
@@ -1657,10 +1713,11 @@ impl MobileCoreInner {
                 &WorkspaceCrdtChangeSet::default().workspace(),
             );
             for error in &outcome.errors {
-                eprintln!("mobile CRDT repair update failed: {error}");
-            }
-            if !outcome.is_ok() {
-                return Err(anyhow!("CRDT repair update failed: {:?}", outcome.errors));
+                // A repair-encoding error for one document must not wedge the entire
+                // sync. Log it and queue whatever updates did encode; the pull
+                // cursors below still persist, so the device keeps converging and
+                // retries the repair next sync rather than failing every sync.
+                eprintln!("mobile sync: CRDT repair update skipped: {error}");
             }
             if !outcome.updates.is_empty() {
                 let operation_id = OperationId::new();
@@ -2773,589 +2830,10 @@ impl MobileCoreInner {
     }
 }
 
-fn mobile_media_to_item_media(
-    media: &MobileItemMedia,
-    image_assets_dir: &Path,
-) -> Option<ImageInline> {
-    if media.kind != "image" {
-        return None;
-    }
-    let path = media.path.as_deref()?;
-    let path = Path::new(path);
-    let asset = path.file_stem()?.to_str()?.parse().ok()?;
-    let format = parse_image_format(&media.format)?;
-    if !path.starts_with(image_assets_dir) {
-        return None;
-    }
-    Some(ImageInline {
-        asset,
-        format,
-        width: media.width.and_then(|value| u32::try_from(value).ok()),
-        height: media.height.and_then(|value| u32::try_from(value).ok()),
-    })
-}
-
-fn parse_image_format(raw: &str) -> Option<ImageAssetFormat> {
-    match raw {
-        "png" => Some(ImageAssetFormat::Png),
-        "jpeg" | "jpg" => Some(ImageAssetFormat::Jpeg),
-        "webp" => Some(ImageAssetFormat::Webp),
-        "gif" => Some(ImageAssetFormat::Gif),
-        "svg" => Some(ImageAssetFormat::Svg),
-        "bmp" => Some(ImageAssetFormat::Bmp),
-        "tiff" => Some(ImageAssetFormat::Tiff),
-        _ => None,
-    }
-}
-
-struct MobileSyncHttpClient {
-    api_base: String,
-    bearer_token: String,
-}
-
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
-struct MobileSyncMediaAsset {
-    document: DocumentId,
-    asset: uuid::Uuid,
-    format: ImageAssetFormat,
-}
-
-impl MobileSyncMediaAsset {
-    fn image_name(self) -> String {
-        format!("{}.{}", self.asset, self.format.extension())
-    }
-}
-
 struct GoogleCalendarApplyResult {
     content_changed: bool,
     created_count: i32,
     changes: WorkspaceCrdtChangeSet,
-}
-
-fn mobile_notification_schedule_snapshot(
-    workspace: &Workspace,
-    defaults: NotificationDefaults,
-    now: DateTime<Utc>,
-    sequence: u64,
-) -> Result<NotificationScheduleSnapshot> {
-    let window_start = DateTime::from_naive_utc_and_offset(
-        now.date_naive()
-            .and_hms_opt(0, 0, 0)
-            .ok_or_else(|| anyhow!("midnight is not representable"))?,
-        Utc,
-    );
-    let window_end = window_start + Duration::days(NOTIFICATION_HORIZON_DAYS);
-    let mut notifications = compute_due_notifications_with_lead_times(
-        workspace,
-        mobile_notification_lead_times(defaults),
-        window_start,
-        window_end,
-    );
-    notifications.sort_by(|left, right| {
-        left.fire_at
-            .cmp(&right.fire_at)
-            .then_with(|| left.key.cmp(&right.key))
-    });
-
-    let mut hasher = Sha256::new();
-    hasher.update(b"knotq.notification_schedule.v1");
-    hasher.update([0]);
-    hasher.update(window_start.to_rfc3339().as_bytes());
-    hasher.update([0]);
-    hasher.update(window_end.to_rfc3339().as_bytes());
-    for notification in &notifications {
-        hasher.update([0]);
-        let json = serde_json::to_vec(notification).unwrap_or_default();
-        hasher.update(json);
-    }
-    let digest = hasher.finalize();
-    let hash = digest.iter().map(|byte| format!("{byte:02x}")).collect();
-
-    Ok(NotificationScheduleSnapshot {
-        sequence,
-        hash,
-        window_start,
-        window_end,
-        occurrence_count: notifications.len(),
-    })
-}
-
-impl MobileSyncHttpClient {
-    fn account_status(&self) -> Result<AccountStatusResponse> {
-        let url = format!("{}/v1/auth/account/status", self.api_base);
-        self.get_json(&url)
-    }
-
-    fn register_device(&self, request: &RegisterDeviceRequest) -> Result<RegisterDeviceResponse> {
-        let url = format!("{}/v1/sync/devices", self.api_base);
-        self.post_json(&url, request)
-    }
-
-    fn upload_media_asset(&self, media: MobileSyncMediaAsset, bytes: &[u8]) -> Result<()> {
-        let url = self.media_url(media);
-        self.authorized(ureq::put(&url))
-            .set("content-type", mobile_media_content_type(media.format))
-            .send_bytes(bytes)
-            .map_err(mobile_sync_http_error)?;
-        Ok(())
-    }
-
-    fn download_media_asset(&self, media: MobileSyncMediaAsset) -> Result<Option<Vec<u8>>> {
-        let url = self.media_url(media);
-        let response = match self.authorized(ureq::get(&url)).call() {
-            Ok(response) => response,
-            Err(ureq::Error::Status(404, response)) => {
-                let code = response
-                    .into_json::<ErrorResponse>()
-                    .map(|error| error.code)
-                    .unwrap_or_else(|_| "404".to_string());
-                if code == "not_found" {
-                    return Ok(None);
-                }
-                return Err(anyhow!("sync backend rejected request: {code}"));
-            }
-            Err(error) => return Err(mobile_sync_http_error(error)),
-        };
-        let mut reader = response
-            .into_reader()
-            .take((MAX_SYNC_MEDIA_BYTES + 1) as u64);
-        let mut bytes = Vec::new();
-        reader
-            .read_to_end(&mut bytes)
-            .with_context(|| format!("read media response from {url}"))?;
-        if bytes.len() > MAX_SYNC_MEDIA_BYTES {
-            return Err(anyhow!(
-                "sync backend returned image {} above the {} byte sync limit",
-                media.image_name(),
-                MAX_SYNC_MEDIA_BYTES
-            ));
-        }
-        Ok(Some(bytes))
-    }
-
-    fn media_url(&self, media: MobileSyncMediaAsset) -> String {
-        format!(
-            "{}/v1/sync/documents/{}/media/{}",
-            self.api_base,
-            media.document,
-            media.image_name()
-        )
-    }
-
-    fn get_json<T: serde::de::DeserializeOwned>(&self, url: &str) -> Result<T> {
-        self.authorized(ureq::get(url))
-            .call()
-            .map_err(mobile_sync_http_error)?
-            .into_json()
-            .with_context(|| format!("parse sync response from {url}"))
-    }
-
-    fn post_json<T, R>(&self, url: &str, body: &T) -> Result<R>
-    where
-        T: serde::Serialize,
-        R: serde::de::DeserializeOwned,
-    {
-        self.authorized(ureq::post(url))
-            .send_json(serde_json::to_value(body)?)
-            .map_err(mobile_sync_http_error)?
-            .into_json()
-            .with_context(|| format!("parse sync response from {url}"))
-    }
-
-    fn authorized(&self, request: ureq::Request) -> ureq::Request {
-        request
-            .timeout(std::time::Duration::from_secs(30))
-            .set("authorization", &format!("Bearer {}", self.bearer_token))
-    }
-}
-
-impl SyncTransport for MobileSyncHttpClient {
-    fn pull(&self, request: &BatchPullRequest) -> Result<BatchPullResponse> {
-        let url = format!("{}/v1/sync/pull", self.api_base);
-        self.post_json(&url, request)
-    }
-
-    fn push(&self, request: &BatchPushRequest) -> Result<BatchPushResponse> {
-        let url = format!("{}/v1/sync/push", self.api_base);
-        self.post_json(&url, request)
-    }
-}
-
-fn mobile_workspace_media_assets(workspace: &Workspace) -> Vec<MobileSyncMediaAsset> {
-    let mut seen = HashSet::new();
-    let mut assets = Vec::new();
-    for scheme in workspace.iter_schemes() {
-        let Some(meta) = workspace.scheme_sync.get(&scheme.id) else {
-            continue;
-        };
-        for item in &scheme.items {
-            for media in mobile_item_image_assets(item) {
-                let media = MobileSyncMediaAsset {
-                    document: meta.id,
-                    asset: media.asset,
-                    format: media.format,
-                };
-                if seen.insert(media) {
-                    assets.push(media);
-                }
-            }
-        }
-    }
-    assets
-}
-
-fn mobile_item_image_assets(item: &Item) -> Vec<ImageInline> {
-    let mut images = Vec::new();
-    mobile_collect_item_image_assets(item, &mut images);
-    images
-}
-
-fn mobile_collect_item_image_assets(item: &Item, images: &mut Vec<ImageInline>) {
-    match &item.content {
-        ItemContent::Text { .. } => {}
-        ItemContent::Image(image) => images.push(*image),
-        ItemContent::Table(table) => {
-            for cell in table.cells() {
-                for item in &cell.items {
-                    mobile_collect_item_image_assets(item, images);
-                }
-            }
-        }
-    }
-}
-
-fn mobile_upload_local_media_assets(
-    client: &MobileSyncHttpClient,
-    local_state: &mut knotq_sync::LocalSyncState,
-    workspace: &Workspace,
-    image_assets_dir: &Path,
-    remote_latest: &HashMap<DocumentId, u64>,
-) -> Result<()> {
-    for media in mobile_workspace_media_assets(workspace) {
-        let path = mobile_image_asset_path(image_assets_dir, media.asset, media.format);
-        let Ok(metadata) = fs::metadata(&path) else {
-            continue;
-        };
-        if !metadata.is_file() {
-            continue;
-        }
-        let byte_length = metadata.len();
-        if byte_length == 0 {
-            continue;
-        }
-        if byte_length > MAX_SYNC_MEDIA_BYTES as u64 {
-            return Err(anyhow!(
-                "image {} is {} bytes, above the {} byte sync limit",
-                media.image_name(),
-                byte_length,
-                MAX_SYNC_MEDIA_BYTES
-            ));
-        }
-        let image_name = media.image_name();
-        let bytes = fs::read(&path).with_context(|| format!("read {}", path.display()))?;
-        if bytes.len() > MAX_SYNC_MEDIA_BYTES {
-            return Err(anyhow!(
-                "image {} is {} bytes, above the {} byte sync limit",
-                image_name,
-                bytes.len(),
-                MAX_SYNC_MEDIA_BYTES
-            ));
-        }
-        let sha256 = mobile_media_sha256(&bytes);
-        if !local_state.should_upload_media_asset(
-            &image_name,
-            media.document,
-            byte_length,
-            &sha256,
-            remote_latest,
-        ) {
-            continue;
-        }
-        client.upload_media_asset(media, &bytes)?;
-        local_state.mark_media_uploaded(image_name, media.document, byte_length, sha256);
-    }
-    Ok(())
-}
-
-fn mobile_download_missing_media_assets(
-    client: &MobileSyncHttpClient,
-    workspace: &Workspace,
-    image_assets_dir: &Path,
-) -> Result<bool> {
-    let mut downloaded = false;
-    for media in mobile_workspace_media_assets(workspace) {
-        let path = mobile_image_asset_path(image_assets_dir, media.asset, media.format);
-        if !mobile_media_asset_needs_download(&path)? {
-            continue;
-        }
-        let image_name = media.image_name();
-        let Some(bytes) = client.download_media_asset(media)? else {
-            eprintln!("mobile sync media missing on backend: {image_name}; skipping download");
-            continue;
-        };
-        if bytes.len() > MAX_SYNC_MEDIA_BYTES {
-            return Err(anyhow!(
-                "downloaded image {} is {} bytes, above the {} byte sync limit",
-                image_name,
-                bytes.len(),
-                MAX_SYNC_MEDIA_BYTES
-            ));
-        }
-        if let Some(parent) = path.parent() {
-            fs::create_dir_all(parent).with_context(|| format!("create {}", parent.display()))?;
-        }
-        fs::write(&path, bytes).with_context(|| format!("write {}", path.display()))?;
-        downloaded = true;
-    }
-    Ok(downloaded)
-}
-
-fn mobile_image_asset_path(
-    image_assets_dir: &Path,
-    asset: uuid::Uuid,
-    format: ImageAssetFormat,
-) -> PathBuf {
-    image_assets_dir.join(format!("{asset}.{}", format.extension()))
-}
-
-fn mobile_media_asset_needs_download(path: &Path) -> Result<bool> {
-    match fs::metadata(path) {
-        Ok(metadata) if metadata.is_file() && metadata.len() > 0 => Ok(false),
-        Ok(metadata) if metadata.is_file() => Ok(true),
-        Ok(_) => Err(anyhow!(
-            "image asset path {} exists but is not a file",
-            path.display()
-        )),
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(true),
-        Err(error) => Err(error).with_context(|| format!("stat {}", path.display())),
-    }
-}
-
-fn mobile_media_content_type(format: ImageAssetFormat) -> &'static str {
-    match format {
-        ImageAssetFormat::Png => "image/png",
-        ImageAssetFormat::Jpeg => "image/jpeg",
-        ImageAssetFormat::Webp => "image/webp",
-        ImageAssetFormat::Gif => "image/gif",
-        ImageAssetFormat::Svg => "image/svg+xml",
-        ImageAssetFormat::Bmp => "image/bmp",
-        ImageAssetFormat::Tiff => "image/tiff",
-    }
-}
-
-fn mobile_media_sha256(bytes: &[u8]) -> String {
-    let digest = Sha256::digest(bytes);
-    digest.iter().map(|byte| format!("{byte:02x}")).collect()
-}
-
-fn mobile_sync_http_error(error: ureq::Error) -> anyhow::Error {
-    match error {
-        ureq::Error::Status(status, response) => {
-            let code = response
-                .into_json::<knotq_sync::ErrorResponse>()
-                .map(|error| error.code)
-                .unwrap_or_else(|_| status.to_string());
-            anyhow!("sync backend rejected request: {code}")
-        }
-        error => anyhow!("sync backend request failed: {error}"),
-    }
-}
-
-fn normalize_sync_api_base(raw: &str) -> Result<String> {
-    let trimmed = raw.trim().trim_end_matches('/');
-    if trimmed.is_empty() {
-        return Err(anyhow!("sync API URL is empty"));
-    }
-    // The bearer token and all workspace contents travel over this URL. Refuse
-    // plaintext HTTP to anything other than a loopback dev server so a misconfig
-    // can't silently leak credentials in the clear.
-    if !mobile_is_secure_api_base(trimmed) {
-        return Err(anyhow!("sync API URL must use https:// (got {trimmed})"));
-    }
-    Ok(trimmed.to_string())
-}
-
-fn mobile_is_secure_api_base(url: &str) -> bool {
-    if let Some(host) = url.strip_prefix("https://") {
-        return !host.is_empty();
-    }
-    if let Some(rest) = url.strip_prefix("http://") {
-        let host = rest
-            .split(['/', ':'])
-            .next()
-            .unwrap_or("")
-            .to_ascii_lowercase();
-        return matches!(host.as_str(), "127.0.0.1" | "localhost" | "[::1]" | "::1");
-    }
-    false
-}
-
-#[cfg(test)]
-mod sync_api_base_tests {
-    use super::{
-        mobile_media_asset_needs_download, mobile_workspace_media_assets, normalize_sync_api_base,
-    };
-    use knotq_model::{ImageAssetFormat, ImageInline, Item, Scheme, Table, Workspace};
-    use std::{fs, path::PathBuf};
-
-    #[test]
-    fn https_is_accepted_http_loopback_only() {
-        assert_eq!(
-            normalize_sync_api_base("https://sync.example.com/").unwrap(),
-            "https://sync.example.com"
-        );
-        assert!(normalize_sync_api_base("http://127.0.0.1:8787").is_ok());
-        assert!(normalize_sync_api_base("http://localhost.evil.com").is_err());
-        assert!(normalize_sync_api_base("http://127.0.0.1.evil.com").is_err());
-        assert!(normalize_sync_api_base("http://sync.example.com").is_err());
-        assert!(normalize_sync_api_base("").is_err());
-    }
-
-    #[test]
-    fn zero_byte_mobile_media_file_is_downloaded_again() {
-        let dir = unique_temp_dir("knotq-mobile-media");
-        let path = dir.join("asset.png");
-        fs::write(&path, []).unwrap();
-
-        assert!(mobile_media_asset_needs_download(&path).unwrap());
-
-        fs::write(&path, [1, 2, 3]).unwrap();
-        assert!(!mobile_media_asset_needs_download(&path).unwrap());
-
-        let _ = fs::remove_dir_all(dir);
-    }
-
-    #[test]
-    fn mobile_media_assets_use_scheme_sync_document_ids() {
-        let mut workspace = Workspace::new();
-        let mut scheme = Scheme::new("Images", 0);
-        let scheme_id = scheme.id;
-        let asset = uuid::Uuid::new_v4();
-        // Two image lines referencing the *same* asset — media collection must
-        // dedupe them to a single asset entry.
-        let image = ImageInline {
-            asset,
-            format: ImageAssetFormat::Png,
-            width: Some(10),
-            height: Some(10),
-        };
-        let mut first = Item::new("");
-        first.set_image(image);
-        let mut second = Item::new("");
-        second.set_image(image);
-        scheme.items.push(first);
-        scheme.items.push(second);
-        workspace.schemes.insert(scheme_id, scheme);
-        workspace.ensure_sync_metadata();
-        let document = workspace.scheme_sync.get(&scheme_id).unwrap().id;
-
-        let media = mobile_workspace_media_assets(&workspace);
-
-        assert_eq!(media.len(), 1);
-        assert_eq!(media[0].document, document);
-        assert_eq!(media[0].asset, asset);
-    }
-
-    #[test]
-    fn mobile_media_assets_include_images_inside_table_cells() {
-        let mut workspace = Workspace::new();
-        let mut scheme = Scheme::new("Table Images", 0);
-        let scheme_id = scheme.id;
-        let asset = uuid::Uuid::new_v4();
-        let image = ImageInline {
-            asset,
-            format: ImageAssetFormat::Png,
-            width: Some(20),
-            height: Some(12),
-        };
-        let mut image_item = Item::new("");
-        image_item.set_image(image);
-        let mut table = Table::new(1, 2);
-        table.cell_mut(0, 1).unwrap().items = vec![Item::new("caption"), image_item];
-        let mut table_item = Item::new("");
-        table_item.set_table(table);
-        scheme.items.push(table_item);
-        workspace.schemes.insert(scheme_id, scheme);
-        workspace.ensure_sync_metadata();
-        let document = workspace.scheme_sync.get(&scheme_id).unwrap().id;
-
-        let media = mobile_workspace_media_assets(&workspace);
-
-        assert_eq!(media.len(), 1);
-        assert_eq!(media[0].document, document);
-        assert_eq!(media[0].asset, asset);
-        assert_eq!(media[0].format, ImageAssetFormat::Png);
-    }
-
-    fn unique_temp_dir(prefix: &str) -> PathBuf {
-        let mut path = std::env::temp_dir();
-        path.push(format!(
-            "{prefix}-{}-{}",
-            std::process::id(),
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap()
-                .as_nanos()
-        ));
-        fs::create_dir_all(&path).unwrap();
-        path
-    }
-}
-
-fn mobile_crdt_change_set_for_command(command: &Command) -> WorkspaceCrdtChangeSet {
-    let mut changes = WorkspaceCrdtChangeSet::default();
-    mobile_collect_crdt_changes(command, &mut changes);
-    changes
-}
-
-fn mobile_collect_crdt_changes(command: &Command, out: &mut WorkspaceCrdtChangeSet) {
-    match command {
-        Command::CreateFolder { .. }
-        | Command::RestoreFolder { .. }
-        | Command::RenameFolder { .. }
-        | Command::SetFolderExpanded { .. }
-        | Command::DeleteFolder { .. }
-        | Command::PermanentlyDeleteFolder { .. }
-        | Command::CreateScheme { .. }
-        | Command::RenameScheme { .. }
-        | Command::SetSchemeColor { .. }
-        | Command::SetSchemeGsync { .. }
-        | Command::SetSchemeSource { .. }
-        | Command::DeleteScheme { .. }
-        | Command::PermanentlyDeleteScheme { .. }
-        | Command::MoveNode { .. } => {
-            out.workspace = true;
-        }
-        Command::RestoreScheme { scheme, .. } | Command::RestoreDeletedScheme { scheme, .. } => {
-            out.workspace = true;
-            out.schemes.insert(scheme.id);
-        }
-        Command::RestoreDeletedFolder { schemes, .. } => {
-            out.workspace = true;
-            for scheme in schemes {
-                out.schemes.insert(scheme.id);
-            }
-        }
-        Command::InsertItem { scheme, .. }
-        | Command::UpdateItemText { scheme, .. }
-        | Command::ReplaceItem { scheme, .. }
-        | Command::SetItemIndent { scheme, .. }
-        | Command::SetItemMarker { scheme, .. }
-        | Command::SetItemDate { scheme, .. }
-        | Command::SetItemRecurrence { scheme, .. }
-        | Command::SetItemPriority { scheme, .. }
-        | Command::SetOccurrenceNotificationOffset { scheme, .. }
-        | Command::ToggleOccurrence { scheme, .. }
-        | Command::DeleteItem { scheme, .. }
-        | Command::ReorderItem { scheme, .. } => {
-            out.schemes.insert(*scheme);
-        }
-        Command::Batch(commands) => {
-            for command in commands {
-                mobile_collect_crdt_changes(command, out);
-            }
-        }
-    }
 }
 
 #[derive(Clone, Debug)]
@@ -3479,217 +2957,6 @@ pub struct MobileItemEdit {
     pub content: Vec<MobileInline>,
 }
 
-impl MobileItem {
-    fn from_item(item: &Item, image_assets_dir: &Path) -> Self {
-        // A line is single-content; flatten to the inline run the bridge speaks
-        // (one element, or empty for a blank text line).
-        let inlines = item.content.to_inlines();
-        Self {
-            id: item.id.to_string(),
-            text: item.text(),
-            marker: marker_str(item.marker).to_string(),
-            indent: i32::from(item.indent),
-            kind: item_kind_str(item.kind()).to_string(),
-            done: item.single_state().is_done(),
-            start: item.start.map(format_datetime),
-            end: item.end.map(format_datetime),
-            notification_offset_secs: item
-                .single_state()
-                .notification_offset_secs
-                .map(offset_to_i32),
-            repeat_rule: recurrence_rule(item.repeats.as_ref()),
-            media: mobile_item_image_assets(item)
-                .iter()
-                .filter_map(|media| MobileItemMedia::from_media(media, image_assets_dir))
-                .collect(),
-            tables: inlines
-                .iter()
-                .filter_map(|inline| match inline {
-                    Inline::Table(table) => Some(MobileTable::from_table(table, image_assets_dir)),
-                    _ => None,
-                })
-                .collect(),
-            content: inlines
-                .iter()
-                .filter_map(|inline| MobileInline::from_inline(inline, image_assets_dir))
-                .collect(),
-        }
-    }
-}
-
-impl MobileInline {
-    /// Maps a domain `Inline` to its mobile representation. Returns `None` for an
-    /// image whose asset cannot be resolved on disk (matching the flat `media`
-    /// path, which also drops unresolved assets).
-    fn from_inline(inline: &Inline, image_assets_dir: &Path) -> Option<Self> {
-        match inline {
-            Inline::Text { text } => Some(MobileInline::Text { text: text.clone() }),
-            Inline::Image(image) => MobileItemMedia::from_media(image, image_assets_dir)
-                .map(|media| MobileInline::Image { media }),
-            Inline::Table(table) => Some(MobileInline::Table {
-                table: MobileTable::from_table(table, image_assets_dir),
-            }),
-        }
-    }
-}
-
-fn mobile_inlines_to_inlines(
-    content: &[MobileInline],
-    image_assets_dir: &Path,
-) -> Result<Vec<Inline>> {
-    content
-        .iter()
-        .map(|inline| match inline {
-            MobileInline::Text { text } => Ok(Inline::Text { text: text.clone() }),
-            MobileInline::Image { media } => mobile_media_to_item_media(media, image_assets_dir)
-                .map(Inline::Image)
-                .ok_or_else(|| anyhow!("invalid inline image media")),
-            MobileInline::Table { table } => Ok(Inline::Table(table.to_table(image_assets_dir)?)),
-        })
-        .collect()
-}
-
-/// Extracts the first RRULE body from a recurrence for display on the client.
-fn recurrence_rule(repeats: Option<&Recurrence>) -> Option<String> {
-    repeats.and_then(|r| r.rrules.first().cloned())
-}
-
-impl MobileItemMedia {
-    fn from_media(media: &ImageInline, image_assets_dir: &Path) -> Option<Self> {
-        Some(Self {
-            kind: "image".to_string(),
-            path: Some(
-                image_assets_dir
-                    .join(format!("{}.{}", media.asset, media.format.extension()))
-                    .display()
-                    .to_string(),
-            ),
-            format: image_format_str(media.format).to_string(),
-            width: media.width.and_then(|value| i32::try_from(value).ok()),
-            height: media.height.and_then(|value| i32::try_from(value).ok()),
-        })
-    }
-}
-
-impl MobileTable {
-    fn from_table(table: &Table, image_assets_dir: &Path) -> Self {
-        Self {
-            columns: table
-                .columns
-                .iter()
-                .map(|column| MobileTableColumn {
-                    id: column.id.to_string(),
-                    name: column.name.clone(),
-                })
-                .collect(),
-            rows: table
-                .rows
-                .iter()
-                .map(|row| MobileTableRow {
-                    id: row.id.to_string(),
-                    cells: row
-                        .cells
-                        .iter()
-                        .map(|cell| MobileTableCell {
-                            text: cell.summary_text(),
-                            lines: cell
-                                .items
-                                .iter()
-                                .map(|item| MobileCellLine::from_item(item, image_assets_dir))
-                                .collect(),
-                        })
-                        .collect(),
-                })
-                .collect(),
-        }
-    }
-
-    fn to_table(&self, image_assets_dir: &Path) -> Result<Table> {
-        let mut table = Table {
-            columns: self
-                .columns
-                .iter()
-                .map(|column| {
-                    Ok(TableColumn {
-                        id: parse_id::<ColumnId>(&column.id)?,
-                        name: column.name.clone(),
-                        width: None,
-                    })
-                })
-                .collect::<Result<Vec<_>>>()?,
-            rows: self
-                .rows
-                .iter()
-                .map(|row| {
-                    Ok(TableRow {
-                        id: parse_id::<RowId>(&row.id)?,
-                        cells: row
-                            .cells
-                            .iter()
-                            .map(|cell| cell.to_table_cell(image_assets_dir))
-                            .collect::<Result<Vec<_>>>()?,
-                    })
-                })
-                .collect::<Result<Vec<_>>>()?,
-        };
-        table.normalize();
-        Ok(table)
-    }
-}
-
-impl MobileTableCell {
-    fn to_table_cell(&self, image_assets_dir: &Path) -> Result<TableCell> {
-        Ok(TableCell::from_items(
-            self.lines
-                .iter()
-                .map(|line| line.to_item(image_assets_dir))
-                .collect::<Result<Vec<_>>>()?,
-        ))
-    }
-}
-
-impl MobileCellLine {
-    fn from_item(item: &Item, image_assets_dir: &Path) -> Self {
-        Self {
-            id: item.id.to_string(),
-            text: item.text(),
-            marker: marker_str(item.marker).to_string(),
-            done: item.single_state().is_done(),
-            start: item.start.map(format_datetime),
-            end: item.end.map(format_datetime),
-            media: item
-                .images()
-                .filter_map(|media| MobileItemMedia::from_media(media, image_assets_dir))
-                .collect(),
-        }
-    }
-
-    fn to_item(&self, image_assets_dir: &Path) -> Result<Item> {
-        let mut item = Item::new(self.text.clone());
-        item.id = parse_id::<ItemId>(&self.id)?;
-        item.marker = parse_marker(Some(&self.marker))?;
-        item.start = parse_datetime_opt(self.start.as_deref())?;
-        item.end = parse_datetime_opt(self.end.as_deref())?;
-        // Legacy cell line: text plus optional media collapses to single-content
-        // (a block wins, so a cell line with media is an image line).
-        let mut inlines = item.content.to_inlines();
-        inlines.extend(
-            self.media
-                .iter()
-                .filter_map(|media| mobile_media_to_item_media(media, image_assets_dir))
-                .map(Inline::Image),
-        );
-        item.content = ItemContent::from_inlines(inlines);
-        if item.marker == ItemMarker::Checkbox {
-            let state = item.state_for_occurrence_mut(OccurrenceId::Single);
-            state.progress = if self.done { -1 } else { 0 };
-            item.normalize_state();
-        }
-        item.enforce_marker_constraints();
-        Ok(item)
-    }
-}
-
 #[derive(Clone, Debug)]
 pub struct MobileDailyEntry {
     pub date: String,
@@ -3730,53 +2997,6 @@ pub struct MobileOccurrence {
     pub notification_offset_secs: Option<i32>,
     pub local_date: Option<String>,
     pub repeat_rule: Option<String>,
-}
-
-impl MobileOccurrence {
-    fn from_context(
-        workspace: &Workspace,
-        context: knotq_index::calendar::OccurrenceWithContext,
-    ) -> Self {
-        let item = workspace
-            .scheme(context.scheme_id)
-            .and_then(|scheme| scheme.item(context.item_id));
-        let title = item.map(|item| item.text()).unwrap_or_default();
-        let repeat_rule = item.and_then(|item| recurrence_rule(item.repeats.as_ref()));
-        let can_delete_future = item
-            .and_then(|item| item.repeats.as_ref())
-            .is_some_and(recurrence_can_delete_future);
-        let local_date = context
-            .occurrence
-            .start
-            .or(context.occurrence.end)
-            .map(|dt| dt.with_timezone(&Local).date_naive().to_string());
-        let occurrence_json = serde_json::to_string(&context.occurrence.id).unwrap_or_default();
-        let occurrence_index =
-            i32::try_from(context.occurrence.occurrence_index).unwrap_or(i32::MAX);
-        Self {
-            scheme_id: context.scheme_id.to_string(),
-            item_id: context.item_id.to_string(),
-            occurrence_json,
-            occurrence_index,
-            is_recurring: !context.occurrence.id.is_single(),
-            can_delete_future,
-            scheme_name: context.scheme_name,
-            color_index: i32::from(context.color_index),
-            is_read_only: workspace.is_scheme_read_only(context.scheme_id),
-            title,
-            kind: item_kind_str(context.occurrence.kind).to_string(),
-            done: context.occurrence.state.is_done(),
-            start: context.occurrence.start.map(format_datetime),
-            end: context.occurrence.end.map(format_datetime),
-            notification_offset_secs: context
-                .occurrence
-                .state
-                .notification_offset_secs
-                .map(offset_to_i32),
-            local_date,
-            repeat_rule,
-        }
-    }
 }
 
 #[derive(Clone, Debug)]
@@ -3830,32 +3050,6 @@ pub struct MobileNotificationRequest {
     pub trigger_at: String,
 }
 
-impl MobileNotificationRequest {
-    fn from_scheduled(notification: ScheduledNotification) -> Self {
-        let occurrence_json = serde_json::to_string(&notification.occurrence).unwrap_or_default();
-        let notification_key = notification.key;
-        Self {
-            id: mobile_notification_id(&notification_key),
-            notification_key,
-            fire_at: format_datetime(notification.fire_at),
-            expires_at: notification.expires_at.map(format_datetime),
-            end_at: notification.end_at.map(format_datetime),
-            title: notification.title,
-            body: notification.body,
-            kind: match notification.kind {
-                knotq_notifications::NotificationKind::Reminder => "reminder",
-                knotq_notifications::NotificationKind::Event => "event",
-                knotq_notifications::NotificationKind::Assignment => "assignment",
-            }
-            .to_string(),
-            scheme_id: notification.scheme_id.to_string(),
-            item_id: notification.item_id.to_string(),
-            occurrence_json,
-            trigger_at: format_datetime(notification.trigger_at),
-        }
-    }
-}
-
 #[derive(Clone, Debug)]
 pub struct MobileSearchHit {
     pub target_kind: String,
@@ -3868,183 +3062,13 @@ pub struct MobileSearchHit {
     pub status: String,
 }
 
-
-fn mobile_upcoming(
-    indexed: &IndexedWorkspace,
-    from: DateTime<Utc>,
-    limit: usize,
-) -> Vec<knotq_index::calendar::OccurrenceWithContext> {
-    let mut occurrences = indexed.calendar_query().range(upcoming_range(from));
-    occurrences.retain(|event| occurrence_anchor(event) >= Some(from));
-
-    let mut seen_recurring_items = HashSet::new();
-    let mut out = Vec::new();
-    for event in occurrences {
-        if !event.occurrence.id.is_single()
-            && !seen_recurring_items.insert((event.scheme_id, event.item_id))
-        {
-            continue;
-        }
-        out.push(event);
-        if out.len() >= limit {
-            break;
-        }
-    }
-    out
-}
-
-fn occurrence_anchor(
-    event: &knotq_index::calendar::OccurrenceWithContext,
-) -> Option<DateTime<Utc>> {
-    event
-        .occurrence
-        .start
-        .or(event.occurrence.end)
-        .or(event.occurrence.available)
-}
-
-fn archived_scheme_node(scheme: &Scheme) -> MobileNode {
-    MobileNode {
-        kind: "scheme".to_string(),
-        id: scheme.id.to_string(),
-        name: scheme.name.clone(),
-        color_index: Some(i32::from(scheme.color_index)),
-        is_daily_queue: false,
-        is_read_only: scheme.is_read_only(),
-        children: Vec::new(),
-    }
-}
-
-fn format_datetime(dt: DateTime<Utc>) -> String {
-    dt.to_rfc3339_opts(chrono::SecondsFormat::Secs, true)
-}
-
-fn format_daily_label(date: NaiveDate) -> String {
-    date.format("%a, %b %-d").to_string()
-}
-
-fn marker_str(marker: ItemMarker) -> &'static str {
-    match marker {
-        ItemMarker::Blank => "blank",
-        ItemMarker::Bullet => "bullet",
-        ItemMarker::Numbered => "numbered",
-        ItemMarker::Checkbox => "checkbox",
-    }
-}
-
-fn item_kind_str(kind: ItemKind) -> &'static str {
-    match kind {
-        ItemKind::Reminder => "reminder",
-        ItemKind::Assignment => "assignment",
-        ItemKind::Event => "event",
-        ItemKind::Procedure => "procedure",
-    }
-}
-
-fn image_format_str(format: ImageAssetFormat) -> &'static str {
-    match format {
-        ImageAssetFormat::Png => "png",
-        ImageAssetFormat::Jpeg => "jpeg",
-        ImageAssetFormat::Webp => "webp",
-        ImageAssetFormat::Gif => "gif",
-        ImageAssetFormat::Svg => "svg",
-        ImageAssetFormat::Bmp => "bmp",
-        ImageAssetFormat::Tiff => "tiff",
-    }
-}
-
-fn theme_mode_str(theme_mode: ThemeMode) -> &'static str {
-    match theme_mode {
-        ThemeMode::System => "system",
-        ThemeMode::Dark => "dark",
-        ThemeMode::Light => "light",
-    }
-}
-
-fn time_format_str(time_format: TimeFormat) -> &'static str {
-    match time_format {
-        TimeFormat::TwelveHour => "twelve_hour",
-        TimeFormat::TwentyFourHour => "twenty_four_hour",
-    }
-}
-
-fn mobile_notification_lead_times(defaults: NotificationDefaults) -> NotificationLeadTimes {
-    NotificationLeadTimes {
-        reminder_offset_secs: 0,
-        event_offset_secs: defaults.event_offset_secs,
-        assignment_offset_secs: defaults.assignment_offset_secs,
-    }
-}
-
-fn offset_to_i32(offset_secs: i64) -> i32 {
-    offset_secs.clamp(i64::from(i32::MIN), i64::from(i32::MAX)) as i32
-}
-
-fn mobile_notification_id(key: &str) -> String {
-    let digest = Sha256::digest(key.as_bytes());
-    format!(
-        "knotq-{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}",
-        digest[0], digest[1], digest[2], digest[3], digest[4], digest[5], digest[6], digest[7]
-    )
-}
-
-fn next_color_index(workspace: &Workspace) -> u8 {
-    let count = workspace
-        .iter_schemes()
-        .filter(|scheme| !workspace.is_daily_queue_scheme(scheme.id))
-        .count();
-    (count % 10) as u8
-}
-
-fn non_empty(value: String, label: &str) -> Result<String> {
-    let value = value.trim().to_string();
-    if value.is_empty() {
-        Err(anyhow!("{label} is required"))
-    } else {
-        Ok(value)
-    }
-}
-
-fn opt_position(position: Option<i32>) -> Result<Option<usize>> {
-    position.map(position_from_i32).transpose()
-}
-
-fn position_from_i32(position: i32) -> Result<usize> {
-    usize::try_from(position).map_err(|_| anyhow!("position cannot be negative: {position}"))
-}
-
-fn as_u8(value: i32, label: &str) -> Result<u8> {
-    u8::try_from(value).map_err(|_| anyhow!("{label} must be between 0 and 255: {value}"))
-}
-
-fn google_account_matches_calendar_source(
-    account: &GoogleOAuthAccount,
-    source: &ImportedCalendarSource,
-) -> bool {
-    if account.account_id == source.account_id {
-        return true;
-    }
-    let Some(account_email) = account.email.as_deref() else {
-        return false;
-    };
-    let source_email = source.account_email.as_deref().or_else(|| {
-        source
-            .account_id
-            .contains('@')
-            .then_some(source.account_id.as_str())
-    });
-    source_email.is_some_and(|source_email| emails_match(account_email, source_email))
-}
-
-fn emails_match(left: &str, right: &str) -> bool {
-    left.trim().eq_ignore_ascii_case(right.trim())
-}
-
 uniffi::include_scaffolding!("knotq_mobile_core");
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::conversions::format_datetime;
+    use chrono::{Local, TimeZone};
     use knotq_model::{
         CalendarProvider, ImportedCalendarSource, ReplicaId, SchemeSource, SyncDocumentKind,
     };

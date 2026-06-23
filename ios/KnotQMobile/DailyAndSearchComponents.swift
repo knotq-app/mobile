@@ -23,9 +23,6 @@ struct DesktopSchemePane: View {
 }
 
 struct DailyFeedPane: View {
-    private static let bottomAnchorID = "daily-feed-bottom-anchor"
-    private static let scrollCoordinateSpace = "daily-feed-scroll-space"
-
     let entries: [MobileDailyEntry]
     let selectedDate: Date
     let theme: KnotQTheme
@@ -41,11 +38,7 @@ struct DailyFeedPane: View {
     let onAdd: () -> Void
     var usesNativeNavigation: Bool = false
     var autoFocusSelectedDay: Bool = true
-    @State private var didInitialBottomPin = false
-    @State private var olderLoadsEnabled = false
-    @State private var userScrolledTowardOlderEntries = false
-    @State private var topSentinelNearViewport = false
-    @State private var restoringLoadAnchorDate: String?
+    @EnvironmentObject private var model: AppModel
 
     var body: some View {
         VStack(spacing: 0) {
@@ -53,83 +46,35 @@ struct DailyFeedPane: View {
                 DailyEditorNavigationBar(theme: theme, onBack: onBack, onAdd: onAdd)
             }
 
-            Group {
-                if visibleEntries.isEmpty {
-                    EmptyState(title: "Daily not ready", detail: "Could not create the daily queue.", theme: theme)
-                } else {
-                    ScrollViewReader { proxy in
-                        ScrollView {
-                            LazyVStack(spacing: 0) {
-                                Color.clear
-                                    .frame(height: 1)
-                                    .background {
-                                        GeometryReader { geometry in
-                                            Color.clear.preference(
-                                                key: DailyFeedTopOffsetPreferenceKey.self,
-                                                value: geometry.frame(in: .named(Self.scrollCoordinateSpace)).minY
-                                            )
-                                        }
-                                    }
-                                DailyHistoryLoadingRow(isLoading: isLoadingOlder, theme: theme)
-                                ForEach(visibleEntries) { entry in
-                                    DailyDayEditorSection(
-                                        entry: entry,
-                                        isEmpty: isEffectivelyEmpty(entry),
-                                        selected: entry.date == selectedDateKey,
-                                        theme: theme,
-                                        autoFocusOnAppear: autoFocusSelectedDay,
-                                        onSelect: { onDate(AppModel.date(from: entry.date) ?? selectedDate) }
-                                    )
-                                    .id(entry.date)
-                                    .onAppear {
-                                        handleOlderEntryAppear(entry.date)
-                                    }
-                                }
-                                Color.clear
-                                    .frame(height: 1)
-                                    .id(Self.bottomAnchorID)
-                            }
-                            .frame(maxWidth: 760, alignment: .leading)
-                            // No horizontal padding here: it would sit *outside*
-                            // each day's editor text view, so taps in that strip
-                            // (the side gutter beside a table) never reach the
-                            // editor. The equivalent margin lives in the editor's
-                            // `textContainerInset` instead (see `DailyDayEditorSection`),
-                            // which keeps it inside the tappable text view.
-                            .padding(.top, 2)
-                            .padding(.bottom, 76)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                        }
-                        .coordinateSpace(name: Self.scrollCoordinateSpace)
-                        .scrollDismissesKeyboard(.never)
-                        .simultaneousGesture(
-                            DragGesture(minimumDistance: 8)
-                                .onChanged { value in
-                                    if value.translation.height > 12 {
-                                        userScrolledTowardOlderEntries = true
-                                        loadOlderIfReady()
-                                    }
-                                },
-                            including: .subviews
-                        )
-                            .onPreferenceChange(DailyFeedTopOffsetPreferenceKey.self) { value in
-                                topSentinelNearViewport = value >= -20 && value <= 80
-                                loadOlderIfReady()
-                            }
-                            .onAppear {
-                                pinInitialBottomIfNeeded(proxy)
-                            }
-                            .onChange(of: loadAnchorDate) { _, _ in
-                                restoreLoadAnchorIfNeeded(proxy)
-                            }
-                            .onChange(of: visibleEntryDateSignature) { _, _ in
-                                restoreLoadAnchorIfNeeded(proxy)
-                            }
-                            .onChange(of: selectedDateKey) { _, value in
-                                scrollWithoutAnimation(proxy, to: value)
-                            }
-                        }
-                    }
+            if visibleEntries.isEmpty {
+                EmptyState(title: "Daily not ready", detail: "Could not create the daily queue.", theme: theme)
+            } else {
+                // The feed is hosted in a custom UIKit scroll container rather
+                // than a SwiftUI `ScrollView { LazyVStack { ... } }`. Each day is
+                // a self-sizing, non-scrolling editor; the LazyVStack recycled
+                // the focused day when it scrolled off-screen (tearing down the
+                // first responder and jumping layout) and the self-sizing reflow
+                // shoved the whole stack. Owning a real `UIScrollView` +
+                // `UIStackView` of hosting controllers keeps every mounted day
+                // alive and lets us anchor `contentOffset` across content-size
+                // and keyboard changes.
+                DailyFeedScroll(
+                    entries: visibleEntries,
+                    selectedDateKey: selectedDateKey,
+                    theme: theme,
+                    autoFocusSelectedDay: autoFocusSelectedDay,
+                    emptyDates: emptyDates,
+                    isLoadingOlder: isLoadingOlder,
+                    canLoadOlder: canLoadOlder,
+                    loadAnchorDate: loadAnchorDate,
+                    model: model,
+                    onSelect: { dateKey in onDate(AppModel.date(from: dateKey) ?? selectedDate) },
+                    onLoadOlder: { oldest in onLoadOlder(oldest) },
+                    onLoadAnchorRestored: { onLoadAnchorRestored() }
+                )
+                // The container manages keyboard insets itself; let SwiftUI not
+                // also shrink it for the keyboard (double avoidance jumps it).
+                .ignoresSafeArea(.keyboard)
             }
         }
         .background(theme.bgApp.ignoresSafeArea())
@@ -145,14 +90,6 @@ struct DailyFeedPane: View {
         entries.sorted { $0.date < $1.date }
     }
 
-    private var oldestVisibleDate: String? {
-        visibleEntries.first?.date
-    }
-
-    private var visibleEntryDateSignature: String {
-        visibleEntries.map(\.date).joined(separator: "|")
-    }
-
     /// Hide empty queues unless they are the selected editable day; otherwise
     /// they reserve editor height without showing meaningful content.
     private var visibleEntries: [MobileDailyEntry] {
@@ -160,6 +97,14 @@ struct DailyFeedPane: View {
             if entry.date == selectedDateKey { return true }
             return !isEffectivelyEmpty(entry)
         }
+    }
+
+    /// Visible entries that have no meaningful content (only the selected day
+    /// survives the `visibleEntries` filter while empty). The container passes
+    /// this to each day section so it can keep showing the title on the empty
+    /// selected day.
+    private var emptyDates: Set<String> {
+        Set(visibleEntries.filter(isEffectivelyEmpty).map(\.date))
     }
 
     private func isEffectivelyEmpty(_ entry: MobileDailyEntry) -> Bool {
@@ -176,115 +121,6 @@ struct DailyFeedPane: View {
         return item.notificationOffsetSecs != nil || item.media.contains(where: dailyMediaIsDisplayable)
     }
 
-    private func handleOlderEntryAppear(_ date: String) {
-        guard olderLoadsEnabled,
-              userScrolledTowardOlderEntries,
-              topSentinelNearViewport,
-              date == oldestVisibleDate
-        else {
-            return
-        }
-        loadOlderIfReady()
-    }
-
-    private func loadOlderIfReady() {
-        guard olderLoadsEnabled,
-              userScrolledTowardOlderEntries,
-              topSentinelNearViewport,
-              let oldestVisibleDate
-        else {
-            return
-        }
-        guard canLoadOlder, !isLoadingOlder else {
-            userScrolledTowardOlderEntries = false
-            return
-        }
-        userScrolledTowardOlderEntries = false
-        onLoadOlder(oldestVisibleDate)
-    }
-
-    private func pinInitialBottomIfNeeded(_ proxy: ScrollViewProxy) {
-        guard !didInitialBottomPin else { return }
-        didInitialBottomPin = true
-        olderLoadsEnabled = false
-        userScrolledTowardOlderEntries = false
-        topSentinelNearViewport = false
-        pinToBottom(proxy)
-        DispatchQueue.main.async {
-            pinToBottom(proxy)
-            DispatchQueue.main.async {
-                pinToBottom(proxy)
-            }
-        }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
-            pinToBottom(proxy)
-            olderLoadsEnabled = true
-        }
-    }
-
-    private func pinToBottom(_ proxy: ScrollViewProxy) {
-        scrollWithoutAnimation(proxy, to: Self.bottomAnchorID)
-    }
-
-    private func restoreLoadAnchorIfNeeded(_ proxy: ScrollViewProxy) {
-        guard let anchor = loadAnchorDate else { return }
-        guard visibleEntries.contains(where: { $0.date == anchor }) else {
-            onLoadAnchorRestored()
-            return
-        }
-        guard restoringLoadAnchorDate != anchor else { return }
-        restoringLoadAnchorDate = anchor
-        DispatchQueue.main.async {
-            scrollWithoutAnimation(proxy, to: anchor, anchor: .top)
-            DispatchQueue.main.async {
-                scrollWithoutAnimation(proxy, to: anchor, anchor: .top)
-                restoringLoadAnchorDate = nil
-                onLoadAnchorRestored()
-            }
-        }
-    }
-
-    private func scrollWithoutAnimation<ID: Hashable>(
-        _ proxy: ScrollViewProxy,
-        to id: ID,
-        anchor: UnitPoint = .bottom
-    ) {
-        var transaction = Transaction()
-        transaction.disablesAnimations = true
-        withTransaction(transaction) {
-            proxy.scrollTo(id, anchor: anchor)
-        }
-    }
-}
-
-private struct DailyFeedTopOffsetPreferenceKey: PreferenceKey {
-    static let defaultValue: CGFloat = .greatestFiniteMagnitude
-
-    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
-        value = nextValue()
-    }
-}
-
-private struct DailyHistoryLoadingRow: View {
-    let isLoading: Bool
-    let theme: KnotQTheme
-
-    var body: some View {
-        HStack {
-            Spacer()
-            if isLoading {
-                ProgressView()
-                    .controlSize(.small)
-                    .tint(theme.textMuted)
-                    .accessibilityLabel("Loading older daily entries")
-            }
-            Spacer()
-        }
-        .frame(height: isLoading ? 34 : 0)
-        .opacity(isLoading ? 1 : 0)
-        .allowsHitTesting(false)
-        .accessibilityHidden(!isLoading)
-    }
 }
 
 struct DailyEditorNavigationBar: View {
@@ -763,5 +599,368 @@ struct DesktopSearchPane: View {
             // Prefill the cursor: focus the field as soon as the pane appears.
             DispatchQueue.main.async { searchFocused = true }
         }
+    }
+}
+
+// MARK: - Daily feed UIKit scroll container
+
+/// UIKit-backed scroll container for the Daily feed (see the comment in
+/// `DailyFeedPane.body` for why the SwiftUI `ScrollView`/`LazyVStack` version was
+/// replaced). It hosts one `UIHostingController<DailyDayEditorSection>` per
+/// visible day inside a `UIScrollView` + `UIStackView`, so:
+///   * no day is recycled while it (and its first responder) scrolls off-screen,
+///   * Auto Layout self-sizing of each day is stable (no reflow jumps),
+///   * `contentOffset` is owned here, so the focused day stays anchored across
+///     content-size changes (loading older history) and keyboard show/hide.
+struct DailyFeedScroll: UIViewControllerRepresentable {
+    let entries: [MobileDailyEntry]          // already filtered to visible + sorted ascending
+    let selectedDateKey: String
+    let theme: KnotQTheme
+    let autoFocusSelectedDay: Bool
+    let emptyDates: Set<String>
+    let isLoadingOlder: Bool
+    let canLoadOlder: Bool
+    let loadAnchorDate: String?
+    let model: AppModel
+    let onSelect: (String) -> Void
+    let onLoadOlder: (String) -> Void
+    let onLoadAnchorRestored: () -> Void
+
+    func makeUIViewController(context: Context) -> DailyFeedScrollController {
+        let controller = DailyFeedScrollController()
+        push(into: controller)
+        controller.apply(initial: true)
+        return controller
+    }
+
+    func updateUIViewController(_ controller: DailyFeedScrollController, context: Context) {
+        push(into: controller)
+        controller.apply(initial: false)
+    }
+
+    private func push(into controller: DailyFeedScrollController) {
+        controller.model = model
+        controller.theme = theme
+        controller.entries = entries
+        controller.selectedDateKey = selectedDateKey
+        controller.autoFocusSelectedDay = autoFocusSelectedDay
+        controller.emptyDates = emptyDates
+        controller.isLoadingOlder = isLoadingOlder
+        controller.canLoadOlder = canLoadOlder
+        controller.loadAnchorDate = loadAnchorDate
+        controller.onSelect = onSelect
+        controller.onLoadOlder = onLoadOlder
+        controller.onLoadAnchorRestored = onLoadAnchorRestored
+    }
+}
+
+final class DailyFeedScrollController: UIViewController, UIScrollViewDelegate {
+    private enum ScrollEdge { case top, bottom }
+    private static let baseTopInset: CGFloat = 2
+    // Clears the floating add button at the bottom (matched the old SwiftUI
+    // `.padding(.bottom, 76)`).
+    private static let baseBottomInset: CGFloat = 76
+    private static let maxContentWidth: CGFloat = 760
+    private static let loadOlderTopThreshold: CGFloat = 80
+
+    // Inputs (set by the representable before each `apply`).
+    var model: AppModel!
+    var theme: KnotQTheme = .dark
+    var entries: [MobileDailyEntry] = []
+    var selectedDateKey: String = ""
+    var autoFocusSelectedDay: Bool = false
+    var emptyDates: Set<String> = []
+    var isLoadingOlder: Bool = false
+    var canLoadOlder: Bool = true
+    var loadAnchorDate: String?
+    var onSelect: (String) -> Void = { _ in }
+    var onLoadOlder: (String) -> Void = { _ in }
+    var onLoadAnchorRestored: () -> Void = {}
+
+    private let scrollView = UIScrollView()
+    private let stack = UIStackView()
+    private let loadingRow = UIView()
+    private let spinner = UIActivityIndicatorView(style: .medium)
+
+    // One hosting controller per day, keyed by `entry.date`.
+    private var hosts: [String: UIHostingController<AnyView>] = [:]
+    private var order: [String] = []
+
+    private var didSetup = false
+    private var needsInitialPin = false
+    private var didInitialBottomPin = false
+    private var pendingLoadOlder = false
+    private var lastSelectedDateKey = ""
+    private var keyboardInset: CGFloat = 0
+
+    // MARK: Lifecycle
+
+    override func loadView() {
+        view = UIView()
+        view.backgroundColor = .clear
+        setupIfNeeded()
+    }
+
+    private func setupIfNeeded() {
+        guard !didSetup else { return }
+        didSetup = true
+
+        scrollView.translatesAutoresizingMaskIntoConstraints = false
+        scrollView.delegate = self
+        scrollView.alwaysBounceVertical = true
+        scrollView.keyboardDismissMode = .none
+        // We own every inset, so don't let the system fold the safe area in.
+        scrollView.contentInsetAdjustmentBehavior = .never
+        scrollView.contentInset = UIEdgeInsets(top: Self.baseTopInset, left: 0, bottom: Self.baseBottomInset, right: 0)
+        view.addSubview(scrollView)
+
+        stack.translatesAutoresizingMaskIntoConstraints = false
+        stack.axis = .vertical
+        stack.alignment = .fill
+        stack.distribution = .fill
+        stack.spacing = 0
+        scrollView.addSubview(stack)
+
+        loadingRow.translatesAutoresizingMaskIntoConstraints = false
+        spinner.translatesAutoresizingMaskIntoConstraints = false
+        spinner.hidesWhenStopped = true
+        loadingRow.addSubview(spinner)
+        stack.addArrangedSubview(loadingRow)
+
+        let content = scrollView.contentLayoutGuide
+        let frame = scrollView.frameLayoutGuide
+        // Width = min(viewport, maxContentWidth), left-aligned (matches the old
+        // `.frame(maxWidth: 760, alignment: .leading)`). Pinning both edges of
+        // the stack to the content guide makes content width == stack width, so
+        // the feed never scrolls horizontally.
+        let preferWide = stack.widthAnchor.constraint(equalTo: frame.widthAnchor)
+        preferWide.priority = .defaultHigh
+        let capWidth = stack.widthAnchor.constraint(lessThanOrEqualToConstant: Self.maxContentWidth)
+        NSLayoutConstraint.activate([
+            scrollView.topAnchor.constraint(equalTo: view.topAnchor),
+            scrollView.bottomAnchor.constraint(equalTo: view.bottomAnchor),
+            scrollView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            scrollView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+
+            stack.topAnchor.constraint(equalTo: content.topAnchor),
+            stack.bottomAnchor.constraint(equalTo: content.bottomAnchor),
+            stack.leadingAnchor.constraint(equalTo: content.leadingAnchor),
+            stack.trailingAnchor.constraint(equalTo: content.trailingAnchor),
+            preferWide,
+            capWidth,
+
+            loadingRow.heightAnchor.constraint(equalToConstant: 34),
+            spinner.centerXAnchor.constraint(equalTo: loadingRow.centerXAnchor),
+            spinner.centerYAnchor.constraint(equalTo: loadingRow.centerYAnchor),
+        ])
+
+        let nc = NotificationCenter.default
+        nc.addObserver(self, selector: #selector(keyboardWillChange(_:)),
+                       name: UIResponder.keyboardWillChangeFrameNotification, object: nil)
+        nc.addObserver(self, selector: #selector(keyboardWillHide(_:)),
+                       name: UIResponder.keyboardWillHideNotification, object: nil)
+    }
+
+    deinit { NotificationCenter.default.removeObserver(self) }
+
+    override func viewDidLayoutSubviews() {
+        super.viewDidLayoutSubviews()
+        if needsInitialPin, scrollView.bounds.height > 0, scrollView.contentSize.height > 0 {
+            needsInitialPin = false
+            pinToBottom()
+            // Re-pin after the next layout pass; self-sizing editors settle their
+            // height a tick late, which would otherwise leave us short of bottom.
+            DispatchQueue.main.async { [weak self] in
+                guard let self else { return }
+                self.pinToBottom()
+                self.didInitialBottomPin = true
+            }
+        }
+    }
+
+    // MARK: Apply
+
+    func apply(initial: Bool) {
+        loadViewIfNeeded()
+
+        // Capture the on-screen position of an anchor day BEFORE mutating the
+        // content, so loading older history (which prepends rows) doesn't shift
+        // what the user is looking at.
+        var anchor: (date: String, screenY: CGFloat)?
+        if !initial, scrollView.bounds.height > 0 {
+            let anchorDate = (loadAnchorDate.flatMap { hosts[$0] != nil ? $0 : nil }) ?? topmostVisibleDate()
+            if let date = anchorDate, let v = hosts[date]?.view {
+                anchor = (date, v.frame.minY - scrollView.contentOffset.y)
+            }
+        }
+
+        reconcile()
+        spinner.isHidden = !isLoadingOlder
+        if isLoadingOlder { spinner.startAnimating() } else { spinner.stopAnimating() }
+        loadingRow.isHidden = !isLoadingOlder
+        // A finished/cleared load re-arms the top trigger.
+        if !isLoadingOlder { pendingLoadOlder = false }
+
+        view.layoutIfNeeded()
+
+        if let anchor, let v = hosts[anchor.date]?.view {
+            scrollView.contentOffset.y = clampOffsetY(v.frame.minY - anchor.screenY)
+        }
+
+        // The anchor signal is single-shot; clear it once we've consumed it.
+        // Async so we don't mutate model state mid SwiftUI update.
+        if loadAnchorDate != nil {
+            DispatchQueue.main.async { [weak self] in self?.onLoadAnchorRestored() }
+        }
+
+        if initial {
+            needsInitialPin = !entries.isEmpty
+            lastSelectedDateKey = selectedDateKey
+        } else if selectedDateKey != lastSelectedDateKey {
+            lastSelectedDateKey = selectedDateKey
+            if didInitialBottomPin {
+                DispatchQueue.main.async { [weak self] in
+                    self?.scrollTo(date: self?.selectedDateKey ?? "", edge: .bottom)
+                }
+            }
+        }
+    }
+
+    /// Reconciles the hosting controllers to `entries`: updates existing days in
+    /// place (preserving their editor state / first responder), creates hosts for
+    /// new days, removes vanished ones, and orders them after the loading row.
+    private func reconcile() {
+        let newDates = entries.map(\.date)
+        let newSet = Set(newDates)
+
+        for (date, host) in hosts where !newSet.contains(date) {
+            host.willMove(toParent: nil)
+            stack.removeArrangedSubview(host.view)
+            host.view.removeFromSuperview()
+            host.removeFromParent()
+            hosts[date] = nil
+        }
+
+        for (index, entry) in entries.enumerated() {
+            let host: UIHostingController<AnyView>
+            if let existing = hosts[entry.date] {
+                host = existing
+                host.rootView = rootView(for: entry)
+            } else {
+                host = UIHostingController(rootView: rootView(for: entry))
+                host.view.backgroundColor = .clear
+                host.sizingOptions = .intrinsicContentSize
+                addChild(host)
+                hosts[entry.date] = host
+                host.didMove(toParent: self)
+            }
+            // +1 to sit after the loading row at index 0.
+            let target = index + 1
+            if stack.arrangedSubviews.firstIndex(of: host.view) != target {
+                stack.insertArrangedSubview(host.view, at: min(target, stack.arrangedSubviews.count))
+            }
+        }
+        order = newDates
+    }
+
+    private func rootView(for entry: MobileDailyEntry) -> AnyView {
+        let date = entry.date
+        return AnyView(
+            DailyDayEditorSection(
+                entry: entry,
+                isEmpty: emptyDates.contains(date),
+                selected: date == selectedDateKey,
+                theme: theme,
+                autoFocusOnAppear: autoFocusSelectedDay,
+                onSelect: { [weak self] in self?.onSelect(date) }
+            )
+            .environmentObject(model)
+        )
+    }
+
+    // MARK: Scrolling helpers
+
+    private func clampOffsetY(_ y: CGFloat) -> CGFloat {
+        let minY = -scrollView.adjustedContentInset.top
+        let maxY = max(minY, scrollView.contentSize.height - scrollView.bounds.height + scrollView.adjustedContentInset.bottom)
+        return min(max(y, minY), maxY)
+    }
+
+    private func pinToBottom() {
+        view.layoutIfNeeded()
+        scrollView.contentOffset.y = clampOffsetY(.greatestFiniteMagnitude)
+    }
+
+    private func scrollTo(date: String, edge: ScrollEdge) {
+        guard let v = hosts[date]?.view else { return }
+        view.layoutIfNeeded()
+        let target: CGFloat
+        switch edge {
+        case .top:
+            target = v.frame.minY - scrollView.adjustedContentInset.top
+        case .bottom:
+            target = v.frame.maxY - scrollView.bounds.height + scrollView.adjustedContentInset.bottom
+        }
+        scrollView.contentOffset.y = clampOffsetY(target)
+    }
+
+    private func topmostVisibleDate() -> String? {
+        let topY = scrollView.contentOffset.y
+        for date in order {
+            if let v = hosts[date]?.view, v.frame.maxY > topY + 0.5 { return date }
+        }
+        return order.last
+    }
+
+    // MARK: UIScrollViewDelegate
+
+    func scrollViewDidScroll(_ scrollView: UIScrollView) {
+        guard didInitialBottomPin,
+              scrollView.isDragging || scrollView.isDecelerating,
+              canLoadOlder, !isLoadingOlder, !pendingLoadOlder,
+              let oldest = order.first else { return }
+        let topThreshold = -scrollView.adjustedContentInset.top + Self.loadOlderTopThreshold
+        guard scrollView.contentOffset.y <= topThreshold else { return }
+        pendingLoadOlder = true
+        onLoadOlder(oldest)
+    }
+
+    // MARK: Keyboard
+
+    @objc private func keyboardWillChange(_ note: Notification) {
+        guard let value = note.userInfo?[UIResponder.keyboardFrameEndUserInfoKey] as? NSValue else { return }
+        let kbInView = view.convert(value.cgRectValue, from: nil)
+        keyboardInset = max(0, scrollView.frame.maxY - kbInView.minY)
+        updateBottomInset()
+        DispatchQueue.main.async { [weak self] in self?.scrollFocusedCaretToVisible() }
+    }
+
+    @objc private func keyboardWillHide(_ note: Notification) {
+        keyboardInset = 0
+        updateBottomInset()
+    }
+
+    private func updateBottomInset() {
+        var inset = scrollView.contentInset
+        inset.bottom = Self.baseBottomInset + keyboardInset
+        scrollView.contentInset = inset
+        scrollView.verticalScrollIndicatorInsets.bottom = keyboardInset
+    }
+
+    private func scrollFocusedCaretToVisible() {
+        guard let textView = firstResponderTextView(in: view),
+              let selection = textView.selectedTextRange else { return }
+        let caret = textView.caretRect(for: selection.end)
+        guard caret.origin.y.isFinite, caret.size.height.isFinite else { return }
+        let rect = textView.convert(caret, to: scrollView).insetBy(dx: 0, dy: -24)
+        scrollView.scrollRectToVisible(rect, animated: true)
+    }
+
+    private func firstResponderTextView(in view: UIView) -> UITextView? {
+        if let textView = view as? UITextView, textView.isFirstResponder { return textView }
+        for subview in view.subviews {
+            if let found = firstResponderTextView(in: subview) { return found }
+        }
+        return nil
     }
 }

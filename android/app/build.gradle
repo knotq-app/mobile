@@ -1,6 +1,18 @@
 plugins {
     id "com.android.application"
     id "org.jetbrains.kotlin.android"
+    // Processes google-services.json so Firebase (Cloud Messaging) auto-initializes.
+    id "com.google.gms.google-services"
+}
+
+// Release signing secrets live in keystore.properties (gitignored). When it is
+// absent (e.g. a fresh checkout or CI without secrets) the release build falls
+// back to unsigned so debug builds still work; a real Play release requires it.
+def keystorePropertiesFile = rootProject.file("keystore.properties")
+def keystoreProperties = new Properties()
+def hasReleaseSigning = keystorePropertiesFile.exists()
+if (hasReleaseSigning) {
+    keystoreProperties.load(new FileInputStream(keystorePropertiesFile))
 }
 
 android {
@@ -11,13 +23,40 @@ android {
         applicationId "com.enigmadux.knotq"
         minSdk 26
         targetSdk 35
-        versionCode 1
-        versionName "1.0"
+        versionCode 4
+        versionName "1.0.2"
+
+        // Explicit sync backend override. Empty by default, in which case the
+        // build-type-derived default applies (debug → sandbox, release → prod;
+        // see AppConstants.defaultSyncApiBase). Set via
+        // `-PknotqApiBase=https://sandbox.api.knotq.com` or the KNOTQ_API_BASE env
+        // var at build time to pin a specific backend (e.g. a local Worker). Only
+        // affects a NEW sign-in — existing sessions keep their stored apiBase.
+        buildConfigField "String", "KNOTQ_API_BASE",
+            "\"${project.findProperty('knotqApiBase') ?: System.getenv('KNOTQ_API_BASE') ?: ''}\""
+    }
+
+    buildFeatures {
+        buildConfig true
+    }
+
+    signingConfigs {
+        if (hasReleaseSigning) {
+            release {
+                storeFile rootProject.file(keystoreProperties["storeFile"])
+                storePassword keystoreProperties["storePassword"]
+                keyAlias keystoreProperties["keyAlias"]
+                keyPassword keystoreProperties["keyPassword"]
+            }
+        }
     }
 
     buildTypes {
         release {
             minifyEnabled false
+            if (hasReleaseSigning) {
+                signingConfig signingConfigs.release
+            }
         }
     }
 
@@ -47,8 +86,15 @@ dependencies {
     // Periodic background sync while the app is backgrounded (the Android
     // counterpart of the iOS BGAppRefresh task).
     implementation "androidx.work:work-runtime:2.9.1"
+    // Firebase Cloud Messaging: silent data pushes wake the app to pull a peer's
+    // notification-schedule change and re-arm local alarms (mirrors iOS FCM).
+    implementation platform("com.google.firebase:firebase-bom:33.7.0")
+    implementation "com.google.firebase:firebase-messaging"
 }
 
+// Cross-compile the Rust core (libknotq_mobile_core.so) into jniLibs before the
+// native libs are merged. Debug and release use separate cargo profiles, wired
+// per-variant so a release bundle ships the optimized .so — not the debug one.
 tasks.register("buildRustDebug") {
     doLast {
         exec {
@@ -58,4 +104,20 @@ tasks.register("buildRustDebug") {
     }
 }
 
-preBuild.dependsOn("buildRustDebug")
+tasks.register("buildRustRelease") {
+    doLast {
+        exec {
+            workingDir rootProject.projectDir
+            commandLine "bash", "build-rust.sh", "release"
+        }
+    }
+}
+
+tasks.configureEach { task ->
+    if (task.name == "mergeDebugNativeLibs") {
+        task.dependsOn("buildRustDebug")
+    }
+    if (task.name == "mergeReleaseNativeLibs") {
+        task.dependsOn("buildRustRelease")
+    }
+}

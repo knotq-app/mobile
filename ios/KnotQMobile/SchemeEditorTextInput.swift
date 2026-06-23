@@ -527,7 +527,7 @@ final class EditorCoordinator: NSObject, UITextViewDelegate, @preconcurrency NST
             // line's, often nil for a fresh line) leaves the table with no id, and
             // cell hit-testing — keyed by item id — silently fails, so cell taps
             // land the document caret before/after the table instead of in a cell.
-            let base = meta.with(itemID: glyphMeta.itemID ?? meta.itemID)
+            let base = meta.with(itemID: glyphMeta.itemID)
             switch block {
             case let .image(media): return base.with(media: [media], tables: [], content: [block])
             case let .table(table): return base.with(media: [], tables: [table], content: [block])
@@ -998,7 +998,7 @@ final class EditorCoordinator: NSObject, UITextViewDelegate, @preconcurrency NST
         let translation = recognizer.translation(in: recognizer.view)
         guard recognizer.state == .ended || recognizer.state == .changed else { return }
         if translation.y > 22, translation.y > abs(translation.x) * 1.25 {
-            view?.resignFirstResponder()
+            _ = view?.resignFirstResponder()
         }
     }
 

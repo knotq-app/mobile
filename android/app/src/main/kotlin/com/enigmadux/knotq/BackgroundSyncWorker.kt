@@ -65,12 +65,26 @@ internal class BackgroundSyncWorker(
         val shared = MainActivity.sharedBridge
         val bridge = shared ?: runCatching { RustBridge(applicationContext) }.getOrNull() ?: return Result.retry()
         return try {
+            // Re-apply the FCM token so a device that registered (or rotated its
+            // token) while backgrounded gets registered with the backend on this
+            // sync. Idempotent — the core dedupes by token.
+            PushRegistration.stored(applicationContext)?.let { PushRegistration.apply(bridge, it) }
             bridge.request(
                 JSONObject()
                     .put("type", "sync_once")
                     .put("api_base", apiBase)
                     .put("bearer_token", bearerToken)
             )
+            // Re-arm local alarms from the freshly-pulled schedule, on the SAME
+            // bridge (refreshFromCore opens its own core, which would clobber this
+            // one's in-memory state). This is what makes a peer's schedule change
+            // surface as a notification on this device.
+            runCatching {
+                MobileNotificationScheduler.reschedule(
+                    applicationContext,
+                    bridge.requestArray(JSONObject().put("type", "pending_notifications"))
+                )
+            }
             Result.success()
         } catch (error: RuntimeException) {
             Result.retry()

@@ -234,6 +234,12 @@ struct ContentView: View {
         .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillHideNotification)) { _ in
             withAnimation(.easeOut(duration: 0.24)) { keyboardVisible = false }
         }
+        // The browser sign-in sheet hosts its own keyboard in a separate window; its
+        // keyboardWillHide can be lost when the sheet dismisses, leaving keyboardVisible
+        // stuck true (which would hide the dock). Reconcile when the auth flow ends.
+        .onChange(of: model.syncAuthInProgress) { _, inProgress in
+            if !inProgress { keyboardVisible = false }
+        }
         .adaptiveEditorPresentation(item: $addItemTarget, isPad: isPadLayout, detents: [.fraction(0.50)]) { target in
             switch target {
             case .scheme(let id):
@@ -332,6 +338,12 @@ struct ContentView: View {
                     .padding(.horizontal, 20)
                     .padding(.bottom, 6)
                     .transition(.move(edge: .bottom).combined(with: .opacity))
+                    // The dock is already hidden while the keyboard is up, so it never
+                    // needs to ride above it. Ignoring the keyboard safe area keeps it
+                    // pinned to the bottom even when a keyboard inset lingers after a
+                    // sheet (e.g. the sign-in web auth) dismisses — otherwise the
+                    // bottom-anchored dock renders pushed "way up" by the stale inset.
+                    .ignoresSafeArea(.keyboard, edges: .bottom)
                 }
             }
     }

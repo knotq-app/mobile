@@ -1,0 +1,10 @@
+# Android signing secrets — NEVER commit these. Back them up securely instead.
+keystore.properties
+*.jks
+*.keystore
+
+# Build output
+/build
+/app/build
+.gradle
+local.properties

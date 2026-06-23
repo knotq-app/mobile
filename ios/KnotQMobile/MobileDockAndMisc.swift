@@ -52,6 +52,14 @@ struct SyncSettingsCard: View {
                 badgeForeground: theme.isDark ? Color(hex: 0x9af0b6) : Color(hex: 0x176b38)
             )
         }
+        if model.syncSession != nil && model.emailVerified == false {
+            return SyncPanelState(
+                badge: "Verify email",
+                detail: "Verify your email to subscribe — check your inbox for the link.",
+                badgeBackground: theme.isDark ? Color(hex: 0xf59e0b).opacity(0.16) : Color(hex: 0xd97706).opacity(0.10),
+                badgeForeground: theme.isDark ? Color(hex: 0xf8d38d) : Color(hex: 0x9a4b00)
+            )
+        }
         if model.syncSession != nil {
             return SyncPanelState(
                 badge: "Not Subscribed",
@@ -136,6 +144,8 @@ struct SyncSettingsCard: View {
         if let session = model.syncSession {
             if session.supportsSync {
                 enabledActions
+            } else if model.emailVerified == false {
+                verifyEmailActions
             } else {
                 upgradeActions
             }
@@ -199,6 +209,37 @@ struct SyncSettingsCard: View {
 
             manageAccountMenu
         }
+    }
+
+    /// Shown when the account email isn't verified: subscribing is blocked, so we
+    /// explain why and offer to resend the verification link (with a soft cooldown).
+    private var verifyEmailActions: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Your email isn't verified. Verify it to subscribe — check your inbox for the link.")
+                .font(.system(size: 11))
+                .lineSpacing(1)
+                .foregroundStyle(theme.isDark ? Color(hex: 0xf8d38d) : Color(hex: 0x9a4b00))
+                .frame(maxWidth: .infinity, alignment: .leading)
+            HStack(spacing: 8) {
+                Button {
+                    Task { await model.resendVerificationEmail() }
+                } label: {
+                    Text(resendLabel)
+                        .lineLimit(1)
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(SyncCardButtonStyle(theme: theme, prominence: .primary))
+                .disabled(model.resendVerificationInProgress || model.resendVerificationCooldown > 0)
+                Spacer(minLength: 8)
+                manageAccountMenu
+            }
+        }
+    }
+
+    private var resendLabel: String {
+        if model.resendVerificationInProgress { return "Sending…" }
+        if model.resendVerificationCooldown > 0 { return "Resend in \(model.resendVerificationCooldown)s" }
+        return "Resend verification email"
     }
 
     /// Account housekeeping (sign out, cancel, delete) lives behind one standard
@@ -292,46 +333,30 @@ private struct DeleteSyncAccountSheet: View {
     let theme: KnotQTheme
     @State private var emailConfirmation = ""
     @State private var password = ""
+    @State private var code = ""
     @FocusState private var focusedField: Field?
 
     private enum Field {
         case email
         case password
+        case code
     }
+
+    // Step 2 begins once the backend has accepted the re-auth and emailed a code.
+    private var awaitingCode: Bool { model.pendingDeletionChallengeId != nil }
 
     var body: some View {
         NavigationStack {
             Form {
-                Section {
-                    if let email = model.syncSession?.email {
-                        LabeledContent("Account", value: email)
-                    }
-                    TextField("Email", text: $emailConfirmation)
-                        .keyboardType(.emailAddress)
-                        .textInputAutocapitalization(.never)
-                        .autocorrectionDisabled()
-                        .focused($focusedField, equals: .email)
-                    SecureField("Password", text: $password)
-                        .textContentType(.password)
-                        .focused($focusedField, equals: .password)
-                } header: {
-                    Text("Confirm Deletion")
-                } footer: {
-                    Text("This schedules deletion of your sync account and cloud data. Local workspace files stay on this device. Cancel any active store subscription before deleting; billing continues through the store until you cancel it.")
-                }
-
-                if model.syncSession?.supportsSync == true && !model.subscriptionCancelled {
-                    Section {
-                        Button(subscriptionActionTitle) {
-                            Task { await manageSubscription() }
-                        }
-                        .disabled(model.syncAccountActionInProgress)
-                    }
+                if awaitingCode {
+                    codeSection
+                } else {
+                    confirmSections
                 }
 
                 if model.syncAccountActionInProgress {
                     Section {
-                        ProgressView("Deleting account...")
+                        ProgressView(awaitingCode ? "Deleting account..." : "Sending code...")
                     }
                 }
             }
@@ -340,25 +365,96 @@ private struct DeleteSyncAccountSheet: View {
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") {
+                        model.pendingDeletionChallengeId = nil
                         dismiss()
                     }
                     .disabled(model.syncAccountActionInProgress)
                 }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Delete", role: .destructive) {
-                        Task { await deleteAccount() }
+                    if awaitingCode {
+                        Button("Delete", role: .destructive) {
+                            Task { await confirmDeletion() }
+                        }
+                        .disabled(!canConfirmCode)
+                    } else {
+                        Button("Send Code") {
+                            Task { await requestDeletion() }
+                        }
+                        .disabled(!canRequestDeletion)
                     }
-                    .disabled(!canDelete)
                 }
             }
         }
         .tint(theme.accent)
         .onAppear {
-            focusedField = .email
+            focusedField = awaitingCode ? .code : .email
         }
     }
 
-    private var canDelete: Bool {
+    // Step 1: re-authenticate and (for store subscriptions) nudge to cancel first.
+    @ViewBuilder
+    private var confirmSections: some View {
+        if hasActiveStoreSubscription {
+            Section {
+                Label {
+                    Text("Deleting your account does **not** cancel your \(subscriptionStoreName) subscription. \(subscriptionStoreName) keeps billing you until you cancel it there. Cancel it first, then delete.")
+                } icon: {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .foregroundStyle(.orange)
+                }
+                Button("Manage \(subscriptionStoreName) Subscription") {
+                    Task { await manageSubscription() }
+                }
+                .disabled(model.syncAccountActionInProgress)
+            } header: {
+                Text("Cancel your subscription first")
+            }
+        }
+
+        Section {
+            if let email = model.syncSession?.email {
+                LabeledContent("Account", value: email)
+            }
+            TextField("Email", text: $emailConfirmation)
+                .keyboardType(.emailAddress)
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled()
+                .focused($focusedField, equals: .email)
+            SecureField("Password", text: $password)
+                .textContentType(.password)
+                .focused($focusedField, equals: .password)
+        } header: {
+            Text("Confirm Deletion")
+        } footer: {
+            Text("We'll email you a one-time code to confirm. Deletion schedules your sync account and cloud data for removal after a 14-day grace period. Local workspace files stay on this device. Sign in again within 14 days to cancel.")
+        }
+
+        if hasActiveWebSubscription {
+            Section {
+                Button("Cancel Subscription") {
+                    Task { await manageSubscription() }
+                }
+                .disabled(model.syncAccountActionInProgress)
+            }
+        }
+    }
+
+    // Step 2: enter the emailed one-time code to actually schedule deletion.
+    @ViewBuilder
+    private var codeSection: some View {
+        Section {
+            TextField("Code", text: $code)
+                .keyboardType(.numberPad)
+                .textContentType(.oneTimeCode)
+                .focused($focusedField, equals: .code)
+        } header: {
+            Text("Enter Confirmation Code")
+        } footer: {
+            Text("Enter the 6-digit code we emailed to \(model.syncSession?.email ?? "your account") to schedule deletion.")
+        }
+    }
+
+    private var canRequestDeletion: Bool {
         guard !model.syncAccountActionInProgress else { return false }
         guard !password.isEmpty else { return false }
         guard let accountEmail = model.syncSession?.email else { return false }
@@ -366,15 +462,40 @@ private struct DeleteSyncAccountSheet: View {
         return emailConfirmation.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() == expected
     }
 
-    private func deleteAccount() async {
-        await model.deleteSyncAccount(confirmEmail: emailConfirmation, password: password)
+    private var canConfirmCode: Bool {
+        guard !model.syncAccountActionInProgress else { return false }
+        return code.trimmingCharacters(in: .whitespacesAndNewlines).count == 6
+    }
+
+    private func requestDeletion() async {
+        await model.requestSyncAccountDeletion(confirmEmail: emailConfirmation, password: password)
+        if model.pendingDeletionChallengeId != nil {
+            focusedField = .code
+        }
+    }
+
+    private func confirmDeletion() async {
+        await model.confirmSyncAccountDeletion(code: code)
         if model.syncSession == nil {
             dismiss()
         }
     }
 
-    private var subscriptionActionTitle: String {
-        (model.subscriptionProvider ?? "").lowercased() == "web" ? "Cancel Subscription" : "Manage Subscription"
+    /// An active, not-yet-cancelled subscription billed through Apple/Google. These
+    /// keep charging through the store even after the account is deleted, so we lead
+    /// with a prominent warning and a shortcut to the store's cancel page.
+    private var hasActiveStoreSubscription: Bool {
+        guard model.syncSession?.supportsSync == true, !model.subscriptionCancelled else { return false }
+        return (model.subscriptionProvider ?? "").lowercased() != "web"
+    }
+
+    private var hasActiveWebSubscription: Bool {
+        guard model.syncSession?.supportsSync == true, !model.subscriptionCancelled else { return false }
+        return (model.subscriptionProvider ?? "").lowercased() == "web"
+    }
+
+    private var subscriptionStoreName: String {
+        (model.subscriptionProvider ?? "").lowercased() == "google" ? "Google Play" : "App Store"
     }
 
     private func manageSubscription() async {

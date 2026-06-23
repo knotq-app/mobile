@@ -67,17 +67,26 @@ final class KnotQBlockAttachment: NSTextAttachment {
         // `drawChrome` paints (same `editorInlineBlockMaxWidth`). TextKit runs
         // attachment layout on the main thread, where the owner is valid; the
         // owner-less fallback only covers the brief window before wiring.
+        // As noted above, TextKit drives attachment layout on the main thread, so
+        // the main-actor owner is safe to query — assert that to the compiler.
+        // Capture into locals first (matching `drawChrome`/`annotationSpacing`
+        // below) so the assumed-isolated closure captures the locals, not this
+        // non-Sendable attachment.
+        let owner = self.owner
+        let block = self.block
+        let indent = self.indent
         let fallbackWidth = max(120, lineFrag.width - CGFloat(indent) * DesktopEditorMetrics.indentWidth)
-        let size: CGSize
-        switch block {
-        case let .image(media):
-            size = owner?.blockDisplaySize(forImage: media, indent: indent)
-                ?? CGSize(width: fallbackWidth, height: DesktopEditorMetrics.imageFallbackHeight)
-        case let .table(table):
-            size = owner?.blockDisplaySize(forTable: table, indent: indent)
-                ?? CGSize(width: fallbackWidth, height: DesktopEditorMetrics.tableHeaderHeight + DesktopEditorMetrics.tableCellHeight)
-        case .text:
-            size = .zero
+        let size: CGSize = MainActor.assumeIsolated {
+            switch block {
+            case let .image(media):
+                return owner?.blockDisplaySize(forImage: media, indent: indent)
+                    ?? CGSize(width: fallbackWidth, height: DesktopEditorMetrics.imageFallbackHeight)
+            case let .table(table):
+                return owner?.blockDisplaySize(forTable: table, indent: indent)
+                    ?? CGSize(width: fallbackWidth, height: DesktopEditorMetrics.tableHeaderHeight + DesktopEditorMetrics.tableCellHeight)
+            case .text:
+                return .zero
+            }
         }
         return CGRect(x: 0, y: 0, width: size.width, height: size.height)
     }
@@ -770,7 +779,7 @@ final class EditorTextView: UITextView {
     @discardableResult
     func placeCaretAtBlockEdge(at point: CGPoint) -> Bool {
         guard let position = blockEdgeCaret(point) else { return false }
-        if !isFirstResponder { becomeFirstResponder() }
+        if !isFirstResponder { _ = becomeFirstResponder() }
         let offset = offset(from: beginningOfDocument, to: position)
         selectedRange = NSRange(location: offset, length: 0)
         return true
@@ -1000,7 +1009,7 @@ final class EditorTextView: UITextView {
         typingAttributes = attrs
         coordinator?.markDirty()
         if !isFirstResponder {
-            becomeFirstResponder()
+            _ = becomeFirstResponder()
         }
         setNeedsDisplay()
     }
@@ -2413,7 +2422,7 @@ final class EditorTextView: UITextView {
 
         let targetRow = row
         let targetColumn = column
-        let focusNeighbor: () -> Void = { [weak self] in
+        let focusNeighbor: @MainActor @Sendable () -> Void = { [weak self] in
             guard let self, let editor = self.activeCellEditor else { return }
             if let next = self.tableCellHit(itemID: hit.itemID, tableIndex: hit.tableIndex, row: targetRow, column: targetColumn) {
                 editor.retarget(to: next)

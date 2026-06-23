@@ -82,14 +82,14 @@ final class EditorController: ObservableObject {
     /// Activates the text view so the system shows the caret + keyboard.
     func focus() {
         guard let view, !view.isFirstResponder else { return }
-        view.becomeFirstResponder()
+        _ = view.becomeFirstResponder()
     }
 
     func blur() {
         // Flush any in-place table cell edit before the document loses focus so
         // its text isn't dropped.
         view?.endTableCellEditing(commit: true)
-        view?.resignFirstResponder()
+        _ = view?.resignFirstResponder()
     }
 
     func focusTitle() {
@@ -550,11 +550,40 @@ struct IntegratedSchemeEditorPane: View {
 
     private func openDateForLine() {
         guard !scheme.isReadOnly else { return }
-        commitDocument()
+        // Push pending edits to the model so the date sheet edits a persisted
+        // item, but DON'T reload the editor here. A full `commitDocument()`
+        // re-applies the attributed string, which in the Daily feed (where each
+        // day is a self-sizing, non-scrolling editor) reflows the section and
+        // shoves the whole stack — the "button glitches, disappears, reappears
+        // lower" symptom. The text view already shows the right content, so a
+        // reload buys nothing on this path.
+        syncEditsToModel()
         guard let itemID = controller.currentLineItemID(),
               let currentScheme = model.scheme(id: scheme.id),
               currentScheme.items.contains(where: { $0.id == itemID }) else { return }
         dateTarget = EditorDateTarget(itemID: itemID)
+    }
+
+    /// Flushes the editor's pending edits into the model without reloading the
+    /// text view. Used before opening an item-scoped sheet (date/recurrence) so
+    /// the sheet targets a persisted item while avoiding the self-sizing reflow
+    /// that `commitDocument()`'s reload triggers in the Daily feed.
+    private func syncEditsToModel() {
+        guard !scheme.isReadOnly else {
+            controller.isDirty = false
+            return
+        }
+        controller.flushCellEdit()
+        guard controller.isDirty else { return }
+        let edits = controller.commit()
+        model.replaceSchemeItems(schemeID: scheme.id, items: edits)
+        controller.isDirty = false
+        // Adopt the refreshed signature so the model mutation above doesn't
+        // bounce back through `.onChange(of: signature(for:))` as a redundant
+        // reload (which would reintroduce the reflow we're avoiding).
+        if let refreshed = model.scheme(id: scheme.id) {
+            schemeSignature = signature(for: refreshed)
+        }
     }
 
     private func insertTableFromToolbar() {

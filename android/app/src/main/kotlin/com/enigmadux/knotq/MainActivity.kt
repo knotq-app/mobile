@@ -195,6 +195,14 @@ class MainActivity : Activity() {
     // provider routes re-enable to the store (Google/Apple) or our backend (web).
     internal var syncSubscriptionCancelled = false
     internal var syncSubscriptionProvider: String? = null
+    // From /v1/auth/account/status: whether the account email is confirmed. `null`
+    // until checked. Subscribing is gated on a confirmed email, so the Sync card
+    // blocks the purchase action and prompts to verify when this is false.
+    internal var syncEmailVerified: Boolean? = null
+    internal var resendVerificationInProgress = false
+    // Frontend cooldown (seconds remaining) for the resend action, a soft limit on
+    // top of the backend's own rate limit.
+    internal var resendVerificationCooldown = 0
     internal var syncFailureNotified = false
     internal var syncOffline = false
     internal var safeAreaTop = 0
@@ -258,14 +266,22 @@ class MainActivity : Activity() {
             bridge = RustBridge(this)
             syncSession = loadSyncSession()
             loadSnapshot()
+            val seededScreenshotFixture = seedScreenshotFixtureIfRequested()
             ensureTodayDailyQueue()
             applyTheme()
             buildShell()
             render()
-            maybeStartOnboarding()
-            MobileNotificationScheduler.requestPermission(this)
+            if (!seededScreenshotFixture) maybeStartOnboarding()
+            // Notification permission is requested *after* onboarding finishes
+            // (iOS parity — see finishOnboarding), so the system dialog doesn't
+            // pop over the sign-in sheet. Returning users who've already onboarded
+            // (onboarding didn't start) get asked here on launch as before.
+            if (!seededScreenshotFixture && !onboardingActive) {
+                MobileNotificationScheduler.requestPermission(this)
+            }
             rescheduleNotifications()
             sharedBridge = bridge
+            registerForPushNotifications()
             handleIncomingAuthIntent(intent?.data)
         } catch (error: Throwable) {
             theme = UiTheme.dark
@@ -690,6 +706,9 @@ class MainActivity : Activity() {
         selectedTab = TAB_HOME
         selectedSchemeId = null
         render()
+        // Ask for notification permission now that onboarding is complete, matching
+        // iOS (ContentView.finishOnboarding → requestAuthorizationIfNeeded).
+        MobileNotificationScheduler.requestPermission(this)
     }
 
     internal fun showOnboardingOverlay() {
@@ -1069,7 +1088,22 @@ class MainActivity : Activity() {
             background = rounded(if (theme.isDark) theme.bgToolbar else theme.bgModal, dp(8), theme.borderOverlay)
             setPadding(dp(4), dp(4), dp(4), dp(3))
         }
-        panel.addView(NavigatorPanel(this), LinearLayout.LayoutParams(-1, -2))
+        // Cap the scheme tree like iOS (max(180dp, 34% of screen height)) so it
+        // scrolls within a fixed maximum instead of pushing Upcoming down the page.
+        val schemeListMaxPx = max(dp(180), (resources.displayMetrics.heightPixels * 0.34f).roundToInt())
+        val schemeScroll = object : ScrollView(this) {
+            override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
+                super.onMeasure(
+                    widthMeasureSpec,
+                    MeasureSpec.makeMeasureSpec(schemeListMaxPx, MeasureSpec.AT_MOST)
+                )
+            }
+        }.apply {
+            isVerticalScrollBarEnabled = false
+            overScrollMode = View.OVER_SCROLL_NEVER
+        }
+        schemeScroll.addView(NavigatorPanel(this), FrameLayout.LayoutParams(-1, -2))
+        panel.addView(schemeScroll, LinearLayout.LayoutParams(-1, -2))
         panel.addView(View(this).apply { setBackgroundColor(theme.dividerSoft) }, LinearLayout.LayoutParams(-1, max(1, (0.5f * resources.displayMetrics.density).roundToInt())).apply {
             setMargins(dp(4), dp(3), dp(4), dp(3))
         })
@@ -1697,7 +1731,14 @@ class MainActivity : Activity() {
         val dateKey = selectedDate.toString()
         val target = if (calendarScrollDate != dateKey) {
             val visibleHasToday = (0 until columns).any { selectedDate.plusDays(it.toLong()) == LocalDate.now() }
-            val hour = if (visibleHasToday) max(0, LocalTime.now().hour - 1) else 7
+            // Screenshot fixture: anchor mid-morning so the seeded daytime events
+            // are framed (the emulator's real clock is arbitrary, so now-1h would
+            // land anywhere).
+            val hour = when {
+                screenshotFixtureRequested() -> 9
+                visibleHasToday -> max(0, LocalTime.now().hour - 1)
+                else -> 7
+            }
             dp(8) + dp(44) * hour
         } else {
             calendarScrollY
@@ -2940,11 +2981,7 @@ class MainActivity : Activity() {
                 exitSchemeEditor()
             })
             addView(View(this@MainActivity), LinearLayout.LayoutParams(0, 1, 1f))
-            if (!readOnly) {
-                addView(iconChipImage(R.drawable.ic_knotq_table_24, "Insert table", iconSize = 17) {
-                    insertTableFromEditor(schemeId, editor)
-                }, LinearLayout.LayoutParams(dp(32), dp(28)).apply { setMargins(0, 0, dp(6), 0) })
-            }
+            // Insert-table lives on the format toolbar; no separate header chip.
             addView(FrameLayout(this@MainActivity).apply {
                 contentDescription = "Color"
                 background = rounded(theme.buttonBg, dp(7))
@@ -3039,7 +3076,9 @@ class MainActivity : Activity() {
                 gravity = Gravity.CENTER
                 setBackgroundColor(theme.bgToolbar)
             }, LinearLayout.LayoutParams(-1, dp(38)))
-        } else {
+        } else if (!screenshotFixtureRequested()) {
+            // The format bar is iOS's keyboard accessory; hide it for clean
+            // store screenshots so the scheme reads as a document.
             root.addView(editorFormatBar(schemeId, editor), LinearLayout.LayoutParams(-1, dp(38)))
         }
         return root
@@ -3181,25 +3220,35 @@ class MainActivity : Activity() {
         }
         val resetScroll = dailyScrollDate != selectedKey
         dailyScrollDate = selectedKey
-        scrollView.post {
-            val anchorDate = pendingDailyAnchorDate
-            pendingDailyAnchorDate = null
-            when {
-                // After a history load, keep the previously-oldest day in place
-                // instead of yanking back to the selected day.
-                anchorDate != null && dayViews[anchorDate] != null ->
-                    scrollView.scrollTo(0, max(0, (dayViews[anchorDate]?.top ?: 0) - dp(4)))
-                resetScroll -> {
-                    val target = dayViews[selectedKey]
-                    if (target != null && target.bottom > scrollView.height) {
-                        scrollView.scrollTo(0, max(0, target.bottom - scrollView.height + dp(8)))
-                    } else if (target == null) {
-                        scrollView.fullScroll(View.FOCUS_DOWN)
+        // Position the scroll BEFORE the first frame is painted (a one-shot
+        // pre-draw pass) rather than in post{} which runs after a draw at
+        // scrollY=0 — that post-draw correction is what made history loads visibly
+        // jump. Views are already laid out by pre-draw, so child tops are valid.
+        val anchorDate = pendingDailyAnchorDate
+        pendingDailyAnchorDate = null
+        scrollView.viewTreeObserver.addOnPreDrawListener(
+            object : android.view.ViewTreeObserver.OnPreDrawListener {
+                override fun onPreDraw(): Boolean {
+                    scrollView.viewTreeObserver.removeOnPreDrawListener(this)
+                    when {
+                        // After a history load, keep the previously-oldest day in
+                        // place instead of yanking back to the selected day.
+                        anchorDate != null && dayViews[anchorDate] != null ->
+                            scrollView.scrollTo(0, max(0, (dayViews[anchorDate]?.top ?: 0) - dp(4)))
+                        resetScroll -> {
+                            val target = dayViews[selectedKey]
+                            if (target != null && target.bottom > scrollView.height) {
+                                scrollView.scrollTo(0, max(0, target.bottom - scrollView.height + dp(8)))
+                            } else if (target == null) {
+                                scrollView.fullScroll(View.FOCUS_DOWN)
+                            }
+                        }
+                        else -> scrollView.scrollTo(0, dailyScrollY)
                     }
+                    return true
                 }
-                else -> scrollView.scrollTo(0, dailyScrollY)
             }
-        }
+        )
         root.addView(scrollView, LinearLayout.LayoutParams(-1, 0, 1f))
         root.addView(editorFormatBar(), LinearLayout.LayoutParams(-1, dp(38)))
         return root
@@ -3270,7 +3319,12 @@ class MainActivity : Activity() {
                 setHorizontallyScrolling(false)
                 setPadding(dp(14), dp(3), dp(14), dp(5))
                 setLineSpacing(0f, 1f)
-                minHeight = if (empty) dp(44) else dailyEditorHeight(scheme)
+                // The editor is WRAP_CONTENT, so it already sizes to its rendered
+                // text; a generous estimated floor (dailyEditorHeight) only padded
+                // short days with dead space between sections. Keep a one-line
+                // tappable floor and let content drive the height, like iOS which
+                // measures each day to its exact content height.
+                minHeight = dp(44)
                 isVerticalScrollBarEnabled = false
                 overScrollMode = View.OVER_SCROLL_NEVER
                 background = null
@@ -3316,25 +3370,6 @@ class MainActivity : Activity() {
             editorHosts[editor] = editorHost
             addView(editorHost, LinearLayout.LayoutParams(-1, -2))
         }
-    }
-
-    internal fun dailyEditorHeight(scheme: JSONObject): Int {
-        val items = scheme.optJSONArray("items")
-        var visualLines = 1
-        var annotations = 0
-        if (items != null && items.length() > 0) {
-            visualLines = 0
-            for (index in 0 until items.length()) {
-                val item = items.optJSONObject(index)
-                val textLength = item?.optString("text")?.length ?: 0
-                visualLines += max(1, (max(textLength, 1) + 33) / 34)
-                val hasStart = item?.let { !it.isNull("start") && it.optString("start").isNotEmpty() } ?: false
-                val hasEnd = item?.let { !it.isNull("end") && it.optString("end").isNotEmpty() } ?: false
-                if (hasStart || hasEnd) annotations++
-            }
-        }
-        // Mirror iOS `DailyDayEditorSection.editorHeight`.
-        return dp(max(48, visualLines * 24 + annotations * 14 + 16))
     }
 
     internal fun dailyAccent(): Int = if (theme.isDark) rgb(0xb8c9e8) else rgb(0x5a7aad)
@@ -3503,10 +3538,14 @@ class MainActivity : Activity() {
         // Cancelled (won't renew) but still entitling: amber "Cancelled" badge, like
         // the not-yet-subscribed state, with a re-enable action below.
         val cancelled = session?.supportsSync == true && syncSubscriptionCancelled
+        // Signed in, not subscribed, and the email is confirmed unverified: subscribing
+        // is blocked until they verify, so the card prompts for that instead.
+        val needsVerification = session != null && session.supportsSync != true && syncEmailVerified == false
         val badge = when {
             session != null && syncOffline -> "Offline"
             cancelled -> "Cancelled"
             session?.supportsSync == true -> "Enabled"
+            needsVerification -> "Verify email"
             session != null -> "Upgrade"
             else -> "Available"
         }
@@ -3525,6 +3564,7 @@ class MainActivity : Activity() {
         val detail = when {
             session != null && syncOffline -> "Sync will retry when your connection is back."
             cancelled -> "Sync stays active until your billing period ends."
+            needsVerification -> "Verify your email to subscribe — check your inbox for the link."
             session != null -> session.email
             else -> "Sign in to keep this workspace available across devices."
         }
@@ -3572,6 +3612,15 @@ class MainActivity : Activity() {
                     when {
                         cancelled -> {
                             leftLabel = "Re-enable"; leftPrimary = true; leftAction = { reEnableSyncSubscription() }
+                        }
+                        needsVerification -> {
+                            leftLabel = when {
+                                resendVerificationInProgress -> "Sending..."
+                                resendVerificationCooldown > 0 -> "Resend in ${resendVerificationCooldown}s"
+                                else -> "Resend verification"
+                            }
+                            leftPrimary = true
+                            leftAction = { resendVerificationEmail() }
                         }
                         !session.supportsSync -> {
                             leftLabel = "I've subscribed"; leftPrimary = true; leftAction = { restoreGooglePlayPurchases() }
@@ -5931,7 +5980,7 @@ class MainActivity : Activity() {
                     ?: "scheme-${occurrence.optInt("color_index")}"
                 if (seen.add(key)) {
                     addView(View(this@MainActivity).apply {
-                        background = rounded(schemeColor(occurrence.optInt("color_index")), dp(3))
+                        background = rounded(occurrenceSchemeColor(occurrence), dp(3))
                     }, LinearLayout.LayoutParams(dp(5), dp(5)).apply {
                         setMargins(dp(1), 0, dp(1), 0)
                     })
@@ -6044,6 +6093,22 @@ class MainActivity : Activity() {
             )
         } catch (error: RuntimeException) {
             showError("Notifications unavailable", error.message)
+        }
+    }
+
+    /// Fetch the current FCM registration token and hand it to the live core so
+    /// the next sync registers this device for silent background pushes. Token
+    /// rotation is handled separately by KnotQMessagingService.onNewToken; this
+    /// covers the common cold-start-with-existing-token case. Best-effort: if
+    /// Play services are unavailable the listener simply never fires.
+    private fun registerForPushNotifications() {
+        runCatching {
+            com.google.firebase.messaging.FirebaseMessaging.getInstance().token
+                .addOnSuccessListener { token ->
+                    if (token.isNullOrBlank()) return@addOnSuccessListener
+                    PushRegistration.store(this, token)
+                    if (::bridge.isInitialized) PushRegistration.apply(bridge, token)
+                }
         }
     }
 

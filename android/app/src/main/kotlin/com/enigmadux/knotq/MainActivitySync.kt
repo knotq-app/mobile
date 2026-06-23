@@ -87,10 +87,14 @@ import java.time.LocalDateTime
 import java.time.ZoneId
 import java.time.format.TextStyle
 import java.io.File
+import java.io.IOException
 import java.util.Locale
 import java.util.UUID
 import java.util.WeakHashMap
 import java.net.HttpURLConnection
+import java.net.InetAddress
+import java.net.ServerSocket
+import java.net.Socket
 import java.net.URL
 import java.security.MessageDigest
 import java.security.SecureRandom
@@ -110,16 +114,26 @@ internal fun MainActivity.showSyncAccountDialog() {
         // it is on, subscribing when it is off. Destructive actions stay last.
         val subscriptionAction =
             if (syncSubscriptionCancelled) "Re-enable subscription" else "Cancel subscription"
+        val needsVerification = !session.supportsSync && syncEmailVerified == false
         val actions = if (session.supportsSync) {
             // "Resync" is the dedicated card button (iOS parity), so this menu is
             // just account housekeeping.
-            mutableListOf(subscriptionAction, "Sign out", "Delete account on website")
+            mutableListOf(subscriptionAction, "Sign out", "Delete account")
+        } else if (needsVerification) {
+            // Subscribing is blocked until the email is verified, so offer the resend
+            // instead of a Subscribe entry that would fail.
+            mutableListOf(
+                "Resend verification email",
+                "Restore purchases",
+                "Sign out",
+                "Delete account"
+            )
         } else {
             mutableListOf(
                 "Subscribe with Google Play",
                 "Restore purchases",
                 "Sign out",
-                "Delete account on website"
+                "Delete account"
             )
         }
         val stateLine = when {
@@ -127,20 +141,25 @@ internal fun MainActivity.showSyncAccountDialog() {
             session.supportsSync && syncSubscriptionCancelled ->
                 "Cancelled - sync stays active until the billing period ends."
             session.supportsSync -> "Sync is on for this account."
+            needsVerification -> "Verify your email to subscribe - check your inbox."
             else -> "Sync is off - subscribe to turn it on."
         }
+        // NOTE: AlertDialog shows EITHER a message OR an items list, not both
+        // (message wins). This is the "Manage" menu, so the actions must render —
+        // the email + state (Enabled/Offline/Cancelled badge) already show on the
+        // sync card, so carry only a concise state line in the title here.
         AlertDialog.Builder(this)
-            .setTitle("Sync account")
-            .setMessage("Signed in as ${session.email}\n$stateLine")
+            .setTitle(stateLine)
             .setItems(actions.toTypedArray()) { _, which ->
                 when (actions[which]) {
                     "Sync now" -> syncOnce()
                     "Subscribe with Google Play" -> startGooglePlaySubscribe()
+                    "Resend verification email" -> resendVerificationEmail()
                     "Restore purchases" -> restoreGooglePlayPurchases()
                     "Cancel subscription" -> cancelSubscriptionAction()
                     "Re-enable subscription" -> reEnableSyncSubscription()
                     "Sign out" -> signOutSync()
-                    "Delete account on website" -> openSyncAccountPage()
+                    "Delete account" -> confirmDeleteSyncAccount()
                 }
             }
             .setNegativeButton("Close", null)
@@ -163,11 +182,11 @@ internal fun MainActivity.showSyncAccountDialog() {
 
 internal fun MainActivity.beginBrowserSyncAuth(createAccount: Boolean) {
     if (syncAuthInProgress) return
-    val apiBase = normalizeApiBase(syncSession?.apiBase ?: DEFAULT_SYNC_API_BASE)
+    val apiBase = normalizeApiBase(syncSession?.apiBase ?: defaultSyncApiBase())
     val state = randomUrlToken(24)
     val verifier = pkceVerifier()
     val challenge = pkceChallenge(verifier)
-    val authUrl = Uri.parse(SYNC_SIGN_IN_PAGE_URL).buildUpon()
+    val authUrl = Uri.parse("${syncWebBase(apiBase)}/signin.html").buildUpon()
         .appendQueryParameter("redirect_uri", SYNC_SIGN_IN_REDIRECT_URI)
         .appendQueryParameter("state", state)
         .appendQueryParameter("mode", if (createAccount) "create" else "signin")
@@ -190,19 +209,25 @@ internal fun MainActivity.beginBrowserSyncAuth(createAccount: Boolean) {
 }
 
 internal fun MainActivity.handleIncomingAuthIntent(uri: Uri?) {
-    if (handleSyncBrowserCallback(uri)) return
-    handleGoogleCallback(uri)
+    // Only the hosted sync sign-in still comes back via a deep link. Google Calendar
+    // now uses a loopback redirect captured directly on a local socket, so it never
+    // arrives through an intent.
+    handleSyncBrowserCallback(uri)
 }
 
 internal fun MainActivity.handleSyncBrowserCallback(uri: Uri?): Boolean {
     if (uri == null || uri.scheme != SYNC_SIGN_IN_REDIRECT_SCHEME || uri.host != SYNC_SIGN_IN_REDIRECT_HOST) {
         return false
     }
-    val pending = loadPendingSyncBrowserAuth()
-    if (pending == null) {
-        showError("Sign in failed", "Sign-in callback arrived without a pending request.")
-        return true
-    }
+    // Android can deliver the same callback more than once (onCreate *and*
+    // onNewIntent, or the intent stored by setIntent() being replayed when the
+    // activity is recreated on rotation). The authorization code is single-use, so
+    // a duplicate exchange would 400 and surface a spurious "Sign in failed" even
+    // though the first exchange succeeded. Ignore a duplicate while one is in flight,
+    // and treat a callback with no pending request as an already-handled duplicate
+    // (or a stray deep link) rather than a failure.
+    if (syncAuthInProgress) return true
+    val pending = loadPendingSyncBrowserAuth() ?: return true
     val state = uri.getQueryParameter("state").orEmpty()
     if (state != pending.state) {
         clearPendingSyncBrowserAuth()
@@ -222,7 +247,11 @@ internal fun MainActivity.handleSyncBrowserCallback(uri: Uri?): Boolean {
         return true
     }
 
+    // Claim the exchange and consume the pending request up front so any duplicate
+    // delivery (see above) sees no pending request and bails silently instead of
+    // re-spending the now-consumed authorization code.
     syncAuthInProgress = true
+    clearPendingSyncBrowserAuth()
     Thread {
         val result = runCatching {
             parseSyncSession(
@@ -239,7 +268,6 @@ internal fun MainActivity.handleSyncBrowserCallback(uri: Uri?): Boolean {
         }
         runOnUiThread {
             syncAuthInProgress = false
-            clearPendingSyncBrowserAuth()
             result.onSuccess { session ->
                 syncLoginChallenge = null
                 installSyncSession(session)
@@ -443,6 +471,9 @@ internal fun MainActivity.signOutSync() {
     syncLoginChallenge = null
     syncSubscriptionCancelled = false
     syncSubscriptionProvider = null
+    syncEmailVerified = null
+    resendVerificationCooldown = 0
+    resendVerificationInProgress = false
     syncOffline = false
     syncFailureNotified = false
     saveSyncSession(null)
@@ -487,7 +518,7 @@ internal fun MainActivity.refreshAccountStatus() {
         runOnUiThread {
             syncInProgress = false
             statusResult.exceptionOrNull()?.let { error ->
-                if (isLikelyNetworkError(error)) {
+                if (isLikelyNetworkError(error) || isTransientSyncError(error)) {
                     syncOffline = true
                     render()
                 }
@@ -496,6 +527,8 @@ internal fun MainActivity.refreshAccountStatus() {
             val result = statusResult.getOrNull() ?: return@runOnUiThread
             syncOffline = false
             syncSubscriptionProvider = result.optString("subscription_provider").ifEmpty { null }
+            syncEmailVerified =
+                if (result.has("email_verified")) result.optBoolean("email_verified", false) else null
             syncSubscriptionCancelled =
                 result.optBoolean("supports_sync", true) &&
                     result.optString("subscription_state").equals("cancelled", ignoreCase = true)
@@ -553,6 +586,8 @@ internal fun MainActivity.refreshSubscriptionStatus() {
             }
             if (status != null) {
                 syncSubscriptionProvider = status.optString("subscription_provider").ifEmpty { null }
+                syncEmailVerified =
+                    if (status.has("email_verified")) status.optBoolean("email_verified", false) else null
                 syncSubscriptionCancelled =
                     status.optBoolean("supports_sync", true) &&
                         status.optString("subscription_state").equals("cancelled", ignoreCase = true)
@@ -619,12 +654,214 @@ internal fun MainActivity.openSubscriptionStorePage(url: String) {
 }
 
 internal fun MainActivity.openSyncAccountPage() {
+    val apiBase = normalizeApiBase(syncSession?.apiBase ?: defaultSyncApiBase())
+    // Match the configured backend (and pass `?api=`) so a sandbox/local build
+    // manages the sandbox account, not production.
+    val accountUri = Uri.parse("${syncWebBase(apiBase)}/account.html").buildUpon()
+        .appendQueryParameter("api", apiBase)
+        .fragment("signin")
+        .build()
     try {
-        startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(SYNC_ACCOUNT_PAGE_URL)))
+        startActivity(Intent(Intent.ACTION_VIEW, accountUri))
         Toast.makeText(this, "Continue on knotq.com.", Toast.LENGTH_SHORT).show()
     } catch (error: ActivityNotFoundException) {
         showError("Could not open account page", error.message)
     }
+}
+
+/// Native account-deletion flow (iOS parity). Confirms the account email + current
+/// password, warns when an active store subscription would keep billing after
+/// deletion, then calls DELETE /v1/auth/account. Deletion is scheduled with a
+/// 14-day grace period; signing back in within that window cancels it.
+internal fun MainActivity.confirmDeleteSyncAccount() {
+    val session = syncSession ?: return
+    // A live Google Play subscription keeps charging through the store even after the
+    // KnotQ account is deleted — deletion does not cancel store billing. Lead with a
+    // prominent warning and a shortcut to Play's manage page when that applies.
+    val hasActiveStoreSub = session.supportsSync && !syncSubscriptionCancelled &&
+        (syncSubscriptionProvider ?: "").lowercase() != "web"
+
+    val form = LinearLayout(this).apply {
+        orientation = LinearLayout.VERTICAL
+        setPadding(dp(20), dp(8), dp(20), 0)
+    }
+    if (hasActiveStoreSub) {
+        form.addView(
+            text(
+                "Cancel your Google Play subscription first. Deleting your account does NOT cancel store billing — Google Play keeps charging you until you cancel it there.",
+                theme.accent,
+                13f,
+                true
+            ),
+            spaced()
+        )
+    }
+    form.addView(
+        text(
+            "This schedules your sync account and cloud data for deletion after a 14-day grace period. Your local workspace stays on this device. Sign in again within 14 days to cancel the deletion.",
+            theme.textDim,
+            13f,
+            false
+        ),
+        spaced()
+    )
+    val emailField = EditText(this).apply {
+        hint = "Email (${session.email})"
+        inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_EMAIL_ADDRESS
+        setSingleLine(true)
+    }
+    form.addView(emailField, spaced())
+    val passwordField = EditText(this).apply {
+        hint = "Current password"
+        inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
+        setSingleLine(true)
+    }
+    form.addView(passwordField)
+
+    val builder = AlertDialog.Builder(this)
+        .setTitle("Delete account")
+        .setView(form)
+        .setNegativeButton("Cancel", null)
+    if (hasActiveStoreSub) {
+        builder.setNeutralButton("Manage subscription") { _, _ ->
+            openSubscriptionStorePage(PLAY_SUBSCRIPTIONS_URL)
+        }
+    }
+    val dialog = builder
+        .setPositiveButton("Delete", null)
+        .create()
+    dialog.setOnShowListener {
+        dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
+            val confirmEmail = emailField.text.toString().trim()
+            if (!confirmEmail.equals(session.email, ignoreCase = true)) {
+                showError("Email did not match", "Type your account email to confirm deletion.")
+                return@setOnClickListener
+            }
+            val password = passwordField.text.toString()
+            if (password.isEmpty()) {
+                showError("Password required", "Enter your current password to delete this account.")
+                return@setOnClickListener
+            }
+            dialog.dismiss()
+            deleteSyncAccount(confirmEmail, password)
+        }
+    }
+    dialog.show()
+}
+
+// Step 1 of 2: re-authenticate (account email + current password). On success the
+// backend emails a one-time code; we then collect it to confirm. Nothing is
+// scheduled until the code is verified (deleteSyncAccountVerify).
+internal fun MainActivity.deleteSyncAccount(confirmEmail: String, password: String) {
+    val session = syncSession ?: return
+    if (syncAccountActionInProgress || syncInProgress) return
+    syncAccountActionInProgress = true
+    syncInProgress = true
+    Thread {
+        val result = runCatching {
+            val active = activeSyncSessionForAccountAction(session)
+            httpJson(
+                "${active.apiBase}/v1/auth/account",
+                "DELETE",
+                JSONObject()
+                    .put("confirm_email", confirmEmail)
+                    .put("password", password),
+                bearerToken = active.bearerToken,
+                accountAction = true
+            )
+        }
+        runOnUiThread {
+            syncAccountActionInProgress = false
+            syncInProgress = false
+            result.onSuccess { response ->
+                val challengeId = response.optString("challenge_id")
+                if (challengeId.isEmpty()) {
+                    showError("Could not delete account", "The sync API did not return a confirmation code.")
+                } else {
+                    showDeletionCodeDialog(challengeId, response.optString("dev_code").ifEmpty { null })
+                }
+            }.onFailure { error ->
+                showError("Could not delete account", error.message)
+            }
+        }
+    }.start()
+}
+
+internal fun MainActivity.showDeletionCodeDialog(challengeId: String, devCode: String?) {
+    val session = syncSession ?: return
+    val form = LinearLayout(this).apply {
+        orientation = LinearLayout.VERTICAL
+        setPadding(dp(20), dp(8), dp(20), 0)
+    }
+    form.addView(
+        text(
+            "Enter the 6-digit code we emailed to ${session.email} to schedule deletion of your account.",
+            theme.textDim,
+            13f,
+            false
+        ),
+        spaced()
+    )
+    val codeField = EditText(this).apply {
+        hint = "Code"
+        setText(devCode.orEmpty())
+        inputType = InputType.TYPE_CLASS_NUMBER
+        setSingleLine(true)
+    }
+    form.addView(codeField)
+    val dialog = AlertDialog.Builder(this)
+        .setTitle("Confirm account deletion")
+        .setView(form)
+        .setNegativeButton("Cancel", null)
+        .setPositiveButton("Delete account", null)
+        .create()
+    dialog.setOnShowListener {
+        dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
+            val code = codeField.text.toString().trim()
+            if (code.length != 6) {
+                showError("Enter the code", "Enter the 6-digit code we emailed you.")
+                return@setOnClickListener
+            }
+            dialog.dismiss()
+            deleteSyncAccountVerify(challengeId, code)
+        }
+    }
+    dialog.show()
+}
+
+// Step 2 of 2: submit the emailed code to schedule the deletion + sign out.
+internal fun MainActivity.deleteSyncAccountVerify(challengeId: String, code: String) {
+    val session = syncSession ?: return
+    if (syncAccountActionInProgress || syncInProgress) return
+    syncAccountActionInProgress = true
+    syncInProgress = true
+    Thread {
+        val result = runCatching {
+            val active = activeSyncSessionForAccountAction(session)
+            httpJson(
+                "${active.apiBase}/v1/auth/account/delete/verify",
+                "POST",
+                JSONObject()
+                    .put("challenge_id", challengeId)
+                    .put("code", code),
+                bearerToken = active.bearerToken,
+                accountAction = true
+            )
+        }
+        runOnUiThread {
+            syncAccountActionInProgress = false
+            syncInProgress = false
+            result.onSuccess {
+                signOutSync()
+                showError(
+                    "Account deletion scheduled",
+                    "Your account and cloud data are scheduled for deletion. Sign in again within 14 days to cancel. Your local workspace stays on this device."
+                )
+            }.onFailure { error ->
+                showError("Could not delete account", error.message)
+            }
+        }
+    }.start()
 }
 
 /// Store-managed (Apple/Google) subscriptions can't be cancelled server-side —
@@ -684,6 +921,50 @@ internal fun MainActivity.cancelSyncSubscription() {
     }.start()
 }
 
+/// Resend the email-verification link to the signed-in account. Soft-rate-limited
+/// on the client with a 60s cooldown (the backend rate-limits too).
+internal fun MainActivity.resendVerificationEmail() {
+    val session = syncSession ?: return
+    if (resendVerificationInProgress || resendVerificationCooldown > 0) return
+    resendVerificationInProgress = true
+    Thread {
+        val result = runCatching {
+            val active = activeSyncSessionForAccountAction(session)
+            httpJson(
+                "${active.apiBase}/v1/auth/email/verify/resend",
+                "POST",
+                JSONObject(),
+                bearerToken = active.bearerToken,
+                accountAction = true
+            )
+        }
+        runOnUiThread {
+            resendVerificationInProgress = false
+            result.onSuccess {
+                showError("Verification email sent", "Check your inbox, then reopen Settings.")
+                startResendCooldown(60)
+            }.onFailure { error ->
+                showError("Could not resend", error.message)
+            }
+            render()
+        }
+    }.start()
+}
+
+internal fun MainActivity.startResendCooldown(seconds: Int) {
+    resendVerificationCooldown = seconds
+    val handler = Handler(Looper.getMainLooper())
+    val tick = object : Runnable {
+        override fun run() {
+            if (resendVerificationCooldown <= 0) return
+            resendVerificationCooldown -= 1
+            render()
+            if (resendVerificationCooldown > 0) handler.postDelayed(this, 1_000)
+        }
+    }
+    handler.postDelayed(tick, 1_000)
+}
+
 // --- Google Play billing ---
 
 internal fun MainActivity.ensureBillingClient(onReady: (BillingClient) -> Unit) {
@@ -720,6 +1001,16 @@ internal fun MainActivity.ensureBillingClient(onReady: (BillingClient) -> Unit) 
 internal fun MainActivity.startGooglePlaySubscribe() {
     val session = syncSession ?: return
     if (purchaseInProgress) return
+    // Subscribing is gated on a confirmed email (the backend rejects the verify call
+    // otherwise); stop here with a clear prompt rather than launch a billing flow the
+    // account can't redeem.
+    if (syncEmailVerified == false) {
+        showError(
+            "Verify your email",
+            "Verify your email before subscribing — check your inbox for the link."
+        )
+        return
+    }
     purchaseInProgress = true
     ensureBillingClient { client ->
         val product = QueryProductDetailsParams.Product.newBuilder()
@@ -916,8 +1207,10 @@ internal fun MainActivity.syncOnce() {
                 }
             }.onFailure { error ->
                 // Non-blocking like the iOS banner, and only on the first
-                // failure so an offline session isn't toasted every poll.
-                if (isLikelyNetworkError(error)) {
+                // failure so an offline session isn't toasted every poll. Transient
+                // backend conditions (429 rate-limit, 5xx) are treated like being
+                // offline so a brief throttle doesn't surface a scary error toast.
+                if (isLikelyNetworkError(error) || isTransientSyncError(error)) {
                     syncOffline = true
                     render()
                     return@onFailure
@@ -962,6 +1255,9 @@ internal fun MainActivity.persistRotatedSyncSession(previous: SyncSession, activ
 internal fun MainActivity.expireSyncSession(showMessage: Boolean = true) {
     syncSession = null
     syncOffline = false
+    syncEmailVerified = null
+    resendVerificationCooldown = 0
+    resendVerificationInProgress = false
     saveSyncSession(null)
     syncPollHandler.removeCallbacks(syncPollRunnable)
     syncPollHandler.removeCallbacks(syncEditRunnable)
@@ -1026,6 +1322,17 @@ internal fun MainActivity.isLikelyNetworkError(error: Throwable): Boolean {
         "failed to connect",
         "no address associated with hostname"
     ).any(message::contains)
+}
+
+// A 429 (rate-limited) or 5xx from the sync backend is transient: the next poll
+// should simply retry. The core surfaces these as "sync backend rejected request:
+// <code>" (a numeric status when the body wasn't a JSON error, e.g. a Cloudflare
+// edge throttle, or "rate_limit_exceeded" from the Worker limiter). Treat them like
+// being offline — quiet backoff — instead of toasting an error the user can't act on.
+internal fun MainActivity.isTransientSyncError(error: Throwable): Boolean {
+    val message = error.message.orEmpty().lowercase()
+    if ("rate_limit" in message) return true
+    return listOf("429", "500", "502", "503", "504").any { message.endsWith(": $it") }
 }
 
 internal fun MainActivity.tokenNeedsRefresh(expiresAt: String): Boolean {
@@ -1180,6 +1487,9 @@ internal fun MainActivity.accountActionErrorMessage(code: String): String = when
     "resume_in_app_store" -> "Re-enable this subscription from your Apple account subscriptions."
     "resume_in_play_store" -> "Re-enable this subscription from your Google Play subscriptions."
     "no_active_subscription" -> "There's no active web subscription to change."
+    "invalid_code" -> "That code is incorrect."
+    "code_expired", "invalid_or_expired_code" -> "That code has expired. Start the deletion again to get a new one."
+    "too_many_attempts" -> "Too many incorrect codes. Start the deletion again to get a new one."
     else -> "The request to the sync API failed."
 }
 
@@ -1187,45 +1497,109 @@ internal fun MainActivity.startGoogleCalendarImport(parentId: String? = null) {
     if (googleAuthInProgress) return
     googleAuthInProgress = true
     Thread {
-        val result = runCatching {
+        // Loopback-redirect PKCE flow, mirroring the desktop Google OAuth path: bind a
+        // local socket on 127.0.0.1, hand Google "http://127.0.0.1:<port>" as the
+        // redirect URI, then read the authorization code straight off the socket. No
+        // custom URI scheme / intent-filter is involved, which is what lets this work
+        // with a Desktop ("installed") OAuth client instead of an iOS one.
+        val server = runCatching {
+            ServerSocket(0, 1, InetAddress.getLoopbackAddress())
+        }.getOrElse { error ->
+            runOnUiThread {
+                googleAuthInProgress = false
+                showError("Google Calendar", error.message)
+            }
+            return@Thread
+        }
+        server.soTimeout = GOOGLE_OAUTH_LOOPBACK_TIMEOUT_MS
+        val redirectUri = "http://127.0.0.1:${server.localPort}"
+
+        val request = runCatching {
             bridge.request(
                 obj(
                     "type" to "google_auth_request",
                     "client_id" to GOOGLE_CLIENT_ID,
-                    "redirect_uri" to GOOGLE_REDIRECT_URI
+                    "redirect_uri" to redirectUri
                 )
             )
-        }
-        runOnUiThread {
-            result.onSuccess { request ->
-                pendingGoogleAuthRequest = request
-                pendingGoogleParentId = parentId
-                savePendingGoogleAuth(request, parentId)
-                try {
-                    startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(request.getString("auth_url"))))
-                } catch (error: ActivityNotFoundException) {
-                    googleAuthInProgress = false
-                    clearPendingGoogleAuth()
-                    showError("Google Calendar", error.message)
-                }
-            }.onFailure { error ->
+        }.getOrElse { error ->
+            runCatching { server.close() }
+            runOnUiThread {
                 googleAuthInProgress = false
                 showError("Google Calendar", error.message)
             }
+            return@Thread
+        }
+
+        pendingGoogleAuthRequest = request
+        pendingGoogleParentId = parentId
+        runOnUiThread {
+            try {
+                startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(request.getString("auth_url"))))
+            } catch (error: ActivityNotFoundException) {
+                googleAuthInProgress = false
+                runCatching { server.close() } // unblocks the accept() below so the thread exits
+                showError("Google Calendar", error.message)
+            }
+        }
+
+        // Block (bounded by soTimeout) until the browser redirects to our loopback
+        // socket. A timeout, an abandoned flow, or the close() above all surface as null.
+        val callbackUrl = runCatching {
+            server.use { srv ->
+                srv.accept().use { socket -> readLoopbackCallbackUrl(socket, redirectUri) }
+            }
+        }.getOrNull()
+
+        if (callbackUrl == null) {
+            runOnUiThread {
+                if (googleAuthInProgress) {
+                    googleAuthInProgress = false
+                    googleCalendarStatus = "Google Calendar sign-in was canceled."
+                    render()
+                }
+            }
+            return@Thread
+        }
+
+        runOnUiThread {
+            bringActivityToFront() // best-effort return to the app; background launch may be blocked
+            completeGoogleCalendarImport(request, callbackUrl, parentId)
         }
     }.start()
 }
 
-internal fun MainActivity.handleGoogleCallback(uri: Uri?) {
-    if (uri == null || uri.scheme != GOOGLE_REDIRECT_SCHEME) return
-    val request = pendingGoogleAuthRequest ?: loadPendingGoogleAuthRequest()
-    val parentId = pendingGoogleParentId ?: loadPendingGoogleParentId()
-    if (request == null) {
-        googleAuthInProgress = false
-        showError("Google Calendar", "Google OAuth callback arrived without a pending request.")
-        return
+// Reads the single GET request the browser makes to the loopback redirect, writes a
+// minimal "you can close this" page back, and returns the full callback URL (including
+// the ?code=...&state=... query) for the core to validate and exchange.
+private fun readLoopbackCallbackUrl(socket: Socket, redirectUri: String): String {
+    val requestLine = socket.getInputStream().bufferedReader().readLine()
+        ?: throw IOException("empty OAuth callback request")
+    // e.g. "GET /?state=...&code=... HTTP/1.1"
+    val target = requestLine.split(' ').getOrNull(1)
+        ?: throw IOException("malformed OAuth callback request")
+    val body = "<html><body style=\"font-family:sans-serif;text-align:center;padding-top:3em\">" +
+        "<h2>KnotQ</h2><p>Google sign-in complete. You can close this tab and return to the app.</p>" +
+        "</body></html>"
+    val response = "HTTP/1.1 200 OK\r\n" +
+        "Content-Type: text/html; charset=utf-8\r\n" +
+        "Content-Length: ${body.toByteArray().size}\r\n" +
+        "Connection: close\r\n\r\n" + body
+    socket.getOutputStream().apply {
+        write(response.toByteArray())
+        flush()
     }
-    completeGoogleCalendarImport(request, uri.toString(), parentId)
+    return redirectUri + target
+}
+
+private fun MainActivity.bringActivityToFront() {
+    runCatching {
+        startActivity(
+            Intent(this, MainActivity::class.java).addFlags(
+                Intent.FLAG_ACTIVITY_REORDER_TO_FRONT or Intent.FLAG_ACTIVITY_SINGLE_TOP
+            )
+        )
+    }
 }
 
 internal fun MainActivity.completeGoogleCalendarImport(request: JSONObject, callbackUrl: String, parentId: String?) {
@@ -1302,22 +1676,6 @@ internal fun MainActivity.configureGoogleSyncPolling() {
     googleSyncPollingActive = true
     googleSyncHandler.postDelayed(googleSyncRunnable, GOOGLE_SYNC_INTERVAL_MS)
 }
-
-internal fun MainActivity.savePendingGoogleAuth(request: JSONObject, parentId: String?) {
-    getSharedPreferences("knotq", Context.MODE_PRIVATE).edit()
-        .putString("knotq.googleAuthRequest", request.toString())
-        .putString("knotq.googleAuthParentId", parentId)
-        .apply()
-}
-
-internal fun MainActivity.loadPendingGoogleAuthRequest(): JSONObject? {
-    val raw = getSharedPreferences("knotq", Context.MODE_PRIVATE).getString("knotq.googleAuthRequest", null)
-        ?: return null
-    return runCatching { JSONObject(raw) }.getOrNull()
-}
-
-internal fun MainActivity.loadPendingGoogleParentId(): String? =
-    getSharedPreferences("knotq", Context.MODE_PRIVATE).getString("knotq.googleAuthParentId", null)
 
 internal fun MainActivity.clearPendingGoogleAuth() {
     pendingGoogleAuthRequest = null

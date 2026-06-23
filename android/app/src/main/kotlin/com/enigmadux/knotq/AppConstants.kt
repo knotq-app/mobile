@@ -5,9 +5,36 @@ package com.enigmadux.knotq
 
 internal const val SYNC_SESSION_PREF = "knotq.localSyncSession"
 internal const val BACKGROUND_SYNC_WORK = "knotq-background-sync"
-internal const val DEFAULT_SYNC_API_BASE = "https://api.knotq.com"
-internal const val SYNC_SIGN_IN_PAGE_URL = "https://www.knotq.com/signin.html"
-internal const val SYNC_ACCOUNT_PAGE_URL = "https://www.knotq.com/account.html#signin"
+internal const val PROD_SYNC_API_BASE = "https://api.knotq.com"
+internal const val SANDBOX_SYNC_API_BASE = "https://sandbox.api.knotq.com"
+
+// Base URL used for a *new* sign-in when no session is stored yet. The build-time
+// KNOTQ_API_BASE override (see app/build.gradle) always wins; otherwise the
+// default is build-aware — debug builds target the hosted sandbox so development
+// never touches production, while release (Play) builds target production.
+// Existing sessions keep their stored apiBase, so this never silently moves a
+// signed-in account between environments.
+internal fun defaultSyncApiBase(): String =
+    BuildConfig.KNOTQ_API_BASE.ifBlank {
+        if (BuildConfig.DEBUG) SANDBOX_SYNC_API_BASE else PROD_SYNC_API_BASE
+    }
+private const val PROD_WEB_BASE = "https://www.knotq.com"
+private const val SANDBOX_WEB_BASE = "https://sandbox.knotq.com"
+
+// The knotq.com site origin matching a sync API base, so a sandbox/local-dev
+// build opens the sandbox site instead of production. The hosted sign-in and
+// account pages also receive the API base via the allowlisted `?api=` param,
+// which is what actually pins the backend (needed for local, where the site is
+// the sandbox host but the API is the loopback Worker).
+internal fun syncWebBase(apiBase: String): String =
+    if (apiBase.contains("sandbox.api.knotq.com") ||
+        apiBase.contains("127.0.0.1") ||
+        apiBase.contains("localhost")
+    ) {
+        SANDBOX_WEB_BASE
+    } else {
+        PROD_WEB_BASE
+    }
 internal const val SYNC_SIGN_IN_REDIRECT_SCHEME = "knotq"
 internal const val SYNC_SIGN_IN_REDIRECT_HOST = "auth-callback"
 internal const val SYNC_SIGN_IN_REDIRECT_URI = "$SYNC_SIGN_IN_REDIRECT_SCHEME://$SYNC_SIGN_IN_REDIRECT_HOST"
@@ -15,14 +42,21 @@ internal const val SYNC_AUTH_API_BASE_PREF = "knotq.syncBrowserAuth.apiBase"
 internal const val SYNC_AUTH_STATE_PREF = "knotq.syncBrowserAuth.state"
 internal const val SYNC_AUTH_VERIFIER_PREF = "knotq.syncBrowserAuth.verifier"
 // The Google Play subscription product id for hosted sync (Play Console).
-internal const val SYNC_SUBSCRIPTION_PRODUCT_ID = "knotq.sync.monthly"
+// Matches the App Store Connect product id (AppModel.syncProductIDs on iOS) so
+// both platforms share one product identifier.
+internal const val SYNC_SUBSCRIPTION_PRODUCT_ID = "com.enigmadux.knotq.sync.monthly"
 // Where store-managed subscriptions are re-enabled (auto-renew turned back on);
 // neither the app nor our backend can flip that for Google/Apple.
 internal const val PLAY_SUBSCRIPTIONS_URL = "https://play.google.com/store/account/subscriptions"
 internal const val APPLE_SUBSCRIPTIONS_URL = "https://apps.apple.com/account/subscriptions"
-internal const val GOOGLE_CLIENT_ID = "419826075228-gn6gj1l20nltil67odvf00u3i7n8a2ld.apps.googleusercontent.com"
-internal const val GOOGLE_REDIRECT_SCHEME = "com.googleusercontent.apps.419826075228-gn6gj1l20nltil67odvf00u3i7n8a2ld"
-internal const val GOOGLE_REDIRECT_URI = "$GOOGLE_REDIRECT_SCHEME:/oauth2redirect"
+// Desktop ("installed") OAuth client. Android drives a loopback-redirect PKCE flow
+// (see startGoogleCalendarImport) rather than the iOS reverse-client-id custom scheme,
+// so the redirect URI is minted at runtime as http://127.0.0.1:<port>; there is no
+// static redirect constant and no client secret to embed.
+internal const val GOOGLE_CLIENT_ID = "419826075228-mt7s13h76ftugo170gqs3l0q0plmldpq.apps.googleusercontent.com"
+// How long the local loopback listener waits for the browser to redirect back before
+// giving up on a Google sign-in attempt.
+internal const val GOOGLE_OAUTH_LOOPBACK_TIMEOUT_MS = 300_000
 internal const val GOOGLE_SYNC_INTERVAL_MS = 120_000L
 internal const val TAB_CALENDAR = 0
 internal const val TAB_SCHEMES = 1

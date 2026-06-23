@@ -21,12 +21,23 @@ final class AppModel: ObservableObject {
     // True while a destructive account action, such as cancelling a subscription,
     // is in flight, so Settings can disable its buttons.
     @Published var syncAccountActionInProgress = false
+    // Set once step 1 of account deletion (re-auth) succeeds and the one-time code
+    // is emailed; cleared on completion or cancel. Drives the OTP entry step.
+    @Published var pendingDeletionChallengeId: String?
     // Set from /v1/auth/account/status: the subscription is cancelled (won't renew)
     // but sync stays active until the period ends, so Settings offers to re-enable.
     @Published var subscriptionCancelled = false
     // The provider backing the current subscription ("apple"/"google"/"web"), used to
     // route the re-enable action to the store or our backend.
     @Published var subscriptionProvider: String?
+    // Set from /v1/auth/account/status: whether the account email is confirmed.
+    // `nil` = not checked yet. Subscribing is gated on a confirmed email, so the
+    // Sync card disables the purchase button and prompts to verify when this is false.
+    @Published var emailVerified: Bool?
+    @Published var resendVerificationInProgress = false
+    // Frontend cooldown (seconds remaining) for the resend button, a soft limit on
+    // top of the backend's own rate limit. Driven by `resendCooldownTask`.
+    @Published var resendVerificationCooldown = 0
     @Published var syncInProgress = false
     @Published var syncOffline = false
     @Published var googleAuthInProgress = false
@@ -56,6 +67,7 @@ final class AppModel: ObservableObject {
     private let backgroundGoogleSyncKey = "knotq.lastBackgroundGoogleSyncAt"
     private var syncPollTask: Task<Void, Never>?
     private var googleSyncTask: Task<Void, Never>?
+    private var resendCooldownTask: Task<Void, Never>?
     private var googleOAuthSession: WebAuthenticationSessionCoordinator?
     private var browserSignInSession: WebAuthenticationSessionCoordinator?
     private var transactionListener: Task<Void, Never>?
@@ -750,10 +762,41 @@ final class AppModel: ObservableObject {
         mutate { try $0.unlinkGoogleAccount(accountID: account.id) }
     }
 
-    private static let signInPageURL = "https://www.knotq.com/signin.html"
+    private static let prodWebBase = "https://www.knotq.com"
+    private static let sandboxWebBase = "https://sandbox.knotq.com"
+    // The knotq.com site origin matching a sync API base, so a sandbox/local-dev
+    // build opens the sandbox site instead of production. The sign-in page also
+    // receives the API base via the allowlisted `?api=` param, which is what
+    // actually pins the backend (needed for local, where the site is the sandbox
+    // host but the API is the loopback Worker).
+    private static func webBase(forApiBase apiBase: String) -> String {
+        if apiBase.contains("sandbox.api.knotq.com")
+            || apiBase.contains("127.0.0.1")
+            || apiBase.contains("localhost") {
+            return sandboxWebBase
+        }
+        return prodWebBase
+    }
     private static let signInRedirectScheme = "knotq"
     private static let signInRedirectURI = "knotq://auth-callback"
-    private static let defaultSyncApiBase = "https://api.knotq.com"
+    // Base URL used for a *new* sign-in when no session is stored yet. A
+    // `KNOTQ_API_BASE` override (set it in the Xcode Run scheme's environment)
+    // always wins; otherwise the default is build-aware — Debug builds target the
+    // hosted sandbox (https://sandbox.api.knotq.com) so development never touches
+    // production, while Release (App Store) builds target production. Existing
+    // sessions keep their stored apiBase, so this never silently moves a signed-in
+    // account between environments.
+    private static var defaultSyncApiBase: String {
+        if let override = ProcessInfo.processInfo.environment["KNOTQ_API_BASE"]?
+            .trimmingCharacters(in: .whitespacesAndNewlines), !override.isEmpty {
+            return override
+        }
+        #if DEBUG
+        return "https://sandbox.api.knotq.com"
+        #else
+        return "https://api.knotq.com"
+        #endif
+    }
 
     /// Start a browser-based sign-in (or account creation): open the hosted sign-in
     /// page with a custom-scheme redirect + PKCE, then exchange the returned
@@ -801,6 +844,9 @@ final class AppModel: ObservableObject {
             let payload = try await exchangeAuthorizeCode(apiBase: apiBase, code: code, codeVerifier: verifier)
             installSyncSession(payload, apiBase: apiBase)
             errorMessage = nil
+            // Pull verification + subscription state so the Sync card reflects whether
+            // the just-signed-in account can subscribe yet.
+            await refreshAccountStatus()
             scheduleSync()
         } catch {
             if Self.isWebAuthCancellation(error) {
@@ -844,7 +890,7 @@ final class AppModel: ObservableObject {
         codeChallenge: String,
         redirectURI: String
     ) -> URL? {
-        var components = URLComponents(string: signInPageURL)
+        var components = URLComponents(string: "\(webBase(forApiBase: apiBase))/signin.html")
         components?.queryItems = [
             URLQueryItem(name: "redirect_uri", value: redirectURI),
             URLQueryItem(name: "state", value: state),
@@ -903,6 +949,12 @@ final class AppModel: ObservableObject {
         syncOffline = false
         subscriptionCancelled = false
         subscriptionProvider = nil
+        pendingDeletionChallengeId = nil
+        emailVerified = nil
+        resendCooldownTask?.cancel()
+        resendCooldownTask = nil
+        resendVerificationCooldown = 0
+        resendVerificationInProgress = false
         syncPollTask?.cancel()
         syncPollTask = nil
         BackgroundSyncCoordinator.shared.scheduleIfEligible(backgroundRefreshEligible)
@@ -983,7 +1035,10 @@ final class AppModel: ObservableObject {
     /// Schedule deletion of the sync account and cloud data from inside the app.
     /// Local workspace files stay on device; the backend revokes all sessions after
     /// accepting the deletion request, so the app signs out immediately.
-    func deleteSyncAccount(confirmEmail: String, password: String) async {
+    /// Step 1 of 2: re-authenticate with email + current password. On success the
+    /// backend emails a one-time code and we surface the OTP entry step; nothing is
+    /// scheduled until `confirmSyncAccountDeletion(code:)` completes.
+    func requestSyncAccountDeletion(confirmEmail: String, password: String) async {
         guard syncSession != nil, !syncInProgress else { return }
         syncAccountActionInProgress = true
         syncInProgress = true
@@ -1014,9 +1069,51 @@ final class AppModel: ObservableObject {
                 let code = body?["code"] as? String
                 throw SyncAuthError.message(Self.accountActionErrorMessage(code))
             }
+            let challenge = try JSONDecoder().decode(ChallengeResponse.self, from: data)
+            pendingDeletionChallengeId = challenge.challengeId
+            errorMessage = "We emailed you a code. Enter it to confirm deleting your account."
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    /// Step 2 of 2: submit the emailed one-time code to schedule deletion. On success
+    /// the account is scheduled for purge after the grace period and we sign out.
+    func confirmSyncAccountDeletion(code: String) async {
+        guard let challengeId = pendingDeletionChallengeId, !syncInProgress else { return }
+        syncAccountActionInProgress = true
+        syncInProgress = true
+        defer {
+            syncInProgress = false
+            syncAccountActionInProgress = false
+        }
+        guard await refreshSyncSessionForAccountAction(),
+              let session = syncSession,
+              let url = URL(string: "\(session.apiBase)/v1/auth/account/delete/verify") else {
+            return
+        }
+        do {
+            var request = URLRequest(url: url)
+            request.httpMethod = "POST"
+            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            request.setValue("Bearer \(session.bearerToken)", forHTTPHeaderField: "Authorization")
+            request.httpBody = try JSONSerialization.data(withJSONObject: [
+                "challenge_id": challengeId,
+                "code": code.trimmingCharacters(in: .whitespacesAndNewlines),
+            ])
+            let (data, response) = try await URLSession.shared.data(for: request)
+            guard let http = response as? HTTPURLResponse else {
+                throw SyncAuthError.message("Sync backend returned an invalid response.")
+            }
+            guard (200..<300).contains(http.statusCode) else {
+                let body = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
+                let code = body?["code"] as? String
+                throw SyncAuthError.message(Self.accountActionErrorMessage(code))
+            }
             _ = try? JSONDecoder().decode(DeleteAccountResponse.self, from: data)
+            pendingDeletionChallengeId = nil
             signOutSync()
-            errorMessage = "Your account deletion request was accepted. Your local workspace stays on this device."
+            errorMessage = "Your account is scheduled for deletion. Sign in again within 14 days to cancel. Your local workspace stays on this device."
         } catch {
             errorMessage = error.localizedDescription
         }
@@ -1095,6 +1192,7 @@ final class AppModel: ObservableObject {
               let url = URL(string: "\(session.apiBase)/v1/auth/account/status") else {
             subscriptionCancelled = false
             subscriptionProvider = nil
+            emailVerified = nil
             syncOffline = false
             return
         }
@@ -1109,12 +1207,61 @@ final class AppModel: ObservableObject {
             let status = try JSONDecoder().decode(AccountStatusPayload.self, from: data)
             syncOffline = false
             subscriptionProvider = status.subscriptionProvider
+            emailVerified = status.emailVerified
             subscriptionCancelled =
                 status.supportsSync && (status.subscriptionState?.lowercased() == "cancelled")
         } catch {
             // Leave the last known state; the user can retry from Settings.
             if Self.isLikelyNetworkError(error) {
                 syncOffline = true
+            }
+        }
+    }
+
+    /// Resend the email-verification link to the signed-in account. Soft-rate-limited
+    /// on the client with a 60s cooldown (the backend rate-limits too). Surfaces the
+    /// outcome in `errorMessage`.
+    func resendVerificationEmail() async {
+        guard let session = syncSession,
+              !resendVerificationInProgress,
+              resendVerificationCooldown == 0,
+              let url = URL(string: "\(session.apiBase)/v1/auth/email/verify/resend") else {
+            return
+        }
+        resendVerificationInProgress = true
+        defer { resendVerificationInProgress = false }
+        do {
+            var request = URLRequest(url: url)
+            request.httpMethod = "POST"
+            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            request.setValue("Bearer \(session.bearerToken)", forHTTPHeaderField: "Authorization")
+            let (_, response) = try await URLSession.shared.data(for: request)
+            guard let http = response as? HTTPURLResponse else {
+                throw SyncAuthError.message("Could not reach the sync service.")
+            }
+            if http.statusCode == 429 {
+                throw SyncAuthError.message("You've requested this recently — wait a minute, then try again.")
+            }
+            guard (200..<300).contains(http.statusCode) else {
+                throw SyncAuthError.message("Could not resend the verification email.")
+            }
+            errorMessage = "Verification email sent. Check your inbox, then reopen Settings."
+            startResendCooldown()
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    private func startResendCooldown(_ seconds: Int = 60) {
+        resendCooldownTask?.cancel()
+        resendVerificationCooldown = seconds
+        // Created in a @MainActor context, so this Task runs on the main actor and can
+        // touch `resendVerificationCooldown` directly.
+        resendCooldownTask = Task { [weak self] in
+            while true {
+                try? await Task.sleep(nanoseconds: 1_000_000_000)
+                guard let self, !Task.isCancelled, self.resendVerificationCooldown > 0 else { return }
+                self.resendVerificationCooldown -= 1
             }
         }
     }
@@ -1127,7 +1274,13 @@ final class AppModel: ObservableObject {
     /// never replay the single-use refresh token concurrently.
     func refreshSubscriptionStatus() async {
         guard syncSession != nil else { return }
-        guard await refreshEntitlement() else { return }
+        // Pick up an entitlement change first; this rotates the session so the status
+        // read below uses the fresh token. Run it best-effort: even when the forced
+        // refresh defers on a transient hiccup (which marks `syncOffline`), still read
+        // the authoritative account status so a reachable backend clears the stale flag
+        // instead of leaving the card stuck on "Offline" after sign-in. The status read
+        // is a bearer-token GET, so it never replays the single-use refresh token.
+        await refreshEntitlement()
         await refreshAccountStatus()
     }
 
@@ -1159,6 +1312,13 @@ final class AppModel: ObservableObject {
     /// account; entitlement is granted server-side and picked up on refresh.
     func purchaseSync(_ product: Product) async {
         guard let session = syncSession, !purchaseInProgress else { return }
+        // Subscribing is gated on a confirmed email (the backend rejects the verify
+        // call otherwise); stop here with a clear prompt rather than start a StoreKit
+        // purchase the account can't redeem.
+        if emailVerified == false {
+            errorMessage = "Verify your email before subscribing — check your inbox for the link."
+            return
+        }
         purchaseInProgress = true
         defer { purchaseInProgress = false }
         do {
@@ -1658,6 +1818,12 @@ final class AppModel: ObservableObject {
             return "Re-enable this subscription from your Google Play account subscriptions."
         case "no_active_subscription":
             return "There's no active paid subscription on this account to change."
+        case "invalid_code":
+            return "That code is incorrect."
+        case "code_expired", "invalid_or_expired_code":
+            return "That code has expired. Start the deletion again to get a new one."
+        case "too_many_attempts":
+            return "Too many incorrect codes. Start the deletion again to get a new one."
         default:
             return "The request to the sync API failed."
         }
@@ -2072,11 +2238,15 @@ private struct AccountStatusPayload: Decodable {
     let supportsSync: Bool
     let subscriptionState: String?
     let subscriptionProvider: String?
+    // Fail closed: a response that omits the field decodes as unverified rather than
+    // silently allowing checkout. The current backend always sends it.
+    let emailVerified: Bool
 
     enum CodingKeys: String, CodingKey {
         case supportsSync = "supports_sync"
         case subscriptionState = "subscription_state"
         case subscriptionProvider = "subscription_provider"
+        case emailVerified = "email_verified"
     }
 
     init(from decoder: Decoder) throws {
@@ -2084,6 +2254,7 @@ private struct AccountStatusPayload: Decodable {
         supportsSync = try container.decodeIfPresent(Bool.self, forKey: .supportsSync) ?? true
         subscriptionState = try container.decodeIfPresent(String.self, forKey: .subscriptionState)
         subscriptionProvider = try container.decodeIfPresent(String.self, forKey: .subscriptionProvider)
+        emailVerified = try container.decodeIfPresent(Bool.self, forKey: .emailVerified) ?? false
     }
 }
 
@@ -2094,6 +2265,15 @@ private struct DeleteAccountResponse: Decodable {
     enum CodingKeys: String, CodingKey {
         case deletionScheduled = "deletion_scheduled"
         case purgeAfter = "purge_after"
+    }
+}
+
+// A pending one-time-code challenge (e.g. account-deletion confirmation).
+private struct ChallengeResponse: Decodable {
+    let challengeId: String
+
+    enum CodingKeys: String, CodingKey {
+        case challengeId = "challenge_id"
     }
 }
 

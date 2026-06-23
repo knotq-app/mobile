@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Production traffic (api.knotq.com) is HTTPS-only. Cleartext HTTP is permitted
+  only for loopback hosts, matching the core's `normalize_sync_api_base` loopback
+  allowance for pointing at a local dev sync server. This replaces the blanket
+  android:usesCleartextTraffic="true", which Play's pre-launch report flags.
+-->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="false" />
+    <domain-config cleartextTrafficPermitted="true">
+        <domain includeSubdomains="true">localhost</domain>
+        <domain includeSubdomains="false">127.0.0.1</domain>
+    </domain-config>
+</network-security-config>

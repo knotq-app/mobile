@@ -627,7 +627,9 @@ internal fun MainActivity.todayTimeColor(): Int =
     if (theme.isDark) rgb(0xbfbfff) else rgb(0x2f67cf)
 
 internal fun MainActivity.calendarItemTextColor(occurrence: JSONObject): Int {
-    val color = schemeColor(occurrence.optInt("color_index"))
+    // Daily-queue occurrences use the steel-blue daily accent, not their
+    // scheme palette color (which is index 0 / red), matching iOS itemTextColor.
+    val color = occurrenceSchemeColor(occurrence)
     val hsv = FloatArray(3)
     Color.colorToHSV(color, hsv)
     val done = occurrence.optBoolean("done")
