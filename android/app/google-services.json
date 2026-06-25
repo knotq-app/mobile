@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "1001496688209",
+    "project_id": "knotq-60ca6",
+    "storage_bucket": "knotq-60ca6.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:1001496688209:android:ffddcc97027e0e1e3f6a70",
+        "android_client_info": {
+          "package_name": "com.enigmadux.knotq"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBiEtXkhPF1KFmO59UU_6a-JCx6ppPV9cg"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
