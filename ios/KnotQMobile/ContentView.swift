@@ -314,38 +314,44 @@ struct ContentView: View {
 
     @ViewBuilder
     private func iPhoneRoot(isWide: Bool) -> some View {
-        mainPane(wide: isWide)
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .overlay(alignment: .bottom) {
-                if !keyboardVisible && homeNavigationDepth == 0 {
-                    // Floating liquid-glass nav. It hovers over the content
-                    // rather than reserving a strip.
-                    MobileDock(
-                        selected: (pane == .scheme || pane == .daily || pane == .search) ? .home : pane,
-                        theme: theme,
-                        onSelect: { selected in
-                            // Re-tapping Calendar while already there jumps back
-                            // to today (there's no nav bar to do it otherwise).
-                            if selected == .calendar, pane == .calendar,
-                               AppModel.dateOnly(model.selectedDate) != AppModel.dateOnly(Date()) {
-                                model.selectedDate = Date()
-                                model.weekOffset = 0
-                                model.refresh()
-                            }
-                            pane = selected
+        ZStack(alignment: .bottom) {
+            // Content keeps normal keyboard avoidance (e.g. the scheme editor scrolls its
+            // caret above the keyboard).
+            mainPane(wide: isWide)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+
+            if !keyboardVisible && homeNavigationDepth == 0 {
+                // Floating liquid-glass nav. It hovers over the content rather than
+                // reserving a strip.
+                MobileDock(
+                    selected: (pane == .scheme || pane == .daily || pane == .search) ? .home : pane,
+                    theme: theme,
+                    onSelect: { selected in
+                        // Re-tapping Calendar while already there jumps back to today
+                        // (there's no nav bar to do it otherwise).
+                        if selected == .calendar, pane == .calendar,
+                           AppModel.dateOnly(model.selectedDate) != AppModel.dateOnly(Date()) {
+                            model.selectedDate = Date()
+                            model.weekOffset = 0
+                            model.refresh()
                         }
-                    )
-                    .padding(.horizontal, 20)
-                    .padding(.bottom, 6)
-                    .transition(.move(edge: .bottom).combined(with: .opacity))
-                    // The dock is already hidden while the keyboard is up, so it never
-                    // needs to ride above it. Ignoring the keyboard safe area keeps it
-                    // pinned to the bottom even when a keyboard inset lingers after a
-                    // sheet (e.g. the sign-in web auth) dismisses — otherwise the
-                    // bottom-anchored dock renders pushed "way up" by the stale inset.
-                    .ignoresSafeArea(.keyboard, edges: .bottom)
-                }
+                        pane = selected
+                    }
+                )
+                .padding(.horizontal, 20)
+                .padding(.bottom, 6)
+                // The dock lives on its OWN full-screen layer that ignores the keyboard
+                // safe area, so its bottom anchor is the real screen bottom (home
+                // indicator) — NOT mainPane's keyboard-shrunk frame. This keeps it pinned
+                // even when a stale keyboard inset lingers after the sign-in web-auth sheet
+                // (whose keyboard is in a separate window) dismisses; previously the
+                // bottom-anchored dock rendered pushed "way up" by that stale inset. The
+                // dock is hidden while a keyboard is genuinely up, so ignoring it is safe.
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
+                .ignoresSafeArea(.keyboard, edges: .bottom)
+                .transition(.move(edge: .bottom).combined(with: .opacity))
             }
+        }
     }
 
     // MARK: - iPad (regular) root — native NavigationSplitView
