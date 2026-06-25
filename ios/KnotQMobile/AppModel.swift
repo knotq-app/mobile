@@ -1582,7 +1582,15 @@ final class AppModel: ObservableObject {
             request.httpMethod = "POST"
             request.setValue("application/json", forHTTPHeaderField: "Content-Type")
             request.httpBody = try JSONSerialization.data(withJSONObject: ["refresh_token": session.refreshToken])
-            let (data, response) = try await URLSession.shared.data(for: request)
+            // Hold a background-task assertion across the rotation so iOS lets the
+            // request finish — and lets us persist the rotated token below — even if
+            // the user backgrounds the app mid-flight. A bare foreground URLSession
+            // request is cancelled on suspend; losing the rotation response here (the
+            // server has already advanced the generation) is exactly what looks like
+            // refresh-token reuse on the next launch and signs the user out.
+            let (data, response) = try await withBackgroundAssertion("knotq.auth.refresh") {
+                try await URLSession.shared.data(for: request)
+            }
             guard let http = response as? HTTPURLResponse else {
                 syncOffline = true
                 return .deferred
@@ -1615,6 +1623,38 @@ final class AppModel: ObservableObject {
             syncOffline = true
             return .deferred
         }
+    }
+
+    /// Run a short, critical async network call under a UIKit background-task
+    /// assertion so it can finish even if the user backgrounds the app mid-request.
+    /// The token rotation is the motivating case: a foreground `URLSession` request
+    /// is cancelled when iOS suspends the app, so without this the server can advance
+    /// the refresh-token generation while we never persist the rotated token — and on
+    /// the next launch that lost rotation looks like refresh-token reuse, revoking the
+    /// whole session and signing the user out. Bounded by iOS's background-time
+    /// budget; if the expiration handler fires first the request just fails and is
+    /// retried next tick (recoverable), which is strictly better than losing a
+    /// committed rotation. The server's reuse-grace window is the backstop for the
+    /// residual case where the app is outright killed mid-rotation.
+    private func withBackgroundAssertion<T>(
+        _ name: String,
+        _ work: () async throws -> T
+    ) async rethrows -> T {
+        let app = UIApplication.shared
+        var taskID: UIBackgroundTaskIdentifier = .invalid
+        taskID = app.beginBackgroundTask(withName: name) {
+            if taskID != .invalid {
+                app.endBackgroundTask(taskID)
+                taskID = .invalid
+            }
+        }
+        defer {
+            if taskID != .invalid {
+                app.endBackgroundTask(taskID)
+                taskID = .invalid
+            }
+        }
+        return try await work()
     }
 
     /// True when the access token expires within the skew window (or is
