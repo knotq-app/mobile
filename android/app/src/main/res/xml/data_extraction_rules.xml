@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Android 12+ (API 31+) backup/transfer rules. The "knotq" SharedPreferences file
+  holds the sync session (bearer + rotating refresh tokens) and Google Calendar
+  OAuth tokens in plaintext, so it must never leave the device via cloud backup or
+  device-to-device transfer. Everything else (local workspace, notification state)
+  is fine to back up.
+-->
+<data-extraction-rules>
+    <cloud-backup>
+        <exclude domain="sharedpref" path="knotq.xml" />
+    </cloud-backup>
+    <device-transfer>
+        <exclude domain="sharedpref" path="knotq.xml" />
+    </device-transfer>
+</data-extraction-rules>

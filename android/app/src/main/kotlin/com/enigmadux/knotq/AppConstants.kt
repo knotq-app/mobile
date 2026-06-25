@@ -49,6 +49,10 @@ internal const val SYNC_SUBSCRIPTION_PRODUCT_ID = "com.enigmadux.knotq.sync.mont
 // neither the app nor our backend can flip that for Google/Apple.
 internal const val PLAY_SUBSCRIPTIONS_URL = "https://play.google.com/store/account/subscriptions"
 internal const val APPLE_SUBSCRIPTIONS_URL = "https://apps.apple.com/account/subscriptions"
+// Legal documents shown at the subscription paywall (Play Payments policy).
+// Always production www.knotq.com — the hosted legal pages aren't sandboxed.
+internal const val TERMS_OF_USE_URL = "https://www.knotq.com/terms.html"
+internal const val PRIVACY_POLICY_URL = "https://www.knotq.com/privacy.html"
 // Desktop ("installed") OAuth client. Android drives a loopback-redirect PKCE flow
 // (see startGoogleCalendarImport) rather than the iOS reverse-client-id custom scheme,
 // so the redirect URI is minted at runtime as http://127.0.0.1:<port>; there is no

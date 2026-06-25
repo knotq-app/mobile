@@ -36,6 +36,17 @@
         <item name="android:colorAccent">#C04510</item>
     </style>
 
+    <!-- AlertDialog themes for custom-view dialogs, tinted per app theme so the
+         dialog chrome matches the in-app light/dark theme instead of always using
+         the dark AppTheme. Without this, light-theme body text (a dark color) lands
+         on a dark dialog background and is unreadable. -->
+    <style name="KnotQAlertDialogDark" parent="@android:style/Theme.Material.Dialog.Alert">
+        <item name="android:colorAccent">#7AA0FF</item>
+    </style>
+    <style name="KnotQAlertDialogLight" parent="@android:style/Theme.Material.Light.Dialog.Alert">
+        <item name="android:colorAccent">#C04510</item>
+    </style>
+
     <!-- ContextThemeWrapper themes for inline (embedded) wheel pickers. -->
     <style name="KnotQInlinePickerDark" parent="@android:style/Theme.Material">
         <item name="android:datePickerStyle">@style/KnotQSpinnerDatePicker</item>

@@ -261,6 +261,11 @@ internal fun MainActivity.timeDialogTheme(): Int = if (theme.isDark) R.style.Kno
 
 internal fun MainActivity.dateDialogTheme(): Int = if (theme.isDark) R.style.KnotQDateDialogDark else R.style.KnotQDateDialogLight
 
+// AlertDialog theme matching the active app theme, so custom-view dialogs (which
+// draw body text in theme colors) stay readable in light mode instead of placing
+// dark text on the always-dark default AppTheme dialog.
+internal fun MainActivity.alertDialogTheme(): Int = if (theme.isDark) R.style.KnotQAlertDialogDark else R.style.KnotQAlertDialogLight
+
 // Context that renders embedded DatePicker/TimePicker widgets as compact wheels.
 internal fun MainActivity.inlinePickerContext(): Context =
     ContextThemeWrapper(this, if (theme.isDark) R.style.KnotQInlinePickerDark else R.style.KnotQInlinePickerLight)
