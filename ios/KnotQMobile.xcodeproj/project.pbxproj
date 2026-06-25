@@ -58,6 +58,32 @@
 			010000000000000000000035 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = 020000000000000000000035 /* PrivacyInfo.xcprivacy */; };
 			010000000000000000000036 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = 020000000000000000000036 /* PrivacyInfo.xcprivacy */; };
 			010000000000000000000040 /* MarkerConcealmentTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 020000000000000000000040 /* MarkerConcealmentTests.swift */; };
+		010000000000000000000050 /* SchemeEditorLayoutManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 020000000000000000000050 /* SchemeEditorLayoutManager.swift */; };
+		010000000000000000000051 /* SchemeEditorBlockAttachment.swift in Sources */ = {isa = PBXBuildFile; fileRef = 020000000000000000000051 /* SchemeEditorBlockAttachment.swift */; };
+		010000000000000000000052 /* SchemeEditorTableCellEditor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 020000000000000000000052 /* SchemeEditorTableCellEditor.swift */; };
+		010000000000000000000053 /* SchemeEditorTextView+Clipboard.swift in Sources */ = {isa = PBXBuildFile; fileRef = 020000000000000000000053 /* SchemeEditorTextView+Clipboard.swift */; };
+		010000000000000000000054 /* SchemeEditorTextView+Drawing.swift in Sources */ = {isa = PBXBuildFile; fileRef = 020000000000000000000054 /* SchemeEditorTextView+Drawing.swift */; };
+		010000000000000000000055 /* SchemeEditorTextView+TableEditing.swift in Sources */ = {isa = PBXBuildFile; fileRef = 020000000000000000000055 /* SchemeEditorTextView+TableEditing.swift */; };
+		010000000000000000000056 /* AppModelSupportTypes.swift in Sources */ = {isa = PBXBuildFile; fileRef = 020000000000000000000056 /* AppModelSupportTypes.swift */; };
+		010000000000000000000057 /* AppModel+SchemeOps.swift in Sources */ = {isa = PBXBuildFile; fileRef = 020000000000000000000057 /* AppModel+SchemeOps.swift */; };
+		010000000000000000000058 /* AppModel+SettingsGoogle.swift in Sources */ = {isa = PBXBuildFile; fileRef = 020000000000000000000058 /* AppModel+SettingsGoogle.swift */; };
+		010000000000000000000059 /* AppModel+SyncAuth.swift in Sources */ = {isa = PBXBuildFile; fileRef = 020000000000000000000059 /* AppModel+SyncAuth.swift */; };
+		01000000000000000000005A /* AppModel+Sync.swift in Sources */ = {isa = PBXBuildFile; fileRef = 02000000000000000000005A /* AppModel+Sync.swift */; };
+		01000000000000000000005B /* AppModel+Fixtures.swift in Sources */ = {isa = PBXBuildFile; fileRef = 02000000000000000000005B /* AppModel+Fixtures.swift */; };
+		01000000000000000000005C /* MarkerConcealmentTests+Reveal.swift in Sources */ = {isa = PBXBuildFile; fileRef = 02000000000000000000005C /* MarkerConcealmentTests+Reveal.swift */; };
+		01000000000000000000005D /* MarkerConcealmentTests+TableCrash.swift in Sources */ = {isa = PBXBuildFile; fileRef = 02000000000000000000005D /* MarkerConcealmentTests+TableCrash.swift */; };
+		01000000000000000000005E /* MarkerConcealmentTests+Markdown.swift in Sources */ = {isa = PBXBuildFile; fileRef = 02000000000000000000005E /* MarkerConcealmentTests+Markdown.swift */; };
+		01000000000000000000005F /* DayTimelineUIKitView+Rendering.swift in Sources */ = {isa = PBXBuildFile; fileRef = 02000000000000000000005F /* DayTimelineUIKitView+Rendering.swift */; };
+		010000000000000000000060 /* DayTimelineUIKitView+Sticky.swift in Sources */ = {isa = PBXBuildFile; fileRef = 020000000000000000000060 /* DayTimelineUIKitView+Sticky.swift */; };
+		010000000000000000000061 /* DayTimelineUIKitView+Gestures.swift in Sources */ = {isa = PBXBuildFile; fileRef = 020000000000000000000061 /* DayTimelineUIKitView+Gestures.swift */; };
+		010000000000000000000062 /* DayTimelineUIKitView+Helpers.swift in Sources */ = {isa = PBXBuildFile; fileRef = 020000000000000000000062 /* DayTimelineUIKitView+Helpers.swift */; };
+		010000000000000000000063 /* EditorClipboardTypes.swift in Sources */ = {isa = PBXBuildFile; fileRef = 020000000000000000000063 /* EditorClipboardTypes.swift */; };
+		010000000000000000000064 /* EditorTextModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 020000000000000000000064 /* EditorTextModel.swift */; };
+		010000000000000000000065 /* SyncSettingsCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = 020000000000000000000065 /* SyncSettingsCard.swift */; };
+		010000000000000000000066 /* SchemeTextView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 020000000000000000000066 /* SchemeTextView.swift */; };
+		010000000000000000000067 /* EditorCoordinator+Editing.swift in Sources */ = {isa = PBXBuildFile; fileRef = 020000000000000000000067 /* EditorCoordinator+Editing.swift */; };
+		010000000000000000000068 /* EditorCoordinator+Processing.swift in Sources */ = {isa = PBXBuildFile; fileRef = 020000000000000000000068 /* EditorCoordinator+Processing.swift */; };
+		010000000000000000000069 /* EditorCoordinator+Toolbar.swift in Sources */ = {isa = PBXBuildFile; fileRef = 020000000000000000000069 /* EditorCoordinator+Toolbar.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -146,6 +172,32 @@
 			020000000000000000000036 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
 			020000000000000000000040 /* MarkerConcealmentTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MarkerConcealmentTests.swift; sourceTree = "<group>"; };
 		020000000000000000000041 /* KnotQMobileTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = KnotQMobileTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		020000000000000000000050 /* SchemeEditorLayoutManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SchemeEditorLayoutManager.swift; sourceTree = "<group>"; };
+		020000000000000000000051 /* SchemeEditorBlockAttachment.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SchemeEditorBlockAttachment.swift; sourceTree = "<group>"; };
+		020000000000000000000052 /* SchemeEditorTableCellEditor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SchemeEditorTableCellEditor.swift; sourceTree = "<group>"; };
+		020000000000000000000053 /* SchemeEditorTextView+Clipboard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "SchemeEditorTextView+Clipboard.swift"; sourceTree = "<group>"; };
+		020000000000000000000054 /* SchemeEditorTextView+Drawing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "SchemeEditorTextView+Drawing.swift"; sourceTree = "<group>"; };
+		020000000000000000000055 /* SchemeEditorTextView+TableEditing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "SchemeEditorTextView+TableEditing.swift"; sourceTree = "<group>"; };
+		020000000000000000000056 /* AppModelSupportTypes.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppModelSupportTypes.swift; sourceTree = "<group>"; };
+		020000000000000000000057 /* AppModel+SchemeOps.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AppModel+SchemeOps.swift"; sourceTree = "<group>"; };
+		020000000000000000000058 /* AppModel+SettingsGoogle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AppModel+SettingsGoogle.swift"; sourceTree = "<group>"; };
+		020000000000000000000059 /* AppModel+SyncAuth.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AppModel+SyncAuth.swift"; sourceTree = "<group>"; };
+		02000000000000000000005A /* AppModel+Sync.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AppModel+Sync.swift"; sourceTree = "<group>"; };
+		02000000000000000000005B /* AppModel+Fixtures.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AppModel+Fixtures.swift"; sourceTree = "<group>"; };
+		02000000000000000000005C /* MarkerConcealmentTests+Reveal.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MarkerConcealmentTests+Reveal.swift"; sourceTree = "<group>"; };
+		02000000000000000000005D /* MarkerConcealmentTests+TableCrash.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MarkerConcealmentTests+TableCrash.swift"; sourceTree = "<group>"; };
+		02000000000000000000005E /* MarkerConcealmentTests+Markdown.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MarkerConcealmentTests+Markdown.swift"; sourceTree = "<group>"; };
+		02000000000000000000005F /* DayTimelineUIKitView+Rendering.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "DayTimelineUIKitView+Rendering.swift"; sourceTree = "<group>"; };
+		020000000000000000000060 /* DayTimelineUIKitView+Sticky.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "DayTimelineUIKitView+Sticky.swift"; sourceTree = "<group>"; };
+		020000000000000000000061 /* DayTimelineUIKitView+Gestures.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "DayTimelineUIKitView+Gestures.swift"; sourceTree = "<group>"; };
+		020000000000000000000062 /* DayTimelineUIKitView+Helpers.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "DayTimelineUIKitView+Helpers.swift"; sourceTree = "<group>"; };
+		020000000000000000000063 /* EditorClipboardTypes.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EditorClipboardTypes.swift; sourceTree = "<group>"; };
+		020000000000000000000064 /* EditorTextModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EditorTextModel.swift; sourceTree = "<group>"; };
+		020000000000000000000065 /* SyncSettingsCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SyncSettingsCard.swift; sourceTree = "<group>"; };
+		020000000000000000000066 /* SchemeTextView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SchemeTextView.swift; sourceTree = "<group>"; };
+		020000000000000000000067 /* EditorCoordinator+Editing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "EditorCoordinator+Editing.swift"; sourceTree = "<group>"; };
+		020000000000000000000068 /* EditorCoordinator+Processing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "EditorCoordinator+Processing.swift"; sourceTree = "<group>"; };
+		020000000000000000000069 /* EditorCoordinator+Toolbar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "EditorCoordinator+Toolbar.swift"; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -236,6 +288,29 @@
 					02000000000000000000002E /* GoogleService-Info.plist */,
 					020000000000000000000014 /* KnotQMobile.entitlements */,
 					020000000000000000000011 /* Assets.xcassets */,
+				020000000000000000000066 /* SchemeTextView.swift */,
+				020000000000000000000067 /* EditorCoordinator+Editing.swift */,
+				020000000000000000000068 /* EditorCoordinator+Processing.swift */,
+				020000000000000000000069 /* EditorCoordinator+Toolbar.swift */,
+				020000000000000000000065 /* SyncSettingsCard.swift */,
+				020000000000000000000063 /* EditorClipboardTypes.swift */,
+				020000000000000000000064 /* EditorTextModel.swift */,
+				02000000000000000000005F /* DayTimelineUIKitView+Rendering.swift */,
+				020000000000000000000060 /* DayTimelineUIKitView+Sticky.swift */,
+				020000000000000000000061 /* DayTimelineUIKitView+Gestures.swift */,
+				020000000000000000000062 /* DayTimelineUIKitView+Helpers.swift */,
+				020000000000000000000056 /* AppModelSupportTypes.swift */,
+				020000000000000000000057 /* AppModel+SchemeOps.swift */,
+				020000000000000000000058 /* AppModel+SettingsGoogle.swift */,
+				020000000000000000000059 /* AppModel+SyncAuth.swift */,
+				02000000000000000000005A /* AppModel+Sync.swift */,
+				02000000000000000000005B /* AppModel+Fixtures.swift */,
+				020000000000000000000050 /* SchemeEditorLayoutManager.swift */,
+				020000000000000000000051 /* SchemeEditorBlockAttachment.swift */,
+				020000000000000000000052 /* SchemeEditorTableCellEditor.swift */,
+				020000000000000000000053 /* SchemeEditorTextView+Clipboard.swift */,
+				020000000000000000000054 /* SchemeEditorTextView+Drawing.swift */,
+				020000000000000000000055 /* SchemeEditorTextView+TableEditing.swift */,
 			);
 			path = KnotQMobile;
 			sourceTree = "<group>";
@@ -265,6 +340,9 @@
 			isa = PBXGroup;
 			children = (
 				020000000000000000000040 /* MarkerConcealmentTests.swift */,
+				02000000000000000000005C /* MarkerConcealmentTests+Reveal.swift */,
+				02000000000000000000005D /* MarkerConcealmentTests+TableCrash.swift */,
+				02000000000000000000005E /* MarkerConcealmentTests+Markdown.swift */,
 			);
 			path = KnotQMobileTests;
 			sourceTree = "<group>";
@@ -490,6 +568,29 @@
 				01000000000000000000000A /* SearchScreen.swift in Sources */,
 				01000000000000000000000B /* SettingsScreen.swift in Sources */,
 				01000000000000000000000C /* SharedViews.swift in Sources */,
+				010000000000000000000066 /* SchemeTextView.swift in Sources */,
+				010000000000000000000067 /* EditorCoordinator+Editing.swift in Sources */,
+				010000000000000000000068 /* EditorCoordinator+Processing.swift in Sources */,
+				010000000000000000000069 /* EditorCoordinator+Toolbar.swift in Sources */,
+				010000000000000000000065 /* SyncSettingsCard.swift in Sources */,
+				010000000000000000000063 /* EditorClipboardTypes.swift in Sources */,
+				010000000000000000000064 /* EditorTextModel.swift in Sources */,
+				01000000000000000000005F /* DayTimelineUIKitView+Rendering.swift in Sources */,
+				010000000000000000000060 /* DayTimelineUIKitView+Sticky.swift in Sources */,
+				010000000000000000000061 /* DayTimelineUIKitView+Gestures.swift in Sources */,
+				010000000000000000000062 /* DayTimelineUIKitView+Helpers.swift in Sources */,
+				010000000000000000000056 /* AppModelSupportTypes.swift in Sources */,
+				010000000000000000000057 /* AppModel+SchemeOps.swift in Sources */,
+				010000000000000000000058 /* AppModel+SettingsGoogle.swift in Sources */,
+				010000000000000000000059 /* AppModel+SyncAuth.swift in Sources */,
+				01000000000000000000005A /* AppModel+Sync.swift in Sources */,
+				01000000000000000000005B /* AppModel+Fixtures.swift in Sources */,
+				010000000000000000000050 /* SchemeEditorLayoutManager.swift in Sources */,
+				010000000000000000000051 /* SchemeEditorBlockAttachment.swift in Sources */,
+				010000000000000000000052 /* SchemeEditorTableCellEditor.swift in Sources */,
+				010000000000000000000053 /* SchemeEditorTextView+Clipboard.swift in Sources */,
+				010000000000000000000054 /* SchemeEditorTextView+Drawing.swift in Sources */,
+				010000000000000000000055 /* SchemeEditorTextView+TableEditing.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -507,6 +608,9 @@
 			buildActionMask = 2147483647;
 			files = (
 				010000000000000000000040 /* MarkerConcealmentTests.swift in Sources */,
+				01000000000000000000005C /* MarkerConcealmentTests+Reveal.swift in Sources */,
+				01000000000000000000005D /* MarkerConcealmentTests+TableCrash.swift in Sources */,
+				01000000000000000000005E /* MarkerConcealmentTests+Markdown.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
