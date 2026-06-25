@@ -58,6 +58,11 @@ internal const val GOOGLE_CLIENT_ID = "419826075228-mt7s13h76ftugo170gqs3l0q0plm
 // giving up on a Google sign-in attempt.
 internal const val GOOGLE_OAUTH_LOOPBACK_TIMEOUT_MS = 300_000
 internal const val GOOGLE_SYNC_INTERVAL_MS = 120_000L
+// Debounce for the push that follows a local edit (mirrors iOS
+// editSyncDebounceNanos): a burst of edits coalesces into one sync instead of
+// pushing on every mutation. Desktop's sync service debounces local changes
+// 30 s; the 30 s foreground poll and an onStop flush are the backstops here.
+internal const val SYNC_EDIT_DEBOUNCE_MS = 5_000L
 internal const val TAB_CALENDAR = 0
 internal const val TAB_SCHEMES = 1
 internal const val TAB_DAILY = 2

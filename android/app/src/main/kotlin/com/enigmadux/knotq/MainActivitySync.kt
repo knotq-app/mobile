@@ -479,6 +479,7 @@ internal fun MainActivity.signOutSync() {
     saveSyncSession(null)
     syncPollHandler.removeCallbacks(syncPollRunnable)
     syncPollHandler.removeCallbacks(syncEditRunnable)
+    syncEditPending = false
     cancelBackgroundSyncWork()
     render()
 }
@@ -1112,12 +1113,17 @@ internal fun MainActivity.startSyncPolling() {
     }
 }
 
-/// iOS pushes a sync right after every local edit; the short delay coalesces
-/// rapid bursts (the in-progress guard handles overlap with the 30s poll).
+/// Debounced sync after a local edit, matching desktop's local-change debounce:
+/// a burst of edits coalesces into one push (SYNC_EDIT_DEBOUNCE_MS) instead of
+/// syncing on every mutation. Leading-window — the first edit of a burst arms
+/// the timer and later edits don't postpone it, so continuous typing still
+/// pushes within the window (the 30s poll and the onStop flush are the
+/// backstops; the in-progress guard handles overlap with the poll).
 internal fun MainActivity.requestSyncSoon() {
     if (syncSession == null) return
-    syncPollHandler.removeCallbacks(syncEditRunnable)
-    syncPollHandler.postDelayed(syncEditRunnable, 350)
+    if (syncEditPending) return
+    syncEditPending = true
+    syncPollHandler.postDelayed(syncEditRunnable, SYNC_EDIT_DEBOUNCE_MS)
 }
 
 /// Periodic background refresh while signed in — the Android counterpart of
@@ -1261,6 +1267,7 @@ internal fun MainActivity.expireSyncSession(showMessage: Boolean = true) {
     saveSyncSession(null)
     syncPollHandler.removeCallbacks(syncPollRunnable)
     syncPollHandler.removeCallbacks(syncEditRunnable)
+    syncEditPending = false
     cancelBackgroundSyncWork()
     if (showMessage) {
         showError("Sync session expired", "Please sign in again.")

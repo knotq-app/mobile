@@ -60,6 +60,11 @@ final class AppModel: ObservableObject {
     private static let maxDailyHistoryDays = 3650
     private static let foregroundGoogleSyncIntervalNanos: UInt64 = 120_000_000_000
     private static let backgroundGoogleSyncInterval: TimeInterval = 6 * 60 * 60
+    // Debounce for the push that follows a local edit: a burst of edits
+    // coalesces into one sync instead of pushing on every mutation. Desktop's
+    // sync service uses a 30 s local-change debounce; mobile leans shorter and
+    // relies on the 30 s foreground poll + flushPendingEditSync() as backstops.
+    private static let editSyncDebounceNanos: UInt64 = 5_000_000_000
 
     private let bridge: RustBridge?
     private let iso = ISO8601DateFormatter()
@@ -67,6 +72,8 @@ final class AppModel: ObservableObject {
     private let backgroundGoogleSyncKey = "knotq.lastBackgroundGoogleSyncAt"
     private var syncPollTask: Task<Void, Never>?
     private var googleSyncTask: Task<Void, Never>?
+    // Non-nil while a post-edit push is waiting out its debounce window.
+    private var pendingEditSyncTask: Task<Void, Never>?
     private var resendCooldownTask: Task<Void, Never>?
     private var googleOAuthSession: WebAuthenticationSessionCoordinator?
     private var browserSignInSession: WebAuthenticationSessionCoordinator?
@@ -279,7 +286,7 @@ final class AppModel: ObservableObject {
             apply(snapshot: after, pendingNotifications: pending)
             errorMessage = nil
             if syncSession != nil {
-                scheduleSync()
+                scheduleEditSync()
             }
             return id
         } catch {
@@ -650,7 +657,7 @@ final class AppModel: ObservableObject {
             apply(snapshot: after, pendingNotifications: pending)
             errorMessage = nil
             if syncSession != nil {
-                scheduleSync()
+                scheduleEditSync()
             }
             return id
         } catch {
@@ -1550,6 +1557,36 @@ final class AppModel: ObservableObject {
         Task { await self.syncOnce() }
     }
 
+    /// Push that follows a local edit, debounced so a burst of edits coalesces
+    /// into one sync instead of pushing on every mutation. Leading-window like
+    /// desktop: the first edit of a burst arms the timer and later edits don't
+    /// postpone it. The 30 s foreground poll backstops a continuous edit, and
+    /// `flushPendingEditSync()` pushes before the app suspends.
+    private func scheduleEditSync() {
+        guard syncSession != nil, pendingEditSyncTask == nil else { return }
+        pendingEditSyncTask = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: Self.editSyncDebounceNanos)
+            guard let self, !Task.isCancelled else { return }
+            self.pendingEditSyncTask = nil
+            await self.syncOnce()
+        }
+    }
+
+    /// Flush a debounced edit immediately, wrapped in a background assertion so a
+    /// push armed just before the app suspends isn't stranded until the next
+    /// BGAppRefreshTask (~3 h) or foreground. No-op when no edit is pending.
+    func flushPendingEditSync() {
+        guard pendingEditSyncTask != nil else { return }
+        pendingEditSyncTask?.cancel()
+        pendingEditSyncTask = nil
+        Task { [weak self] in
+            guard let self else { return }
+            _ = await self.withBackgroundAssertion("knotq.flush-edit-sync") {
+                await self.runBackgroundSync()
+            }
+        }
+    }
+
     private func refreshSyncSessionForAccountAction() async -> Bool {
         switch await refreshSyncSessionIfNeeded() {
         case .ready:
@@ -1723,7 +1760,7 @@ final class AppModel: ObservableObject {
                 self.apply(snapshot: snapshot, pendingNotifications: pending)
                 self.errorMessage = nil
                 if self.syncSession != nil {
-                    self.scheduleSync()
+                    self.scheduleEditSync()
                 }
             case .failure(let error):
                 self.errorMessage = error.localizedDescription

@@ -1,6 +1,9 @@
 package com.enigmadux.knotq
 
 import android.content.Context
+import androidx.work.ExistingWorkPolicy
+import androidx.work.OneTimeWorkRequest
+import androidx.work.WorkManager
 import androidx.work.Worker
 import androidx.work.WorkerParameters
 import org.json.JSONObject
@@ -129,5 +132,17 @@ internal class BackgroundSyncWorker(
     private fun tokenNeedsRefresh(expiresAt: String): Boolean {
         val expiry = runCatching { Instant.parse(expiresAt) }.getOrNull() ?: return true
         return expiry.isBefore(Instant.now().plusSeconds(120))
+    }
+}
+
+/// Enqueue a one-off background sync to flush local edits (or pull a peer's
+/// change) shortly after the app leaves the foreground. Unique + KEEP so a burst
+/// of triggers — an FCM push, an onStop flush — coalesces into one run rather
+/// than stacking redundant syncs.
+internal fun enqueueOneTimeSync(context: Context) {
+    runCatching {
+        val request = OneTimeWorkRequest.Builder(BackgroundSyncWorker::class.java).build()
+        WorkManager.getInstance(context)
+            .enqueueUniqueWork("knotq-push-sync", ExistingWorkPolicy.KEEP, request)
     }
 }

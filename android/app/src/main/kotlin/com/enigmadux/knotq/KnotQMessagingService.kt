@@ -1,9 +1,6 @@
 package com.enigmadux.knotq
 
 import android.content.Context
-import androidx.work.ExistingWorkPolicy
-import androidx.work.OneTimeWorkRequest
-import androidx.work.WorkManager
 import com.google.firebase.messaging.FirebaseMessagingService
 import com.google.firebase.messaging.RemoteMessage
 import org.json.JSONObject
@@ -35,16 +32,6 @@ class KnotQMessagingService : FirebaseMessagingService() {
     override fun onMessageReceived(message: RemoteMessage) {
         if (message.data["type"] != PushRegistration.SCHEDULE_CHANGED) return
         enqueueOneTimeSync(applicationContext)
-    }
-
-    private fun enqueueOneTimeSync(context: Context) {
-        runCatching {
-            val request = OneTimeWorkRequest.Builder(BackgroundSyncWorker::class.java).build()
-            // KEEP coalesces a burst of pushes (one per peer edit) into a single
-            // sync instead of stacking redundant runs.
-            WorkManager.getInstance(context)
-                .enqueueUniqueWork("knotq-push-sync", ExistingWorkPolicy.KEEP, request)
-        }
     }
 }
 

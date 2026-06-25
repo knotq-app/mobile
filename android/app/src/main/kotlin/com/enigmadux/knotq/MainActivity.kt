@@ -222,9 +222,17 @@ class MainActivity : Activity() {
             syncPollHandler.postDelayed(this, 30_000)
         }
     }
-    // Coalesces the sync triggered right after each local edit (iOS pushes on
-    // every mutate; the short delay batches rapid editing bursts).
-    internal val syncEditRunnable = Runnable { syncOnce() }
+    // True while the post-edit push is waiting out SYNC_EDIT_DEBOUNCE_MS, so a
+    // burst of edits arms the timer once (leading-window) and onStop knows to
+    // flush a still-pending edit before the app leaves the foreground.
+    internal var syncEditPending = false
+    // Debounced sync triggered right after each local edit, matching desktop's
+    // local-change debounce: rapid edits coalesce into one push instead of
+    // syncing on every mutation.
+    internal val syncEditRunnable = Runnable {
+        syncEditPending = false
+        syncOnce()
+    }
     internal val googleSyncHandler = Handler(Looper.getMainLooper())
     internal val googleSyncRunnable = object : Runnable {
         override fun run() {
@@ -315,18 +323,27 @@ class MainActivity : Activity() {
     override fun onStop() {
         isInForeground = false
         syncPollHandler.removeCallbacks(syncPollRunnable)
+        val flushEditSync = syncEditPending
         syncPollHandler.removeCallbacks(syncEditRunnable)
+        syncEditPending = false
         googleSyncHandler.removeCallbacks(googleSyncRunnable)
         googleSyncPollingActive = false
-        // Mirror iOS applicationDidEnterBackground: keep workspace data fresh
-        // via periodic background refresh while signed in to sync.
-        if (::bridge.isInitialized) scheduleBackgroundSyncWork()
+        if (::bridge.isInitialized) {
+            // Mirror iOS applicationDidEnterBackground: keep workspace data fresh
+            // via periodic background refresh while signed in to sync.
+            scheduleBackgroundSyncWork()
+            // A debounced edit hadn't pushed yet — flush it via a one-off worker so
+            // backgrounding right after typing doesn't strand the change until the
+            // 3 h refresh. Mirrors iOS flushPendingEditSync().
+            if (flushEditSync) enqueueOneTimeSync(this)
+        }
         super.onStop()
     }
 
     override fun onDestroy() {
         syncPollHandler.removeCallbacks(syncPollRunnable)
         syncPollHandler.removeCallbacks(syncEditRunnable)
+        syncEditPending = false
         googleSyncHandler.removeCallbacks(googleSyncRunnable)
         billingClient?.endConnection()
         billingClient = null

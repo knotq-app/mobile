@@ -17,14 +17,22 @@ struct KnotQMobileApp: App {
                     MobileReviewPrompt.maybeRequestReview()
                 }
                 .onChange(of: scenePhase) { _, phase in
-                    // Re-check the sync entitlement + subscription lifecycle whenever
-                    // the app returns to the foreground, so a subscription bought (or
-                    // changed) while it was backgrounded shows up without waiting for
-                    // the access token to expire. Cold launch and sign-in are covered
-                    // by startSyncPolling's own refresh.
-                    guard phase == .active else { return }
-                    Task { await model.refreshSubscriptionStatus() }
-                    MobileReviewPrompt.maybeRequestReview()
+                    switch phase {
+                    case .active:
+                        // Re-check the sync entitlement + subscription lifecycle whenever
+                        // the app returns to the foreground, so a subscription bought (or
+                        // changed) while it was backgrounded shows up without waiting for
+                        // the access token to expire. Cold launch and sign-in are covered
+                        // by startSyncPolling's own refresh.
+                        Task { await model.refreshSubscriptionStatus() }
+                        MobileReviewPrompt.maybeRequestReview()
+                    case .background:
+                        // Push a still-debounced edit before we suspend, so editing then
+                        // backgrounding doesn't strand the change until the ~3 h refresh.
+                        model.flushPendingEditSync()
+                    default:
+                        break
+                    }
                 }
         }
     }
