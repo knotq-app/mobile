@@ -108,7 +108,7 @@ internal object MobileDateFormatting {
             val to = upcomingDatePrefix(endInstant)
             val fromText = if (from.isEmpty()) start else "$from $start"
             val toText = if (from == to) end else if (to.isEmpty()) end else "$to $end"
-            return "$fromText → $toText"
+            return "$fromText – $toText"
         }
         if (startInstant != null && start.isNotEmpty()) {
             val day = upcomingDatePrefix(startInstant)
@@ -145,7 +145,7 @@ internal object MobileDateFormatting {
         val start = time(startRaw, twentyFourHour).takeIf { it.isNotEmpty() }
         val end = time(endRaw, twentyFourHour).takeIf { it.isNotEmpty() }
         return when {
-            start != null && end != null -> "$start → $end"
+            start != null && end != null -> "$start – $end"
             start != null -> "At $start"
             end != null -> "Due $end"
             else -> null

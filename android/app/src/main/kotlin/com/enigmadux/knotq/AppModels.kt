@@ -37,7 +37,7 @@ internal val ONBOARDING_STEPS = listOf(
     ),
     OnboardingStepDef(
         "Calendar",
-        "Your calendar holds events, assignments, and reminders. Tap to add a reminder, long-press for an assignment, or drag to block out an event.",
+        "Your calendar holds events, assignments, and reminders. Long-press to add a task.",
         TAB_CALENDAR,
         ringsContent = true
     ),
