@@ -32,9 +32,10 @@ use knotq_storage_json::{
     save_workspace, WorkspaceLoadOptions,
 };
 use knotq_sync::{
-    batch_pull_and_apply, batch_push_pending, queue_workspace_bootstrap_updates, DevicePlatform,
-    NotificationPermissionState, PendingCrdtEdit, PushChannel, PushEnvironment,
-    RegisterDeviceRequest, WorkspaceCrdtChangeSet, WorkspaceCrdtDocuments,
+    batch_pull_and_apply, batch_push_pending, queue_account_switch_reseed,
+    queue_workspace_bootstrap_updates, DevicePlatform, NotificationPermissionState, PendingCrdtEdit,
+    PushChannel, PushEnvironment, RegisterDeviceRequest, WorkspaceCrdtChangeSet,
+    WorkspaceCrdtDocuments,
 };
 mod google_calendar;
 use google_calendar::{GoogleCalendarImportResult, GoogleOAuthConfig};
@@ -1674,6 +1675,24 @@ impl MobileCoreInner {
                 kind: update.kind,
                 update_v1: update.update_v1,
             });
+            // Force re-seed this device's scheme content to the new account. The
+            // bootstrap only re-seeds documents the new server LACKS, so a scheme the
+            // new account already holds from another origin would otherwise never
+            // receive this device's content (the cross-account content gap). Full
+            // snapshots union idempotently; deterministic item creation dedupes items.
+            queue_account_switch_reseed(
+                &mut sync_state,
+                &self.crdt,
+                &self.workspace,
+                self.settings.replica_id,
+            );
+            self.next_sequence = sync_state
+                .pending
+                .iter()
+                .map(|edit| edit.local_sequence)
+                .max()
+                .unwrap_or(0)
+                + 1;
         }
 
         // Register this device (with its push token, if any) so the backend can
