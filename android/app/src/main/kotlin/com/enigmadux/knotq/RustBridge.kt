@@ -228,6 +228,9 @@ internal class RustBridge(context: Context) : AutoCloseable {
                 body.getInt("month").toUInt()
             ).toJsonArray { it.toJson() }
             "pending_notifications" -> core.pendingNotifications(null, 14).toJsonArray { it.toJson() }
+            "delivered_notifications_to_clear" -> JSONArray().apply {
+                core.deliveredNotificationsToClear(null).forEach { put(it) }
+            }
             else -> error("Unknown Rust array request: ${body.getString("type")}")
         }
     }

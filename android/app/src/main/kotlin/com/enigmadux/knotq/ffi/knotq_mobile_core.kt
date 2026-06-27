@@ -670,6 +670,8 @@ internal object IntegrityCheckingUniffiLib {
     ): Short
     external fun uniffi_knotq_mobile_core_checksum_method_mobilecore_delete_table_row(
     ): Short
+    external fun uniffi_knotq_mobile_core_checksum_method_mobilecore_delivered_notifications_to_clear(
+    ): Short
     external fun uniffi_knotq_mobile_core_checksum_method_mobilecore_empty_archive(
     ): Short
     external fun uniffi_knotq_mobile_core_checksum_method_mobilecore_ensure_daily_queue(
@@ -824,6 +826,8 @@ external fun uniffi_knotq_mobile_core_fn_method_mobilecore_delete_table_column(`
 ): Unit
 external fun uniffi_knotq_mobile_core_fn_method_mobilecore_delete_table_row(`ptr`: Long,`schemeId`: RustBuffer.ByValue,`itemId`: RustBuffer.ByValue,`row`: Int,uniffi_out_err: UniffiRustCallStatus, 
 ): Unit
+external fun uniffi_knotq_mobile_core_fn_method_mobilecore_delivered_notifications_to_clear(`ptr`: Long,`now`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+): RustBuffer.ByValue
 external fun uniffi_knotq_mobile_core_fn_method_mobilecore_empty_archive(`ptr`: Long,uniffi_out_err: UniffiRustCallStatus, 
 ): Unit
 external fun uniffi_knotq_mobile_core_fn_method_mobilecore_ensure_daily_queue(`ptr`: Long,`date`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
@@ -1085,6 +1089,9 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_knotq_mobile_core_checksum_method_mobilecore_delete_table_row() != 55975.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_knotq_mobile_core_checksum_method_mobilecore_delivered_notifications_to_clear() != 16078.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_knotq_mobile_core_checksum_method_mobilecore_empty_archive() != 9301.toShort()) {
@@ -1647,6 +1654,8 @@ public interface MobileCoreInterface {
     
     fun `deleteTableRow`(`schemeId`: kotlin.String, `itemId`: kotlin.String, `row`: kotlin.Int)
     
+    fun `deliveredNotificationsToClear`(`now`: kotlin.String?): List<kotlin.String>
+    
     fun `emptyArchive`()
     
     fun `ensureDailyQueue`(`date`: kotlin.String?)
@@ -2058,6 +2067,20 @@ open class MobileCore: Disposable, AutoCloseable, MobileCoreInterface
 }
     }
     
+    
+
+    
+    @Throws(MobileException::class)override fun `deliveredNotificationsToClear`(`now`: kotlin.String?): List<kotlin.String> {
+            return FfiConverterSequenceString.lift(
+    callWithHandle {
+    uniffiRustCallWithError(MobileException) { _status ->
+    UniffiLib.uniffi_knotq_mobile_core_fn_method_mobilecore_delivered_notifications_to_clear(
+        it,
+        FfiConverterOptionalString.lower(`now`),_status)
+}
+    }
+    )
+    }
     
 
     
@@ -4210,6 +4233,34 @@ public object FfiConverterOptionalString: FfiConverterRustBuffer<kotlin.String?>
         } else {
             buf.put(1)
             FfiConverterString.write(value, buf)
+        }
+    }
+}
+
+
+
+
+/**
+ * @suppress
+ */
+public object FfiConverterSequenceString: FfiConverterRustBuffer<List<kotlin.String>> {
+    override fun read(buf: ByteBuffer): List<kotlin.String> {
+        val len = buf.getInt()
+        return List<kotlin.String>(len) {
+            FfiConverterString.read(buf)
+        }
+    }
+
+    override fun allocationSize(value: List<kotlin.String>): ULong {
+        val sizeForLength = 4UL
+        val sizeForItems = value.map { FfiConverterString.allocationSize(it) }.sum()
+        return sizeForLength + sizeForItems
+    }
+
+    override fun write(value: List<kotlin.String>, buf: ByteBuffer) {
+        buf.putInt(value.size)
+        value.iterator().forEach {
+            FfiConverterString.write(it, buf)
         }
     }
 }

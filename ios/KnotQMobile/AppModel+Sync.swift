@@ -300,13 +300,18 @@ extension AppModel {
             try action(b)
             return (
                 try b.snapshot(today: today, weekOffset: week, dailyHistoryDays: history),
-                try b.pendingNotifications()
+                try b.pendingNotifications(),
+                try b.deliveredNotificationsToClear()
             )
         }) { [weak self] result in
             guard let self else { return }
             switch result {
-            case .success(let (snapshot, pending)):
-                self.apply(snapshot: snapshot, pendingNotifications: pending)
+            case .success(let (snapshot, pending, staleNotificationIds)):
+                self.apply(
+                    snapshot: snapshot,
+                    pendingNotifications: pending,
+                    staleNotificationIds: staleNotificationIds
+                )
                 self.errorMessage = nil
                 if self.syncSession != nil {
                     self.scheduleEditSync()
@@ -389,13 +394,13 @@ extension AppModel {
             // without waiting for the access token to expire.
             await self?.refreshSubscriptionStatus()
             await self?.syncOnce()
-            // 2s tick: sync promptly when a peer pushed (server `changed`), with a
+            // 1s tick: sync promptly when a peer pushed (server `changed`), with a
             // 30s full poll as the safety net (and the catch-up when offline/WS down).
             var secondsSinceFullPoll = 0
             while !Task.isCancelled {
-                try? await Task.sleep(nanoseconds: 2_000_000_000)
+                try? await Task.sleep(nanoseconds: 1_000_000_000)
                 guard let self else { break }
-                secondsSinceFullPoll += 2
+                secondsSinceFullPoll += 1
                 let pending = await self.wsPendingChanged()
                 if pending || secondsSinceFullPoll >= 30 {
                     secondsSinceFullPoll = 0

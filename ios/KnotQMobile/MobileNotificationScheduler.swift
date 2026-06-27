@@ -78,6 +78,18 @@ final class MobileNotificationScheduler: NSObject, UNUserNotificationCenterDeleg
         }
     }
 
+    /// Tear down delivered (and any still-pending) notifications the core has
+    /// flagged as stale — an event whose end time has passed, or an occurrence
+    /// that was completed. `reschedule` deliberately leaves delivered banners in
+    /// place, so this is the path that removes them from Notification Center once
+    /// they no longer apply.
+    @MainActor
+    func clearDelivered(_ ids: [String]) {
+        guard !ids.isEmpty else { return }
+        center.removeDeliveredNotifications(withIdentifiers: ids)
+        center.removePendingNotificationRequests(withIdentifiers: ids)
+    }
+
     /// Set the app icon badge to the current overdue count. `0` clears it.
     @MainActor
     func updateBadgeCount(_ count: Int) {

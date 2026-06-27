@@ -81,8 +81,30 @@ internal object MobileNotificationScheduler {
         try {
             val requests = bridge.requestArray(JSONObject().put("type", "pending_notifications"))
             reschedule(context, requests)
+            clearStale(
+                context,
+                bridge.requestArray(JSONObject().put("type", "delivered_notifications_to_clear"))
+            )
         } finally {
             bridge.close()
+        }
+    }
+
+    // Tear down delivered banners (and any matching pending alarm) the core
+    // flagged as stale — an event past its end time, or a completed occurrence.
+    // reschedule() only re-aims future alarms, so this is what removes a banner
+    // that already fired once it no longer applies. Mirrors iOS clearDelivered.
+    fun clearStale(context: Context, ids: JSONArray) {
+        if (ids.length() == 0) return
+        val appContext = context.applicationContext
+        val cleared = HashSet<String>()
+        for (index in 0 until ids.length()) {
+            val id = ids.optString(index).takeIf { it.isNotBlank() } ?: continue
+            cancelAlarm(appContext, id)
+            cleared.add(id)
+        }
+        if (cleared.isNotEmpty()) {
+            saveScheduledIds(appContext, scheduledIds(appContext) - cleared)
         }
     }
 

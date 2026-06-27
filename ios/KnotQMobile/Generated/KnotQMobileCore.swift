@@ -550,6 +550,8 @@ public protocol MobileCoreProtocol: AnyObject, Sendable {
     
     func deleteTableRow(schemeId: String, itemId: String, row: Int32) throws 
     
+    func deliveredNotificationsToClear(now: String?) throws  -> [String]
+    
     func emptyArchive() throws 
     
     func ensureDailyQueue(date: String?) throws 
@@ -889,6 +891,15 @@ open func deleteTableRow(schemeId: String, itemId: String, row: Int32)throws   {
         FfiConverterInt32.lower(row),$0
     )
 }
+}
+    
+open func deliveredNotificationsToClear(now: String?)throws  -> [String]  {
+    return try  FfiConverterSequenceString.lift(try rustCallWithError(FfiConverterTypeMobileError_lift) {
+    uniffi_knotq_mobile_core_fn_method_mobilecore_delivered_notifications_to_clear(
+            self.uniffiCloneHandle(),
+        FfiConverterOptionString.lower(now),$0
+    )
+})
 }
     
 open func emptyArchive()throws   {try rustCallWithError(FfiConverterTypeMobileError_lift) {
@@ -3087,6 +3098,31 @@ fileprivate struct FfiConverterOptionString: FfiConverterRustBuffer {
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
+fileprivate struct FfiConverterSequenceString: FfiConverterRustBuffer {
+    typealias SwiftType = [String]
+
+    public static func write(_ value: [String], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterString.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [String] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [String]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterString.read(from: &buf))
+        }
+        return seq
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
 fileprivate struct FfiConverterSequenceTypeMobileCalendarDay: FfiConverterRustBuffer {
     typealias SwiftType = [MobileCalendarDay]
 
@@ -3570,6 +3606,9 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_knotq_mobile_core_checksum_method_mobilecore_delete_table_row() != 55975) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_knotq_mobile_core_checksum_method_mobilecore_delivered_notifications_to_clear() != 16078) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_knotq_mobile_core_checksum_method_mobilecore_empty_archive() != 9301) {

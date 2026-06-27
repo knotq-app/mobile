@@ -610,6 +610,102 @@ fn pending_event_notifications_include_end_at() {
 }
 
 #[test]
+fn delivered_notifications_to_clear_targets_expired_events_and_completed_items() {
+    let dir = std::env::temp_dir().join(format!("knotq-mobile-test-{}", uuid::Uuid::new_v4()));
+    let core = MobileCore::new(dir.display().to_string()).expect("open mobile core");
+    let now = Utc.with_ymd_and_hms(2026, 5, 27, 12, 0, 0).unwrap();
+
+    // An event whose end time has already elapsed: its banner should be cleared.
+    let past_start = now - Duration::hours(2);
+    let past_end = now - Duration::hours(1);
+    core.add_calendar_item(
+        None,
+        Some(past_start.date_naive().to_string()),
+        "Past event".to_string(),
+        "event".to_string(),
+        Some(format_datetime(past_start)),
+        Some(format_datetime(past_end)),
+    )
+    .expect("add past event");
+    // Capture its stable id while the notification is still in the future.
+    let past_event_id = core
+        .pending_notifications(Some(format_datetime(past_start - Duration::hours(1))), 14)
+        .expect("pending before fire")
+        .into_iter()
+        .find(|request| request.title == "Past event")
+        .expect("past event notification")
+        .id;
+
+    // A still-live future event must NOT be cleared.
+    let future_start = now + Duration::hours(5);
+    let future_end = now + Duration::hours(6);
+    core.add_calendar_item(
+        None,
+        Some(future_start.date_naive().to_string()),
+        "Future event".to_string(),
+        "event".to_string(),
+        Some(format_datetime(future_start)),
+        Some(format_datetime(future_end)),
+    )
+    .expect("add future event");
+    let future_event_id = core
+        .pending_notifications(Some(format_datetime(now)), 14)
+        .expect("pending now")
+        .into_iter()
+        .find(|request| request.title == "Future event")
+        .expect("future event notification")
+        .id;
+
+    // A reminder the user completes: its delivered banner should be cleared too.
+    let reminder = {
+        let reminder_start = now + Duration::hours(1);
+        core.add_calendar_item(
+            None,
+            Some(reminder_start.date_naive().to_string()),
+            "Done reminder".to_string(),
+            "reminder".to_string(),
+            Some(format_datetime(reminder_start)),
+            None,
+        )
+        .expect("add reminder");
+        core.pending_notifications(Some(format_datetime(now)), 14)
+            .expect("pending now")
+            .into_iter()
+            .find(|request| request.title == "Done reminder")
+            .expect("reminder notification")
+    };
+    let reminder_id = reminder.id.clone();
+    assert!(core
+        .apply_notification_action(
+            ACTION_MARK_DONE.to_string(),
+            reminder.scheme_id,
+            reminder.item_id,
+            reminder.occurrence_json,
+            reminder.trigger_at,
+        )
+        .expect("mark reminder done"));
+
+    let clear = core
+        .delivered_notifications_to_clear(Some(format_datetime(now)))
+        .expect("clear list");
+
+    assert!(
+        clear.contains(&past_event_id),
+        "an event past its end time should be cleared"
+    );
+    assert!(
+        clear.contains(&reminder_id),
+        "a completed reminder should be cleared"
+    );
+    assert!(
+        !clear.contains(&future_event_id),
+        "a still-live future event must not be cleared"
+    );
+
+    let _ = std::fs::remove_dir_all(dir);
+}
+
+#[test]
 fn notification_snooze_actions_reschedule_visible_ios_options() {
     for (action, delay_secs) in [
         (ACTION_SNOOZE_10_MINUTES, 10 * 60),

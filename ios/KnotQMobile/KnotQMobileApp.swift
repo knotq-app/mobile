@@ -19,6 +19,9 @@ struct KnotQMobileApp: App {
                 .onChange(of: scenePhase) { _, phase in
                     switch phase {
                     case .active:
+                        // Advance the daily/home "today" if the day rolled over while
+                        // the app was backgrounded, so it isn't stuck on yesterday.
+                        model.handleDayRolloverIfNeeded()
                         // Re-check the sync entitlement + subscription lifecycle whenever
                         // the app returns to the foreground, so a subscription bought (or
                         // changed) while it was backgrounded shows up without waiting for

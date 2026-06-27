@@ -147,7 +147,7 @@ internal fun MainActivity.startWsNudge() {
     Thread {
         while (wsNudgeActive) {
             try {
-                Thread.sleep(2_000)
+                Thread.sleep(1_000)
             } catch (_: InterruptedException) {
                 break
             }

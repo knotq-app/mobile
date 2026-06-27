@@ -398,6 +398,9 @@ interface MobileCore {
   sequence<MobileNotificationRequest> pending_notifications(string? now, i32 horizon_days);
 
   [Throws=MobileError]
+  sequence<string> delivered_notifications_to_clear(string? now);
+
+  [Throws=MobileError]
   boolean apply_notification_action(string action_id, string scheme_id, string item_id, string occurrence_json, string trigger_at);
 
   [Throws=MobileError]

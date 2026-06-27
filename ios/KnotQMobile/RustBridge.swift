@@ -318,6 +318,10 @@ final class RustBridge: @unchecked Sendable {
         try core.pendingNotifications(now: nil, horizonDays: 14)
     }
 
+    func deliveredNotificationsToClear() throws -> [String] {
+        try core.deliveredNotificationsToClear(now: nil)
+    }
+
     func applyNotificationAction(_ request: MobileNotificationActionRequest) throws -> Bool {
         try core.applyNotificationAction(
             actionId: request.actionID,

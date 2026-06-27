@@ -80,6 +80,10 @@ final class AppModel: ObservableObject {
     var transactionListener: Task<Void, Never>?
     var dailyHistoryDays = AppModel.initialDailyHistoryDays(for: Date())
     var pendingDailyHistoryLoadAnchorDate: String?
+    // Calendar day the model is currently anchored to. Used to notice a midnight
+    // rollover (or timezone shift) so the home/daily "today" doesn't go stale
+    // while the app stays alive or sits backgrounded across midnight.
+    var anchoredDay = Calendar.current.startOfDay(for: Date())
 
     init() {
         bridge = try? RustBridge()
@@ -89,6 +93,16 @@ final class AppModel: ObservableObject {
             errorMessage = "Rust core failed to initialize"
         }
         MobileNotificationScheduler.shared.configure(model: self)
+        // Roll the daily/home "today" forward when the system day changes while the
+        // app is alive. Backgrounded-across-midnight is handled separately on
+        // scenePhase `.active`, since this notification only fires while running.
+        NotificationCenter.default.addObserver(
+            forName: .NSCalendarDayChanged,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor in self?.handleDayRolloverIfNeeded() }
+        }
         #if DEBUG
         let seededScreenshotFixture = seedScreenshotFixtureIfRequested()
         #endif
@@ -139,7 +153,8 @@ final class AppModel: ObservableObject {
         bridge.enqueue({ b in
             (
                 try b.snapshot(today: today, weekOffset: week, dailyHistoryDays: history),
-                try b.pendingNotifications()
+                try b.pendingNotifications(),
+                try b.deliveredNotificationsToClear()
             )
         }) { [weak self] result in
             guard let self else { return }
@@ -151,8 +166,12 @@ final class AppModel: ObservableObject {
                 }
             }
             switch result {
-            case .success(let (snapshot, pending)):
-                self.apply(snapshot: snapshot, pendingNotifications: pending)
+            case .success(let (snapshot, pending, staleNotificationIds)):
+                self.apply(
+                    snapshot: snapshot,
+                    pendingNotifications: pending,
+                    staleNotificationIds: staleNotificationIds
+                )
                 if isDailyHistoryLoad {
                     self.dailyHistoryLoadAnchorDate = loadAnchorDate
                 }
@@ -164,6 +183,25 @@ final class AppModel: ObservableObject {
                 self.errorMessage = error.localizedDescription
             }
         }
+    }
+
+    /// Re-anchor to the current calendar day after a rollover. If the user was
+    /// parked on what used to be "today" (the common case), advance the selected
+    /// date with it; if they'd navigated to another day, keep their selection but
+    /// still rebuild so today's daily queue exists and "today" markers refresh.
+    /// Safe to call on every foreground — it no-ops while the day is unchanged.
+    func handleDayRolloverIfNeeded() {
+        let today = Calendar.current.startOfDay(for: Date())
+        guard today != anchoredDay else { return }
+        let wasOnPreviousToday = Calendar.current.startOfDay(for: selectedDate) == anchoredDay
+        anchoredDay = today
+        if wasOnPreviousToday {
+            selectedDate = Date()
+            weekOffset = 0
+        }
+        // Creates the new day's daily queue and rebuilds the snapshot, which also
+        // reschedules notifications and clears any now-stale banners.
+        ensureTodayDailyQueue()
     }
 
     func loadOlderDailyEntries(from oldestDate: String) {
@@ -184,11 +222,18 @@ final class AppModel: ObservableObject {
     }
 
     /// Install a freshly-read snapshot plus its derived state. Always runs on
-    /// the main actor with data produced on the bridge queue.
-    func apply(snapshot: MobileSnapshot, pendingNotifications: [MobileNotificationRequest]) {
+    /// the main actor with data produced on the bridge queue. `staleNotificationIds`
+    /// are delivered banners the core says no longer apply (event ended, or the
+    /// occurrence was completed) — cleared from Notification Center here.
+    func apply(
+        snapshot: MobileSnapshot,
+        pendingNotifications: [MobileNotificationRequest],
+        staleNotificationIds: [String] = []
+    ) {
         self.snapshot = snapshot
         KnotQWidgetSnapshotStore.publish(snapshot: snapshot)
         MobileNotificationScheduler.shared.reschedule(pendingNotifications)
+        MobileNotificationScheduler.shared.clearDelivered(staleNotificationIds)
         MobileNotificationScheduler.shared.updateBadgeCount(Self.overdueBadgeCount(for: snapshot))
         configureGoogleSyncPolling(accountCount: snapshot.settings.googleAccountCount)
         BackgroundSyncCoordinator.shared.scheduleIfEligible(backgroundRefreshEligible)
@@ -208,11 +253,19 @@ final class AppModel: ObservableObject {
         guard let bridge else { return }
         let today = Self.dateOnly(selectedDate)
         let week = weekOffset
-        guard let snapshot = try? await bridge.perform({ try $0.snapshot(today: today, weekOffset: week) })
+        guard let result = try? await bridge.perform({ b in
+            (
+                try b.snapshot(today: today, weekOffset: week),
+                try b.deliveredNotificationsToClear()
+            )
+        })
         else {
             return
         }
-        MobileNotificationScheduler.shared.updateBadgeCount(Self.overdueBadgeCount(for: snapshot))
+        // Tear down banners for events that ended (or occurrences completed)
+        // while backgrounded, so they don't linger until the next foreground.
+        MobileNotificationScheduler.shared.clearDelivered(result.1)
+        MobileNotificationScheduler.shared.updateBadgeCount(Self.overdueBadgeCount(for: result.0))
     }
 
     func search(_ query: String) {

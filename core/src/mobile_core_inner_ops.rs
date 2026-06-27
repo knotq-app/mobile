@@ -237,6 +237,31 @@ impl MobileCoreInner {
         .collect())
     }
 
+    /// OS notification ids whose delivered banners should be torn down: events
+    /// whose occurrence has passed its end time, plus any occurrence (event,
+    /// reminder, assignment) that has since been completed. `pending_notifications`
+    /// already drops these from the *scheduled* set, so this exists to dismiss the
+    /// banner that already fired and otherwise lingers in Notification Center.
+    pub(crate) fn delivered_notifications_to_clear(
+        &self,
+        now: DateTime<Utc>,
+    ) -> Result<Vec<String>> {
+        let lead_times = mobile_notification_lead_times(self.settings.notification_defaults);
+        let mut keys = expired_event_notification_keys(&self.workspace, lead_times, now);
+        keys.extend(completed_notification_keys(
+            &self.workspace,
+            lead_times,
+            now - Duration::days(NOTIFICATION_HORIZON_DAYS),
+            now + Duration::days(NOTIFICATION_HORIZON_DAYS),
+        ));
+        keys.sort();
+        keys.dedup();
+        Ok(keys
+            .into_iter()
+            .map(|key| mobile_notification_id(&key))
+            .collect())
+    }
+
     pub(crate) fn apply_notification_action(
         &mut self,
         action_id: &str,

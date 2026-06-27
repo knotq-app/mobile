@@ -121,6 +121,10 @@ class MainActivity : Activity() {
     internal var selectedTab = TAB_HOME
     internal var weekOffset = 0
     internal var selectedDate: LocalDate = LocalDate.now()
+    // Calendar day the UI is anchored to, so onStart can notice a midnight
+    // rollover and advance the daily/home "today" instead of staying stuck on
+    // yesterday when the app is reopened the next day without a restart.
+    internal var anchoredDay: LocalDate = LocalDate.now()
     internal var selectedSchemeId: String? = null
     // Tab the scheme editor was entered from, so its back button returns there.
     internal var schemeReturnTab = TAB_HOME
@@ -298,6 +302,29 @@ class MainActivity : Activity() {
         refreshSubscriptionStatus()
         startSyncPolling()
         configureGoogleSyncPolling()
+        // The app may have been backgrounded across midnight; roll the daily/home
+        // "today" forward so it isn't stuck on yesterday.
+        handleDayRolloverIfNeeded()
+    }
+
+    // Re-anchor to the current day after a rollover. If the user was parked on
+    // what used to be "today", advance the selected date with it; otherwise keep
+    // their selection but still rebuild so today's daily queue exists and the
+    // "today" markers refresh. No-ops while the day is unchanged.
+    internal fun handleDayRolloverIfNeeded() {
+        if (!::bridge.isInitialized) return
+        val today = LocalDate.now()
+        if (today == anchoredDay) return
+        val wasOnPreviousToday = selectedDate == anchoredDay
+        anchoredDay = today
+        if (wasOnPreviousToday) {
+            selectedDate = today
+            weekOffset = 0
+        }
+        ensureTodayDailyQueue()
+        loadSnapshot()
+        rescheduleNotifications()
+        render()
     }
 
     override fun onResume() {
@@ -2097,6 +2124,12 @@ class MainActivity : Activity() {
             MobileNotificationScheduler.reschedule(
                 this,
                 bridge.requestArray(obj("type" to "pending_notifications"))
+            )
+            // Also clear banners for events that ended or occurrences completed,
+            // which reschedule() leaves in the tray once they've already fired.
+            MobileNotificationScheduler.clearStale(
+                this,
+                bridge.requestArray(obj("type" to "delivered_notifications_to_clear"))
             )
         } catch (error: RuntimeException) {
             showError("Notifications unavailable", error.message)

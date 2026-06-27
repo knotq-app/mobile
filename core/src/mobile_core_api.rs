@@ -920,6 +920,20 @@ impl MobileCore {
             .map_err(Into::into)
     }
 
+    /// OS notification ids the shell should remove from the delivered list (and
+    /// any matching pending alarm) because their event has ended or their
+    /// occurrence was completed. The shell calls this on refresh/foreground so a
+    /// banner doesn't outlive its event's end time or persist after completion.
+    pub fn delivered_notifications_to_clear(
+        &self,
+        now: Option<String>,
+    ) -> Result<Vec<String>, MobileError> {
+        let now = parse_datetime_opt(now.as_deref())?.unwrap_or_else(Utc::now);
+        self.lock()?
+            .delivered_notifications_to_clear(now)
+            .map_err(Into::into)
+    }
+
     pub fn apply_notification_action(
         &self,
         action_id: String,
@@ -969,9 +983,10 @@ impl MobileCore {
     }
 
     /// Whether a server `changed` nudge is waiting. The shell polls this while
-    /// connected and calls `sync_once` promptly when true (which clears it).
+    /// connected and calls `sync_once` promptly when true (which clears it). Read
+    /// lock-free so the poll is never blocked behind an in-flight `sync_once`.
     pub fn ws_pending_changed(&self) -> Result<bool, MobileError> {
-        Ok(self.lock()?.ws_pending_changed())
+        Ok(self.ws_changed.load(std::sync::atomic::Ordering::SeqCst))
     }
 
     /// Hand the core a push token (e.g. an FCM registration token) so the next

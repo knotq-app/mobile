@@ -204,10 +204,4 @@ impl MobileCoreInner {
             .as_ref()
             .is_some_and(|client| client.is_connected())
     }
-
-    /// Whether a server `changed` nudge is waiting to be picked up by a sync. The
-    /// shell polls this to sync promptly while connected; `sync_once` clears it.
-    pub(crate) fn ws_pending_changed(&self) -> bool {
-        self.ws_changed.load(Ordering::SeqCst)
-    }
 }

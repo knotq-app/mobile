@@ -18,7 +18,8 @@ use knotq_model::{
     SchemeId, SchemeSource, Table, Workspace, DAILY_QUEUE_COLOR_INDEX,
 };
 use knotq_notifications::{
-    compute_due_notifications_with_lead_times, DEFAULT_DURABLE_NOTIFICATION_LIMIT,
+    compute_due_notifications_with_lead_times, completed_notification_keys,
+    expired_event_notification_keys, DEFAULT_DURABLE_NOTIFICATION_LIMIT,
 };
 use knotq_state::{
     daily_queue_initial_start, daily_queue_scheme_name, make_default_workspace,
@@ -56,8 +57,9 @@ use media_sync::{
 mod conversions;
 use conversions::{
     archived_scheme_node, as_u8, format_daily_label, google_account_matches_calendar_source,
-    mobile_inlines_to_inlines, mobile_notification_lead_times, mobile_upcoming, next_color_index,
-    non_empty, offset_to_i32, opt_position, position_from_i32, theme_mode_str, time_format_str,
+    mobile_inlines_to_inlines, mobile_notification_id, mobile_notification_lead_times,
+    mobile_upcoming, next_color_index, non_empty, offset_to_i32, opt_position, position_from_i32,
+    theme_mode_str, time_format_str,
 };
 
 mod mobile_core_api;
@@ -122,12 +124,19 @@ impl From<anyhow::Error> for MobileError {
 
 pub struct MobileCore {
     inner: Mutex<MobileCoreInner>,
+    // Shared handle to inner.ws_changed, read lock-free by `ws_pending_changed` so
+    // the shell's nudge poll is never blocked by an in-flight `sync_once` that
+    // holds the core mutex across its network round trip.
+    ws_changed: std::sync::Arc<std::sync::atomic::AtomicBool>,
 }
 
 impl MobileCore {
     pub fn new(app_dir: String) -> Result<Self, MobileError> {
+        let inner = MobileCoreInner::open(Path::new(&app_dir).to_path_buf())?;
+        let ws_changed = std::sync::Arc::clone(&inner.ws_changed);
         Ok(Self {
-            inner: Mutex::new(MobileCoreInner::open(Path::new(&app_dir).to_path_buf())?),
+            inner: Mutex::new(inner),
+            ws_changed,
         })
     }
 
