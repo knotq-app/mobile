@@ -73,6 +73,10 @@ impl MobileCoreInner {
             registered_push_token: None,
             retained_completed: RetainedCompletedItems::default(),
             last_remote_sync_at: None,
+            ws_client: None,
+            ws_token: std::sync::Arc::new(std::sync::Mutex::new(String::new())),
+            ws_changed: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
+            ws_api_base: None,
         })
     }
 
@@ -459,15 +463,28 @@ impl MobileCoreInner {
         let has_local_pending = load_local_sync_state(&self.workspace_path)
             .map(|state| !state.pending.is_empty())
             .unwrap_or(false);
-        if self.should_coalesce_idle_sync(has_local_pending) {
+        // A server `changed` nudge over the socket means a peer pushed — always run
+        // (and clear the flag) rather than coalescing it away.
+        let ws_changed = self.ws_changed.swap(false, std::sync::atomic::Ordering::SeqCst);
+        if !ws_changed && self.should_coalesce_idle_sync(has_local_pending) {
             return Ok(false);
         }
         self.last_remote_sync_at = Some(std::time::Instant::now());
+        // Keep the ws reconnect token fresh (the shell hands us the current token).
+        if let Ok(mut token) = self.ws_token.lock() {
+            *token = bearer_token.to_string();
+        }
 
         let client = MobileSyncHttpClient {
             api_base: normalize_sync_api_base(api_base)?,
             bearer_token: bearer_token.to_string(),
         };
+        // Batched pull/push prefer the live socket and fall back to HTTP; aux calls
+        // (account status, device register, media) always use the HTTP `client`.
+        // Clone the Arc into a local so the transport doesn't borrow `self` (which is
+        // mutated below).
+        let ws_client = self.ws_client.clone();
+        let transport = crate::ws_sync::FallbackTransport::new(ws_client.as_deref(), &client);
         // The account this bearer token belongs to owns the one canonical
         // personal-workspace document id; always adopt it. The previous shortcut
         // ("if sync.id == id we're already canonicalized, reuse it") only proved
@@ -555,7 +572,7 @@ impl MobileCoreInner {
         // on another device). Applying merged state is idempotent in Yjs.
         let workspace = self.workspace.clone();
         let pull = batch_pull_and_apply(
-            &client,
+            &transport,
             &mut self.crdt,
             &mut sync_state,
             workspace,
@@ -665,7 +682,7 @@ impl MobileCoreInner {
         // workspace above is already durable, so the cursor never runs ahead of it.
         let mut pushed = Vec::new();
         let push_result = batch_push_pending(
-            &client,
+            &transport,
             &mut sync_state,
             self.settings.replica_id,
             &notification_schedule,

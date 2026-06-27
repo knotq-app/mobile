@@ -350,18 +350,57 @@ extension AppModel {
         }
     }
 
+    /// Open the persistent sync WebSocket for the current session (online, poll-free
+    /// sync; `sync_once`'s pull/push then ride the socket). Idempotent in the core.
+    func startWsSync() {
+        guard let bridge, let session = syncSession, session.supportsSync else { return }
+        let apiBase = session.apiBase
+        let bearerToken = session.bearerToken
+        bridge.enqueue({ b -> Bool in
+            try b.startWsSync(apiBase: apiBase, bearerToken: bearerToken)
+            return true
+        }) { _ in }
+    }
+
+    /// Tear down the sync WebSocket (backgrounded / signed out); sync falls back to HTTP.
+    func stopWsSync() {
+        guard let bridge else { return }
+        bridge.enqueue({ b -> Bool in
+            try b.stopWsSync()
+            return true
+        }) { _ in }
+    }
+
+    /// Whether a server `changed` nudge is waiting (a peer pushed). Drives the
+    /// prompt "live" receive sync below.
+    func wsPendingChanged() async -> Bool {
+        guard let bridge else { return false }
+        return (try? await bridge.perform { try $0.wsPendingChanged() }) ?? false
+    }
+
     func startSyncPolling() {
         syncPollTask?.cancel()
         guard syncSession != nil else { return }
+        // Online, poll-free sync: pull/push ride a persistent socket.
+        startWsSync()
         syncPollTask = Task { [weak self] in
             // Pick up an entitlement change (a subscription bought on another device
             // or the web) on launch/sign-in before the first sync, so it shows up
             // without waiting for the access token to expire.
             await self?.refreshSubscriptionStatus()
             await self?.syncOnce()
+            // 2s tick: sync promptly when a peer pushed (server `changed`), with a
+            // 30s full poll as the safety net (and the catch-up when offline/WS down).
+            var secondsSinceFullPoll = 0
             while !Task.isCancelled {
-                try? await Task.sleep(nanoseconds: 30_000_000_000)
-                await self?.syncOnce()
+                try? await Task.sleep(nanoseconds: 2_000_000_000)
+                guard let self else { break }
+                secondsSinceFullPoll += 2
+                let pending = await self.wsPendingChanged()
+                if pending || secondsSinceFullPoll >= 30 {
+                    secondsSinceFullPoll = 0
+                    await self.syncOnce()
+                }
             }
         }
     }

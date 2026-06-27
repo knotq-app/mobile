@@ -63,6 +63,7 @@ use conversions::{
 mod mobile_core_api;
 mod mobile_core_inner_ops;
 mod mobile_core_inner_views;
+mod ws_sync;
 
 #[cfg(test)]
 mod tests;
@@ -168,6 +169,18 @@ struct MobileCoreInner {
     // wake-storms (silent-push/poll triggers that arrive in bursts) so a device
     // can't barrage the backend — see `sync_once`.
     last_remote_sync_at: Option<std::time::Instant>,
+    // Persistent WebSocket sync client (online, poll-free). `None` until the shell
+    // calls `start_ws_sync`. When connected, `sync_once` pull/push ride it.
+    ws_client: Option<std::sync::Arc<knotq_sync::ws::WsClient>>,
+    // Latest bearer token for the ws client's reconnect handshakes (re-read on
+    // every reconnect, so token refreshes apply).
+    ws_token: std::sync::Arc<std::sync::Mutex<String>>,
+    // Set by the ws `changed` callback; forces the next `sync_once` to run (not
+    // coalesce) and signals the shell (via `ws_pending_changed`) to sync promptly.
+    ws_changed: std::sync::Arc<std::sync::atomic::AtomicBool>,
+    // The api_base the current ws client was built for, so an account switch
+    // rebuilds it.
+    ws_api_base: Option<String>,
 }
 
 /// Minimum spacing between remote syncs that have nothing local to push. Silent

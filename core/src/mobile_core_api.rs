@@ -950,6 +950,30 @@ impl MobileCore {
         Ok(self.lock()?.sync_notice.take())
     }
 
+    /// Open a persistent WebSocket for online, poll-free sync. While connected,
+    /// `sync_once`'s pull/push ride the socket and a peer's push triggers a prompt
+    /// sync (see `ws_pending_changed`). Idempotent; re-points on an account change.
+    pub fn start_ws_sync(&self, api_base: String, bearer_token: String) -> Result<(), MobileError> {
+        self.lock()?.start_ws_sync(&api_base, &bearer_token);
+        Ok(())
+    }
+
+    /// Tear down the WebSocket (sign-out, app backgrounded). Sync falls back to HTTP.
+    pub fn stop_ws_sync(&self) -> Result<(), MobileError> {
+        self.lock()?.stop_ws_sync();
+        Ok(())
+    }
+
+    pub fn is_ws_connected(&self) -> Result<bool, MobileError> {
+        Ok(self.lock()?.is_ws_connected())
+    }
+
+    /// Whether a server `changed` nudge is waiting. The shell polls this while
+    /// connected and calls `sync_once` promptly when true (which clears it).
+    pub fn ws_pending_changed(&self) -> Result<bool, MobileError> {
+        Ok(self.lock()?.ws_pending_changed())
+    }
+
     /// Hand the core a push token (e.g. an FCM registration token) so the next
     /// sync registers this device for silent background wake-ups. An empty token
     /// clears the registration. Channel is FCM; environment is "sandbox"/"production".

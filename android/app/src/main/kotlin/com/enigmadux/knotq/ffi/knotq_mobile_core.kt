@@ -682,6 +682,8 @@ internal object IntegrityCheckingUniffiLib {
     ): Short
     external fun uniffi_knotq_mobile_core_checksum_method_mobilecore_insert_table_row(
     ): Short
+    external fun uniffi_knotq_mobile_core_checksum_method_mobilecore_is_ws_connected(
+    ): Short
     external fun uniffi_knotq_mobile_core_checksum_method_mobilecore_month_days(
     ): Short
     external fun uniffi_knotq_mobile_core_checksum_method_mobilecore_move_item_to_scheme(
@@ -744,6 +746,10 @@ internal object IntegrityCheckingUniffiLib {
     ): Short
     external fun uniffi_knotq_mobile_core_checksum_method_mobilecore_snapshot_with_daily_history(
     ): Short
+    external fun uniffi_knotq_mobile_core_checksum_method_mobilecore_start_ws_sync(
+    ): Short
+    external fun uniffi_knotq_mobile_core_checksum_method_mobilecore_stop_ws_sync(
+    ): Short
     external fun uniffi_knotq_mobile_core_checksum_method_mobilecore_sync_google_calendars(
     ): Short
     external fun uniffi_knotq_mobile_core_checksum_method_mobilecore_sync_once(
@@ -757,6 +763,8 @@ internal object IntegrityCheckingUniffiLib {
     external fun uniffi_knotq_mobile_core_checksum_method_mobilecore_unlink_google_account(
     ): Short
     external fun uniffi_knotq_mobile_core_checksum_method_mobilecore_update_item_text(
+    ): Short
+    external fun uniffi_knotq_mobile_core_checksum_method_mobilecore_ws_pending_changed(
     ): Short
     external fun uniffi_knotq_mobile_core_checksum_constructor_mobilecore_new(
     ): Short
@@ -828,6 +836,8 @@ external fun uniffi_knotq_mobile_core_fn_method_mobilecore_insert_table_column(`
 ): Unit
 external fun uniffi_knotq_mobile_core_fn_method_mobilecore_insert_table_row(`ptr`: Long,`schemeId`: RustBuffer.ByValue,`itemId`: RustBuffer.ByValue,`row`: Int,uniffi_out_err: UniffiRustCallStatus, 
 ): Unit
+external fun uniffi_knotq_mobile_core_fn_method_mobilecore_is_ws_connected(`ptr`: Long,uniffi_out_err: UniffiRustCallStatus, 
+): Byte
 external fun uniffi_knotq_mobile_core_fn_method_mobilecore_month_days(`ptr`: Long,`year`: Int,`month`: Int,uniffi_out_err: UniffiRustCallStatus, 
 ): RustBuffer.ByValue
 external fun uniffi_knotq_mobile_core_fn_method_mobilecore_move_item_to_scheme(`ptr`: Long,`sourceSchemeId`: RustBuffer.ByValue,`targetSchemeId`: RustBuffer.ByValue,`itemId`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
@@ -890,6 +900,10 @@ external fun uniffi_knotq_mobile_core_fn_method_mobilecore_snapshot(`ptr`: Long,
 ): RustBuffer.ByValue
 external fun uniffi_knotq_mobile_core_fn_method_mobilecore_snapshot_with_daily_history(`ptr`: Long,`today`: RustBuffer.ByValue,`weekOffset`: Int,`dailyHistoryDays`: Int,uniffi_out_err: UniffiRustCallStatus, 
 ): RustBuffer.ByValue
+external fun uniffi_knotq_mobile_core_fn_method_mobilecore_start_ws_sync(`ptr`: Long,`apiBase`: RustBuffer.ByValue,`bearerToken`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+): Unit
+external fun uniffi_knotq_mobile_core_fn_method_mobilecore_stop_ws_sync(`ptr`: Long,uniffi_out_err: UniffiRustCallStatus, 
+): Unit
 external fun uniffi_knotq_mobile_core_fn_method_mobilecore_sync_google_calendars(`ptr`: Long,uniffi_out_err: UniffiRustCallStatus, 
 ): RustBuffer.ByValue
 external fun uniffi_knotq_mobile_core_fn_method_mobilecore_sync_once(`ptr`: Long,`apiBase`: RustBuffer.ByValue,`bearerToken`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
@@ -904,6 +918,8 @@ external fun uniffi_knotq_mobile_core_fn_method_mobilecore_unlink_google_account
 ): Unit
 external fun uniffi_knotq_mobile_core_fn_method_mobilecore_update_item_text(`ptr`: Long,`schemeId`: RustBuffer.ByValue,`itemId`: RustBuffer.ByValue,`text`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
 ): Unit
+external fun uniffi_knotq_mobile_core_fn_method_mobilecore_ws_pending_changed(`ptr`: Long,uniffi_out_err: UniffiRustCallStatus, 
+): Byte
 external fun ffi_knotq_mobile_core_rustbuffer_alloc(`size`: Long,uniffi_out_err: UniffiRustCallStatus, 
 ): RustBuffer.ByValue
 external fun ffi_knotq_mobile_core_rustbuffer_from_bytes(`bytes`: ForeignBytes.ByValue,uniffi_out_err: UniffiRustCallStatus, 
@@ -1089,6 +1105,9 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
     if (lib.uniffi_knotq_mobile_core_checksum_method_mobilecore_insert_table_row() != 60208.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
+    if (lib.uniffi_knotq_mobile_core_checksum_method_mobilecore_is_ws_connected() != 13165.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
     if (lib.uniffi_knotq_mobile_core_checksum_method_mobilecore_month_days() != 13384.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
@@ -1182,6 +1201,12 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
     if (lib.uniffi_knotq_mobile_core_checksum_method_mobilecore_snapshot_with_daily_history() != 46876.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
+    if (lib.uniffi_knotq_mobile_core_checksum_method_mobilecore_start_ws_sync() != 42046.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_knotq_mobile_core_checksum_method_mobilecore_stop_ws_sync() != 10376.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
     if (lib.uniffi_knotq_mobile_core_checksum_method_mobilecore_sync_google_calendars() != 29004.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
@@ -1201,6 +1226,9 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_knotq_mobile_core_checksum_method_mobilecore_update_item_text() != 59124.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_knotq_mobile_core_checksum_method_mobilecore_ws_pending_changed() != 19116.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_knotq_mobile_core_checksum_constructor_mobilecore_new() != 55.toShort()) {
@@ -1631,6 +1659,8 @@ public interface MobileCoreInterface {
     
     fun `insertTableRow`(`schemeId`: kotlin.String, `itemId`: kotlin.String, `row`: kotlin.Int)
     
+    fun `isWsConnected`(): kotlin.Boolean
+    
     fun `monthDays`(`year`: kotlin.Int, `month`: kotlin.UInt): List<MobileCalendarDay>
     
     fun `moveItemToScheme`(`sourceSchemeId`: kotlin.String, `targetSchemeId`: kotlin.String, `itemId`: kotlin.String)
@@ -1693,6 +1723,10 @@ public interface MobileCoreInterface {
     
     fun `snapshotWithDailyHistory`(`today`: kotlin.String?, `weekOffset`: kotlin.Int, `dailyHistoryDays`: kotlin.Int): MobileSnapshot
     
+    fun `startWsSync`(`apiBase`: kotlin.String, `bearerToken`: kotlin.String)
+    
+    fun `stopWsSync`()
+    
     fun `syncGoogleCalendars`(): MobileGoogleSyncResult
     
     fun `syncOnce`(`apiBase`: kotlin.String, `bearerToken`: kotlin.String): kotlin.Boolean
@@ -1706,6 +1740,8 @@ public interface MobileCoreInterface {
     fun `unlinkGoogleAccount`(`accountId`: kotlin.String)
     
     fun `updateItemText`(`schemeId`: kotlin.String, `itemId`: kotlin.String, `text`: kotlin.String)
+    
+    fun `wsPendingChanged`(): kotlin.Boolean
     
     companion object
 }
@@ -2101,6 +2137,20 @@ open class MobileCore: Disposable, AutoCloseable, MobileCoreInterface
 }
     }
     
+    
+
+    
+    @Throws(MobileException::class)override fun `isWsConnected`(): kotlin.Boolean {
+            return FfiConverterBoolean.lift(
+    callWithHandle {
+    uniffiRustCallWithError(MobileException) { _status ->
+    UniffiLib.uniffi_knotq_mobile_core_fn_method_mobilecore_is_ws_connected(
+        it,
+        _status)
+}
+    }
+    )
+    }
     
 
     
@@ -2512,6 +2562,32 @@ open class MobileCore: Disposable, AutoCloseable, MobileCoreInterface
     
 
     
+    @Throws(MobileException::class)override fun `startWsSync`(`apiBase`: kotlin.String, `bearerToken`: kotlin.String)
+        = 
+    callWithHandle {
+    uniffiRustCallWithError(MobileException) { _status ->
+    UniffiLib.uniffi_knotq_mobile_core_fn_method_mobilecore_start_ws_sync(
+        it,
+        FfiConverterString.lower(`apiBase`),FfiConverterString.lower(`bearerToken`),_status)
+}
+    }
+    
+    
+
+    
+    @Throws(MobileException::class)override fun `stopWsSync`()
+        = 
+    callWithHandle {
+    uniffiRustCallWithError(MobileException) { _status ->
+    UniffiLib.uniffi_knotq_mobile_core_fn_method_mobilecore_stop_ws_sync(
+        it,
+        _status)
+}
+    }
+    
+    
+
+    
     @Throws(MobileException::class)override fun `syncGoogleCalendars`(): MobileGoogleSyncResult {
             return FfiConverterTypeMobileGoogleSyncResult.lift(
     callWithHandle {
@@ -2603,6 +2679,20 @@ open class MobileCore: Disposable, AutoCloseable, MobileCoreInterface
 }
     }
     
+    
+
+    
+    @Throws(MobileException::class)override fun `wsPendingChanged`(): kotlin.Boolean {
+            return FfiConverterBoolean.lift(
+    callWithHandle {
+    uniffiRustCallWithError(MobileException) { _status ->
+    UniffiLib.uniffi_knotq_mobile_core_fn_method_mobilecore_ws_pending_changed(
+        it,
+        _status)
+}
+    }
+    )
+    }
     
 
     

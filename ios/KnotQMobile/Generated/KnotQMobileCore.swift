@@ -562,6 +562,8 @@ public protocol MobileCoreProtocol: AnyObject, Sendable {
     
     func insertTableRow(schemeId: String, itemId: String, row: Int32) throws 
     
+    func isWsConnected() throws  -> Bool
+    
     func monthDays(year: Int32, month: UInt32) throws  -> [MobileCalendarDay]
     
     func moveItemToScheme(sourceSchemeId: String, targetSchemeId: String, itemId: String) throws 
@@ -624,6 +626,10 @@ public protocol MobileCoreProtocol: AnyObject, Sendable {
     
     func snapshotWithDailyHistory(today: String?, weekOffset: Int32, dailyHistoryDays: Int32) throws  -> MobileSnapshot
     
+    func startWsSync(apiBase: String, bearerToken: String) throws 
+    
+    func stopWsSync() throws 
+    
     func syncGoogleCalendars() throws  -> MobileGoogleSyncResult
     
     func syncOnce(apiBase: String, bearerToken: String) throws  -> Bool
@@ -637,6 +643,8 @@ public protocol MobileCoreProtocol: AnyObject, Sendable {
     func unlinkGoogleAccount(accountId: String) throws 
     
     func updateItemText(schemeId: String, itemId: String, text: String) throws 
+    
+    func wsPendingChanged() throws  -> Bool
     
 }
 open class MobileCore: MobileCoreProtocol, @unchecked Sendable {
@@ -938,6 +946,14 @@ open func insertTableRow(schemeId: String, itemId: String, row: Int32)throws   {
 }
 }
     
+open func isWsConnected()throws  -> Bool  {
+    return try  FfiConverterBool.lift(try rustCallWithError(FfiConverterTypeMobileError_lift) {
+    uniffi_knotq_mobile_core_fn_method_mobilecore_is_ws_connected(
+            self.uniffiCloneHandle(),$0
+    )
+})
+}
+    
 open func monthDays(year: Int32, month: UInt32)throws  -> [MobileCalendarDay]  {
     return try  FfiConverterSequenceTypeMobileCalendarDay.lift(try rustCallWithError(FfiConverterTypeMobileError_lift) {
     uniffi_knotq_mobile_core_fn_method_mobilecore_month_days(
@@ -1235,6 +1251,22 @@ open func snapshotWithDailyHistory(today: String?, weekOffset: Int32, dailyHisto
 })
 }
     
+open func startWsSync(apiBase: String, bearerToken: String)throws   {try rustCallWithError(FfiConverterTypeMobileError_lift) {
+    uniffi_knotq_mobile_core_fn_method_mobilecore_start_ws_sync(
+            self.uniffiCloneHandle(),
+        FfiConverterString.lower(apiBase),
+        FfiConverterString.lower(bearerToken),$0
+    )
+}
+}
+    
+open func stopWsSync()throws   {try rustCallWithError(FfiConverterTypeMobileError_lift) {
+    uniffi_knotq_mobile_core_fn_method_mobilecore_stop_ws_sync(
+            self.uniffiCloneHandle(),$0
+    )
+}
+}
+    
 open func syncGoogleCalendars()throws  -> MobileGoogleSyncResult  {
     return try  FfiConverterTypeMobileGoogleSyncResult_lift(try rustCallWithError(FfiConverterTypeMobileError_lift) {
     uniffi_knotq_mobile_core_fn_method_mobilecore_sync_google_calendars(
@@ -1296,6 +1328,14 @@ open func updateItemText(schemeId: String, itemId: String, text: String)throws  
         FfiConverterString.lower(text),$0
     )
 }
+}
+    
+open func wsPendingChanged()throws  -> Bool  {
+    return try  FfiConverterBool.lift(try rustCallWithError(FfiConverterTypeMobileError_lift) {
+    uniffi_knotq_mobile_core_fn_method_mobilecore_ws_pending_changed(
+            self.uniffiCloneHandle(),$0
+    )
+})
 }
     
 
@@ -3550,6 +3590,9 @@ private let initializationResult: InitializationResult = {
     if (uniffi_knotq_mobile_core_checksum_method_mobilecore_insert_table_row() != 60208) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_knotq_mobile_core_checksum_method_mobilecore_is_ws_connected() != 13165) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_knotq_mobile_core_checksum_method_mobilecore_month_days() != 13384) {
         return InitializationResult.apiChecksumMismatch
     }
@@ -3643,6 +3686,12 @@ private let initializationResult: InitializationResult = {
     if (uniffi_knotq_mobile_core_checksum_method_mobilecore_snapshot_with_daily_history() != 46876) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_knotq_mobile_core_checksum_method_mobilecore_start_ws_sync() != 42046) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_knotq_mobile_core_checksum_method_mobilecore_stop_ws_sync() != 10376) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_knotq_mobile_core_checksum_method_mobilecore_sync_google_calendars() != 29004) {
         return InitializationResult.apiChecksumMismatch
     }
@@ -3662,6 +3711,9 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_knotq_mobile_core_checksum_method_mobilecore_update_item_text() != 59124) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_knotq_mobile_core_checksum_method_mobilecore_ws_pending_changed() != 19116) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_knotq_mobile_core_checksum_constructor_mobilecore_new() != 55) {

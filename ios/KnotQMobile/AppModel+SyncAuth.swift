@@ -165,6 +165,7 @@ extension AppModel {
         resendVerificationInProgress = false
         syncPollTask?.cancel()
         syncPollTask = nil
+        stopWsSync()
         BackgroundSyncCoordinator.shared.scheduleIfEligible(backgroundRefreshEligible)
         UserDefaults.standard.removeObject(forKey: syncSessionKey)
     }

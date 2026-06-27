@@ -26,10 +26,15 @@ struct KnotQMobileApp: App {
                         // by startSyncPolling's own refresh.
                         Task { await model.refreshSubscriptionStatus() }
                         MobileReviewPrompt.maybeRequestReview()
+                        // Re-open the sync socket on return to the foreground.
+                        model.startWsSync()
                     case .background:
                         // Push a still-debounced edit before we suspend, so editing then
                         // backgrounding doesn't strand the change until the ~3 h refresh.
                         model.flushPendingEditSync()
+                        // Tear the socket down while suspended (FCM + the 3h refresh
+                        // cover background wakeups).
+                        model.stopWsSync()
                     default:
                         break
                     }

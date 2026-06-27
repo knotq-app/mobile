@@ -407,6 +407,18 @@ interface MobileCore {
   string? take_sync_notice();
 
   [Throws=MobileError]
+  void start_ws_sync(string api_base, string bearer_token);
+
+  [Throws=MobileError]
+  void stop_ws_sync();
+
+  [Throws=MobileError]
+  boolean is_ws_connected();
+
+  [Throws=MobileError]
+  boolean ws_pending_changed();
+
+  [Throws=MobileError]
   void set_push_registration(string token, string environment);
 
   [Throws=MobileError]

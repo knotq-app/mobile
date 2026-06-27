@@ -208,6 +208,9 @@ class MainActivity : Activity() {
     // burst of edits arms the timer once (leading-window) and onStop knows to
     // flush a still-pending edit before the app leaves the foreground.
     internal var syncEditPending = false
+    // Drives the background WebSocket "changed" nudge poll while in the foreground.
+    @Volatile
+    internal var wsNudgeActive = false
     // Debounced sync triggered right after each local edit, matching desktop's
     // local-change debounce: rapid edits coalesce into one push instead of
     // syncing on every mutation.
@@ -306,6 +309,9 @@ class MainActivity : Activity() {
     override fun onStop() {
         isInForeground = false
         syncPollHandler.removeCallbacks(syncPollRunnable)
+        // Tear the socket down in the background (FCM + the 3h refresh cover wakeups).
+        stopWsNudge()
+        stopWsSync()
         val flushEditSync = syncEditPending
         syncPollHandler.removeCallbacks(syncEditRunnable)
         syncEditPending = false
@@ -327,6 +333,8 @@ class MainActivity : Activity() {
         syncPollHandler.removeCallbacks(syncPollRunnable)
         syncPollHandler.removeCallbacks(syncEditRunnable)
         syncEditPending = false
+        stopWsNudge()
+        stopWsSync()
         googleSyncHandler.removeCallbacks(googleSyncRunnable)
         billingClient?.endConnection()
         billingClient = null

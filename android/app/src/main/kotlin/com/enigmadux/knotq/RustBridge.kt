@@ -212,6 +212,9 @@ internal class RustBridge(context: Context) : AutoCloseable {
                 body.getString("environment")
             )
             "seed_editor_image_fixture" -> core.seedEditorImageFixture()
+            "ws_start" -> core.startWsSync(body.getString("api_base"), body.getString("bearer_token"))
+            "ws_stop" -> core.stopWsSync()
+            "ws_pending_changed" -> return JSONObject().put("pending", core.wsPendingChanged())
             else -> error("Unknown Rust request: ${body.getString("type")}")
         }
         return JSONObject()

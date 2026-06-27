@@ -109,7 +109,59 @@ internal fun MainActivity.startSyncPolling() {
     if (syncSession != null) {
         syncOnce()
         syncPollHandler.postDelayed(syncPollRunnable, 30_000)
+        // Online, poll-free sync: pull/push ride a persistent socket and a peer's
+        // push triggers a prompt sync (the 30s poll above stays as a safety net).
+        startWsSync()
+        startWsNudge()
     }
+}
+
+/// Open the persistent sync WebSocket for the current session. While connected,
+/// `sync_once`'s pull/push ride the socket. Idempotent in the core.
+internal fun MainActivity.startWsSync() {
+    val session = syncSession ?: return
+    if (!session.supportsSync) return
+    // runCatching also absorbs the case where `bridge` isn't initialized yet.
+    runCatching {
+        bridge.request(
+            obj(
+                "type" to "ws_start",
+                "api_base" to session.apiBase,
+                "bearer_token" to session.bearerToken
+            )
+        )
+    }
+}
+
+internal fun MainActivity.stopWsSync() {
+    runCatching { bridge.request(obj("type" to "ws_stop")) }
+}
+
+/// Background poller that reacts to a server `changed` nudge by syncing promptly
+/// (the "live" receive path). Runs off the main thread because the core lock can be
+/// held by an in-flight `sync_once` during network I/O; the actual `sync_once` is
+/// dispatched back to the main thread (it owns `syncSession`/`syncInProgress`).
+internal fun MainActivity.startWsNudge() {
+    if (wsNudgeActive) return
+    wsNudgeActive = true
+    Thread {
+        while (wsNudgeActive) {
+            try {
+                Thread.sleep(2_000)
+            } catch (_: InterruptedException) {
+                break
+            }
+            if (!wsNudgeActive) break
+            val pending = runCatching {
+                bridge.request(obj("type" to "ws_pending_changed")).optBoolean("pending", false)
+            }.getOrDefault(false)
+            if (pending) runOnUiThread { syncOnce() }
+        }
+    }.start()
+}
+
+internal fun MainActivity.stopWsNudge() {
+    wsNudgeActive = false
 }
 
 /// Debounced sync after a local edit, matching desktop's local-change debounce:
@@ -267,6 +319,8 @@ internal fun MainActivity.expireSyncSession(showMessage: Boolean = true) {
     syncPollHandler.removeCallbacks(syncPollRunnable)
     syncPollHandler.removeCallbacks(syncEditRunnable)
     syncEditPending = false
+    stopWsNudge()
+    stopWsSync()
     cancelBackgroundSyncWork()
     if (showMessage) {
         showError("Sync session expired", "Please sign in again.")

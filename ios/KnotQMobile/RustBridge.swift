@@ -332,6 +332,18 @@ final class RustBridge: @unchecked Sendable {
         try core.syncOnce(apiBase: apiBase, bearerToken: bearerToken)
     }
 
+    func startWsSync(apiBase: String, bearerToken: String) throws {
+        try core.startWsSync(apiBase: apiBase, bearerToken: bearerToken)
+    }
+
+    func stopWsSync() throws {
+        try core.stopWsSync()
+    }
+
+    func wsPendingChanged() throws -> Bool {
+        try core.wsPendingChanged()
+    }
+
     func setPushRegistration(token: String, environment: String) throws {
         try core.setPushRegistration(token: token, environment: environment)
     }
