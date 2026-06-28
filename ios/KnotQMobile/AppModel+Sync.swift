@@ -383,6 +383,14 @@ extension AppModel {
         return (try? await bridge.perform { try $0.wsPendingChanged() }) ?? false
     }
 
+    /// Whether the persistent socket is currently up. Used only to gate the slow
+    /// fallback poll — while connected, foreground sync is entirely socket-driven
+    /// (no network polling).
+    func isWsConnected() async -> Bool {
+        guard let bridge else { return false }
+        return (try? await bridge.perform { try $0.isWsConnected() }) ?? false
+    }
+
     func startSyncPolling() {
         syncPollTask?.cancel()
         guard syncSession != nil else { return }
@@ -394,17 +402,28 @@ extension AppModel {
             // without waiting for the access token to expire.
             await self?.refreshSubscriptionStatus()
             await self?.syncOnce()
-            // 1s tick: sync promptly when a peer pushed (server `changed`), with a
-            // 30s full poll as the safety net (and the catch-up when offline/WS down).
-            var secondsSinceFullPoll = 0
+            // Foreground sync is socket-driven: NO periodic network poll while the
+            // socket is up. The 1 s tick is a cheap LOCAL flag read — a network sync
+            // fires only when a peer's push arrives as a `changed` nudge (or a
+            // reconnect flags a catch-up). The only poll left is a slow fallback
+            // that runs ONLY when the socket is actually down (e.g. a network that
+            // blocks WS), so such a device still converges.
+            var secondsSinceFallbackPoll = 0
             while !Task.isCancelled {
                 try? await Task.sleep(nanoseconds: 1_000_000_000)
                 guard let self else { break }
-                secondsSinceFullPoll += 1
-                let pending = await self.wsPendingChanged()
-                if pending || secondsSinceFullPoll >= 30 {
-                    secondsSinceFullPoll = 0
+                if await self.wsPendingChanged() {
+                    secondsSinceFallbackPoll = 0
                     await self.syncOnce()
+                    continue
+                }
+                secondsSinceFallbackPoll += 1
+                if secondsSinceFallbackPoll >= 30 {
+                    secondsSinceFallbackPoll = 0
+                    // Connected → rely entirely on the socket; only poll if it's down.
+                    if await self.isWsConnected() == false {
+                        await self.syncOnce()
+                    }
                 }
             }
         }

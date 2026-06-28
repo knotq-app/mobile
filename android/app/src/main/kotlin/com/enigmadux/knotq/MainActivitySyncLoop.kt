@@ -107,10 +107,12 @@ import kotlin.math.roundToInt
 internal fun MainActivity.startSyncPolling() {
     syncPollHandler.removeCallbacks(syncPollRunnable)
     if (syncSession != null) {
+        // Bootstrap once, then rely entirely on the socket while in the foreground:
+        // NO periodic network poll. startWsNudge() drives prompt syncs from server
+        // `changed` nudges (and an on-(re)connect catch-up), plus a slow fallback
+        // that runs only while the socket is actually down. The 3h WorkManager job
+        // (scheduleBackgroundSyncWork) is the background refresh.
         syncOnce()
-        syncPollHandler.postDelayed(syncPollRunnable, 30_000)
-        // Online, poll-free sync: pull/push ride a persistent socket and a peer's
-        // push triggers a prompt sync (the 30s poll above stays as a safety net).
         startWsSync()
         startWsNudge()
     }
@@ -145,6 +147,7 @@ internal fun MainActivity.startWsNudge() {
     if (wsNudgeActive) return
     wsNudgeActive = true
     Thread {
+        var secondsSinceFallbackPoll = 0
         while (wsNudgeActive) {
             try {
                 Thread.sleep(1_000)
@@ -155,7 +158,22 @@ internal fun MainActivity.startWsNudge() {
             val pending = runCatching {
                 bridge.request(obj("type" to "ws_pending_changed")).optBoolean("pending", false)
             }.getOrDefault(false)
-            if (pending) runOnUiThread { syncOnce() }
+            if (pending) {
+                secondsSinceFallbackPoll = 0
+                runOnUiThread { syncOnce() }
+                continue
+            }
+            secondsSinceFallbackPoll += 1
+            if (secondsSinceFallbackPoll >= 30) {
+                secondsSinceFallbackPoll = 0
+                // Foreground sync is socket-driven — only poll when the socket is
+                // actually down (e.g. a network that blocks WS) so such a device
+                // still converges. While connected, rely entirely on the nudges.
+                val connected = runCatching {
+                    bridge.request(obj("type" to "ws_connected")).optBoolean("connected", false)
+                }.getOrDefault(false)
+                if (!connected) runOnUiThread { syncOnce() }
+            }
         }
     }.start()
 }
@@ -256,7 +274,19 @@ internal fun MainActivity.syncOnce() {
                 if (changed) {
                     loadSnapshot()
                     rescheduleNotifications()
-                    render()
+                    val active = activeEditor()
+                    if (active != null && active.isFocused) {
+                        // A remote change arrived while the user is editing. Don't
+                        // full-render (it would reset the caret); instead reload just
+                        // the focused editor with the MERGED content (caret kept). This
+                        // shows the incoming edit AND rebases the editor so the next
+                        // push-on-type flush (a full-document replace) merges instead of
+                        // deleting the remote edit — the desktop->mobile drop. No-op if
+                        // the merged text already matches (our own push echoing back).
+                        reloadFocusedEditorFromSnapshot(active)
+                    } else {
+                        render()
+                    }
                 }
                 val notice = response.optString("notice", "")
                 if (notice.isNotEmpty()) {

@@ -73,6 +73,8 @@ final class EditorCoordinator: NSObject, UITextViewDelegate, @preconcurrency NST
     func markDirty() {
         guard !readOnly else { return }
         controller?.isDirty = true
+        // Drives the editor's debounced live flush to the core (push-on-type).
+        controller?.editTick &+= 1
     }
 
     func refreshEmpty() {

@@ -215,6 +215,7 @@ internal class RustBridge(context: Context) : AutoCloseable {
             "ws_start" -> core.startWsSync(body.getString("api_base"), body.getString("bearer_token"))
             "ws_stop" -> core.stopWsSync()
             "ws_pending_changed" -> return JSONObject().put("pending", core.wsPendingChanged())
+            "ws_connected" -> return JSONObject().put("connected", core.isWsConnected())
             else -> error("Unknown Rust request: ${body.getString("type")}")
         }
         return JSONObject()

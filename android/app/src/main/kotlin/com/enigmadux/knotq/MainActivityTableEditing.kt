@@ -308,10 +308,36 @@ import kotlin.math.roundToInt
         editor.setSelection(location.coerceIn(0, editor.text?.length ?: 0))
     }
 
-    internal fun MainActivity.commitSchemeDocument(schemeId: String, editor: EditText, rerender: Boolean) {
+    /// Debounced live flush of the editor into the core while typing, so a phone
+    /// edit propagates within ~1 s (push-on-type) like desktop instead of only on
+    /// blur. A burst of keystrokes coalesces into one flush. `rerender = false` is
+    /// the cursor-safe "quiet commit" (no full re-render of the screen).
+    internal fun MainActivity.scheduleEditorFlush(schemeId: String, editor: EditText) {
+        editorFlushRunnable?.let { syncPollHandler.removeCallbacks(it) }
+        val work = Runnable {
+            editorFlushRunnable = null
+            if (editor.isAttachedToWindow) {
+                liveFlushEditor(schemeId, editor)
+            }
+        }
+        editorFlushRunnable = work
+        syncPollHandler.postDelayed(work, 600)
+    }
+
+    /// Build the replace-items payload from the editor's current text. Reads the
+    /// EditText, so it MUST run on the main thread. Returns the payload plus the
+    /// reconciled lines (the core preserves the ids we send, so they become the
+    /// editor's model).
+    private fun MainActivity.buildSchemeItemsPayload(
+        schemeId: String,
+        editor: EditText,
+    ): Pair<JSONArray, List<SchemeEditorLine>> {
         ensureTerminalNewline(editor.text, editor.selectionStart)
         val oldLines = (editor.tag as? List<*>)?.filterIsInstance<SchemeEditorLine>().orEmpty()
-        val nextLines = reconcileEditorLines(oldLines, parseEditorDocument(editor.text.toString(), preserveBlankDocument = oldLines.isNotEmpty()))
+        val nextLines = reconcileEditorLines(
+            oldLines,
+            parseEditorDocument(editor.text.toString(), preserveBlankDocument = oldLines.isNotEmpty())
+        )
         val array = JSONArray()
         nextLines.forEach { line ->
             val existing = line.id?.let { findItem(schemeId, it) }
@@ -333,6 +359,56 @@ import kotlin.math.roundToInt
                 ))
             }
         }
+        return array to nextLines
+    }
+
+    /// Live (push-on-type) flush: extract edits on the main thread, then write them
+    /// to the core OFF the main thread and schedule the push. The core write is async
+    /// because a sync run holds the core lock across network I/O — blocking the UI
+    /// thread on it ANRs the app (the Daily-editing freeze). No reload/re-render, so
+    /// the caret is untouched; blur runs the authoritative `commitSchemeDocument`.
+    internal fun MainActivity.liveFlushEditor(schemeId: String, editor: EditText) {
+        val (array, nextLines) = buildSchemeItemsPayload(schemeId, editor)
+        // Adopt the sent lines now so a later flush/commit reconciles against them.
+        editor.tag = nextLines
+        // Core write on the shared serial executor: off the UI thread (no hang on
+        // the sync lock) and ordered with `mutate`/other edits.
+        coreExecutor.execute {
+            val ok = runCatching {
+                bridge.request(obj("type" to "replace_scheme_items", "scheme_id" to schemeId, "items" to array))
+            }.isSuccess
+            if (ok) runOnUiThread { requestSyncSoon() }
+        }
+    }
+
+    /// A remote change arrived while an editor is focused: reload just that editor
+    /// with the MERGED content from the snapshot (caret preserved), instead of a full
+    /// render() that resets the caret. This shows the incoming edit AND rebases the
+    /// editor so the next push-on-type flush (a full-document `replace_scheme_items`)
+    /// diffs against the merged state rather than deleting the remote edit (the
+    /// desktop->mobile drop). No-op when the merged text already matches what's shown
+    /// (our own push echoing back). setText re-applies markdown spans via the watcher;
+    /// the resulting same-content flush is an idempotent no-op (empty CRDT diff).
+    internal fun MainActivity.reloadFocusedEditorFromSnapshot(editor: EditText) {
+        val schemeId = editorSchemeIds[editor] ?: return
+        val scheme = findScheme(schemeId) ?: return
+        val newLines = documentLines(scheme)
+        val newText = renderDocument(newLines)
+        if (newText == (editor.text?.toString() ?: "")) return
+        val caret = editor.selectionStart.coerceIn(0, newText.length)
+        editor.setText(newText)
+        editor.tag = newLines
+        if (editor is SchemeEditText) {
+            editor.lineAdornments = editorLineAdornments(scheme, timeFormat24())
+        }
+        editor.setSelection(caret.coerceIn(0, editor.text?.length ?: 0))
+    }
+
+    internal fun MainActivity.commitSchemeDocument(schemeId: String, editor: EditText, rerender: Boolean) {
+        // Any commit path (debounce, blur, back) supersedes a pending debounced flush.
+        editorFlushRunnable?.let { syncPollHandler.removeCallbacks(it) }
+        editorFlushRunnable = null
+        val (array, nextLines) = buildSchemeItemsPayload(schemeId, editor)
         try {
             bridge.request(obj("type" to "replace_scheme_items", "scheme_id" to schemeId, "items" to array))
             loadSnapshot()

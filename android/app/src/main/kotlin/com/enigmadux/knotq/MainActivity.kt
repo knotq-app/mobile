@@ -153,6 +153,14 @@ class MainActivity : Activity() {
     internal val editorHosts = WeakHashMap<EditText, FrameLayout>()
     internal var lastActiveEditor: EditText? = null
     internal var suppressEditorBlurCommit = false
+    // Pending debounced live flush of the active editor into the core (push-on-type).
+    internal var editorFlushRunnable: Runnable? = null
+    // Serial executor for core WRITES (edits/flushes), so they run OFF the main
+    // thread — a sync run holds the core lock across network I/O, and doing a core
+    // write on the UI thread blocks (hangs) until that lock frees. Single-threaded
+    // = FIFO, so edit order is preserved (like iOS's serial bridge queue).
+    internal val coreExecutor: java.util.concurrent.ExecutorService =
+        java.util.concurrent.Executors.newSingleThreadExecutor()
     // The inline cell editor currently shown (if any), so a second tap commits
     // the first before moving on.
     internal var activeCellEdit: ActiveCellEdit? = null
@@ -218,9 +226,18 @@ class MainActivity : Activity() {
     // Debounced sync triggered right after each local edit, matching desktop's
     // local-change debounce: rapid edits coalesce into one push instead of
     // syncing on every mutation.
-    internal val syncEditRunnable = Runnable {
-        syncEditPending = false
-        syncOnce()
+    internal val syncEditRunnable = object : Runnable {
+        override fun run() {
+            // If a sync is already running, don't drop this edit — retry shortly so
+            // it isn't stranded until some other trigger (there's no foreground poll
+            // backstop now). Keep syncEditPending set so the retry stays armed.
+            if (syncInProgress) {
+                syncPollHandler.postDelayed(this, 500)
+                return
+            }
+            syncEditPending = false
+            syncOnce()
+        }
     }
     internal val googleSyncHandler = Handler(Looper.getMainLooper())
     internal val googleSyncRunnable = object : Runnable {

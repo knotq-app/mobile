@@ -13,6 +13,10 @@ final class EditorController: ObservableObject {
     weak var view: EditorTextView?
     @Published var isDirty = false
     @Published var isEmpty = true
+    // Bumped on every keystroke/structural edit (see `markDirty`). The editor view
+    // observes it to debounce a live flush of the edits into the core (so a phone
+    // edit pushes within ~1 s like desktop, instead of only on blur).
+    @Published var editTick = 0
     private var pendingImageLocation: Int?
 
     func load(items: [MobileItem], theme: KnotQTheme, timeFormat: String, placeCursorAtEnd: Bool = false) {
@@ -26,6 +30,25 @@ final class EditorController: ObservableObject {
                 && $0.end == nil
                 && $0.media.isEmpty
                 && $0.tables.isEmpty
+        }
+    }
+
+    /// Reload the document from `items` (e.g. a remote change pulled in while the
+    /// user is mid-edit) while keeping the caret roughly where it was, so a rare
+    /// concurrent incoming edit doesn't yank the cursor. Best-effort: the caret is
+    /// restored by absolute offset, clamped to the new length.
+    func reloadPreservingCaret(items: [MobileItem], theme: KnotQTheme, timeFormat: String) {
+        let savedSelection = view?.selectedRange
+        let wasFirstResponder = view?.isFirstResponder ?? false
+        load(items: items, theme: theme, timeFormat: timeFormat)
+        if let view, let savedSelection {
+            let length = (view.text as NSString).length
+            let location = min(savedSelection.location, length)
+            view.selectedRange = NSRange(
+                location: location,
+                length: min(savedSelection.length, max(0, length - location))
+            )
+            if wasFirstResponder { _ = view.becomeFirstResponder() }
         }
     }
 
@@ -119,6 +142,11 @@ struct IntegratedSchemeEditorPane: View {
     @State private var loadedSchemeID: String?
     @State private var showingImagePicker = false
     @State private var imagePickerItem: PhotosPickerItem?
+    // Debounced live-commit while typing (push-on-type, like desktop).
+    @State private var liveFlushWork: DispatchWorkItem?
+    // Set when we flush our own edits, so the resulting snapshot echo doesn't
+    // reload the editor and reset the caret mid-type.
+    @State private var selfFlushEcho = false
 
     private var accent: Color {
         schemeColor(scheme.colorIndex, dark: theme.isDark)
@@ -271,8 +299,27 @@ struct IntegratedSchemeEditorPane: View {
         }
         .onChange(of: signature(for: scheme)) { _, newValue in
             guard newValue != schemeSignature else { return }
-            loadDocument(force: false)
+            schemeSignature = newValue
+            if selfFlushEcho {
+                // Our own live flush echoing back through the snapshot — the editor
+                // already shows this content, so don't reload (would reset the caret).
+                selfFlushEcho = false
+                return
+            }
+            if controller.isDirty {
+                // A genuine remote change arrived while the user is mid-edit (rare).
+                // Render it but keep the caret roughly in place. The user's own
+                // in-flight keystrokes were already flushed on the debounce, so the
+                // pulled state is the CRDT merge of both.
+                controller.reloadPreservingCaret(items: scheme.items, theme: theme, timeFormat: timeFormat)
+            } else {
+                loadDocument(force: false)
+            }
         }
+        // Push-on-type: each keystroke re-arms a short debounce that flushes the
+        // editor into the core (which then syncs over the socket), so phone edits
+        // propagate live like desktop instead of only on blur.
+        .onChange(of: controller.editTick) { _, _ in scheduleLiveFlush() }
         // On iPad the editor pane is reused across schemes (no fresh `onAppear`),
         // so creating a new scheme while one is already open needs this to select
         // its title — matching the iPhone flow where each scheme pushes a new view.
@@ -428,6 +475,8 @@ struct IntegratedSchemeEditorPane: View {
     }
 
     private func commitDocument() {
+        liveFlushWork?.cancel()
+        liveFlushWork = nil
         guard !scheme.isReadOnly else {
             controller.isDirty = false
             return
@@ -442,6 +491,31 @@ struct IntegratedSchemeEditorPane: View {
         } else {
             controller.isDirty = false
         }
+    }
+
+    /// Re-arm the debounce that flushes editor edits into the core while the user
+    /// is still typing, so a phone edit propagates within ~1 s (push-on-type) like
+    /// desktop, instead of waiting for blur. A burst of keystrokes coalesces into
+    /// one flush (the timer only fires once typing pauses).
+    private func scheduleLiveFlush() {
+        liveFlushWork?.cancel()
+        let work = DispatchWorkItem { flushLive() }
+        liveFlushWork = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.6, execute: work)
+    }
+
+    /// Flush the editor's pending edits into the core WITHOUT reloading the text
+    /// view, so the caret is untouched. `isDirty` stays true so the resulting
+    /// snapshot echo is recognised (`selfFlushEcho`) and doesn't reload either.
+    /// The model mutation goes through `mutate`, which schedules the debounced sync
+    /// push, so the edit rides the socket to other devices.
+    private func flushLive() {
+        liveFlushWork = nil
+        guard !scheme.isReadOnly, controller.isDirty else { return }
+        controller.flushCellEdit()
+        let edits = controller.commit()
+        selfFlushEcho = true
+        model.replaceSchemeItems(schemeID: scheme.id, items: edits)
     }
 
     private func archiveCurrentScheme() {

@@ -63,10 +63,12 @@ internal const val GOOGLE_CLIENT_ID = "419826075228-mt7s13h76ftugo170gqs3l0q0plm
 internal const val GOOGLE_OAUTH_LOOPBACK_TIMEOUT_MS = 300_000
 internal const val GOOGLE_SYNC_INTERVAL_MS = 120_000L
 // Debounce for the push that follows a local edit (mirrors iOS
-// editSyncDebounceNanos): a burst of edits coalesces into one sync instead of
-// pushing on every mutation. Desktop's sync service debounces local changes
-// 30 s; the 30 s foreground poll and an onStop flush are the backstops here.
-internal const val SYNC_EDIT_DEBOUNCE_MS = 5_000L
+// editSyncDebounceNanos): a short leading window so a burst of edits coalesces
+// into one push while still feeling instant. With the persistent socket a push
+// is a cheap frame (no HTTP round-trip) and the in-progress guard caps it to one
+// in-flight sync at a time, so this can be short like desktop's WS local-change
+// debounce. The 30 s foreground poll and an onStop flush remain the backstops.
+internal const val SYNC_EDIT_DEBOUNCE_MS = 400L
 internal const val TAB_CALENDAR = 0
 internal const val TAB_SCHEMES = 1
 internal const val TAB_DAILY = 2

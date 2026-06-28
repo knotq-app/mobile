@@ -157,6 +157,10 @@ import kotlin.math.roundToInt
             selectionChangedHandler = { formatBarMarkerRefresh?.invoke() }
             if (!readOnly) {
                 tableCellTapHandler = { hit -> beginInlineCellEdit(schemeId, this, hit) }
+                // Push-on-type: each edit re-arms a debounce that quietly commits the
+                // document to the core (which then syncs over the socket), so phone
+                // edits propagate live like desktop instead of only on blur.
+                onUserEdit = { scheduleEditorFlush(schemeId, this) }
             }
             isEnabled = !readOnly
             gravity = Gravity.TOP or Gravity.START
@@ -449,6 +453,9 @@ import kotlin.math.roundToInt
                 markerTapHandler = { lineIndex -> toggleEditorLineMarker(this, lineIndex) }
                 selectionChangedHandler = { formatBarMarkerRefresh?.invoke() }
                 tableCellTapHandler = { hit -> beginInlineCellEdit(schemeId, this, hit) }
+                // Push-on-type for the Daily editor too (the scheme editor wires this
+                // in renderSchemeEditor; the Daily day editor is a separate instance).
+                onUserEdit = { scheduleEditorFlush(schemeId, this) }
                 gravity = Gravity.TOP or Gravity.START
                 setTextColor(theme.textPrimary)
                 setHintTextColor(theme.textMuted)

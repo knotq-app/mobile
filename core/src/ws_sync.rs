@@ -175,9 +175,16 @@ impl MobileCoreInner {
                 .filter(|token| !token.is_empty())
         });
         let ws_changed = Arc::clone(&self.ws_changed);
+        let ws_changed_on_connect = Arc::clone(&self.ws_changed);
         let callbacks = WsCallbacks {
             on_changed: Box::new(move || ws_changed.store(true, Ordering::SeqCst)),
             on_presence: Box::new(|_event| {}),
+            // (Re)connected: flag a catch-up so the next nudge tick syncs — this
+            // reconciles any `changed` missed while the socket was down without
+            // foreground polling.
+            on_connect: Box::new(move || {
+                ws_changed_on_connect.store(true, Ordering::SeqCst)
+            }),
         };
         let factory = Box::new(TgFactory {
             ws_url: ws_url_from_api_base(api_base),

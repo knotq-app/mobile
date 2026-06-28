@@ -192,6 +192,10 @@ internal class SchemeEditText(context: android.content.Context) : EditText(conte
     }
     var markerTapHandler: ((Int) -> Unit)? = null
     var selectionChangedHandler: (() -> Unit)? = null
+    // Fired after a real user text edit (not the editor's own re-styling, and not
+    // mid-IME-composition). The host uses it to debounce a live flush of the
+    // document into the core (push-on-type, like desktop) instead of only on blur.
+    var onUserEdit: (() -> Unit)? = null
     // Inline table interactions. `tableCellTapHandler` is invoked with the
     // logical line (item), the cell's row/column, and the cell's on-screen rect
     // so the host can float an editable field over it. Row/column add+delete
@@ -322,6 +326,14 @@ internal class SchemeEditText(context: android.content.Context) : EditText(conte
                     enforceBlockObjectIsolation(s)
                     handleEnterContinuation(s)
                     applyPrefixSpans(s, fullDocument = true)
+                }
+                // Schedule a live flush on ANY real edit — including mid-IME
+                // composition (the soft keyboard holds a composing span while typing
+                // a word, so gating this on `composing < 0` like the styling block
+                // above would delay the push until the word/blur committed). The
+                // debounce coalesces; the commit reads the currently visible text.
+                if (!styling && s != null) {
+                    onUserEdit?.invoke()
                 }
                 invalidate()
             }

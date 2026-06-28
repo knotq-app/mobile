@@ -348,6 +348,10 @@ final class RustBridge: @unchecked Sendable {
         try core.wsPendingChanged()
     }
 
+    func isWsConnected() throws -> Bool {
+        try core.isWsConnected()
+    }
+
     func setPushRegistration(token: String, environment: String) throws {
         try core.setPushRegistration(token: token, environment: environment)
     }

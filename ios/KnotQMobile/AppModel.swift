@@ -60,11 +60,13 @@ final class AppModel: ObservableObject {
     static let maxDailyHistoryDays = 3650
     static let foregroundGoogleSyncIntervalNanos: UInt64 = 120_000_000_000
     static let backgroundGoogleSyncInterval: TimeInterval = 6 * 60 * 60
-    // Debounce for the push that follows a local edit: a burst of edits
-    // coalesces into one sync instead of pushing on every mutation. Desktop's
-    // sync service uses a 30 s local-change debounce; mobile leans shorter and
-    // relies on the 30 s foreground poll + flushPendingEditSync() as backstops.
-    static let editSyncDebounceNanos: UInt64 = 5_000_000_000
+    // Debounce for the push that follows a local edit: a short leading window so
+    // a burst of edits coalesces into one push while still feeling instant. With
+    // the persistent socket a push is a cheap frame (no HTTP round-trip), and the
+    // `syncInProgress` guard already caps it to one in-flight sync at a time, so
+    // this can be short like desktop's WS local-change debounce (~300 ms). The 30 s
+    // foreground poll + flushPendingEditSync() remain the backstops.
+    static let editSyncDebounceNanos: UInt64 = 400_000_000
 
     let bridge: RustBridge?
     let iso = ISO8601DateFormatter()

@@ -598,14 +598,34 @@ import kotlin.math.roundToInt
     }
 
     internal fun MainActivity.mutate(body: JSONObject) {
-        try {
-            bridge.request(body)
-            loadSnapshot()
-            rescheduleNotifications()
-            render()
-            requestSyncSoon()
-        } catch (error: RuntimeException) {
-            showError("Could not save", error.message)
+        // Run the core write + snapshot read OFF the main thread (serial = FIFO, so
+        // edit order holds) so an in-flight sync holding the core lock can't hang the
+        // UI. The snapshot is re-read here and applied on the main thread; the UI
+        // updates on completion (like iOS's async mutate).
+        val today = selectedDate.toString()
+        val week = weekOffset
+        val hist = dailyHistoryDays
+        coreExecutor.execute {
+            val result = runCatching {
+                bridge.request(body)
+                bridge.request(obj(
+                    "type" to "snapshot",
+                    "today" to today,
+                    "week_offset" to week,
+                    "daily_history_days" to hist
+                ))
+            }
+            runOnUiThread {
+                result.onSuccess { snap ->
+                    snapshot = snap
+                    configureGoogleSyncPolling()
+                    rescheduleNotifications()
+                    render()
+                    requestSyncSoon()
+                }.onFailure { error ->
+                    showError("Could not save", error.message)
+                }
+            }
         }
     }
 
