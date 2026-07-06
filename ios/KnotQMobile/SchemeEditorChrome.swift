@@ -17,10 +17,16 @@ final class EditorController: ObservableObject {
     // observes it to debounce a live flush of the edits into the core (so a phone
     // edit pushes within ~1 s like desktop, instead of only on blur).
     @Published var editTick = 0
+    // The items as of the last load/flush — what the core already knows from
+    // this editor. A remote change that lands mid-edit diffs the live text
+    // against this to tell the user's unflushed lines from everything else
+    // (see `mergeRemoteSchemeItems`).
+    var baselineItems: [MobileItem] = []
     private var pendingImageLocation: Int?
 
     func load(items: [MobileItem], theme: KnotQTheme, timeFormat: String, placeCursorAtEnd: Bool = false) {
         view?.loadItems(items, theme: theme, timeFormat: timeFormat, placeCursorAtEnd: placeCursorAtEnd)
+        baselineItems = items
         isDirty = false
         isEmpty = items.isEmpty || items.allSatisfy {
             $0.text.isEmpty
@@ -34,21 +40,36 @@ final class EditorController: ObservableObject {
     }
 
     /// Reload the document from `items` (e.g. a remote change pulled in while the
-    /// user is mid-edit) while keeping the caret roughly where it was, so a rare
-    /// concurrent incoming edit doesn't yank the cursor. Best-effort: the caret is
-    /// restored by absolute offset, clamped to the new length.
+    /// user is mid-edit) while keeping the caret and scroll where they were, so a
+    /// concurrent incoming edit doesn't yank the view around. The caret re-anchors
+    /// by line identity (item id + offset within the line) — absolute offsets go
+    /// stale as soon as the change touched anything above the caret — falling back
+    /// to the clamped absolute offset when the caret's line is gone.
     func reloadPreservingCaret(items: [MobileItem], theme: KnotQTheme, timeFormat: String) {
-        let savedSelection = view?.selectedRange
-        let wasFirstResponder = view?.isFirstResponder ?? false
+        guard let view else {
+            load(items: items, theme: theme, timeFormat: timeFormat)
+            return
+        }
+        let context = view.caretContext()
+        let savedSelection = view.selectedRange
+        let savedOffset = view.contentOffset
+        let wasFirstResponder = view.isFirstResponder
         load(items: items, theme: theme, timeFormat: timeFormat)
-        if let view, let savedSelection {
-            let length = (view.text as NSString).length
+        let length = (view.text as NSString).length
+        if let itemID = context.itemID,
+           let location = view.caretLocation(forItemID: itemID, offsetInLine: context.offsetInLine) {
+            view.selectedRange = NSRange(location: location, length: 0)
+        } else {
             let location = min(savedSelection.location, length)
             view.selectedRange = NSRange(
                 location: location,
                 length: min(savedSelection.length, max(0, length - location))
             )
-            if wasFirstResponder { _ = view.becomeFirstResponder() }
+        }
+        if wasFirstResponder { _ = view.becomeFirstResponder() }
+        if view.isScrollEnabled {
+            // Re-taking first responder can autoscroll; pin the document back.
+            view.setContentOffset(view.clampedContentOffset(savedOffset), animated: false)
         }
     }
 
@@ -61,6 +82,12 @@ final class EditorController: ObservableObject {
     func commit() -> [MobileItemEdit] {
         view?.endTableCellEditing(commit: true)
         return view?.extractItemEdits() ?? []
+    }
+
+    /// Adopt core-minted ids for lines this editor created, without a reload
+    /// (the caret must not move mid-type). See `EditorTextView.adoptItemIDs`.
+    func adoptItemIDs(from items: [MobileItem], theme: KnotQTheme) {
+        view?.adoptItemIDs(from: items, theme: theme)
     }
 
     func flushCellEdit() {
@@ -307,11 +334,30 @@ struct IntegratedSchemeEditorPane: View {
                 return
             }
             if controller.isDirty {
-                // A genuine remote change arrived while the user is mid-edit (rare).
-                // Render it but keep the caret roughly in place. The user's own
-                // in-flight keystrokes were already flushed on the debounce, so the
-                // pulled state is the CRDT merge of both.
-                controller.reloadPreservingCaret(items: scheme.items, theme: theme, timeFormat: timeFormat)
+                // A genuine remote change arrived while the user is mid-edit (the
+                // core no longer reports the echo of our own push as a change).
+                // Keystrokes still inside the live-flush window exist only in the
+                // text view, so rebuilding from the remote list would drop them.
+                // Merge per line — the user's unflushed lines win locally, remote
+                // wins everywhere else — then flush the merge so the core and
+                // every other device converge on it.
+                liveFlushWork?.cancel()
+                liveFlushWork = nil
+                let localEdits = controller.commit()
+                let merged = mergeRemoteSchemeItems(
+                    remote: scheme.items,
+                    baseline: controller.baselineItems,
+                    local: localEdits
+                )
+                controller.reloadPreservingCaret(items: merged, theme: theme, timeFormat: timeFormat)
+                if merged != scheme.items {
+                    // The core still holds the plain remote state: keep the
+                    // baseline there so a second remote change during the flush
+                    // window still sees these lines as locally modified.
+                    controller.baselineItems = scheme.items
+                    controller.isDirty = true
+                    scheduleLiveFlush()
+                }
             } else {
                 loadDocument(force: false)
             }
@@ -516,6 +562,14 @@ struct IntegratedSchemeEditorPane: View {
         let edits = controller.commit()
         selfFlushEcho = true
         model.replaceSchemeItems(schemeID: scheme.id, items: edits)
+        if let refreshed = model.scheme(id: scheme.id) {
+            // Adopt the ids the core minted for lines this flush created — still
+            // without a reload — so the next flush updates those items in place
+            // instead of re-creating them under fresh ids, and a mid-edit remote
+            // merge can match every line by id.
+            controller.adoptItemIDs(from: refreshed.items, theme: theme)
+            controller.baselineItems = refreshed.items
+        }
     }
 
     private func archiveCurrentScheme() {
@@ -656,6 +710,8 @@ struct IntegratedSchemeEditorPane: View {
         // bounce back through `.onChange(of: signature(for:))` as a redundant
         // reload (which would reintroduce the reflow we're avoiding).
         if let refreshed = model.scheme(id: scheme.id) {
+            controller.adoptItemIDs(from: refreshed.items, theme: theme)
+            controller.baselineItems = refreshed.items
             schemeSignature = signature(for: refreshed)
         }
     }

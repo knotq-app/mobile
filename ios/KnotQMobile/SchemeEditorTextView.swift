@@ -435,6 +435,7 @@ final class EditorTextView: UITextView {
 
     func loadItems(_ items: [MobileItem], theme: KnotQTheme, timeFormat: String, placeCursorAtEnd: Bool) {
         let savedSelection = selectedRange
+        let savedOffset = contentOffset
         self.theme = theme
         self.timeFormat = timeFormat
         coordinator?.suppress {
@@ -466,6 +467,10 @@ final class EditorTextView: UITextView {
                     self.scrollRangeToVisible(NSRange(location: max(0, self.textStorage.length - 1), length: 0))
                 }
             }
+        } else if isScrollEnabled {
+            // Replacing the storage resets the scroll position; a reload (theme
+            // change, remote update) must not visibly jump the document.
+            setContentOffset(clampedContentOffset(savedOffset), animated: false)
         }
         refreshEmbeddedLayoutIfNeeded(deferred: true)
         setNeedsDisplay()
@@ -505,6 +510,66 @@ final class EditorTextView: UITextView {
             textStorage.endEditing()
         }
         return extractEdits(from: textStorage)
+    }
+
+    /// The caret's line identity: the item id of the paragraph containing the
+    /// caret plus the caret's offset within that paragraph. Lets a full reload
+    /// re-anchor the caret by line, where the absolute offset goes stale the
+    /// moment a change inserts or removes characters above the caret.
+    func caretContext() -> (itemID: String?, offsetInLine: Int) {
+        let ns = textStorage.string as NSString
+        guard ns.length > 0 else { return (nil, 0) }
+        let caret = clampedCaret(selectedRange.location, in: textStorage)
+        let paragraph = ns.paragraphRange(for: NSRange(location: min(caret, ns.length - 1), length: 0))
+        return (
+            lineMeta(at: paragraph.location, in: textStorage).itemID,
+            max(0, caret - paragraph.location)
+        )
+    }
+
+    /// Best-effort inverse of `caretContext` against the current (freshly
+    /// loaded) document. nil when no line carries `itemID` anymore.
+    func caretLocation(forItemID itemID: String, offsetInLine: Int) -> Int? {
+        let ns = textStorage.string as NSString
+        for paragraph in paragraphRanges(in: ns) {
+            guard lineMeta(at: paragraph.fullRange.location, in: textStorage).itemID == itemID else {
+                continue
+            }
+            return paragraph.fullRange.location + min(offsetInLine, paragraph.lineRange.length)
+        }
+        return nil
+    }
+
+    /// Clamp a saved scroll offset to the current content, so restoring it
+    /// after a storage rebuild can't overshoot a now-shorter document.
+    func clampedContentOffset(_ offset: CGPoint) -> CGPoint {
+        let minY = -adjustedContentInset.top
+        let maxY = max(minY, contentSize.height + adjustedContentInset.bottom - bounds.height)
+        return CGPoint(x: offset.x, y: min(max(offset.y, minY), maxY))
+    }
+
+    /// Fill in the item ids the core just minted for lines this editor created
+    /// (`replaceSchemeItems` maps drafts to items 1:1 in order). Meta-only —
+    /// no text changes, no caret movement, no dirty marking — so a live flush
+    /// can adopt ids without the reload that would interrupt typing. Lines
+    /// that already carry an id keep it; on any draft/item mismatch, skip.
+    func adoptItemIDs(from items: [MobileItem], theme: KnotQTheme) {
+        let paragraphs = paragraphRanges(in: textStorage.string as NSString)
+        guard paragraphs.count == items.count else { return }
+        coordinator?.suppress {
+            textStorage.beginEditing()
+            for (paragraph, item) in zip(paragraphs, items) where !item.id.isEmpty {
+                let meta = paragraphMeta(of: paragraph.fullRange, in: textStorage)
+                guard meta.itemID == nil else { continue }
+                setLineMeta(
+                    meta.with(itemID: item.id),
+                    onParagraph: paragraph.fullRange,
+                    in: textStorage,
+                    theme: theme
+                )
+            }
+            textStorage.endEditing()
+        }
     }
 
     func isEffectivelyEmpty() -> Bool {

@@ -652,7 +652,18 @@ impl MobileCoreInner {
                     .is_some_and(|rule| !rule.trim().is_empty())
                 || !draft.media.is_empty();
             let should_apply_rich_metadata = existing_item.is_none() || has_rich_metadata;
-            let mut item = existing_item.unwrap_or_else(|| Item::new(""));
+            let mut item = existing_item.unwrap_or_else(|| {
+                let mut item = Item::new("");
+                // Adopt a caller-minted id (as `insert_table` does): the shell
+                // mints ids for lines it must render before the round-trip
+                // (e.g. remote-merge reloads mid-edit), and each flush of such
+                // a line must land on ONE item instead of re-creating it under
+                // a fresh id every time.
+                if let Some(id) = existing_id.filter(|id| !used_ids.contains(id)) {
+                    item.id = id;
+                }
+                item
+            });
 
             used_ids.push(item.id);
             // A line is single-content. A bulk save sends empty `content`/`media`

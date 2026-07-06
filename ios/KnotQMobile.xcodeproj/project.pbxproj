@@ -48,6 +48,7 @@
 		01000000000000000000002B /* SchemeEditorTextInput.swift in Sources */ = {isa = PBXBuildFile; fileRef = 02000000000000000000002B /* SchemeEditorTextInput.swift */; };
 		01000000000000000000002C /* SchemeEditorTextView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 02000000000000000000002C /* SchemeEditorTextView.swift */; };
 		01000000000000000000002D /* SchemeEditorSheets.swift in Sources */ = {isa = PBXBuildFile; fileRef = 02000000000000000000002D /* SchemeEditorSheets.swift */; };
+		01000000000000000000006A /* SchemeEditorRemoteMerge.swift in Sources */ = {isa = PBXBuildFile; fileRef = 02000000000000000000006A /* SchemeEditorRemoteMerge.swift */; };
 		01000000000000000000002E /* GoogleService-Info.plist in Resources */ = {isa = PBXBuildFile; fileRef = 02000000000000000000002E /* GoogleService-Info.plist */; };
 		01000000000000000000002F /* BackgroundSyncCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 02000000000000000000002F /* BackgroundSyncCoordinator.swift */; };
 		010000000000000000000030 /* BackgroundTasks.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 020000000000000000000030 /* BackgroundTasks.framework */; };
@@ -58,6 +59,7 @@
 			010000000000000000000035 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = 020000000000000000000035 /* PrivacyInfo.xcprivacy */; };
 			010000000000000000000036 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = 020000000000000000000036 /* PrivacyInfo.xcprivacy */; };
 			010000000000000000000040 /* MarkerConcealmentTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 020000000000000000000040 /* MarkerConcealmentTests.swift */; };
+			01000000000000000000006B /* RemoteMergeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 02000000000000000000006B /* RemoteMergeTests.swift */; };
 		010000000000000000000050 /* SchemeEditorLayoutManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 020000000000000000000050 /* SchemeEditorLayoutManager.swift */; };
 		010000000000000000000051 /* SchemeEditorBlockAttachment.swift in Sources */ = {isa = PBXBuildFile; fileRef = 020000000000000000000051 /* SchemeEditorBlockAttachment.swift */; };
 		010000000000000000000052 /* SchemeEditorTableCellEditor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 020000000000000000000052 /* SchemeEditorTableCellEditor.swift */; };
@@ -163,6 +165,7 @@
 		02000000000000000000002B /* SchemeEditorTextInput.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SchemeEditorTextInput.swift; sourceTree = "<group>"; };
 		02000000000000000000002C /* SchemeEditorTextView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SchemeEditorTextView.swift; sourceTree = "<group>"; };
 		02000000000000000000002D /* SchemeEditorSheets.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SchemeEditorSheets.swift; sourceTree = "<group>"; };
+		02000000000000000000006A /* SchemeEditorRemoteMerge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SchemeEditorRemoteMerge.swift; sourceTree = "<group>"; };
 		02000000000000000000002E /* GoogleService-Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = "GoogleService-Info.plist"; sourceTree = "<group>"; };
 		02000000000000000000002F /* BackgroundSyncCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BackgroundSyncCoordinator.swift; sourceTree = "<group>"; };
 			020000000000000000000030 /* BackgroundTasks.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = BackgroundTasks.framework; path = System/Library/Frameworks/BackgroundTasks.framework; sourceTree = SDKROOT; };
@@ -171,6 +174,7 @@
 			020000000000000000000035 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
 			020000000000000000000036 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
 			020000000000000000000040 /* MarkerConcealmentTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MarkerConcealmentTests.swift; sourceTree = "<group>"; };
+			02000000000000000000006B /* RemoteMergeTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RemoteMergeTests.swift; sourceTree = "<group>"; };
 		020000000000000000000041 /* KnotQMobileTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = KnotQMobileTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		020000000000000000000050 /* SchemeEditorLayoutManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SchemeEditorLayoutManager.swift; sourceTree = "<group>"; };
 		020000000000000000000051 /* SchemeEditorBlockAttachment.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SchemeEditorBlockAttachment.swift; sourceTree = "<group>"; };
@@ -275,6 +279,7 @@
 				02000000000000000000002B /* SchemeEditorTextInput.swift */,
 				02000000000000000000002C /* SchemeEditorTextView.swift */,
 				02000000000000000000002D /* SchemeEditorSheets.swift */,
+				02000000000000000000006A /* SchemeEditorRemoteMerge.swift */,
 				020000000000000000000033 /* MobileDate.swift */,
 				020000000000000000000034 /* ScheduleFormComponents.swift */,
 				020000000000000000000008 /* CalendarScreen.swift */,
@@ -340,6 +345,7 @@
 			isa = PBXGroup;
 			children = (
 				020000000000000000000040 /* MarkerConcealmentTests.swift */,
+				02000000000000000000006B /* RemoteMergeTests.swift */,
 				02000000000000000000005C /* MarkerConcealmentTests+Reveal.swift */,
 				02000000000000000000005D /* MarkerConcealmentTests+TableCrash.swift */,
 				02000000000000000000005E /* MarkerConcealmentTests+Markdown.swift */,
@@ -560,6 +566,7 @@
 				01000000000000000000002B /* SchemeEditorTextInput.swift in Sources */,
 				01000000000000000000002C /* SchemeEditorTextView.swift in Sources */,
 				01000000000000000000002D /* SchemeEditorSheets.swift in Sources */,
+				01000000000000000000006A /* SchemeEditorRemoteMerge.swift in Sources */,
 				010000000000000000000033 /* MobileDate.swift in Sources */,
 				010000000000000000000034 /* ScheduleFormComponents.swift in Sources */,
 				010000000000000000000007 /* SchemeEditorView.swift in Sources */,
@@ -608,6 +615,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				010000000000000000000040 /* MarkerConcealmentTests.swift in Sources */,
+				01000000000000000000006B /* RemoteMergeTests.swift in Sources */,
 				01000000000000000000005C /* MarkerConcealmentTests+Reveal.swift in Sources */,
 				01000000000000000000005D /* MarkerConcealmentTests+TableCrash.swift in Sources */,
 				01000000000000000000005E /* MarkerConcealmentTests+Markdown.swift in Sources */,
