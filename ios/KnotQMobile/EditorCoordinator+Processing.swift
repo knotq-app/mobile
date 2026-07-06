@@ -22,13 +22,20 @@ extension EditorCoordinator {
             storage.endEditing()
         }
 
+        // Both deferred passes below exist only for block (image/table) glyphs.
+        // Skip them for plain-text documents so a keystroke doesn't schedule a
+        // full-document display invalidation plus a per-paragraph isolation scan
+        // on every character — dead work that lands one runloop tick after the
+        // glyph and reads as the caret/scroll "catching up" late.
+        let hasBlocks = containsBlockObject(storage.string)
+
         // Refresh embedded block (table/image) rendering, but DEFERRED. Doing it
         // here invalidates display against a layout manager that hasn't yet
         // processed this edit; its `_boundingRectForGlyphRange` then reads
         // `characterAtIndex` past the new length (NSRangeException) — UIKit's
         // autocorrection replace is the reliable trigger. The whole call must
         // wait until the edit cycle finishes, like the isolate pass below.
-        if !embeddedDisplayRefreshPending {
+        if hasBlocks, !embeddedDisplayRefreshPending {
             embeddedDisplayRefreshPending = true
             DispatchQueue.main.async { [weak self] in
                 self?.embeddedDisplayRefreshPending = false
@@ -38,7 +45,7 @@ extension EditorCoordinator {
 
         // I4 backstop runs deferred (length changes are unsafe inside this
         // callback — they corrupt the layout manager and crash a later pass).
-        if !blockIsolationPending {
+        if hasBlocks, !blockIsolationPending {
             blockIsolationPending = true
             DispatchQueue.main.async { [weak self] in
                 self?.runBlockIsolationPass()

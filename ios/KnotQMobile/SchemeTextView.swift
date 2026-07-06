@@ -88,9 +88,12 @@ struct SchemeTextView: UIViewRepresentable {
 
     func updateUIView(_ uiView: EditorTextView, context: Context) {
         let coordinator = context.coordinator
+        let accentColor = UIColor(accent)
         let themeChanged = uiView.theme.isDark != theme.isDark
+        let accentChanged = uiView.accentColor != accentColor
+        let insetsChanged = uiView.textContainerInset != textInsets
         coordinator.theme = theme
-        coordinator.accentColor = UIColor(accent)
+        coordinator.accentColor = accentColor
         coordinator.onDateRequested = onDate
         coordinator.onImageUploadRequested = onImageUpload
         coordinator.onInsertTableRequested = onInsertTable
@@ -100,14 +103,33 @@ struct SchemeTextView: UIViewRepresentable {
         uiView.onTableDeleteRow = onTableDeleteRow
         uiView.onTableInsertColumn = onTableInsertColumn
         uiView.onTableDeleteColumn = onTableDeleteColumn
-        uiView.theme = theme
-        uiView.accentColor = UIColor(accent)
-        uiView.backgroundColor = UIColor(theme.bgApp)
-        uiView.textContainerInset = textInsets
-        uiView.isScrollEnabled = isScrollEnabled
-        uiView.keyboardDismissMode = .none
-        uiView.isEditable = !readOnly
-        uiView.isSelectable = true
+        // Every UIKit write below is equality-guarded: updateUIView re-runs on
+        // each ancestor re-render (every model snapshot, every live flush), and
+        // UITextView setters like textContainerInset invalidate text layout even
+        // when the value is unchanged — visible as a small scroll jump / late
+        // caret while typing near the bottom of the document.
+        if themeChanged {
+            uiView.theme = theme
+            uiView.backgroundColor = UIColor(theme.bgApp)
+        }
+        if accentChanged {
+            uiView.accentColor = accentColor
+        }
+        if insetsChanged {
+            uiView.textContainerInset = textInsets
+        }
+        if uiView.isScrollEnabled != isScrollEnabled {
+            uiView.isScrollEnabled = isScrollEnabled
+        }
+        if uiView.keyboardDismissMode != .none {
+            uiView.keyboardDismissMode = .none
+        }
+        if uiView.isEditable == readOnly {
+            uiView.isEditable = !readOnly
+        }
+        if !uiView.isSelectable {
+            uiView.isSelectable = true
+        }
         if themeChanged {
             uiView.restyleForTheme(theme)
         }
@@ -115,8 +137,10 @@ struct SchemeTextView: UIViewRepresentable {
             uiView.inputAccessoryView = nil
         }
         uiView.configureTitle(title: schemeTitle, theme: theme, visible: showsTitle, editable: titleEditable, validator: titleValidator, onCommit: onRenameTitle)
-        uiView.refreshEmbeddedLayoutIfNeeded(deferred: true)
-        uiView.setNeedsDisplay()
+        if themeChanged || accentChanged || insetsChanged {
+            uiView.refreshEmbeddedLayoutIfNeeded(deferred: true)
+            uiView.setNeedsDisplay()
+        }
     }
 
     /// Self-sizing for embedded (non-scrolling) editors: report the exact

@@ -231,8 +231,15 @@ extension AppModel {
         mutate { try $0.reorderItem(schemeID: schemeID, from: from, to: to) }
     }
 
-    func replaceSchemeItems(schemeID: String, items: [MobileItemEdit]) {
-        mutate { try $0.replaceSchemeItems(schemeID: schemeID, items: items) }
+    /// `completion` fires once the mutation's snapshot is installed — the point
+    /// where `scheme(id:)` reflects this replace (the editor's live flush adopts
+    /// core-minted item ids there; reading synchronously would see the old list).
+    func replaceSchemeItems(
+        schemeID: String,
+        items: [MobileItemEdit],
+        completion: (@MainActor () -> Void)? = nil
+    ) {
+        mutate({ try $0.replaceSchemeItems(schemeID: schemeID, items: items) }, completion: completion)
     }
 
     func setItemDate(schemeID: String, itemID: String, kind: String, date: Date?) {

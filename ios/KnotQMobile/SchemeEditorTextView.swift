@@ -553,7 +553,7 @@ final class EditorTextView: UITextView {
     /// no text changes, no caret movement, no dirty marking — so a live flush
     /// can adopt ids without the reload that would interrupt typing. Lines
     /// that already carry an id keep it; on any draft/item mismatch, skip.
-    func adoptItemIDs(from items: [MobileItem], theme: KnotQTheme) {
+    func adoptItemIDs(from items: [MobileItem]) {
         let paragraphs = paragraphRanges(in: textStorage.string as NSString)
         guard paragraphs.count == items.count else { return }
         coordinator?.suppress {
@@ -561,11 +561,15 @@ final class EditorTextView: UITextView {
             for (paragraph, item) in zip(paragraphs, items) where !item.id.isEmpty {
                 let meta = paragraphMeta(of: paragraph.fullRange, in: textStorage)
                 guard meta.itemID == nil else { continue }
-                setLineMeta(
-                    meta.with(itemID: item.id),
-                    onParagraph: paragraph.fullRange,
-                    in: textStorage,
-                    theme: theme
+                // Swap only the `.knotqLine` attribute: line styling doesn't
+                // depend on the item id, and the full `setLineMeta` restyle
+                // (remove/re-add font + paragraph style) invalidates the
+                // paragraph's layout — a visible caret/scroll nudge on exactly
+                // the line the user is typing on when the flush lands.
+                textStorage.addAttribute(
+                    .knotqLine,
+                    value: meta.with(itemID: item.id),
+                    range: paragraph.fullRange
                 )
             }
             textStorage.endEditing()

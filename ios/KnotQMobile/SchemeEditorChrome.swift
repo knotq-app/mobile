@@ -1,3 +1,4 @@
+import Combine
 import PhotosUI
 import SwiftUI
 import UniformTypeIdentifiers
@@ -13,10 +14,13 @@ final class EditorController: ObservableObject {
     weak var view: EditorTextView?
     @Published var isDirty = false
     @Published var isEmpty = true
-    // Bumped on every keystroke/structural edit (see `markDirty`). The editor view
+    // Fired on every keystroke/structural edit (see `markDirty`). The editor view
     // observes it to debounce a live flush of the edits into the core (so a phone
-    // edit pushes within ~1 s like desktop, instead of only on blur).
-    @Published var editTick = 0
+    // edit pushes within ~1 s like desktop, instead of only on blur). A plain
+    // subject — deliberately NOT @Published — so typing doesn't re-render the
+    // SwiftUI pane (and re-run updateUIView's layout-invalidating UIKit setters)
+    // on every character.
+    let editPulse = PassthroughSubject<Void, Never>()
     // The items as of the last load/flush — what the core already knows from
     // this editor. A remote change that lands mid-edit diffs the live text
     // against this to tell the user's unflushed lines from everything else
@@ -86,8 +90,8 @@ final class EditorController: ObservableObject {
 
     /// Adopt core-minted ids for lines this editor created, without a reload
     /// (the caret must not move mid-type). See `EditorTextView.adoptItemIDs`.
-    func adoptItemIDs(from items: [MobileItem], theme: KnotQTheme) {
-        view?.adoptItemIDs(from: items, theme: theme)
+    func adoptItemIDs(from items: [MobileItem]) {
+        view?.adoptItemIDs(from: items)
     }
 
     func flushCellEdit() {
@@ -171,9 +175,12 @@ struct IntegratedSchemeEditorPane: View {
     @State private var imagePickerItem: PhotosPickerItem?
     // Debounced live-commit while typing (push-on-type, like desktop).
     @State private var liveFlushWork: DispatchWorkItem?
-    // Set when we flush our own edits, so the resulting snapshot echo doesn't
-    // reload the editor and reset the caret mid-type.
-    @State private var selfFlushEcho = false
+    // The scheme signature our own live flush produced, captured from the
+    // refreshed snapshot. When `.onChange(of: signature(for:))` fires with
+    // exactly this content it is our own edit echoing back — skip the reload
+    // that would reset the caret. A genuine remote change carries a different
+    // signature, so (unlike a boolean flag) this can never swallow one.
+    @State private var selfFlushSignature: String?
 
     private var accent: Color {
         schemeColor(scheme.colorIndex, dark: theme.isDark)
@@ -327,12 +334,13 @@ struct IntegratedSchemeEditorPane: View {
         .onChange(of: signature(for: scheme)) { _, newValue in
             guard newValue != schemeSignature else { return }
             schemeSignature = newValue
-            if selfFlushEcho {
+            if newValue == selfFlushSignature {
                 // Our own live flush echoing back through the snapshot — the editor
                 // already shows this content, so don't reload (would reset the caret).
-                selfFlushEcho = false
+                selfFlushSignature = nil
                 return
             }
+            selfFlushSignature = nil
             if controller.isDirty {
                 // A genuine remote change arrived while the user is mid-edit (the
                 // core no longer reports the echo of our own push as a change).
@@ -365,7 +373,7 @@ struct IntegratedSchemeEditorPane: View {
         // Push-on-type: each keystroke re-arms a short debounce that flushes the
         // editor into the core (which then syncs over the socket), so phone edits
         // propagate live like desktop instead of only on blur.
-        .onChange(of: controller.editTick) { _, _ in scheduleLiveFlush() }
+        .onReceive(controller.editPulse) { _ in scheduleLiveFlush() }
         // On iPad the editor pane is reused across schemes (no fresh `onAppear`),
         // so creating a new scheme while one is already open needs this to select
         // its title — matching the iPhone flow where each scheme pushes a new view.
@@ -530,12 +538,15 @@ struct IntegratedSchemeEditorPane: View {
         controller.flushCellEdit()
         guard controller.isDirty else { return }
         let edits = controller.commit()
-        model.replaceSchemeItems(schemeID: scheme.id, items: edits)
-        if let refreshed = model.scheme(id: scheme.id) {
-            controller.load(items: refreshed.items, theme: theme, timeFormat: timeFormat)
-            schemeSignature = signature(for: refreshed)
-        } else {
-            controller.isDirty = false
+        // The refreshed snapshot only exists once the async core write lands;
+        // reloading from a synchronous read would re-install the pre-commit list.
+        model.replaceSchemeItems(schemeID: scheme.id, items: edits) {
+            if let refreshed = model.scheme(id: scheme.id) {
+                controller.load(items: refreshed.items, theme: theme, timeFormat: timeFormat)
+                schemeSignature = signature(for: refreshed)
+            } else {
+                controller.isDirty = false
+            }
         }
     }
 
@@ -560,15 +571,20 @@ struct IntegratedSchemeEditorPane: View {
         guard !scheme.isReadOnly, controller.isDirty else { return }
         controller.flushCellEdit()
         let edits = controller.commit()
-        selfFlushEcho = true
-        model.replaceSchemeItems(schemeID: scheme.id, items: edits)
-        if let refreshed = model.scheme(id: scheme.id) {
+        // The core write runs async on the bridge queue; the snapshot carrying
+        // the ids it minted only exists in `completion`. Reading the model
+        // synchronously after the call would see the PRE-flush list — id
+        // adoption would silently no-op (line-count mismatch) and every flush
+        // would re-create the still-unadopted line under a fresh id.
+        model.replaceSchemeItems(schemeID: scheme.id, items: edits) {
+            guard let refreshed = model.scheme(id: scheme.id) else { return }
             // Adopt the ids the core minted for lines this flush created — still
             // without a reload — so the next flush updates those items in place
             // instead of re-creating them under fresh ids, and a mid-edit remote
             // merge can match every line by id.
-            controller.adoptItemIDs(from: refreshed.items, theme: theme)
+            controller.adoptItemIDs(from: refreshed.items)
             controller.baselineItems = refreshed.items
+            selfFlushSignature = signature(for: refreshed)
         }
     }
 
@@ -704,16 +720,19 @@ struct IntegratedSchemeEditorPane: View {
         controller.flushCellEdit()
         guard controller.isDirty else { return }
         let edits = controller.commit()
-        model.replaceSchemeItems(schemeID: scheme.id, items: edits)
-        controller.isDirty = false
-        // Adopt the refreshed signature so the model mutation above doesn't
-        // bounce back through `.onChange(of: signature(for:))` as a redundant
-        // reload (which would reintroduce the reflow we're avoiding).
-        if let refreshed = model.scheme(id: scheme.id) {
-            controller.adoptItemIDs(from: refreshed.items, theme: theme)
-            controller.baselineItems = refreshed.items
-            schemeSignature = signature(for: refreshed)
+        model.replaceSchemeItems(schemeID: scheme.id, items: edits) {
+            // Adopt the refreshed signature so the model mutation above doesn't
+            // bounce back through `.onChange(of: signature(for:))` as a redundant
+            // reload (which would reintroduce the reflow we're avoiding). Runs in
+            // the completion because the snapshot only reflects the replace once
+            // the async core write lands.
+            if let refreshed = model.scheme(id: scheme.id) {
+                controller.adoptItemIDs(from: refreshed.items)
+                controller.baselineItems = refreshed.items
+                schemeSignature = signature(for: refreshed)
+            }
         }
+        controller.isDirty = false
     }
 
     private func insertTableFromToolbar() {

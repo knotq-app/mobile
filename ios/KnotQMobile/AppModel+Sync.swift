@@ -319,7 +319,13 @@ extension AppModel {
     /// Apply a local edit on the bridge queue, then install the resulting
     /// snapshot. The bridge queue is serial and FIFO, so edits submitted from
     /// the main thread land in UI order even though nothing blocks here.
-    func mutate(_ action: @escaping @Sendable (RustBridge) throws -> Void) {
+    /// `completion` runs on the main actor after the refreshed snapshot is
+    /// installed (or after the failure is recorded) — the earliest point where
+    /// re-reading the model observes this mutation.
+    func mutate(
+        _ action: @escaping @Sendable (RustBridge) throws -> Void,
+        completion: (@MainActor () -> Void)? = nil
+    ) {
         guard let bridge else { return }
         let today = Self.dateOnly(selectedDate)
         let week = weekOffset
@@ -332,7 +338,10 @@ extension AppModel {
                 try b.deliveredNotificationsToClear()
             )
         }) { [weak self] result in
-            guard let self else { return }
+            guard let self else {
+                completion?()
+                return
+            }
             switch result {
             case .success(let (snapshot, pending, staleNotificationIds)):
                 self.apply(
@@ -347,6 +356,7 @@ extension AppModel {
             case .failure(let error):
                 self.errorMessage = error.localizedDescription
             }
+            completion?()
         }
     }
 

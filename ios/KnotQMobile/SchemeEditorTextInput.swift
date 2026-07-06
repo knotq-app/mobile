@@ -72,9 +72,15 @@ final class EditorCoordinator: NSObject, UITextViewDelegate, @preconcurrency NST
 
     func markDirty() {
         guard !readOnly else { return }
-        controller?.isDirty = true
+        // Guard the @Published write: markDirty runs on every keystroke, and an
+        // unguarded re-assignment of an unchanged value still fires
+        // objectWillChange — re-rendering the whole SwiftUI pane (and re-running
+        // updateUIView, whose UIKit setters invalidate text layout) per character.
+        if controller?.isDirty != true {
+            controller?.isDirty = true
+        }
         // Drives the editor's debounced live flush to the core (push-on-type).
-        controller?.editTick &+= 1
+        controller?.editPulse.send()
     }
 
     func refreshEmpty() {
