@@ -104,7 +104,8 @@ enum DesktopEditorMetrics {
     let marker: Marker
     let indent: Int
     let done: Bool
-    let itemID: String?
+    // var (not let) solely for `adoptItemID` below; treat as immutable elsewhere.
+    private(set) var itemID: String?
     let annotation: String?
     let start: String?
     let end: String?
@@ -163,6 +164,17 @@ enum DesktopEditorMetrics {
             tables: item.tables,
             content: item.content
         )
+    }
+
+    /// Fills in the core-minted item id after a live flush created this line's
+    /// item. Mutates IN PLACE — every character of the line shares this one
+    /// instance (invariant I2), so adoption needs no text-storage write at all.
+    /// That is the point: in TextKit any attribute edit (even a same-value one)
+    /// invalidates the paragraph's layout, and this runs on exactly the line
+    /// the user is typing on when the flush completes. Only ever fills a nil id.
+    func adoptItemID(_ id: String) {
+        guard itemID == nil else { return }
+        itemID = id
     }
 
     /// True when the line is a block line (its single content is an image or

@@ -145,6 +145,33 @@ func setLineMeta(
     guard let safeRange = nonEmptyTextRange(paragraphRange, length: storage.length) else { return }
     let body = bodyText(paragraphRange: safeRange, in: storage)
     let attrs = EditorAttributes.bodyAttributes(meta: meta, theme: theme)
+
+    // Compose the target styling out of place first, and skip the storage write
+    // when the paragraph already carries it exactly. This runs on EVERY
+    // keystroke (normalizeAffectedParagraphs), and in TextKit a same-value
+    // attribute remove/re-add still invalidates the paragraph's layout — while
+    // typing near the bottom of the document that surfaces as a small scroll
+    // nudge and a caret that repaints a beat late. Plain typing hits the
+    // equal-and-skip path because the inserted character inherits the line's
+    // uniform attributes (and its `.knotqLine` is the same shared instance, so
+    // the identity-based compare matches); anything that actually restyles —
+    // markdown emphasis, marker/indent changes, clone resets — differs and
+    // falls through to the write.
+    let current = storage.attributedSubstring(from: safeRange)
+    let target = NSMutableAttributedString(attributedString: current)
+    let targetRange = NSRange(location: 0, length: target.length)
+    let targetBodyRange = NSRange(location: 0, length: (body as NSString).length)
+    target.removeAttribute(.font, range: targetRange)
+    target.removeAttribute(.foregroundColor, range: targetRange)
+    target.removeAttribute(.backgroundColor, range: targetRange)
+    target.removeAttribute(.knotqMarker, range: targetRange)
+    target.removeAttribute(.paragraphStyle, range: targetRange)
+    target.removeAttribute(.strikethroughStyle, range: targetRange)
+    target.removeAttribute(.strikethroughColor, range: targetRange)
+    target.addAttributes(attrs, range: targetRange)
+    applyInlineMarkdownStyling(body: body, bodyRange: targetBodyRange, in: target)
+    guard !current.isEqual(target) else { return }
+
     storage.removeAttribute(.font, range: safeRange)
     storage.removeAttribute(.foregroundColor, range: safeRange)
     storage.removeAttribute(.backgroundColor, range: safeRange)

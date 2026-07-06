@@ -58,6 +58,21 @@ final class EditorLayoutManager: NSLayoutManager {
         guard invalidation.length > 0, invalidation.location < length else {
             return true
         }
+        // Reveal/collapse only affects characters tagged `.knotqMarker`. The
+        // revealed range moves on every keystroke and caret change; without this
+        // check each one regenerates glyphs and forces a synchronous full
+        // ensureLayout even on plain-text lines with nothing to reveal — enough
+        // for UITextView to nudge the scroll mid-type at the document's bottom.
+        if !force {
+            var hasMarker = false
+            storage.enumerateAttribute(.knotqMarker, in: invalidation) { value, _, stop in
+                if value != nil {
+                    hasMarker = true
+                    stop.pointee = true
+                }
+            }
+            guard hasMarker else { return false }
+        }
         invalidateGlyphs(forCharacterRange: invalidation, changeInLength: 0, actualCharacterRange: nil)
         invalidateLayout(forCharacterRange: invalidation, actualCharacterRange: nil)
         if let container = textContainers.first {

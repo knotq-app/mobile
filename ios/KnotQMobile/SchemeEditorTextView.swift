@@ -556,23 +556,18 @@ final class EditorTextView: UITextView {
     func adoptItemIDs(from items: [MobileItem]) {
         let paragraphs = paragraphRanges(in: textStorage.string as NSString)
         guard paragraphs.count == items.count else { return }
-        coordinator?.suppress {
-            textStorage.beginEditing()
-            for (paragraph, item) in zip(paragraphs, items) where !item.id.isEmpty {
-                let meta = paragraphMeta(of: paragraph.fullRange, in: textStorage)
-                guard meta.itemID == nil else { continue }
-                // Swap only the `.knotqLine` attribute: line styling doesn't
-                // depend on the item id, and the full `setLineMeta` restyle
-                // (remove/re-add font + paragraph style) invalidates the
-                // paragraph's layout — a visible caret/scroll nudge on exactly
-                // the line the user is typing on when the flush lands.
-                textStorage.addAttribute(
-                    .knotqLine,
-                    value: meta.with(itemID: item.id),
-                    range: paragraph.fullRange
-                )
-            }
-            textStorage.endEditing()
+        for (paragraph, item) in zip(paragraphs, items) where !item.id.isEmpty {
+            // Mutate the line's shared LineMeta instance instead of writing the
+            // attribute: ANY text-storage edit (even an unchanged-value one)
+            // invalidates the paragraph's layout, and this fires on exactly the
+            // line the user is typing on when the flush completes — a visible
+            // caret/scroll nudge. Skip a paragraph whose meta isn't uniform
+            // (mid-autocorrect split); the next normalize pass restores I2 and
+            // the next flush adopts it then.
+            let meta = lineMeta(at: paragraph.fullRange.location, in: textStorage)
+            guard meta.itemID == nil,
+                  meta === paragraphMeta(of: paragraph.fullRange, in: textStorage) else { continue }
+            meta.adoptItemID(item.id)
         }
     }
 
