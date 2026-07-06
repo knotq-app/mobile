@@ -264,10 +264,30 @@ func defaultNotificationOffset(kind: CalendarKind, settings: MobileSettings?) ->
 }
 
 func notificationLeadTimeLabel(_ offsetSecs: Int32) -> String {
-    occurrenceNotificationOptions.first { $0.offsetSecs == offsetSecs }?.label
-        ?? eventDefaultNotificationOptions.first { $0.offsetSecs == offsetSecs }?.label
-        ?? assignmentDefaultNotificationOptions.first { $0.offsetSecs == offsetSecs }?.label
-        ?? "\(offsetSecs / 60) minutes before"
+    if let label = occurrenceNotificationOptions.first(where: { $0.offsetSecs == offsetSecs })?.label
+        ?? eventDefaultNotificationOptions.first(where: { $0.offsetSecs == offsetSecs })?.label
+        ?? assignmentDefaultNotificationOptions.first(where: { $0.offsetSecs == offsetSecs })?.label {
+        return label
+    }
+    // A snoozed occurrence can fire after its start time, producing a negative
+    // offset. Mirror Android/desktop: decompose the duration and say before/after
+    // instead of rendering nonsense like "-1200 minutes before".
+    let suffix = offsetSecs > 0 ? "before" : "after"
+    return "\(formatLeadDuration(abs(offsetSecs))) \(suffix)"
+}
+
+private func formatLeadDuration(_ seconds: Int32) -> String {
+    let days = seconds / 86_400
+    if days > 0 && seconds % 86_400 == 0 { return pluralLeadUnit(days, "day") }
+    let hours = seconds / 3_600
+    if hours > 0 && seconds % 3_600 == 0 { return pluralLeadUnit(hours, "hour") }
+    let minutes = seconds / 60
+    if minutes > 0 { return pluralLeadUnit(minutes, "minute") }
+    return pluralLeadUnit(seconds, "second")
+}
+
+private func pluralLeadUnit(_ count: Int32, _ unit: String) -> String {
+    count == 1 ? "1 \(unit)" : "\(count) \(unit)s"
 }
 
 func occurrenceNotificationOptionsIncluding(_ offsetSecs: Int32) -> [NotificationLeadTimeOption] {

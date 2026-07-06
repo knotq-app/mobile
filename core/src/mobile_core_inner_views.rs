@@ -98,14 +98,18 @@ impl MobileCoreInner {
             .map(|context| MobileOccurrence::from_context(&self.workspace, context))
             .collect();
         let retained = &self.retained_completed;
+        let now = Utc::now();
         let overdue = indexed
             .calendar_query()
-            .overdue_retaining(Utc::now(), |event| {
-                retained.contains(&CalendarOccurrenceKey {
-                    scheme_id: event.scheme_id,
-                    item_id: event.item_id,
-                    occurrence: event.occurrence.id.clone(),
-                })
+            .overdue_retaining(now, |event| {
+                retained.is_retained(
+                    &CalendarOccurrenceKey {
+                        scheme_id: event.scheme_id,
+                        item_id: event.item_id,
+                        occurrence: event.occurrence.id.clone(),
+                    },
+                    now,
+                )
             })
             .into_iter()
             .map(|context| MobileOccurrence::from_context(&self.workspace, context))

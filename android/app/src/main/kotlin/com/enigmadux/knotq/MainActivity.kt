@@ -246,6 +246,14 @@ class MainActivity : Activity() {
             googleSyncHandler.postDelayed(this, GOOGLE_SYNC_INTERVAL_MS)
         }
     }
+    // Debounce foreground notification rescheduling: a burst of sync pulls / edits
+    // would otherwise re-arm the same OS schedule on every change. Leading-window
+    // (like syncEditRunnable): the first call applies immediately, further calls
+    // inside the window collapse into one trailing apply. The background worker
+    // calls MobileNotificationScheduler.reschedule directly and is not throttled.
+    internal val notifRescheduleHandler = Handler(Looper.getMainLooper())
+    internal var notifRescheduleCooldown = false
+    internal var notifReschedulePending = false
 
     companion object {
         // The background sync worker runs in this process: it reuses the live
@@ -2135,7 +2143,27 @@ class MainActivity : Activity() {
     }
 
 
+    // Throttled entry point — coalesces bursts. Must be called on the UI thread
+    // (all foreground callers are); the background worker bypasses this.
     internal fun rescheduleNotifications() {
+        if (notifRescheduleCooldown) {
+            notifReschedulePending = true
+            return
+        }
+        rescheduleNotificationsCooldownStart()
+    }
+
+    private fun rescheduleNotificationsCooldownStart() {
+        notifRescheduleCooldown = true
+        notifReschedulePending = false
+        rescheduleNotificationsNow()
+        notifRescheduleHandler.postDelayed({
+            notifRescheduleCooldown = false
+            if (notifReschedulePending) rescheduleNotificationsCooldownStart()
+        }, NOTIF_RESCHEDULE_DEBOUNCE_MS)
+    }
+
+    private fun rescheduleNotificationsNow() {
         if (!::bridge.isInitialized) return
         try {
             MobileNotificationScheduler.reschedule(

@@ -69,6 +69,9 @@ internal const val GOOGLE_SYNC_INTERVAL_MS = 120_000L
 // in-flight sync at a time, so this can be short like desktop's WS local-change
 // debounce. The 30 s foreground poll and an onStop flush remain the backstops.
 internal const val SYNC_EDIT_DEBOUNCE_MS = 400L
+// Coalesce foreground notification rescheduling so a burst of sync pulls / edits
+// re-arms the OS schedule once per window instead of on every change.
+internal const val NOTIF_RESCHEDULE_DEBOUNCE_MS = 12_000L
 internal const val TAB_CALENDAR = 0
 internal const val TAB_SCHEMES = 1
 internal const val TAB_DAILY = 2

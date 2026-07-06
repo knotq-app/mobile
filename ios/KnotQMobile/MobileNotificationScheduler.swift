@@ -26,6 +26,16 @@ final class MobileNotificationScheduler: NSObject, UNUserNotificationCenterDeleg
     private let center = UNUserNotificationCenter.current()
     private let iso = ISO8601DateFormatter()
 
+    /// Coalesce a burst of reschedule requests (sync pulls, rapid edits) before
+    /// touching the OS notification center again, so we don't constantly re-arm
+    /// the same schedule. Leading-edge: the first request in an idle period
+    /// applies immediately; further requests inside the window collapse into a
+    /// single trailing apply.
+    private static let rescheduleDebounce: TimeInterval = 12
+    private var latestDesired: [PendingMobileNotification]?
+    private var rescheduleCooldownActive = false
+    private var rescheduleTrailingPending = false
+
     private override init() {
         super.init()
         iso.formatOptions = [.withInternetDateTime]
@@ -51,19 +61,52 @@ final class MobileNotificationScheduler: NSObject, UNUserNotificationCenterDeleg
 
     @MainActor
     func reschedule(_ requests: [MobileNotificationRequest]) {
-        let desired = requests
-            .compactMap(notificationRequest)
-            .prefix(64)
+        latestDesired = Array(requests.compactMap(notificationRequest).prefix(64))
+        guard !rescheduleCooldownActive else {
+            // Inside the debounce window — coalesce. The trailing apply picks up
+            // this latest desired set when the cooldown ends.
+            rescheduleTrailingPending = true
+            return
+        }
+        applyLatestRescheduleAndStartCooldown()
+    }
+
+    @MainActor
+    private func applyLatestRescheduleAndStartCooldown() {
+        rescheduleCooldownActive = true
+        rescheduleTrailingPending = false
+        applyLatestReschedule()
+        DispatchQueue.main.asyncAfter(deadline: .now() + Self.rescheduleDebounce) { [weak self] in
+            guard let self else { return }
+            self.rescheduleCooldownActive = false
+            if self.rescheduleTrailingPending {
+                self.applyLatestRescheduleAndStartCooldown()
+            }
+        }
+    }
+
+    @MainActor
+    private func applyLatestReschedule() {
+        guard let desired = latestDesired else { return }
         let desiredByID = Dictionary(uniqueKeysWithValues: desired.map { ($0.id, $0) })
 
-        // Reconcile only *pending* (not-yet-fired) requests. Delivered
-        // notifications are intentionally left in Notification Center so they
-        // persist until the user dismisses them or picks an action (Mark Done /
-        // Snooze) — iOS clears a delivered notification automatically when an
-        // action is chosen. Previously we also removed any delivered
-        // notification that wasn't in the desired set, but `desired` only ever
-        // contains *future* requests, so every notification that had already
-        // fired was treated as stale and wiped on the next refresh.
+        // Notification ids are stable per occurrence (the fire time is not part of
+        // the key), so a delivered banner whose id is in the *future* desired set
+        // can only mean that occurrence was rescheduled — e.g. "remind me later"
+        // chosen on another device and synced here. Clear that stale banner so the
+        // rescheduled notification doesn't stack a second copy 10 minutes later.
+        // A normally-delivered, still-relevant notification has already fired, so
+        // its id never appears in `desired` and is left untouched.
+        let desiredIDs = Array(desiredByID.keys)
+        if !desiredIDs.isEmpty {
+            center.removeDeliveredNotifications(withIdentifiers: desiredIDs)
+        }
+
+        // Reconcile only *pending* (not-yet-fired) requests. Other delivered
+        // banners are intentionally left in Notification Center so they persist
+        // until the user dismisses them or picks an action; the core's
+        // `delivered_notifications_to_clear` (completed occurrences / expired
+        // events) drives any other removals via `clearDelivered`.
         center.getPendingNotificationRequests { [center, desiredByID] pending in
             let managedPending = pending
                 .map(\.identifier)

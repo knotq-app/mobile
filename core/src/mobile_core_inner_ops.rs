@@ -100,11 +100,14 @@ impl MobileCoreInner {
             item_id: item,
             occurrence,
         };
+        let now = Utc::now();
         if is_done {
-            self.retained_completed.insert(key);
+            self.retained_completed.insert(key, now);
         } else {
             self.retained_completed.remove(&key);
         }
+        // Bound the set: entries past their panel TTL are dead weight.
+        self.retained_completed.purge_expired(now);
     }
 
     pub(crate) fn apply(&mut self, command: Command) -> Result<()> {

@@ -171,8 +171,8 @@ struct MobileCoreInner {
     push_environment: Option<PushEnvironment>,
     registered_push_token: Option<String>,
     // Occurrences completed this session, kept on the upcoming panel (faded, in
-    // place) until they're un-completed or the app reloads — mirroring desktop's
-    // `retained_completed_calendar_items`.
+    // place) until they're un-completed, their retention TTL elapses, or the app
+    // reloads — mirroring desktop's retained-completed set.
     retained_completed: RetainedCompletedItems,
     // Monotonic time of the last remote sync that actually ran. Used to coalesce
     // wake-storms (silent-push/poll triggers that arrive in bursts) so a device

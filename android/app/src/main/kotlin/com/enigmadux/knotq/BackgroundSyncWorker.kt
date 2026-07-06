@@ -1,11 +1,13 @@
 package com.enigmadux.knotq
 
 import android.content.Context
+import android.content.SharedPreferences
 import androidx.work.ExistingWorkPolicy
 import androidx.work.OneTimeWorkRequest
 import androidx.work.WorkManager
 import androidx.work.Worker
 import androidx.work.WorkerParameters
+import com.enigmadux.knotq.ffi.MobileException
 import org.json.JSONObject
 import java.net.HttpURLConnection
 import java.net.URL
@@ -38,16 +40,8 @@ internal class BackgroundSyncWorker(
 
         var bearerToken = session.optString("bearer_token")
         if (tokenNeedsRefresh(session.optString("expires_at"))) {
-            when (val refreshed = refreshSession(apiBase, refreshToken)) {
+            when (refreshAndPersist(prefs, session, apiBase)) {
                 is RefreshOutcome.Rotated -> {
-                    // Persist immediately: the old refresh token is single-use,
-                    // and the activity reloads this on its next onStart.
-                    session.put("bearer_token", refreshed.json.optString("bearer_token"))
-                    session.put("expires_at", refreshed.json.optString("expires_at"))
-                    session.put("refresh_token", refreshed.json.optString("refresh_token"))
-                    session.put("refresh_expires_at", refreshed.json.optString("refresh_expires_at"))
-                    session.put("supports_sync", refreshed.json.optBoolean("supports_sync", true))
-                    prefs.edit().putString(SYNC_SESSION_PREF, session.toString()).apply()
                     bearerToken = session.optString("bearer_token")
                     if (!session.optBoolean("supports_sync", true)) return Result.success()
                 }
@@ -72,12 +66,39 @@ internal class BackgroundSyncWorker(
             // token) while backgrounded gets registered with the backend on this
             // sync. Idempotent — the core dedupes by token.
             PushRegistration.stored(applicationContext)?.let { PushRegistration.apply(bridge, it) }
-            bridge.request(
-                JSONObject()
-                    .put("type", "sync_once")
-                    .put("api_base", apiBase)
-                    .put("bearer_token", bearerToken)
-            )
+            // One reactive auth retry. The proactive refresh above only fires when our
+            // local expiry check says the token is near expiry; if the backend refuses
+            // the bearer anyway (clock skew, an early server-side revoke, or a missed
+            // key rotation), force a single refresh and try once more. sync_once throws
+            // MobileException — NOT a RuntimeException — so the catch below never saw a
+            // 401 and the job used to fail terminally (no retry). Bounded to one forced
+            // refresh so a genuinely dead session can't loop.
+            var triedAuthRefresh = false
+            while (true) {
+                try {
+                    bridge.request(
+                        JSONObject()
+                            .put("type", "sync_once")
+                            .put("api_base", apiBase)
+                            .put("bearer_token", bearerToken)
+                    )
+                    break
+                } catch (error: MobileException) {
+                    if (triedAuthRefresh || !isAuthRejection(error)) return Result.retry()
+                    when (refreshAndPersist(prefs, session, apiBase)) {
+                        is RefreshOutcome.Rotated -> {
+                            if (!session.optBoolean("supports_sync", true)) return Result.success()
+                            bearerToken = session.optString("bearer_token")
+                            triedAuthRefresh = true
+                        }
+                        RefreshOutcome.SessionDead -> {
+                            prefs.edit().remove(SYNC_SESSION_PREF).apply()
+                            return Result.success()
+                        }
+                        RefreshOutcome.Transient -> return Result.retry()
+                    }
+                }
+            }
             // Re-arm local alarms from the freshly-pulled schedule, on the SAME
             // bridge (refreshFromCore opens its own core, which would clobber this
             // one's in-memory state). This is what makes a peer's schedule change
@@ -103,6 +124,34 @@ internal class BackgroundSyncWorker(
         object SessionDead : RefreshOutcome
         object Transient : RefreshOutcome
     }
+
+    /// Refresh the access token and, on success, persist the rotated credentials
+    /// into [session] and prefs immediately (the old refresh token is single-use,
+    /// and the activity reloads this on its next onStart). Shared by the proactive
+    /// near-expiry path and the reactive 401 path so both rotate at most once and
+    /// store before the token is reused.
+    private fun refreshAndPersist(
+        prefs: SharedPreferences,
+        session: JSONObject,
+        apiBase: String
+    ): RefreshOutcome {
+        val outcome = refreshSession(apiBase, session.optString("refresh_token"))
+        if (outcome is RefreshOutcome.Rotated) {
+            session.put("bearer_token", outcome.json.optString("bearer_token"))
+            session.put("expires_at", outcome.json.optString("expires_at"))
+            session.put("refresh_token", outcome.json.optString("refresh_token"))
+            session.put("refresh_expires_at", outcome.json.optString("refresh_expires_at"))
+            session.put("supports_sync", outcome.json.optBoolean("supports_sync", true))
+            prefs.edit().putString(SYNC_SESSION_PREF, session.toString()).apply()
+        }
+        return outcome
+    }
+
+    /// The backend refused the bearer token itself — an HTTP 401, which the auth
+    /// middleware tags `unauthorized` and the core surfaces as that reason. Worth a
+    /// forced refresh + one retry; other core errors are not.
+    private fun isAuthRejection(error: MobileException): Boolean =
+        error is MobileException.Core && error.reason.contains("unauthorized")
 
     private fun refreshSession(apiBase: String, refreshToken: String): RefreshOutcome {
         return try {

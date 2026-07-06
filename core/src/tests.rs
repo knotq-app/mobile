@@ -413,6 +413,36 @@ fn completing_an_overdue_assignment_keeps_it_on_the_upcoming_panel() {
         .expect("still present");
     assert!(!occ.done);
 
+    // Retention is not permanent: re-complete it, then backdate the retention
+    // timestamp past the TTL — as if the completion happened over an hour ago —
+    // and the row ages off the panel.
+    core.toggle_occurrence(
+        occ.scheme_id.clone(),
+        occ.item_id.clone(),
+        occ.occurrence_json.clone(),
+    )
+    .expect("re-complete");
+    let key = CalendarOccurrenceKey {
+        scheme_id: crate::parsing::parse_id(&occ.scheme_id).unwrap(),
+        item_id: crate::parsing::parse_id(&occ.item_id).unwrap(),
+        occurrence: serde_json::from_str(&occ.occurrence_json).unwrap(),
+    };
+    {
+        let mut inner = core.inner.lock().unwrap();
+        assert!(
+            inner.retained_completed.contains(&key),
+            "sanity: the re-completion was retained"
+        );
+        let stale = Utc::now()
+            - chrono::Duration::seconds(knotq_state::RETAINED_COMPLETED_TTL_SECS + 60);
+        inner.retained_completed.insert(key, stale);
+    }
+    let overdue = core.snapshot(None, 0).unwrap().calendar.overdue;
+    assert!(
+        !overdue.iter().any(|occ| occ.title == "Old essay"),
+        "an hour after completion the row no longer holds its place"
+    );
+
     let _ = std::fs::remove_dir_all(dir);
 }
 

@@ -25,30 +25,48 @@ extension AppModel {
         guard !syncInProgress, let session = syncSession, session.supportsSync else { return false }
         syncInProgress = true
         defer { syncInProgress = false }
-        guard await refreshSyncSessionIfNeeded() == .ready, let bridge, let current = syncSession else {
-            return false
-        }
-        do {
+        guard await refreshSyncSessionIfNeeded() == .ready else { return false }
+
+        // One reactive auth retry. The proactive refresh above only fires when our
+        // local expiry check says the token is near expiry; if the backend rejects
+        // the bearer token anyway (clock skew, an early server-side revoke, or a key
+        // rotation we missed), force a single refresh and try once more. A silent
+        // push wakes us only briefly, so giving up on the first 401 would strand this
+        // device until the next push or the ~3 h BGAppRefreshTask. Bounded to one
+        // forced refresh so a genuinely dead session can't loop.
+        var triedAuthRefresh = false
+        while true {
+            guard let bridge, let current = syncSession else { return false }
             let apiBase = current.apiBase
             let bearerToken = current.bearerToken
-            let result = try await bridge.perform { b in
-                let changed = try b.syncOnce(apiBase: apiBase, bearerToken: bearerToken)
-                let notice = try b.takeSyncNotice()
-                return (changed, notice)
+            do {
+                let result = try await bridge.perform { b in
+                    let changed = try b.syncOnce(apiBase: apiBase, bearerToken: bearerToken)
+                    let notice = try b.takeSyncNotice()
+                    return (changed, notice)
+                }
+                if result.0 {
+                    refresh()
+                }
+                if let notice = result.1 {
+                    errorMessage = notice
+                }
+                syncOffline = false
+                return result.0
+            } catch {
+                // A terminal refresh failure signs out inside refreshSyncSessionIfNeeded;
+                // a transient one returns non-.ready, so we fall through and bail.
+                if !triedAuthRefresh,
+                   Self.isAuthRejection(error),
+                   await refreshSyncSessionIfNeeded(force: true) == .ready {
+                    triedAuthRefresh = true
+                    continue
+                }
+                if Self.isLikelyNetworkError(error) {
+                    syncOffline = true
+                }
+                return false
             }
-            if result.0 {
-                refresh()
-            }
-            if let notice = result.1 {
-                errorMessage = notice
-            }
-            syncOffline = false
-            return result.0
-        } catch {
-            if Self.isLikelyNetworkError(error) {
-                syncOffline = true
-            }
-            return false
         }
     }
 
@@ -263,6 +281,16 @@ extension AppModel {
         }
         let message = error.localizedDescription.lowercased()
         return ["network", "request failed", "offline", "timed out", "cannot connect", "not connected"].contains { message.contains($0) }
+    }
+
+    /// The backend rejected the bearer token itself — an HTTP 401, which the auth
+    /// middleware tags `unauthorized` and the core surfaces as that code. Distinct
+    /// from a transient network error: the access token was refused, so a forced
+    /// refresh + one retry can recover it (vs. a network blip, which just retries
+    /// on the next tick with the same token).
+    static func isAuthRejection(_ error: Error) -> Bool {
+        guard case let MobileError.Core(reason) = error else { return false }
+        return reason.contains("unauthorized")
     }
 
     static func isTerminalRefreshError(_ data: Data) -> Bool {
