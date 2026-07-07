@@ -685,6 +685,14 @@ final class DailyFeedScrollController: UIViewController, UIScrollViewDelegate {
     // One hosting controller per day, keyed by `entry.date`.
     private var hosts: [String: UIHostingController<AnyView>] = [:]
     private var order: [String] = []
+    // What `rootView(for:)` was last built from, per day — every `AppModel`
+    // mutation republishes `snapshot` (so e.g. the user's own live-flush of the
+    // line they're typing re-invokes `apply` here), but most of those carry no
+    // real change for this feed. Skipping the rootView reassignment (and the
+    // anchor-based scroll resnap below) when nothing changed avoids an Auto
+    // Layout pass + contentOffset correction firing on every keystroke's flush.
+    private var lastAppliedEntry: [String: MobileDailyEntry] = [:]
+    private var lastAppliedFlags: [String: (isEmpty: Bool, selected: Bool, isDark: Bool, autoFocus: Bool)] = [:]
 
     private var didSetup = false
     private var needsInitialPin = false
@@ -692,6 +700,7 @@ final class DailyFeedScrollController: UIViewController, UIScrollViewDelegate {
     private var pendingLoadOlder = false
     private var lastSelectedDateKey = ""
     private var keyboardInset: CGFloat = 0
+    private var pendingCaretScrollWorkItem: DispatchWorkItem?
 
     // MARK: Lifecycle
 
@@ -794,16 +803,20 @@ final class DailyFeedScrollController: UIViewController, UIScrollViewDelegate {
             }
         }
 
-        reconcile()
+        let (contentChanged, structuralChanged) = reconcile()
         spinner.isHidden = !isLoadingOlder
         if isLoadingOlder { spinner.startAnimating() } else { spinner.stopAnimating() }
         loadingRow.isHidden = !isLoadingOlder
         // A finished/cleared load re-arms the top trigger.
         if !isLoadingOlder { pendingLoadOlder = false }
 
-        view.layoutIfNeeded()
-
-        if let anchor, let v = hosts[anchor.date]?.view {
+        if contentChanged {
+            view.layoutIfNeeded()
+        }
+        // Resnap only for structural changes (a day added/removed/reordered) or
+        // an explicit `loadAnchorDate` — see the `reconcile` doc comment.
+        if structuralChanged || loadAnchorDate != nil,
+           let anchor, let v = hosts[anchor.date]?.view {
             scrollView.contentOffset.y = clampOffsetY(v.frame.minY - anchor.screenY)
         }
 
@@ -829,7 +842,23 @@ final class DailyFeedScrollController: UIViewController, UIScrollViewDelegate {
     /// Reconciles the hosting controllers to `entries`: updates existing days in
     /// place (preserving their editor state / first responder), creates hosts for
     /// new days, removes vanished ones, and orders them after the loading row.
-    private func reconcile() {
+    /// Returns `(contentChanged, structuralChanged)` — callers use these to skip
+    /// unnecessary work in `apply`:
+    ///  - `contentChanged`: some day's rootView was actually reassigned (skip the
+    ///    Auto Layout pass otherwise — most `apply` calls are no-ops, since
+    ///    `entries` is rebuilt from `AppModel.snapshot`, which republishes on
+    ///    every mutate anywhere in the app, including our own live-flush).
+    ///  - `structuralChanged`: a day was added, removed, or reordered. Only this
+    ///    (or an explicit `loadAnchorDate`, the "loaded older history" signal)
+    ///    justifies the anchor resnap below — content growing/shrinking *within*
+    ///    an already-visible day (e.g. the line the user is actively typing,
+    ///    including on a slow enough cadence that every keystroke's flush is a
+    ///    real, distinct change) doesn't move anything above it, so there is
+    ///    nothing to correct for. Resnapping anyway was visible as an instant
+    ///    jump-then-settle on every such flush.
+    private func reconcile() -> (contentChanged: Bool, structuralChanged: Bool) {
+        var contentChanged = false
+        var structuralChanged = false
         let newDates = entries.map(\.date)
         let newSet = Set(newDates)
 
@@ -839,13 +868,30 @@ final class DailyFeedScrollController: UIViewController, UIScrollViewDelegate {
             host.view.removeFromSuperview()
             host.removeFromParent()
             hosts[date] = nil
+            lastAppliedEntry[date] = nil
+            lastAppliedFlags[date] = nil
+            contentChanged = true
+            structuralChanged = true
         }
 
         for (index, entry) in entries.enumerated() {
+            let flags = (
+                isEmpty: emptyDates.contains(entry.date),
+                selected: entry.date == selectedDateKey,
+                isDark: theme.isDark,
+                autoFocus: autoFocusSelectedDay
+            )
             let host: UIHostingController<AnyView>
             if let existing = hosts[entry.date] {
                 host = existing
-                host.rootView = rootView(for: entry)
+                let unchanged = lastAppliedEntry[entry.date] == entry
+                    && (lastAppliedFlags[entry.date].map { $0 == flags } ?? false)
+                if !unchanged {
+                    host.rootView = rootView(for: entry)
+                    lastAppliedEntry[entry.date] = entry
+                    lastAppliedFlags[entry.date] = flags
+                    contentChanged = true
+                }
             } else {
                 host = UIHostingController(rootView: rootView(for: entry))
                 host.view.backgroundColor = .clear
@@ -853,14 +899,21 @@ final class DailyFeedScrollController: UIViewController, UIScrollViewDelegate {
                 addChild(host)
                 hosts[entry.date] = host
                 host.didMove(toParent: self)
+                lastAppliedEntry[entry.date] = entry
+                lastAppliedFlags[entry.date] = flags
+                contentChanged = true
+                structuralChanged = true
             }
             // +1 to sit after the loading row at index 0.
             let target = index + 1
             if stack.arrangedSubviews.firstIndex(of: host.view) != target {
                 stack.insertArrangedSubview(host.view, at: min(target, stack.arrangedSubviews.count))
+                contentChanged = true
+                structuralChanged = true
             }
         }
         order = newDates
+        return (contentChanged, structuralChanged)
     }
 
     private func rootView(for entry: MobileDailyEntry) -> AnyView {
@@ -930,9 +983,20 @@ final class DailyFeedScrollController: UIViewController, UIScrollViewDelegate {
     @objc private func keyboardWillChange(_ note: Notification) {
         guard let value = note.userInfo?[UIResponder.keyboardFrameEndUserInfoKey] as? NSValue else { return }
         let kbInView = view.convert(value.cgRectValue, from: nil)
-        keyboardInset = max(0, scrollView.frame.maxY - kbInView.minY)
+        let newInset = max(0, scrollView.frame.maxY - kbInView.minY)
+        // The predictive-text/accessory bar refires this notification on nearly
+        // every keystroke even when the keyboard's actual height hasn't changed.
+        // Reacting unconditionally restarted an animated caret-follow scroll
+        // mid-flight on every letter — a stack of competing animations that
+        // shows up as the feed instantly jumping and settling back a beat
+        // later. Only react when the height genuinely moved.
+        guard abs(newInset - keyboardInset) > 0.5 else { return }
+        keyboardInset = newInset
         updateBottomInset()
-        DispatchQueue.main.async { [weak self] in self?.scrollFocusedCaretToVisible() }
+        pendingCaretScrollWorkItem?.cancel()
+        let workItem = DispatchWorkItem { [weak self] in self?.scrollFocusedCaretToVisible() }
+        pendingCaretScrollWorkItem = workItem
+        DispatchQueue.main.async(execute: workItem)
     }
 
     @objc private func keyboardWillHide(_ note: Notification) {
