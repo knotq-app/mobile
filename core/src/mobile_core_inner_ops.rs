@@ -474,7 +474,6 @@ impl MobileCoreInner {
             push_environment: Some(self.push_environment.unwrap_or(PushEnvironment::Production)),
             notification_permission: NotificationPermissionState::default(),
             local_scheduler_supported: Some(true),
-            supports_document_epochs: Some(true),
         };
         match client.register_device(&request) {
             Ok(_) => self.registered_push_token = Some(token),
