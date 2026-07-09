@@ -28,6 +28,7 @@ fn bootstrap_snapshot_supersedes_pending_delta_for_new_remote_document() {
             kind: SyncDocumentKind::Scheme,
             last_pulled_sequence: 0,
             last_pushed_sequence: 12,
+            epoch: 0,
         },
     );
     sync_state.push_pending(PendingCrdtEdit {
@@ -39,6 +40,7 @@ fn bootstrap_snapshot_supersedes_pending_delta_for_new_remote_document() {
         document,
         kind: SyncDocumentKind::Scheme,
         update_v1: stale_delta.clone(),
+        touched_items: Vec::new(),
     });
 
     queue_workspace_bootstrap_updates(
@@ -87,6 +89,7 @@ fn bootstrap_drops_orphaned_pending_delta_without_remote_base() {
         document: orphan_document,
         kind: SyncDocumentKind::Scheme,
         update_v1: vec![9, 9, 9],
+        touched_items: Vec::new(),
     });
 
     queue_workspace_bootstrap_updates(
@@ -433,8 +436,8 @@ fn completing_an_overdue_assignment_keeps_it_on_the_upcoming_panel() {
             inner.retained_completed.contains(&key),
             "sanity: the re-completion was retained"
         );
-        let stale = Utc::now()
-            - chrono::Duration::seconds(knotq_state::RETAINED_COMPLETED_TTL_SECS + 60);
+        let stale =
+            Utc::now() - chrono::Duration::seconds(knotq_state::RETAINED_COMPLETED_TTL_SECS + 60);
         inner.retained_completed.insert(key, stale);
     }
     let overdue = core.snapshot(None, 0).unwrap().calendar.overdue;
@@ -558,6 +561,7 @@ fn google_calendar_sync_deletes_duplicate_imported_schemes_after_first() {
                 full_sync: true,
                 items: Vec::new(),
                 deleted: Vec::new(),
+                recurrence_exdates: Vec::new(),
             }],
             false,
             root,

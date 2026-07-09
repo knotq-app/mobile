@@ -148,7 +148,10 @@ impl MobileCoreInner {
         save_crdt_state(&self.workspace_path, &self.crdt.document_states())
     }
 
-    pub(crate) fn load_daily_queue_scheme_if_needed(&mut self, date: NaiveDate) -> Result<Option<SchemeId>> {
+    pub(crate) fn load_daily_queue_scheme_if_needed(
+        &mut self,
+        date: NaiveDate,
+    ) -> Result<Option<SchemeId>> {
         let Some(expected_id) = self.workspace.daily_queue_scheme_id(date) else {
             return Ok(None);
         };
@@ -174,7 +177,11 @@ impl MobileCoreInner {
         }
     }
 
-    pub(crate) fn load_daily_queue_date_range(&mut self, start: NaiveDate, end: NaiveDate) -> Result<()> {
+    pub(crate) fn load_daily_queue_date_range(
+        &mut self,
+        start: NaiveDate,
+        end: NaiveDate,
+    ) -> Result<()> {
         let first = start.min(end);
         let last = start.max(end);
         let dates = self
@@ -197,7 +204,11 @@ impl MobileCoreInner {
         Ok(())
     }
 
-    pub(crate) fn load_daily_queue_calendar_range(&mut self, start: NaiveDate, end: NaiveDate) -> Result<()> {
+    pub(crate) fn load_daily_queue_calendar_range(
+        &mut self,
+        start: NaiveDate,
+        end: NaiveDate,
+    ) -> Result<()> {
         for (date, scheme) in
             load_daily_queue_schemes_for_calendar_range(&self.workspace_path, start, end)?
         {
@@ -432,6 +443,7 @@ impl MobileCoreInner {
                 document: update.document,
                 kind: update.kind,
                 update_v1: update.update_v1,
+                touched_items: update.touched_items,
             });
         }
         save_local_sync_state(&self.workspace_path, &sync_state)
@@ -462,6 +474,7 @@ impl MobileCoreInner {
             push_environment: Some(self.push_environment.unwrap_or(PushEnvironment::Production)),
             notification_permission: NotificationPermissionState::default(),
             local_scheduler_supported: Some(true),
+            supports_document_epochs: Some(true),
         };
         match client.register_device(&request) {
             Ok(_) => self.registered_push_token = Some(token),
@@ -493,7 +506,9 @@ impl MobileCoreInner {
             .unwrap_or(false);
         // A server `changed` nudge over the socket means a peer pushed — always run
         // (and clear the flag) rather than coalescing it away.
-        let ws_changed = self.ws_changed.swap(false, std::sync::atomic::Ordering::SeqCst);
+        let ws_changed = self
+            .ws_changed
+            .swap(false, std::sync::atomic::Ordering::SeqCst);
         if !ws_changed && self.should_coalesce_idle_sync(has_local_pending) {
             return Ok(false);
         }
@@ -570,6 +585,7 @@ impl MobileCoreInner {
                 document: update.document,
                 kind: update.kind,
                 update_v1: update.update_v1,
+                touched_items: update.touched_items,
             });
             // Force re-seed this device's scheme content to the new account. The
             // bootstrap only re-seeds documents the new server LACKS, so a scheme the
@@ -615,7 +631,7 @@ impl MobileCoreInner {
                 );
             }
         }
-        let remote_updates_applied = pull.remote_updates_applied;
+        let mut remote_updates_applied = pull.remote_updates_applied;
         self.workspace = pull.workspace;
         let mut repaired_workspace_changed = self
             .workspace
@@ -648,6 +664,7 @@ impl MobileCoreInner {
                         document: update.document,
                         kind: update.kind,
                         update_v1: update.update_v1,
+                        touched_items: update.touched_items,
                     });
                 }
             }
@@ -709,7 +726,7 @@ impl MobileCoreInner {
         // the next sync to re-download every document from sequence zero. The merged
         // workspace above is already durable, so the cursor never runs ahead of it.
         let mut pushed = Vec::new();
-        let push_result = batch_push_pending(
+        let mut push_result = batch_push_pending(
             &transport,
             &mut sync_state,
             self.settings.replica_id,
@@ -718,6 +735,37 @@ impl MobileCoreInner {
             &mut self.crdt,
             &self.workspace,
         );
+        // A `document_epoch_stale` rejection means some document was squashed
+        // (history replaced, epoch bumped) since this run's pull. One bounded
+        // re-pull adopts the squashed state and re-expresses the pending edits
+        // against it, after which the push succeeds — mirroring the desktop
+        // scheduler's single epoch retry.
+        if push_result
+            .as_ref()
+            .err()
+            .is_some_and(|err| err.downcast_ref::<knotq_sync::SyncPushEpochStale>().is_some())
+        {
+            eprintln!("mobile sync: push hit a stale document epoch; re-pulling to adopt and retrying");
+            let adoption = batch_pull_and_apply(
+                &transport,
+                &mut self.crdt,
+                &mut sync_state,
+                self.workspace.clone(),
+                self.settings.replica_id,
+            )?;
+            remote_updates_applied += adoption.remote_updates_applied;
+            self.workspace = adoption.workspace;
+            self.save_workspace()?;
+            push_result = batch_push_pending(
+                &transport,
+                &mut sync_state,
+                self.settings.replica_id,
+                &notification_schedule,
+                &mut pushed,
+                &mut self.crdt,
+                &self.workspace,
+            );
+        }
         save_local_sync_state(&self.workspace_path, &sync_state)?;
         push_result?;
 
@@ -795,7 +843,7 @@ impl MobileCoreInner {
                 imported_count: 0,
                 synced_count: 0,
                 failure_count: 0,
-                message: "No Google Calendar account is connected.".to_string(),
+                message: knotq_l10n::t("google.sync.no_account").to_string(),
             });
         }
         let accounts = self.settings.google_accounts.clone();
@@ -839,11 +887,11 @@ impl MobileCoreInner {
         let failure_count = result.failures.len() as i32;
         let message = if result.failures.is_empty() {
             if synced_count == 0 {
-                "Google Calendar is already up to date.".to_string()
+                knotq_l10n::t("google.sync.up_to_date").to_string()
             } else if applied.created_count > 0 {
-                format!("Imported {} Google calendars.", applied.created_count)
+                knotq_l10n::t_count("google.sync.imported_count", applied.created_count as i64)
             } else {
-                format!("Synced {synced_count} Google calendars.")
+                knotq_l10n::t_count("google.sync.synced_count", synced_count as i64)
             }
         } else {
             result.failures.join("\n")
@@ -857,7 +905,10 @@ impl MobileCoreInner {
         })
     }
 
-    pub(crate) fn upsert_google_accounts(&mut self, accounts: Vec<knotq_model::GoogleOAuthAccount>) -> bool {
+    pub(crate) fn upsert_google_accounts(
+        &mut self,
+        accounts: Vec<knotq_model::GoogleOAuthAccount>,
+    ) -> bool {
         let mut changed = false;
         for account in accounts {
             if let Some(existing) = self.settings.google_accounts.iter_mut().find(|existing| {
@@ -899,7 +950,10 @@ impl MobileCoreInner {
             .collect()
     }
 
-    pub(crate) fn google_calendar_scheme_count_for_account(&self, account: &GoogleOAuthAccount) -> usize {
+    pub(crate) fn google_calendar_scheme_count_for_account(
+        &self,
+        account: &GoogleOAuthAccount,
+    ) -> usize {
         self.workspace
             .schemes
             .values()
@@ -1033,5 +1087,4 @@ impl MobileCoreInner {
         }
         changed
     }
-
 }

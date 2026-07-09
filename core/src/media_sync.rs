@@ -10,9 +10,9 @@ use knotq_model::{
 };
 use knotq_notifications::compute_due_notifications_with_lead_times;
 use knotq_sync::{
-    AccountStatusResponse, BatchPullRequest, BatchPullResponse, BatchPushRequest, BatchPushResponse,
-    ErrorResponse, NotificationScheduleSnapshot, RegisterDeviceRequest, RegisterDeviceResponse,
-    SyncTransport, MAX_SYNC_MEDIA_BYTES,
+    AccountStatusResponse, BatchPullRequest, BatchPullResponse, BatchPushRequest,
+    BatchPushResponse, ErrorResponse, NotificationScheduleSnapshot, RegisterDeviceRequest,
+    RegisterDeviceResponse, SyncTransport, MAX_SYNC_MEDIA_BYTES,
 };
 use sha2::{Digest, Sha256};
 
@@ -127,7 +127,10 @@ impl MobileSyncHttpClient {
         self.get_json(&url)
     }
 
-    pub(crate) fn register_device(&self, request: &RegisterDeviceRequest) -> Result<RegisterDeviceResponse> {
+    pub(crate) fn register_device(
+        &self,
+        request: &RegisterDeviceRequest,
+    ) -> Result<RegisterDeviceResponse> {
         let url = format!("{}/v1/sync/devices", self.api_base);
         self.post_json(&url, request)
     }
@@ -218,7 +221,35 @@ impl SyncTransport for MobileSyncHttpClient {
 
     fn push(&self, request: &BatchPushRequest) -> Result<BatchPushResponse> {
         let url = format!("{}/v1/sync/push", self.api_base);
-        self.post_json(&url, request)
+        // Push-specific error mapping: a deterministic 4xx rejection must carry
+        // the typed `SyncPushRejected` so the engine's self-heal (reseed) and the
+        // epoch-stale re-pull can react — the plain string this used to return
+        // silently disabled both on the HTTP fallback path. Auth rejections keep
+        // the exact "unauthorized" message the shells' retry matches on.
+        self.authorized(ureq::post(&url))
+            .send_json(serde_json::to_value(request)?)
+            .map_err(mobile_sync_push_http_error)?
+            .into_json()
+            .with_context(|| format!("parse sync response from {url}"))
+    }
+}
+
+fn mobile_sync_push_http_error(error: ureq::Error) -> anyhow::Error {
+    match error {
+        ureq::Error::Status(status, response) => {
+            let code = response
+                .into_json::<knotq_sync::ErrorResponse>()
+                .map(|error| error.code)
+                .unwrap_or_else(|_| status.to_string());
+            if status == 401 || code == "unauthorized" {
+                return anyhow!("sync backend rejected request: {code}");
+            }
+            if (400..500).contains(&status) {
+                return anyhow::Error::new(knotq_sync::SyncPushRejected { code });
+            }
+            anyhow!("sync backend rejected request: {code}")
+        }
+        error => anyhow!("sync backend request failed: {error}"),
     }
 }
 
@@ -356,7 +387,9 @@ pub(crate) fn mobile_download_missing_media_assets(
                 continue;
             }
             Err(error) => {
-                eprintln!("mobile sync: media download failed for {image_name}; skipping: {error:#}");
+                eprintln!(
+                    "mobile sync: media download failed for {image_name}; skipping: {error:#}"
+                );
                 continue;
             }
         };
@@ -373,7 +406,9 @@ pub(crate) fn mobile_download_missing_media_assets(
             fs::create_dir_all(parent).with_context(|| format!("create {}", parent.display()))?;
         }
         if let Err(error) = fs::write(&path, bytes) {
-            eprintln!("mobile sync: failed to write downloaded image {image_name}; skipping: {error}");
+            eprintln!(
+                "mobile sync: failed to write downloaded image {image_name}; skipping: {error}"
+            );
             continue;
         }
         downloaded = true;
@@ -606,7 +641,10 @@ mod sync_api_base_tests {
             &dir,
             &std::collections::HashMap::new(),
         );
-        assert!(result.is_ok(), "oversized asset must not wedge sync: {result:?}");
+        assert!(
+            result.is_ok(),
+            "oversized asset must not wedge sync: {result:?}"
+        );
 
         let _ = fs::remove_dir_all(dir);
     }
@@ -627,7 +665,10 @@ mod sync_api_base_tests {
             &dir,
             &std::collections::HashMap::new(),
         );
-        assert!(result.is_ok(), "failed upload must not wedge sync: {result:?}");
+        assert!(
+            result.is_ok(),
+            "failed upload must not wedge sync: {result:?}"
+        );
 
         let _ = fs::remove_dir_all(dir);
     }
@@ -641,7 +682,10 @@ mod sync_api_base_tests {
 
         let result =
             mobile_download_missing_media_assets(&unreachable_media_client(), &workspace, &dir);
-        assert!(result.is_ok(), "failed download must not wedge sync: {result:?}");
+        assert!(
+            result.is_ok(),
+            "failed download must not wedge sync: {result:?}"
+        );
 
         let _ = fs::remove_dir_all(dir);
     }
