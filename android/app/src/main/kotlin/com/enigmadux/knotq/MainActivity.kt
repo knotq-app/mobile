@@ -53,6 +53,7 @@ import androidx.work.ExistingPeriodicWorkPolicy
 import androidx.work.NetworkType
 import androidx.work.PeriodicWorkRequest
 import androidx.work.WorkManager
+import com.enigmadux.knotq.ffi.setLocale
 import android.widget.ArrayAdapter
 import android.widget.AdapterView
 import android.widget.CheckBox
@@ -146,6 +147,7 @@ class MainActivity : Activity() {
     internal var dailyScrollDate: String? = null
     internal var pendingDailyAnchorDate: String? = null
     internal var pendingDailyAutoFocusDate: String? = null
+    internal var pendingTitleFocusSchemeId: String? = null
     internal var lastRenderedTab: Int? = null
     internal val editorSchemeIds = WeakHashMap<EditText, String>()
     // The FrameLayout wrapping each editor, used to float the inline table-cell
@@ -286,6 +288,7 @@ class MainActivity : Activity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         try {
+            setLocale(java.util.Locale.getDefault().toLanguageTag())
             bridge = RustBridge(this)
             syncSession = loadSyncSession()
             loadSnapshot()
@@ -370,6 +373,13 @@ class MainActivity : Activity() {
         googleSyncHandler.removeCallbacks(googleSyncRunnable)
         googleSyncPollingActive = false
         if (::bridge.isInitialized) {
+            // Apply a reschedule the debounce deferred — the trailing runnable may
+            // never run once the process is cached/frozen, which would leave the
+            // alarms armed from a now-stale schedule.
+            if (notifReschedulePending) {
+                notifReschedulePending = false
+                rescheduleNotificationsNow()
+            }
             // Mirror iOS applicationDidEnterBackground: keep workspace data fresh
             // via periodic background refresh while signed in to sync.
             scheduleBackgroundSyncWork()
@@ -1811,6 +1821,7 @@ class MainActivity : Activity() {
         private var draggedSinceLift = false
         private var pendingPlacement: Pair<String, Int>? = null
         private var liftRunnable: Runnable? = null
+        private var disallowingParentIntercept = false
 
         init {
             addView(list, LayoutParams(-1, -2))
@@ -1917,6 +1928,7 @@ class MainActivity : Activity() {
                     pressedRow = hit?.first
                     pressedMeta = hit?.second
                     if (hit != null) {
+                        setParentInterceptDisallowed(true)
                         val lift = Runnable {
                             liftRunnable = null
                             beginLift()
@@ -1932,17 +1944,24 @@ class MainActivity : Activity() {
                         // still track the finger.
                         handleDragMove(ev)
                     } else if (abs(ev.x - downX) > touchSlop || abs(ev.y - downY) > touchSlop) {
-                        cancelLift()
+                        cancelLift(releaseParentIntercept = true)
                     }
                 }
-                MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> cancelLift()
+                MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> cancelLift(releaseParentIntercept = !dragging)
             }
             return dragging
         }
 
-        private fun cancelLift() {
+        private fun cancelLift(releaseParentIntercept: Boolean) {
             liftRunnable?.let { removeCallbacks(it) }
             liftRunnable = null
+            if (releaseParentIntercept) setParentInterceptDisallowed(false)
+        }
+
+        private fun setParentInterceptDisallowed(disallowed: Boolean) {
+            if (disallowingParentIntercept == disallowed) return
+            parent?.requestDisallowInterceptTouchEvent(disallowed)
+            disallowingParentIntercept = disallowed
         }
 
         private fun beginLift() {
@@ -1950,7 +1969,7 @@ class MainActivity : Activity() {
             dragging = true
             draggedSinceLift = false
             pendingPlacement = null
-            parent?.requestDisallowInterceptTouchEvent(true)
+            setParentInterceptDisallowed(true)
             row.elevation = dp(8).toFloat()
             row.animate().scaleX(0.97f).scaleY(0.97f).alpha(0.85f).setDuration(120).start()
             performHapticFeedback(android.view.HapticFeedbackConstants.LONG_PRESS)
@@ -2000,7 +2019,7 @@ class MainActivity : Activity() {
             row?.alpha = 1f
             row?.translationY = 0f
             row?.elevation = 0f
-            parent?.requestDisallowInterceptTouchEvent(false)
+            setParentInterceptDisallowed(false)
             if (meta == null) return
             if (commit && placement != null) {
                 // Reveal a drop into a collapsed folder, like iOS.
@@ -2040,7 +2059,6 @@ class MainActivity : Activity() {
         private fun rawDrop(y: Float): RawNavDrop? {
             if (rowMetas.isEmpty()) return null
             val rootId = rootFolderId() ?: return null
-            val rootCount = snapshot.optJSONObject("root")?.optJSONArray("children")?.length() ?: 0
             val firstView = rowMetas.first().first
             val lastView = rowMetas.last().first
             val yInList = y - list.top
@@ -2048,7 +2066,8 @@ class MainActivity : Activity() {
                 return RawNavDrop(rootId, 0, (firstView.top + list.top).toFloat(), 0, null)
             }
             if (yInList >= lastView.bottom) {
-                return RawNavDrop(rootId, rootCount, (lastView.bottom + list.top).toFloat(), 0, null)
+                val lastMeta = rowMetas.last().second
+                return rawDropAfterRow(lastView, lastMeta)
             }
             val (view, meta) = rowAt(y) ?: return null
             val fraction = if (view.height > 0) (yInList - view.top) / view.height.toFloat() else 0.5f
@@ -2065,6 +2084,14 @@ class MainActivity : Activity() {
             val position = meta.siblingIndex + if (after) 1 else 0
             val lineY = ((if (after) view.bottom else view.top) + list.top).toFloat()
             return RawNavDrop(meta.parentId, position, lineY, meta.depth, null)
+        }
+
+        private fun rawDropAfterRow(view: View, meta: NavRowMeta): RawNavDrop {
+            val lineY = (view.bottom + list.top).toFloat()
+            if (meta.kind == "folder" && !collapsedFolderIds.contains(meta.id)) {
+                return RawNavDrop(meta.id, meta.childCount, lineY, meta.depth + 1, null)
+            }
+            return RawNavDrop(meta.parentId, meta.siblingIndex + 1, lineY, meta.depth, null)
         }
 
         /// Resolves a raw sibling slot against the post-removal child list and

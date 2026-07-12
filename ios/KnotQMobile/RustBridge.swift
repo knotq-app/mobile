@@ -348,6 +348,10 @@ final class RustBridge: @unchecked Sendable {
         try core.wsPendingChanged()
     }
 
+    func noteRemoteChanged() throws {
+        try core.noteRemoteChanged()
+    }
+
     func isWsConnected() throws -> Bool {
         try core.isWsConnected()
     }

@@ -73,6 +73,10 @@ internal class BackgroundSyncWorker(
             // MobileException — NOT a RuntimeException — so the catch below never saw a
             // 401 and the job used to fail terminally (no retry). Bounded to one forced
             // refresh so a genuinely dead session can't loop.
+            // A background run is usually here because a peer pushed (FCM wake /
+            // onStop flush) — flag it so the core's idle-sync coalescer can't
+            // skip the pull as "synced moments ago".
+            runCatching { bridge.request(JSONObject().put("type", "note_remote_changed")) }
             var triedAuthRefresh = false
             while (true) {
                 try {

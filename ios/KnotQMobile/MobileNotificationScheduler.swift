@@ -30,11 +30,16 @@ final class MobileNotificationScheduler: NSObject, UNUserNotificationCenterDeleg
     /// touching the OS notification center again, so we don't constantly re-arm
     /// the same schedule. Leading-edge: the first request in an idle period
     /// applies immediately; further requests inside the window collapse into a
-    /// single trailing apply.
+    /// single trailing apply. Background wakes bypass this via `rescheduleNow`
+    /// (a suspended process never runs the trailing timer), and
+    /// `flushPendingReschedule` drains a deferred apply before the app suspends.
     private static let rescheduleDebounce: TimeInterval = 12
     private var latestDesired: [PendingMobileNotification]?
     private var rescheduleCooldownActive = false
     private var rescheduleTrailingPending = false
+    /// Serializes applies so two in-flight reconciles can't interleave their
+    /// read/add/remove sequences against the notification center.
+    private var applyChain: Task<Void, Never>?
 
     private override init() {
         super.init()
@@ -61,7 +66,7 @@ final class MobileNotificationScheduler: NSObject, UNUserNotificationCenterDeleg
 
     @MainActor
     func reschedule(_ requests: [MobileNotificationRequest]) {
-        latestDesired = Array(requests.compactMap(notificationRequest).prefix(64))
+        latestDesired = desiredSet(requests)
         guard !rescheduleCooldownActive else {
             // Inside the debounce window — coalesce. The trailing apply picks up
             // this latest desired set when the cooldown ends.
@@ -71,11 +76,38 @@ final class MobileNotificationScheduler: NSObject, UNUserNotificationCenterDeleg
         applyLatestRescheduleAndStartCooldown()
     }
 
+    /// Immediate, await-able reschedule for background wakes (silent push /
+    /// BGAppRefreshTask): bypasses the debounce and returns only after the
+    /// notification center has accepted the requests, so a background task that
+    /// awaits this before reporting completion can't be suspended with the
+    /// schedule half-armed.
+    @MainActor
+    func rescheduleNow(_ requests: [MobileNotificationRequest]) async {
+        latestDesired = desiredSet(requests)
+        rescheduleTrailingPending = false
+        await enqueueApply().value
+    }
+
+    /// Drain a trailing apply the debounce deferred. Called as the app
+    /// backgrounds: the trailing timer never fires in a suspended process, so
+    /// without this a reschedule requested inside the cooldown window would be
+    /// silently dropped until the next foreground.
+    @MainActor
+    func flushPendingReschedule() {
+        guard rescheduleTrailingPending else { return }
+        rescheduleTrailingPending = false
+        enqueueApply()
+    }
+
+    private func desiredSet(_ requests: [MobileNotificationRequest]) -> [PendingMobileNotification] {
+        Array(requests.compactMap(notificationRequest).prefix(64))
+    }
+
     @MainActor
     private func applyLatestRescheduleAndStartCooldown() {
         rescheduleCooldownActive = true
         rescheduleTrailingPending = false
-        applyLatestReschedule()
+        enqueueApply()
         DispatchQueue.main.asyncAfter(deadline: .now() + Self.rescheduleDebounce) { [weak self] in
             guard let self else { return }
             self.rescheduleCooldownActive = false
@@ -86,9 +118,21 @@ final class MobileNotificationScheduler: NSObject, UNUserNotificationCenterDeleg
     }
 
     @MainActor
-    private func applyLatestReschedule() {
+    @discardableResult
+    private func enqueueApply() -> Task<Void, Never> {
+        let previous = applyChain
+        let next = Task { @MainActor [weak self] in
+            await previous?.value
+            await self?.applyLatestReschedule()
+        }
+        applyChain = next
+        return next
+    }
+
+    @MainActor
+    private func applyLatestReschedule() async {
         guard let desired = latestDesired else { return }
-        let desiredByID = Dictionary(uniqueKeysWithValues: desired.map { ($0.id, $0) })
+        let desiredByID = Dictionary(desired.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
 
         // Notification ids are stable per occurrence (the fire time is not part of
         // the key), so a delivered banner whose id is in the *future* desired set
@@ -102,22 +146,27 @@ final class MobileNotificationScheduler: NSObject, UNUserNotificationCenterDeleg
             center.removeDeliveredNotifications(withIdentifiers: desiredIDs)
         }
 
-        // Reconcile only *pending* (not-yet-fired) requests. Other delivered
-        // banners are intentionally left in Notification Center so they persist
-        // until the user dismisses them or picks an action; the core's
-        // `delivered_notifications_to_clear` (completed occurrences / expired
-        // events) drives any other removals via `clearDelivered`.
-        center.getPendingNotificationRequests { [center, desiredByID] pending in
-            let managedPending = pending
-                .map(\.identifier)
-                .filter { $0.hasPrefix("knotq-") }
-            if !managedPending.isEmpty {
-                center.removePendingNotificationRequests(withIdentifiers: managedPending)
-            }
+        // Reconcile only *pending* (not-yet-fired) requests, and ADD FIRST:
+        // adding with an existing identifier atomically replaces it, so the
+        // desired set is fully armed before anything is torn down. The previous
+        // remove-everything-then-re-add ordering left a window where a
+        // suspension wiped every armed notification with the rebuild never
+        // running. Other delivered banners are intentionally left in
+        // Notification Center so they persist until the user dismisses them or
+        // picks an action; the core's `delivered_notifications_to_clear`
+        // (completed occurrences / expired events) drives any other removals
+        // via `clearDelivered`.
+        let previouslyPending = await center.pendingNotificationRequests()
+            .map(\.identifier)
+            .filter { $0.hasPrefix("knotq-") }
 
-            for request in desiredByID.values.sorted(by: { $0.fireAt < $1.fireAt }) {
-                center.add(request.notificationRequest)
-            }
+        for request in desiredByID.values.sorted(by: { $0.fireAt < $1.fireAt }) {
+            try? await center.add(request.notificationRequest)
+        }
+
+        let stale = previouslyPending.filter { desiredByID[$0] == nil }
+        if !stale.isEmpty {
+            center.removePendingNotificationRequests(withIdentifiers: stale)
         }
     }
 

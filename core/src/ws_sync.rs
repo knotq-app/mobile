@@ -124,8 +124,8 @@ impl SyncTransport for FallbackTransport<'_> {
             if ws.is_connected() {
                 match ws.request_pull(request) {
                     Ok(response) => return Ok(response),
-                    Err(WsRequestError::Server { code, .. }) => {
-                        return Err(anyhow!("sync backend rejected request: {code}"))
+                    Err(WsRequestError::Server { status, code }) => {
+                        return Err(ws_server_pull_error(status, code))
                     }
                     Err(_) => { /* transport hiccup → HTTP fallback this run */ }
                 }
@@ -139,8 +139,8 @@ impl SyncTransport for FallbackTransport<'_> {
             if ws.is_connected() {
                 match ws.request_push(request) {
                     Ok(response) => return Ok(response),
-                    Err(WsRequestError::Server { code, .. }) => {
-                        return Err(anyhow::Error::new(SyncPushRejected { code }))
+                    Err(WsRequestError::Server { status, code }) => {
+                        return Err(ws_server_push_error(status, code))
                     }
                     Err(_) => { /* transport hiccup → HTTP fallback this run */ }
                 }
@@ -148,6 +148,21 @@ impl SyncTransport for FallbackTransport<'_> {
         }
         self.http.push(request)
     }
+}
+
+fn ws_server_pull_error(_status: Option<u16>, code: String) -> anyhow::Error {
+    anyhow!("sync backend rejected request: {code}")
+}
+
+fn ws_server_push_error(status: Option<u16>, code: String) -> anyhow::Error {
+    if is_unauthorized(status, &code) {
+        return anyhow!("sync backend rejected request: {code}");
+    }
+    anyhow::Error::new(SyncPushRejected { code })
+}
+
+fn is_unauthorized(status: Option<u16>, code: &str) -> bool {
+    status == Some(401) || code == "unauthorized"
 }
 
 // ── lifecycle on MobileCoreInner ────────────────────────────────────────────
@@ -182,9 +197,7 @@ impl MobileCoreInner {
             // (Re)connected: flag a catch-up so the next nudge tick syncs — this
             // reconciles any `changed` missed while the socket was down without
             // foreground polling.
-            on_connect: Box::new(move || {
-                ws_changed_on_connect.store(true, Ordering::SeqCst)
-            }),
+            on_connect: Box::new(move || ws_changed_on_connect.store(true, Ordering::SeqCst)),
         };
         let factory = Box::new(TgFactory {
             ws_url: ws_url_from_api_base(api_base),
@@ -210,5 +223,28 @@ impl MobileCoreInner {
         self.ws_client
             .as_ref()
             .is_some_and(|client| client.is_connected())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn ws_push_unauthorized_is_not_a_content_rejection() {
+        let err = ws_server_push_error(Some(401), "unauthorized".to_string());
+
+        assert!(err.downcast_ref::<SyncPushRejected>().is_none());
+        assert!(format!("{err:#}").contains("unauthorized"));
+    }
+
+    #[test]
+    fn ws_push_content_rejection_still_uses_push_rejected() {
+        let err = ws_server_push_error(Some(403), "crdt_schema_invalid".to_string());
+
+        let rejected = err
+            .downcast_ref::<SyncPushRejected>()
+            .expect("content rejection should drive push self-heal");
+        assert_eq!(rejected.code, "crdt_schema_invalid");
     }
 }

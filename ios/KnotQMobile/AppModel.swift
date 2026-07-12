@@ -241,6 +241,47 @@ final class AppModel: ObservableObject {
         BackgroundSyncCoordinator.shared.scheduleIfEligible(backgroundRefreshEligible)
     }
 
+    /// Await-able variant of `refresh()` for background wakes: installs the
+    /// fresh snapshot AND re-arms the OS notification schedule before returning.
+    /// The background task reports completion off this — and iOS suspends the
+    /// process right after — so the reschedule must not be fire-and-forget: a
+    /// suspended half-applied reschedule is how a synced change ends up with no
+    /// local notification armed while the (persisted) widget still shows it.
+    func refreshAndRearmNotifications() async {
+        guard let bridge else { return }
+        let today = Self.dateOnly(selectedDate)
+        let week = weekOffset
+        let history = dailyHistoryDays
+        guard let result = try? await bridge.perform({ b in
+            (
+                try b.snapshot(today: today, weekOffset: week, dailyHistoryDays: history),
+                try b.pendingNotifications(),
+                try b.deliveredNotificationsToClear()
+            )
+        }) else { return }
+        snapshot = result.0
+        KnotQWidgetSnapshotStore.publish(snapshot: result.0)
+        await MobileNotificationScheduler.shared.rescheduleNow(result.1)
+        MobileNotificationScheduler.shared.clearDelivered(result.2)
+        MobileNotificationScheduler.shared.updateBadgeCount(Self.overdueBadgeCount(for: result.0))
+        configureGoogleSyncPolling(accountCount: result.0.settings.googleAccountCount)
+        BackgroundSyncCoordinator.shared.scheduleIfEligible(backgroundRefreshEligible)
+    }
+
+    /// Re-arm the OS notification schedule from the core's current (on-disk)
+    /// state without a snapshot rebuild. Run on background wakes that found no
+    /// remote change: if an earlier run was suspended mid-reschedule, this
+    /// restores the schedule, so every wake self-heals instead of trusting that
+    /// the last reschedule completed.
+    func rearmNotificationsNow() async {
+        guard let bridge else { return }
+        guard let result = try? await bridge.perform({ b in
+            (try b.pendingNotifications(), try b.deliveredNotificationsToClear())
+        }) else { return }
+        await MobileNotificationScheduler.shared.rescheduleNow(result.0)
+        MobileNotificationScheduler.shared.clearDelivered(result.1)
+    }
+
     /// Number of overdue items shown on the app icon badge. Completed-but-retained
     /// occurrences (kept faded on the upcoming panel) are excluded so the badge
     /// only counts things that still need attention.

@@ -1,4 +1,9 @@
-namespace knotq_mobile_core {};
+namespace knotq_mobile_core {
+  // Applies the shell's UI locale to core-produced strings (sync status
+  // messages, daily labels). Accepts any BCP-47-ish tag; unknown tags fall
+  // back to English. Call at startup and when the system locale changes.
+  void set_locale(string tag);
+};
 
 [Error]
 interface MobileError {
@@ -420,6 +425,9 @@ interface MobileCore {
 
   [Throws=MobileError]
   boolean ws_pending_changed();
+
+  [Throws=MobileError]
+  void note_remote_changed();
 
   [Throws=MobileError]
   void set_push_registration(string token, string environment);

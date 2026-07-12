@@ -128,6 +128,9 @@ final class BackgroundSyncCoordinator {
             }
             let model = AppModel.shared
             scheduleIfEligible(model.backgroundRefreshEligible)
+            // This wake means a peer pushed — tell the core so the sync can't be
+            // coalesced away as idle.
+            model.noteRemoteChanged()
             let changed = await model.runBackgroundSync()
             completionHandler(changed ? .newData : .noData)
         }

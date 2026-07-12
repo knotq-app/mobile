@@ -5,6 +5,14 @@ import UIKit
 @main
 struct KnotQMobileApp: App {
     @UIApplicationDelegateAdaptor(KnotQAppDelegate.self) private var appDelegate
+    // Localizes core-produced strings (sync status, daily labels). Declared before
+    // `model` so its default-value initializer runs first (stored property
+    // defaults run in declaration order before any other property's), i.e.
+    // before `AppModel.shared` takes the first workspace/settings snapshot.
+    private let localeConfigured: Bool = {
+        setLocale(tag: Locale.preferredLanguages.first ?? "en")
+        return true
+    }()
     @StateObject private var model = AppModel.shared
     @Environment(\.scenePhase) private var scenePhase
 
@@ -35,6 +43,9 @@ struct KnotQMobileApp: App {
                         // Push a still-debounced edit before we suspend, so editing then
                         // backgrounding doesn't strand the change until the ~3 h refresh.
                         model.flushPendingEditSync()
+                        // Apply a reschedule the debounce deferred — its trailing timer
+                        // never fires once we're suspended.
+                        MobileNotificationScheduler.shared.flushPendingReschedule()
                         // Tear the socket down while suspended (FCM + the 3h refresh
                         // cover background wakeups).
                         model.stopWsSync()

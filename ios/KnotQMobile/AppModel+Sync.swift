@@ -18,6 +18,16 @@ extension AppModel {
         }
     }
 
+    /// Flag in the core that a peer pushed (a silent FCM wake-up arrived), so the
+    /// upcoming `sync_once` cannot be coalesced away as an "idle" sync. The
+    /// coalescer's recency clock is monotonic and pauses while the device sleeps,
+    /// so without this a wake shortly after the last sync pulls nothing. Enqueued
+    /// on the serial bridge queue, so it lands before a sync enqueued after it.
+    func noteRemoteChanged() {
+        guard let bridge else { return }
+        bridge.enqueue({ try $0.noteRemoteChanged() }) { _ in }
+    }
+
     /// One-shot sync used by background app refresh and silent pushes. Guarded so it
     /// can't race the foreground poll; returns whether remote changes were applied.
     @discardableResult
@@ -25,6 +35,14 @@ extension AppModel {
         guard !syncInProgress, let session = syncSession, session.supportsSync else { return false }
         syncInProgress = true
         defer { syncInProgress = false }
+        // Background resyncs ride plain HTTP. The socket should already be down
+        // (the scenePhase handler tears it down), but if iOS suspended us before
+        // that teardown ran, the core still holds a client whose socket died with
+        // the suspension — drop it so the pull can't stall on a zombie transport.
+        // Foreground re-opens it on scenePhase .active.
+        if UIApplication.shared.applicationState == .background {
+            stopWsSync()
+        }
         guard await refreshSyncSessionIfNeeded() == .ready else { return false }
 
         // One reactive auth retry. The proactive refresh above only fires when our
@@ -46,7 +64,16 @@ extension AppModel {
                     return (changed, notice)
                 }
                 if result.0 {
-                    refresh()
+                    // Await the snapshot install AND the notification re-arm
+                    // before returning: the background-task completion handler
+                    // fires off our return value and iOS suspends the process
+                    // right after, so a fire-and-forget refresh() here left the
+                    // pulled change persisted with no UNNotificationRequest armed.
+                    await refreshAndRearmNotifications()
+                } else {
+                    // No remote change, but re-arm from disk anyway so a wake
+                    // self-heals a schedule lost by an earlier interrupted run.
+                    await rearmNotificationsNow()
                 }
                 if let notice = result.1 {
                     errorMessage = notice
@@ -60,6 +87,13 @@ extension AppModel {
                    Self.isAuthRejection(error),
                    await refreshSyncSessionIfNeeded(force: true) == .ready {
                     triedAuthRefresh = true
+                    let hadWs = await isWsConnected()
+                    // If this ran while the foreground socket was up, rebuild it
+                    // before retrying so the new handshake uses the fresh token.
+                    stopWsSync()
+                    if hadWs {
+                        startWsSync()
+                    }
                     continue
                 }
                 if Self.isLikelyNetworkError(error) {
@@ -95,26 +129,48 @@ extension AppModel {
         // rotated credentials), or bail out if the session is gone.
         guard await refreshSyncSessionIfNeeded() == .ready else { return }
 
-        guard let bridge, let session = syncSession, session.supportsSync else { return }
-        do {
-            let apiBase = session.apiBase
-            let bearerToken = session.bearerToken
-            let result = try await bridge.perform { b in
-                let changed = try b.syncOnce(apiBase: apiBase, bearerToken: bearerToken)
-                let notice = try b.takeSyncNotice()
-                return (changed, notice)
-            }
-            if result.0 {
-                refresh()
-            }
-            syncOffline = false
-            errorMessage = result.1
-        } catch {
-            if Self.isLikelyNetworkError(error) {
-                syncOffline = true
-                errorMessage = nil
-            } else {
-                errorMessage = error.localizedDescription
+        var triedAuthRefresh = false
+        while true {
+            guard let bridge, let session = syncSession, session.supportsSync else { return }
+            do {
+                let apiBase = session.apiBase
+                let bearerToken = session.bearerToken
+                let result = try await bridge.perform { b in
+                    let changed = try b.syncOnce(apiBase: apiBase, bearerToken: bearerToken)
+                    let notice = try b.takeSyncNotice()
+                    return (changed, notice)
+                }
+                if result.0 {
+                    refresh()
+                }
+                syncOffline = false
+                errorMessage = result.1
+                return
+            } catch {
+                if !triedAuthRefresh, Self.isAuthRejection(error) {
+                    switch await refreshSyncSessionIfNeeded(force: true) {
+                    case .ready:
+                        triedAuthRefresh = true
+                        // Rebuild the socket: the current connection was authenticated
+                        // with the token the backend just rejected.
+                        stopWsSync()
+                        startWsSync()
+                        continue
+                    case .deferred:
+                        syncOffline = true
+                        errorMessage = nil
+                        return
+                    case .sessionDead:
+                        return
+                    }
+                }
+                if Self.isLikelyNetworkError(error) {
+                    syncOffline = true
+                    errorMessage = nil
+                } else {
+                    errorMessage = error.localizedDescription
+                }
+                return
             }
         }
     }

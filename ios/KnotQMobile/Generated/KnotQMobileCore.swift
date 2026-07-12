@@ -572,6 +572,8 @@ public protocol MobileCoreProtocol: AnyObject, Sendable {
     
     func moveNode(kind: String, id: String, folderId: String, position: Int32) throws 
     
+    func noteRemoteChanged() throws 
+    
     func pendingNotifications(now: String?, horizonDays: Int32) throws  -> [MobileNotificationRequest]
     
     func permanentlyDeleteFolder(folderId: String) throws 
@@ -992,6 +994,13 @@ open func moveNode(kind: String, id: String, folderId: String, position: Int32)t
         FfiConverterString.lower(id),
         FfiConverterString.lower(folderId),
         FfiConverterInt32.lower(position),$0
+    )
+}
+}
+    
+open func noteRemoteChanged()throws   {try rustCallWithError(FfiConverterTypeMobileError_lift) {
+    uniffi_knotq_mobile_core_fn_method_mobilecore_note_remote_changed(
+            self.uniffiCloneHandle(),$0
     )
 }
 }
@@ -3544,6 +3553,12 @@ fileprivate struct FfiConverterSequenceTypeMobileInline: FfiConverterRustBuffer 
         return seq
     }
 }
+public func setLocale(tag: String)  {try! rustCall() {
+    uniffi_knotq_mobile_core_fn_func_set_locale(
+        FfiConverterString.lower(tag),$0
+    )
+}
+}
 
 private enum InitializationResult {
     case ok
@@ -3559,6 +3574,9 @@ private let initializationResult: InitializationResult = {
     let scaffolding_contract_version = ffi_knotq_mobile_core_uniffi_contract_version()
     if bindings_contract_version != scaffolding_contract_version {
         return InitializationResult.contractVersionMismatch
+    }
+    if (uniffi_knotq_mobile_core_checksum_func_set_locale() != 34909) {
+        return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_knotq_mobile_core_checksum_method_mobilecore_add_calendar_item() != 34862) {
         return InitializationResult.apiChecksumMismatch
@@ -3639,6 +3657,9 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_knotq_mobile_core_checksum_method_mobilecore_move_node() != 12044) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_knotq_mobile_core_checksum_method_mobilecore_note_remote_changed() != 52287) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_knotq_mobile_core_checksum_method_mobilecore_pending_notifications() != 49328) {

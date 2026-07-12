@@ -540,7 +540,11 @@ impl MobileCore {
             .mutate_table(parse_id(&scheme_id)?, parse_id(&item_id)?, |table| {
                 let column = position_from_i32(column)?;
                 let at = column.min(table.column_count());
-                table.insert_column(at, format!("Column {}", at + 1));
+                let header = knotq_l10n::t_with(
+                    "editor.table.default_column",
+                    &[("number", &(at + 1).to_string())],
+                );
+                table.insert_column(at, header);
                 Ok(())
             })
             .map_err(Into::into)
@@ -987,6 +991,18 @@ impl MobileCore {
     /// lock-free so the poll is never blocked behind an in-flight `sync_once`.
     pub fn ws_pending_changed(&self) -> Result<bool, MobileError> {
         Ok(self.ws_changed.load(std::sync::atomic::Ordering::SeqCst))
+    }
+
+    /// Flag that a peer pushed — the shell calls this when a silent FCM wake-up
+    /// arrives, before running `sync_once`. Equivalent to the socket's server
+    /// `changed` nudge: it defeats the idle-sync coalescer, which otherwise skips
+    /// the pull when nothing local is queued and the last sync looks recent.
+    /// "Recent" is measured on a monotonic clock that pauses while the device
+    /// sleeps, so without this flag a background wake can silently pull nothing
+    /// and a peer's change (often a notification) is missed until the next wake.
+    pub fn note_remote_changed(&self) -> Result<(), MobileError> {
+        self.ws_changed.store(true, std::sync::atomic::Ordering::SeqCst);
+        Ok(())
     }
 
     /// Hand the core a push token (e.g. an FCM registration token) so the next

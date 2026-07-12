@@ -638,6 +638,8 @@ internal object IntegrityCheckingUniffiLib {
         uniffiCheckContractApiVersion(this)
         uniffiCheckApiChecksums(this)
     }
+    external fun uniffi_knotq_mobile_core_checksum_func_set_locale(
+    ): Short
     external fun uniffi_knotq_mobile_core_checksum_method_mobilecore_add_calendar_item(
     ): Short
     external fun uniffi_knotq_mobile_core_checksum_method_mobilecore_add_item(
@@ -691,6 +693,8 @@ internal object IntegrityCheckingUniffiLib {
     external fun uniffi_knotq_mobile_core_checksum_method_mobilecore_move_item_to_scheme(
     ): Short
     external fun uniffi_knotq_mobile_core_checksum_method_mobilecore_move_node(
+    ): Short
+    external fun uniffi_knotq_mobile_core_checksum_method_mobilecore_note_remote_changed(
     ): Short
     external fun uniffi_knotq_mobile_core_checksum_method_mobilecore_pending_notifications(
     ): Short
@@ -848,6 +852,8 @@ external fun uniffi_knotq_mobile_core_fn_method_mobilecore_move_item_to_scheme(`
 ): Unit
 external fun uniffi_knotq_mobile_core_fn_method_mobilecore_move_node(`ptr`: Long,`kind`: RustBuffer.ByValue,`id`: RustBuffer.ByValue,`folderId`: RustBuffer.ByValue,`position`: Int,uniffi_out_err: UniffiRustCallStatus, 
 ): Unit
+external fun uniffi_knotq_mobile_core_fn_method_mobilecore_note_remote_changed(`ptr`: Long,uniffi_out_err: UniffiRustCallStatus, 
+): Unit
 external fun uniffi_knotq_mobile_core_fn_method_mobilecore_pending_notifications(`ptr`: Long,`now`: RustBuffer.ByValue,`horizonDays`: Int,uniffi_out_err: UniffiRustCallStatus, 
 ): RustBuffer.ByValue
 external fun uniffi_knotq_mobile_core_fn_method_mobilecore_permanently_delete_folder(`ptr`: Long,`folderId`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
@@ -924,6 +930,8 @@ external fun uniffi_knotq_mobile_core_fn_method_mobilecore_update_item_text(`ptr
 ): Unit
 external fun uniffi_knotq_mobile_core_fn_method_mobilecore_ws_pending_changed(`ptr`: Long,uniffi_out_err: UniffiRustCallStatus, 
 ): Byte
+external fun uniffi_knotq_mobile_core_fn_func_set_locale(`tag`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+): Unit
 external fun ffi_knotq_mobile_core_rustbuffer_alloc(`size`: Long,uniffi_out_err: UniffiRustCallStatus, 
 ): RustBuffer.ByValue
 external fun ffi_knotq_mobile_core_rustbuffer_from_bytes(`bytes`: ForeignBytes.ByValue,uniffi_out_err: UniffiRustCallStatus, 
@@ -1043,6 +1051,9 @@ private fun uniffiCheckContractApiVersion(lib: IntegrityCheckingUniffiLib) {
 }
 @Suppress("UNUSED_PARAMETER")
 private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
+    if (lib.uniffi_knotq_mobile_core_checksum_func_set_locale() != 34909.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
     if (lib.uniffi_knotq_mobile_core_checksum_method_mobilecore_add_calendar_item() != 34862.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
@@ -1122,6 +1133,9 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_knotq_mobile_core_checksum_method_mobilecore_move_node() != 12044.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_knotq_mobile_core_checksum_method_mobilecore_note_remote_changed() != 52287.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_knotq_mobile_core_checksum_method_mobilecore_pending_notifications() != 49328.toShort()) {
@@ -1676,6 +1690,8 @@ public interface MobileCoreInterface {
     
     fun `moveNode`(`kind`: kotlin.String, `id`: kotlin.String, `folderId`: kotlin.String, `position`: kotlin.Int)
     
+    fun `noteRemoteChanged`()
+    
     fun `pendingNotifications`(`now`: kotlin.String?, `horizonDays`: kotlin.Int): List<MobileNotificationRequest>
     
     fun `permanentlyDeleteFolder`(`folderId`: kotlin.String)
@@ -2211,6 +2227,19 @@ open class MobileCore: Disposable, AutoCloseable, MobileCoreInterface
     UniffiLib.uniffi_knotq_mobile_core_fn_method_mobilecore_move_node(
         it,
         FfiConverterString.lower(`kind`),FfiConverterString.lower(`id`),FfiConverterString.lower(`folderId`),FfiConverterInt.lower(`position`),_status)
+}
+    }
+    
+    
+
+    
+    @Throws(MobileException::class)override fun `noteRemoteChanged`()
+        = 
+    callWithHandle {
+    uniffiRustCallWithError(MobileException) { _status ->
+    UniffiLib.uniffi_knotq_mobile_core_fn_method_mobilecore_note_remote_changed(
+        it,
+        _status)
 }
     }
     
@@ -4739,5 +4768,14 @@ public object FfiConverterSequenceTypeMobileInline: FfiConverterRustBuffer<List<
             FfiConverterTypeMobileInline.write(it, buf)
         }
     }
+} fun `setLocale`(`tag`: kotlin.String)
+        = 
+    uniffiRustCall() { _status ->
+    UniffiLib.uniffi_knotq_mobile_core_fn_func_set_locale(
+    
+        FfiConverterString.lower(`tag`),_status)
 }
+    
+    
+
 
