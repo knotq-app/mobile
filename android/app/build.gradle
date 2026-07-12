@@ -23,8 +23,8 @@ android {
         applicationId "com.enigmadux.knotq"
         minSdk 26
         targetSdk 35
-        versionCode 5
-        versionName "1.0.3"
+        versionCode 8
+        versionName "1.0.5"
 
         // Explicit sync backend override. Empty by default, in which case the
         // build-type-derived default applies (debug → sandbox, release → prod;
@@ -77,7 +77,9 @@ android {
 }
 
 dependencies {
-    implementation "net.java.dev.jna:jna:5.12.0@aar"
+    // 5.15+ required: earlier AARs ship libjnidispatch.so without 16 KB page
+    // alignment, which Play rejects for 16 KB page-size devices.
+    implementation "net.java.dev.jna:jna:5.17.0@aar"
     implementation "androidx.annotation:annotation:1.9.1"
     // Google Play Billing for the sync subscription.
     implementation "com.android.billingclient:billing:7.1.1"
@@ -90,6 +92,8 @@ dependencies {
     // notification-schedule change and re-arm local alarms (mirrors iOS FCM).
     implementation platform("com.google.firebase:firebase-bom:33.7.0")
     implementation "com.google.firebase:firebase-messaging"
+
+    testImplementation "junit:junit:4.13.2"
 }
 
 // Cross-compile the Rust core (libknotq_mobile_core.so) into jniLibs before the

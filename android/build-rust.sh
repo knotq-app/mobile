@@ -55,6 +55,14 @@ export CARGO_TARGET_ARMV7_LINUX_ANDROIDEABI_LINKER="$TOOLCHAIN/armv7a-linux-andr
 export CARGO_TARGET_I686_LINUX_ANDROID_LINKER="$TOOLCHAIN/i686-linux-android26-clang"
 export CARGO_TARGET_X86_64_LINUX_ANDROID_LINKER="$TOOLCHAIN/x86_64-linux-android26-clang"
 
+# Align ELF LOAD segments to 16 KB pages on every ABI so the libs load on
+# 16 KB page-size devices (Play requirement), independent of the NDK default.
+PAGE_ALIGN="-C link-arg=-Wl,-z,max-page-size=16384"
+export CARGO_TARGET_AARCH64_LINUX_ANDROID_RUSTFLAGS="$PAGE_ALIGN"
+export CARGO_TARGET_ARMV7_LINUX_ANDROIDEABI_RUSTFLAGS="$PAGE_ALIGN"
+export CARGO_TARGET_I686_LINUX_ANDROID_RUSTFLAGS="$PAGE_ALIGN"
+export CARGO_TARGET_X86_64_LINUX_ANDROID_RUSTFLAGS="$PAGE_ALIGN"
+
 cargo run --manifest-path "$MOBILE_ROOT/Cargo.toml" -p knotq-mobile-core --features bindgen-cli --bin uniffi-bindgen -- \
   generate "$MOBILE_ROOT/core/src/knotq_mobile_core.udl" \
   --config "$MOBILE_ROOT/core/uniffi.toml" \
