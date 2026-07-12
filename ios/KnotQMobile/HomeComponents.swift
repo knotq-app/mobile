@@ -221,13 +221,13 @@ struct HomeUpcomingSection: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text("Upcoming")
+            Text(L10n.t("upcoming.section.upcoming"))
                 .font(.system(size: 22, weight: .bold))
                 .foregroundStyle(theme.textPrimary)
                 .padding(.horizontal, 2)
 
             if occurrences.isEmpty {
-                Text("Nothing scheduled")
+                Text(L10n.t("mobile.home.nothing_scheduled"))
                     .font(.system(size: 14))
                     .foregroundStyle(theme.textMuted)
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -338,7 +338,7 @@ struct HomeNavigationPane: View {
                             NavigationStackInteractivePopEnabler(enabled: true)
                         }
                     } else {
-                        EmptyState(title: "Scheme missing", detail: "It may have been archived or deleted.", theme: theme)
+                        EmptyState(title: L10n.t("mobile.home.scheme_missing_title"), detail: L10n.t("mobile.home.scheme_missing_detail"), theme: theme)
                             .toolbar(.visible, for: .navigationBar)
                     }
                 case .daily:
@@ -452,7 +452,7 @@ private struct HomeInlineSearchField: View {
                 .font(.system(size: 16, weight: .medium))
                 .foregroundStyle(theme.textMuted)
 
-            TextField("Search KnotQ", text: $query)
+            TextField(L10n.t("search.placeholder"), text: $query)
                 .textFieldStyle(.plain)
                 .font(.system(size: 16, weight: .regular))
                 .foregroundStyle(theme.textPrimary)
@@ -471,7 +471,7 @@ private struct HomeInlineSearchField: View {
                         .foregroundStyle(theme.textMuted)
                 }
                 .buttonStyle(.plain)
-                .accessibilityLabel("Clear Search")
+                .accessibilityLabel(L10n.t("mobile.home.clear_search"))
             }
         }
         .padding(.horizontal, 12)
@@ -495,8 +495,8 @@ struct HomeSearchResultsPane: View {
             LazyVStack(spacing: 2) {
                 if hits.isEmpty {
                     EmptyState(
-                        title: "No Results",
-                        detail: "Nothing matches \"\(query)\".",
+                        title: L10n.t("mobile.home.search_no_results_title"),
+                        detail: L10n.t("mobile.home.search_no_results_detail", ["query": query]),
                         theme: theme
                     )
                     .padding(.top, 56)
@@ -578,14 +578,14 @@ struct HomeSchemesSection: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(alignment: .center, spacing: 6) {
-                Text("Schemes")
+                Text(L10n.t("onboarding.step.schemes.title"))
                     .font(.system(size: 20, weight: .bold))
                     .foregroundStyle(theme.textPrimary)
                 Spacer(minLength: 0)
                 Menu {
-                    Button("New Scheme", systemImage: "doc.badge.plus", action: onNewScheme)
-                    Button("Folder", systemImage: "folder.badge.plus", action: onNewFolder)
-                    Button("Google Calendar", systemImage: "calendar.badge.plus") {
+                    Button(L10n.t("mobile.home.new_scheme"), systemImage: "doc.badge.plus", action: onNewScheme)
+                    Button(L10n.t("sidebar.context.folder"), systemImage: "folder.badge.plus", action: onNewFolder)
+                    Button(L10n.t("sidebar.context.google_calendar"), systemImage: "calendar.badge.plus") {
                         onGoogleCalendar(nil)
                     }
                 } label: {
@@ -611,7 +611,7 @@ struct HomeSchemesSection: View {
                             onOpenScheme: onOpenScheme
                         )
                     } else {
-                        Text("No schemes yet")
+                        Text(L10n.t("mobile.home.no_schemes_yet"))
                             .font(.system(size: 14))
                             .foregroundStyle(theme.textMuted)
                             .frame(maxWidth: .infinity, minHeight: 30, alignment: .leading)
@@ -660,7 +660,7 @@ struct HomeDailySchemeRow: View {
                         .font(.system(size: 13, weight: .semibold))
                         .foregroundStyle(theme.isDark ? Color(hex: 0xc0d6ff) : Color(hex: 0x4f71a6))
                 }
-                Text("Daily")
+                Text(L10n.t("menu.daily"))
                     .font(.system(size: 14, weight: .medium))
                     .foregroundStyle(theme.textPrimary)
                     .lineLimit(1)
@@ -684,7 +684,7 @@ struct HomeDailySchemeRow: View {
             .contentShape(Rectangle())
             }
         .buttonStyle(.plain)
-        .accessibilityLabel("Daily")
+        .accessibilityLabel(L10n.t("menu.daily"))
     }
 
     private var openCount: Int {

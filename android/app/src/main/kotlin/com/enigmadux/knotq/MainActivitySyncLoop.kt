@@ -77,6 +77,7 @@ import com.android.billingclient.api.Purchase
 import com.android.billingclient.api.PurchasesUpdatedListener
 import com.android.billingclient.api.QueryProductDetailsParams
 import com.android.billingclient.api.QueryPurchasesParams
+import com.enigmadux.knotq.ffi.MobileException
 import com.google.android.play.core.review.ReviewManagerFactory
 import org.json.JSONArray
 import org.json.JSONObject
@@ -230,7 +231,7 @@ internal fun MainActivity.syncOnce() {
         // Refresh the short-lived access token if near expiry (rotating +
         // persisting the new credentials). If refresh is temporarily unavailable,
         // skip this tick instead of syncing with an expired bearer token.
-        val active = when (val refresh = refreshSyncSessionIfNeeded(session)) {
+        var active = when (val refresh = refreshSyncSessionIfNeeded(session)) {
             is SyncRefreshResult.Ready -> refresh.session
             SyncRefreshResult.Deferred -> {
                 runOnUiThread {
@@ -248,25 +249,112 @@ internal fun MainActivity.syncOnce() {
                 return@Thread
             }
         }
-        if (active !== session) {
+        var expectedRefreshToken = session.refreshToken
+        if (active != session) {
+            val previousRefreshToken = expectedRefreshToken
+            saveSyncSession(active)
             runOnUiThread {
+                if (syncSession?.refreshToken == previousRefreshToken) {
+                    syncSession = active
+                    syncOffline = false
+                    syncFailureNotified = false
+                    saveSyncSession(active)
+                }
+            }
+            expectedRefreshToken = active.refreshToken
+        }
+        if (!active.supportsSync) {
+            runOnUiThread {
+                syncInProgress = false
+                if (syncSession?.refreshToken == expectedRefreshToken && syncSession != active) {
+                    syncSession = active
+                    syncOffline = false
+                    syncFailureNotified = false
+                    saveSyncSession(active)
+                }
+                scheduleBackgroundSyncWork()
+                render()
+            }
+            return@Thread
+        }
+
+        var triedAuthRefresh = false
+        var result: kotlin.Result<JSONObject>
+        while (true) {
+            result = runCatching {
+                bridge.request(
+                    obj(
+                        "type" to "sync_once",
+                        "api_base" to active.apiBase,
+                        "bearer_token" to active.bearerToken
+                    )
+                )
+            }
+            val error = result.exceptionOrNull()
+            if (error == null || triedAuthRefresh || !isAuthRejection(error)) break
+            when (val refresh = refreshSyncSessionIfNeeded(active, force = true)) {
+                is SyncRefreshResult.Ready -> {
+                    expectedRefreshToken = active.refreshToken
+                    active = refresh.session
+                    saveSyncSession(active)
+                    // Rebuild the socket: the current connection was authenticated
+                    // with the token the backend just rejected.
+                    runCatching { bridge.request(obj("type" to "ws_stop")) }
+                    if (active.supportsSync) {
+                        runCatching {
+                            bridge.request(
+                                obj(
+                                    "type" to "ws_start",
+                                    "api_base" to active.apiBase,
+                                    "bearer_token" to active.bearerToken
+                                )
+                            )
+                        }
+                    }
+                    if (!active.supportsSync) {
+                        runOnUiThread {
+                            syncInProgress = false
+                            if (syncSession?.refreshToken == expectedRefreshToken && syncSession != active) {
+                                syncSession = active
+                                syncOffline = false
+                                syncFailureNotified = false
+                                saveSyncSession(active)
+                            }
+                            scheduleBackgroundSyncWork()
+                            render()
+                        }
+                        return@Thread
+                    }
+                    triedAuthRefresh = true
+                    continue
+                }
+                SyncRefreshResult.Deferred -> {
+                    runOnUiThread {
+                        syncInProgress = false
+                        syncOffline = true
+                        render()
+                    }
+                    return@Thread
+                }
+                SyncRefreshResult.SessionDead -> {
+                    runOnUiThread {
+                        syncInProgress = false
+                        expireSyncSession()
+                    }
+                    return@Thread
+                }
+            }
+        }
+
+        runOnUiThread {
+            syncInProgress = false
+            if (syncSession?.refreshToken == expectedRefreshToken && syncSession != active) {
                 syncSession = active
                 syncOffline = false
                 syncFailureNotified = false
                 saveSyncSession(active)
+                scheduleBackgroundSyncWork()
             }
-        }
-        val result = runCatching {
-            bridge.request(
-                obj(
-                    "type" to "sync_once",
-                    "api_base" to active.apiBase,
-                    "bearer_token" to active.bearerToken
-                )
-            )
-        }
-        runOnUiThread {
-            syncInProgress = false
             result.onSuccess { response ->
                 syncFailureNotified = false
                 syncOffline = false
@@ -423,6 +511,15 @@ internal fun MainActivity.isTransientSyncError(error: Throwable): Boolean {
     val message = error.message.orEmpty().lowercase()
     if ("rate_limit" in message) return true
     return listOf("429", "500", "502", "503", "504").any { message.endsWith(": $it") }
+}
+
+internal fun MainActivity.isAuthRejection(error: Throwable): Boolean {
+    var current: Throwable? = error
+    while (current != null) {
+        if (current is MobileException.Core && current.reason.contains("unauthorized")) return true
+        current = current.cause
+    }
+    return error.message.orEmpty().contains("unauthorized", ignoreCase = true)
 }
 
 internal fun MainActivity.tokenNeedsRefresh(expiresAt: String): Boolean {

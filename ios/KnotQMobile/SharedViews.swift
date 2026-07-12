@@ -42,10 +42,10 @@ struct NameSheet: View {
             .navigationTitle(title)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") { dismiss() }
+                    Button(L10n.t("common.cancel")) { dismiss() }
                 }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Save") {
+                    Button(L10n.t("common.save")) {
                         let validationError = validator?(text)
                         error = validationError
                         guard validationError == nil else { return }
@@ -66,8 +66,8 @@ struct ArchiveTarget: Identifiable, Equatable {
 
         var label: String {
             switch self {
-            case .folder: "Folder"
-            case .scheme: "Scheme"
+            case .folder: L10n.t("sidebar.context.folder")
+            case .scheme: L10n.t("mobile.archive.kind_scheme")
             }
         }
     }
@@ -89,19 +89,19 @@ struct ArchiveTarget: Identifiable, Equatable {
     }
 
     var title: String {
-        "Move to Archive?"
+        L10n.t("mobile.archive.move_title")
     }
 
     var confirmTitle: String {
-        "Move to Archive"
+        L10n.t("mobile.archive.move_confirm")
     }
 
     var message: String {
         switch kind {
         case .folder:
-            return "\"\(name)\" and its schemes will be moved out of the sidebar. You can restore them later from Archive."
+            return L10n.t("mobile.archive.move_folder_message", ["name": name])
         case .scheme:
-            return "\"\(name)\" will be moved out of the sidebar. You can restore it later from Archive."
+            return L10n.t("mobile.archive.move_scheme_message", ["name": name])
         }
     }
 }
@@ -115,38 +115,36 @@ struct DestructiveConfirmationTarget: Identifiable, Equatable {
     static func permanentlyDeleteScheme(_ scheme: MobileScheme) -> DestructiveConfirmationTarget {
         DestructiveConfirmationTarget(
             id: "permanent-\(scheme.id)",
-            title: "Delete Permanently",
-            message: "\"\(scheme.displayName)\" will be removed from the archive permanently.",
-            confirmTitle: "Delete Permanently"
+            title: L10n.t("mobile.archive.delete_permanently_title"),
+            message: L10n.t("mobile.archive.delete_scheme_permanently_message", ["name": scheme.displayName]),
+            confirmTitle: L10n.t("mobile.archive.delete_permanently_title")
         )
     }
 
     static func permanentlyDeleteArchivedScheme(name: String, id: String) -> DestructiveConfirmationTarget {
         DestructiveConfirmationTarget(
             id: "permanent-\(id)",
-            title: "Delete Permanently",
-            message: "\"\(name)\" will be removed from the archive permanently.",
-            confirmTitle: "Delete Permanently"
+            title: L10n.t("mobile.archive.delete_permanently_title"),
+            message: L10n.t("mobile.archive.delete_scheme_permanently_message", ["name": name]),
+            confirmTitle: L10n.t("mobile.archive.delete_permanently_title")
         )
     }
 
     static func permanentlyDeleteArchivedFolder(name: String, id: String) -> DestructiveConfirmationTarget {
         DestructiveConfirmationTarget(
             id: "permanent-folder-\(id)",
-            title: "Delete Folder Permanently",
-            message: "\"\(name)\" and all of its schemes will be removed from the archive permanently.",
-            confirmTitle: "Delete Permanently"
+            title: L10n.t("mobile.archive.delete_folder_permanently_title"),
+            message: L10n.t("mobile.archive.delete_folder_permanently_message", ["name": name]),
+            confirmTitle: L10n.t("mobile.archive.delete_permanently_title")
         )
     }
 
     static func emptyArchive(count: Int) -> DestructiveConfirmationTarget {
         DestructiveConfirmationTarget(
             id: "empty-archive",
-            title: "Empty Archive",
-            message: count == 1
-                ? "The archived scheme will be deleted permanently."
-                : "\(count) archived schemes will be deleted permanently.",
-            confirmTitle: "Empty Archive"
+            title: L10n.t("archive.empty_confirm_button"),
+            message: L10n.plural("mobile.archive.empty_confirm_message", count),
+            confirmTitle: L10n.t("archive.empty_confirm_button")
         )
     }
 }

@@ -714,8 +714,7 @@ fn notification_snooze_actions_reschedule_visible_ios_options() {
         (ACTION_SNOOZE_6_HOURS, 6 * 60 * 60),
         (ACTION_SNOOZE_1_DAY, 24 * 60 * 60),
     ] {
-        let dir =
-            std::env::temp_dir().join(format!("knotq-mobile-test-{}", uuid::Uuid::new_v4()));
+        let dir = std::env::temp_dir().join(format!("knotq-mobile-test-{}", uuid::Uuid::new_v4()));
         let core = MobileCore::new(dir.display().to_string()).expect("open mobile core");
         let now = Utc::now();
         let trigger_at = now + Duration::days(3);
@@ -1026,8 +1025,7 @@ fn recurring_event_edit_this_event_uses_desktop_scoped_commit() {
         .into_iter()
         .flat_map(|day| day.occurrences)
         .find(|occurrence| {
-            occurrence.title == "Standup"
-                && occurrence.local_date.as_deref() == Some("2026-01-07")
+            occurrence.title == "Standup" && occurrence.local_date.as_deref() == Some("2026-01-07")
         })
         .expect("jan 7 occurrence");
     assert!(occurrence.is_recurring);
@@ -1070,8 +1068,7 @@ fn recurring_event_edit_this_event_uses_desktop_scoped_commit() {
         .into_iter()
         .flat_map(|day| day.occurrences)
         .find(|occurrence| {
-            occurrence.title == "Standup"
-                && occurrence.local_date.as_deref() == Some("2026-01-07")
+            occurrence.title == "Standup" && occurrence.local_date.as_deref() == Some("2026-01-07")
         })
         .expect("moved occurrence");
     assert_eq!(moved.start.as_deref(), Some("2026-01-07T14:00:00Z"));
@@ -1128,8 +1125,7 @@ fn recurring_event_delete_this_event_adds_exception_not_delete_item() {
         .into_iter()
         .flat_map(|day| day.occurrences)
         .find(|occurrence| {
-            occurrence.title == "Standup"
-                && occurrence.local_date.as_deref() == Some("2026-01-07")
+            occurrence.title == "Standup" && occurrence.local_date.as_deref() == Some("2026-01-07")
         })
         .expect("jan 7 occurrence");
     core.delete_event_occurrence(
@@ -1158,10 +1154,8 @@ fn recurring_event_delete_this_event_adds_exception_not_delete_item() {
         .into_iter()
         .flat_map(|day| day.occurrences)
         .any(|occurrence| {
-            occurrence.title == "Standup"
-                && occurrence.local_date.as_deref() == Some("2026-01-07")
+            occurrence.title == "Standup" && occurrence.local_date.as_deref() == Some("2026-01-07")
         }));
 
     let _ = std::fs::remove_dir_all(dir);
 }
-

@@ -21,21 +21,21 @@ struct NotificationDefaultsSettingsSection: View {
 
     var body: some View {
         Section {
-            Picker("Events", selection: eventOffsetBinding) {
+            Picker(L10n.t("settings.notifications.events_label"), selection: eventOffsetBinding) {
                 ForEach(eventDefaultNotificationOptions) { option in
                     Text(option.label).tag(option.offsetSecs)
                 }
             }
             .pickerStyle(.menu)
 
-            Picker("Assignments", selection: assignmentOffsetBinding) {
+            Picker(L10n.t("settings.notifications.assignments_label"), selection: assignmentOffsetBinding) {
                 ForEach(assignmentDefaultNotificationOptions) { option in
                     Text(option.label).tag(option.offsetSecs)
                 }
             }
             .pickerStyle(.menu)
         } header: {
-            Text("Notifications")
+            Text(L10n.t("settings.notifications.section"))
         }
         .listRowBackground(theme.bgModal)
     }
@@ -75,7 +75,7 @@ struct DesktopSettingsPane: View {
     var body: some View {
         NavigationStack {
             SettingsForm(theme: theme)
-                .navigationTitle("Settings")
+                .navigationTitle(L10n.t("settings.header.title"))
                 .navigationDestination(for: SettingsRoute.self) { route in
                     switch route {
                     case .archive:
@@ -107,25 +107,25 @@ struct SettingsForm: View {
             .listRowSeparator(.hidden)
 
             Section {
-                Picker("Theme", selection: themeBinding) {
-                    SettingsThemeOption(title: "Dark", systemImage: "moon.fill").tag("dark")
-                    SettingsThemeOption(title: "Light", systemImage: "sun.max.fill").tag("light")
-                    SettingsThemeOption(title: "System", systemImage: "circle.lefthalf.filled").tag("system")
+                Picker(L10n.t("settings.appearance.theme_label"), selection: themeBinding) {
+                    SettingsThemeOption(title: L10n.t("settings.appearance.theme_dark"), systemImage: "moon.fill").tag("dark")
+                    SettingsThemeOption(title: L10n.t("settings.appearance.theme_light"), systemImage: "sun.max.fill").tag("light")
+                    SettingsThemeOption(title: L10n.t("settings.appearance.theme_system"), systemImage: "circle.lefthalf.filled").tag("system")
                 }
                 .pickerStyle(.menu)
             } header: {
-                Text("Appearance")
+                Text(L10n.t("settings.appearance.section"))
             }
             .listRowBackground(theme.bgModal)
 
             Section {
-                Picker("Clock", selection: timeBinding) {
-                    Text("12-hour").tag("twelve_hour")
-                    Text("24-hour").tag("twenty_four_hour")
+                Picker(L10n.t("settings.time.clock_label"), selection: timeBinding) {
+                    Text(L10n.t("settings.time.clock_12h")).tag("twelve_hour")
+                    Text(L10n.t("settings.time.clock_24h")).tag("twenty_four_hour")
                 }
                 .pickerStyle(.menu)
             } header: {
-                Text("Time")
+                Text(L10n.t("settings.time.section"))
             }
             .listRowBackground(theme.bgModal)
 
@@ -145,16 +145,16 @@ struct SettingsForm: View {
             Color.clear.frame(height: 96)
         }
         .confirmationDialog(
-            "Cancel sync subscription?",
+            L10n.t("mobile.settings.cancel_sync_subscription_title"),
             isPresented: $showingCancelConfirm,
             titleVisibility: .visible
         ) {
-            Button("Cancel Subscription", role: .destructive) {
+            Button(L10n.t("mobile.settings.cancel_sync_subscription_confirm"), role: .destructive) {
                 Task { await model.cancelSyncSubscription() }
             }
-            Button("Keep Sync", role: .cancel) {}
+            Button(L10n.t("mobile.settings.keep_sync"), role: .cancel) {}
         } message: {
-            Text("Your local workspace stays on this device. Paid sync may remain available until the current billing period ends.")
+            Text(L10n.t("mobile.settings.cancel_sync_subscription_message"))
         }
     }
 
@@ -188,10 +188,10 @@ struct SettingsHelpSection: View {
                         .frame(width: 28, height: 28)
 
                     VStack(alignment: .leading, spacing: 2) {
-                        Text("Need help with anything?")
+                        Text(L10n.t("mobile.settings.help_title"))
                             .font(.system(size: 15, weight: .semibold))
                             .foregroundStyle(theme.textPrimary)
-                        Text("Join the KnotQ Discord")
+                        Text(L10n.t("mobile.settings.help_discord"))
                             .font(.system(size: 12))
                             .foregroundStyle(theme.textSoft)
                     }
@@ -292,7 +292,7 @@ struct ColorMenu: View {
                     model.setSchemeColor(id: nodeID, colorIndex: Int32(index))
                 } label: {
                     Label {
-                        Text(index == Int(colorIndex) ? "Selected" : "")
+                        Text(index == Int(colorIndex) ? L10n.t("mobile.home.color_selected") : "")
                     } icon: {
                         Image(systemName: colorIndex == Int32(index) ? "checkmark.circle.fill" : "circle.fill")
                             .symbolRenderingMode(.palette)
@@ -304,7 +304,7 @@ struct ColorMenu: View {
                 }
             }
         } label: {
-            Label("Color", systemImage: "paintpalette")
+            Label(L10n.t("mobile.home.color_menu_label"), systemImage: "paintpalette")
         }
     }
 }

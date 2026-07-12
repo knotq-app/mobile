@@ -18,7 +18,7 @@ use knotq_model::{
     SchemeId, SchemeSource, Table, Workspace, DAILY_QUEUE_COLOR_INDEX,
 };
 use knotq_notifications::{
-    compute_due_notifications_with_lead_times, completed_notification_keys,
+    completed_notification_keys, compute_due_notifications_with_lead_times,
     expired_event_notification_keys, DEFAULT_DURABLE_NOTIFICATION_LIMIT,
 };
 use knotq_state::{
@@ -34,8 +34,8 @@ use knotq_storage_json::{
 };
 use knotq_sync::{
     batch_pull_and_apply, batch_push_pending, queue_account_switch_reseed,
-    queue_workspace_bootstrap_updates, DevicePlatform, NotificationPermissionState, PendingCrdtEdit,
-    PushChannel, PushEnvironment, RegisterDeviceRequest, WorkspaceCrdtChangeSet,
+    queue_workspace_bootstrap_updates, DevicePlatform, NotificationPermissionState,
+    PendingCrdtEdit, PushChannel, PushEnvironment, RegisterDeviceRequest, WorkspaceCrdtChangeSet,
     WorkspaceCrdtDocuments,
 };
 mod google_calendar;
@@ -50,8 +50,8 @@ use crdt_changes::mobile_crdt_change_set_for_command;
 mod media_sync;
 use media_sync::{
     mobile_download_missing_media_assets, mobile_media_to_item_media,
-    mobile_notification_schedule_snapshot, mobile_upload_local_media_assets, normalize_sync_api_base,
-    MobileSyncHttpClient,
+    mobile_notification_schedule_snapshot, mobile_upload_local_media_assets,
+    normalize_sync_api_base, MobileSyncHttpClient,
 };
 
 mod conversions;
@@ -140,7 +140,6 @@ impl MobileCore {
         })
     }
 
-
     fn lock(&self) -> Result<MutexGuard<'_, MobileCoreInner>, MobileError> {
         // A panic while the lock is held poisons the mutex. Without recovery,
         // every later call — and every resync — would fail forever with "lock
@@ -200,7 +199,6 @@ struct MobileCoreInner {
 /// shells' poll interval (~30s) so the periodic pull is unaffected, and bypassed
 /// whenever there are local edits queued so user changes never wait on it.
 const MIN_REMOTE_SYNC_INTERVAL: std::time::Duration = std::time::Duration::from_secs(10);
-
 
 struct GoogleCalendarApplyResult {
     content_changed: bool,
@@ -434,5 +432,10 @@ pub struct MobileSearchHit {
     pub status: String,
 }
 
-uniffi::include_scaffolding!("knotq_mobile_core");
+/// Applies the shell's UI locale to core-produced strings (sync status
+/// messages, daily labels). Unknown tags fall back to English.
+pub fn set_locale(tag: String) {
+    knotq_l10n::set_locale(&tag);
+}
 
+uniffi::include_scaffolding!("knotq_mobile_core");

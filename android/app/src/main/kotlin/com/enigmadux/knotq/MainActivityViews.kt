@@ -145,15 +145,15 @@ internal fun MainActivity.addOccurrenceSection(root: LinearLayout, title: String
 
 internal fun MainActivity.titleText(): String {
     return if (selectedTab == TAB_SCHEMES && selectedSchemeId != null) {
-        findScheme(selectedSchemeId!!)?.optString("display_name") ?: "Scheme"
+        findScheme(selectedSchemeId!!)?.optString("display_name") ?: L10n.t(this, "mobile.nav.scheme_title_fallback")
     } else {
         when (selectedTab) {
-            TAB_HOME -> "Home"
-            TAB_CALENDAR -> "Calendar"
-            TAB_SCHEMES -> "Schemes"
-            TAB_DAILY -> "Daily"
-            TAB_SEARCH -> "Search"
-            TAB_SETTINGS -> "Settings"
+            TAB_HOME -> L10n.t(this, "mobile.nav.tab_home")
+            TAB_CALENDAR -> L10n.t(this, "mobile.nav.tab_calendar")
+            TAB_SCHEMES -> L10n.t(this, "mobile.nav.tab_schemes")
+            TAB_DAILY -> L10n.t(this, "mobile.nav.tab_daily")
+            TAB_SEARCH -> L10n.t(this, "mobile.nav.tab_search")
+            TAB_SETTINGS -> L10n.t(this, "mobile.nav.tab_settings")
             else -> "KnotQ"
         }
     }
@@ -251,7 +251,7 @@ internal fun MainActivity.dialogTimeLabel(time: LocalTime): String {
     if (timeFormat24()) return "%02d:%02d".format(Locale.US, time.hour, time.minute)
     val hour = time.hour
     val hour12 = (hour % 12).let { if (it == 0) 12 else it }
-    val period = if (hour < 12) "AM" else "PM"
+    val period = if (hour < 12) L10n.t(this, "event.date_popover.am") else L10n.t(this, "event.date_popover.pm")
     return "%d:%02d %s".format(Locale.US, hour12, time.minute, period)
 }
 
@@ -498,26 +498,15 @@ internal fun MainActivity.homeFloatingActions(): View =
     LinearLayout(this).apply {
         orientation = LinearLayout.HORIZONTAL
         gravity = Gravity.CENTER
-        addView(floatingAction(R.drawable.ic_knotq_check_square_24, "Daily") {
+        addView(floatingAction(R.drawable.ic_knotq_check_square_24, L10n.t(this@homeFloatingActions, "mobile.nav.tab_daily")) {
             selectedTab = TAB_DAILY
             selectedSchemeId = null
             ensureDaily()
         }, LinearLayout.LayoutParams(dp(ICON_FLOATING_WIDTH_DP), dp(ICON_FLOATING_WIDTH_DP)).apply {
             setMargins(0, 0, dp(10), 0)
         })
-        addView(floatingAction(R.drawable.ic_knotq_edit_24, "New Scheme") {
-            showNameDialog("New Scheme", "", { validateSchemeName(it, folderId = rootFolderId()) }) { name ->
-                mutate(obj("type" to "create_scheme", "name" to name, "position" to 0))
-                snapshot.optJSONArray("schemes")?.let { schemes ->
-                    for (index in schemes.length() - 1 downTo 0) {
-                        val scheme = schemes.optJSONObject(index) ?: continue
-                        if (scheme.optString("display_name") == name || scheme.optString("name") == name) {
-                            openScheme(scheme.optString("id"))
-                            return@showNameDialog
-                        }
-                    }
-                }
-            }
+        addView(floatingAction(R.drawable.ic_knotq_edit_24, L10n.t(this@homeFloatingActions, "mobile.nav.new_scheme")) {
+            quickCreateScheme()
         }, LinearLayout.LayoutParams(dp(ICON_FLOATING_WIDTH_DP), dp(ICON_FLOATING_WIDTH_DP)))
     }
 
@@ -738,21 +727,20 @@ internal fun Int.floorMod(mod: Int): Int = ((this % mod) + mod) % mod
 internal fun MainActivity.dp(value: Int): Int = (value * resources.displayMetrics.density).roundToInt()
 
 internal fun MainActivity.toast(value: String?) {
-    Toast.makeText(this, value ?: "Error", Toast.LENGTH_LONG).show()
+    Toast.makeText(this, value ?: L10n.t(this, "mobile.common.error_fallback"), Toast.LENGTH_LONG).show()
 }
 
 internal fun MainActivity.showError(title: String, message: String?) {
     AlertDialog.Builder(this)
         .setTitle(title)
-        .setMessage(message ?: "Unknown error")
-        .setPositiveButton("OK", null)
+        .setMessage(message ?: L10n.t(this, "mobile.common.unknown_error"))
+        .setPositiveButton(L10n.t(this, "common.ok"), null)
         .show()
 }
 
 internal fun MainActivity.showFatal(message: String?) {
-    setContentView(text(message ?: "KnotQ failed to start", theme.textPrimary, 16f, true).apply {
+    setContentView(text(message ?: L10n.t(this, "mobile.common.fatal_fallback"), theme.textPrimary, 16f, true).apply {
         gravity = Gravity.CENTER
         setBackgroundColor(theme.bgApp)
     })
 }
-

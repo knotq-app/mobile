@@ -18,8 +18,8 @@ struct SearchScreen: View {
                 }
             }
         }
-        .navigationTitle("Search")
-        .searchable(text: $query, prompt: "Search")
+        .navigationTitle(L10n.t("mobile.search.screen_title"))
+        .searchable(text: $query, prompt: L10n.t("mobile.search.screen_title"))
         .onChange(of: query) { _, value in
             model.search(value)
         }

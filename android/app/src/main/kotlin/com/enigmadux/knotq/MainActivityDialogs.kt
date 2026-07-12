@@ -102,22 +102,11 @@ import kotlin.math.roundToInt
 
     internal fun MainActivity.showNewMenu() {
         AlertDialog.Builder(this)
-            .setTitle("New")
-            .setItems(arrayOf("New Scheme", "New Folder", "Google Calendar")) { _, which ->
+            .setTitle(L10n.t(this, "sidebar.footer.new"))
+            .setItems(arrayOf(L10n.t(this, "mobile.new_menu.new_scheme"), L10n.t(this, "sidebar.context.new_folder"), L10n.t(this, "sidebar.context.google_calendar"))) { _, which ->
                 when (which) {
-                    0 -> showNameDialog("New Scheme", "", { validateSchemeName(it, folderId = rootFolderId()) }) { name ->
-                        mutate(obj("type" to "create_scheme", "name" to name, "position" to 0))
-                        snapshot.optJSONArray("schemes")?.let { schemes ->
-                            for (index in schemes.length() - 1 downTo 0) {
-                                val scheme = schemes.optJSONObject(index) ?: continue
-                                if (scheme.optString("display_name") == name || scheme.optString("name") == name) {
-                                    openScheme(scheme.optString("id"))
-                                    return@showNameDialog
-                                }
-                            }
-                        }
-                    }
-                    1 -> showNameDialog("New Folder", "", { validateFolderName(it) }) { name -> mutate(obj("type" to "create_folder", "name" to name)) }
+                    0 -> quickCreateScheme()
+                    1 -> showNameDialog(L10n.t(this, "sidebar.context.new_folder"), "", { validateFolderName(it) }) { name -> mutate(obj("type" to "create_folder", "name" to name)) }
                     2 -> startGoogleCalendarImport()
                 }
             }
@@ -127,24 +116,31 @@ import kotlin.math.roundToInt
     internal fun MainActivity.showItemDialog(schemeId: String, item: JSONObject?) {
         val editing = item != null
         val form = page(compact = true)
-        val text = edit(item?.optString("text") ?: "").apply { hint = "Item" }
+        val text = edit(item?.optString("text") ?: "").apply { hint = L10n.t(this@showItemDialog, "sidebar.context.item") }
         val markerValues = arrayOf("checkbox", "blank", "bullet", "numbered")
-        val marker = spinner(markerValues)
+        val markerLabels = arrayOf(
+            L10n.t(this, "mobile.marker.checkbox"),
+            L10n.t(this, "mobile.marker.blank"),
+            L10n.t(this, "mobile.marker.bullet"),
+            L10n.t(this, "mobile.marker.numbered")
+        )
+        val marker = spinner(markerLabels)
         if (editing) marker.setSelection(markerValues.indexOf(item?.optString("marker")).coerceAtLeast(0))
         form.addView(text, spaced())
         form.addView(marker, spaced())
         AlertDialog.Builder(this)
-            .setTitle(if (editing) "Edit Item" else "New Item")
+            .setTitle(if (editing) L10n.t(this, "mobile.item_dialog.edit_title") else L10n.t(this, "menu.new_item"))
             .setView(form)
-            .setPositiveButton(if (editing) "Save" else "Add") { _, _ ->
+            .setPositiveButton(if (editing) L10n.t(this, "common.save") else L10n.t(this, "common.add")) { _, _ ->
+                val selectedMarker = markerValues.getOrElse(marker.selectedItemPosition) { markerValues[0] }
                 if (item != null) {
                     mutate(obj("type" to "update_item_text", "scheme_id" to schemeId, "item_id" to item.optString("id"), "text" to text.text.toString().trim()))
-                    mutate(obj("type" to "set_item_marker", "scheme_id" to schemeId, "item_id" to item.optString("id"), "marker" to marker.selectedItem.toString()))
+                    mutate(obj("type" to "set_item_marker", "scheme_id" to schemeId, "item_id" to item.optString("id"), "marker" to selectedMarker))
                 } else {
-                    mutate(obj("type" to "add_item", "scheme_id" to schemeId, "text" to text.text.toString().trim(), "marker" to marker.selectedItem.toString()))
+                    mutate(obj("type" to "add_item", "scheme_id" to schemeId, "text" to text.text.toString().trim(), "marker" to selectedMarker))
                 }
             }
-            .setNegativeButton("Cancel", null)
+            .setNegativeButton(L10n.t(this, "common.cancel"), null)
             .show()
     }
 
@@ -193,12 +189,17 @@ import kotlin.math.roundToInt
             seedDate
         }
         val titleInput = edit(occurrence?.optString("title") ?: "").apply {
-            hint = "Title"
+            hint = L10n.t(this@showEventEditorDialog, "event.field.title")
             isEnabled = !readOnly
         }
         // iOS-style segmented kind selector instead of a raw lowercase spinner.
         val kindValues = arrayOf("event", "reminder", "assignment", "task")
-        val kindTitles = arrayOf("Event", "Reminder", "Assignment", "Task")
+        val kindTitles = arrayOf(
+            L10n.t(this, "mobile.event_kind.event"),
+            L10n.t(this, "mobile.event_kind.reminder"),
+            L10n.t(this, "mobile.event_kind.assignment"),
+            L10n.t(this, "mobile.event_kind.task")
+        )
         var activeKindValue = if (kindValues.contains(initialKind)) initialKind else "task"
         val kindChips = HashMap<String, TextView>()
         val kindRow = LinearLayout(this).apply {
@@ -227,7 +228,7 @@ import kotlin.math.roundToInt
                 }
             }
         }
-        val schemeLabels = mutableListOf("Daily")
+        val schemeLabels = mutableListOf(L10n.t(this, "menu.daily"))
         val schemeIds = mutableListOf<String?>(null)
         snapshot.optJSONArray("schemes")?.forEachObject { scheme ->
             if (!scheme.optBoolean("is_daily_queue") && !scheme.optBoolean("is_read_only")) {
@@ -245,7 +246,13 @@ import kotlin.math.roundToInt
         var startTime = defaultStart.toLocalTime().takeIf { it != LocalTime.MIDNIGHT } ?: LocalTime.now().withSecond(0).withNano(0)
         var endTime = defaultEnd.toLocalTime()
         val repeatValues = arrayOf("none", "daily", "weekly", "monthly", "yearly")
-        val repeatLabels = arrayOf("Never", "Daily", "Weekly", "Monthly", "Yearly")
+        val repeatLabels = arrayOf(
+            L10n.t(this, "repeat.value.never"),
+            L10n.t(this, "repeat.daily"),
+            L10n.t(this, "repeat.weekly"),
+            L10n.t(this, "repeat.monthly"),
+            L10n.t(this, "repeat.yearly")
+        )
         val repeat = spinner(repeatLabels).apply {
             setSelection(repeatValues.indexOf(MobileRecurrence.repeatChoiceFromRrule(occurrence?.optionalString("repeat_rule"))).coerceAtLeast(0))
             isEnabled = !readOnly
@@ -313,7 +320,7 @@ import kotlin.math.roundToInt
             gravity = Gravity.CENTER_VERTICAL
             background = rounded(theme.buttonBg, dp(8), theme.borderOverlay)
             setPadding(dp(12), 0, dp(12), 0)
-            addView(text("Completed", theme.textPrimary, 15f, false), LinearLayout.LayoutParams(0, -2, 1f))
+            addView(text(L10n.t(this@showEventEditorDialog, "event.field.completed"), theme.textPrimary, 15f, false), LinearLayout.LayoutParams(0, -2, 1f))
             addView(completed, LinearLayout.LayoutParams(-2, -2))
             setOnClickListener { if (!readOnly) completed.toggle() }
         }
@@ -336,11 +343,16 @@ import kotlin.math.roundToInt
         card.addView(LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(16), dp(14), dp(16), dp(7))
-            addView(text(if (readOnly) "Details" else if (editing) "Edit" else "New", theme.textPrimary, 21f, true))
+            addView(text(
+                if (readOnly) L10n.t(this@showEventEditorDialog, "mobile.event_dialog.details_title")
+                else if (editing) L10n.t(this@showEventEditorDialog, "common.edit")
+                else L10n.t(this@showEventEditorDialog, "sidebar.footer.new"),
+                theme.textPrimary, 21f, true
+            ))
             val subtitle = when {
-                readOnly -> "Imported calendar item"
+                readOnly -> L10n.t(this@showEventEditorDialog, "mobile.event_dialog.imported_subtitle")
                 editing -> occurrence?.optString("scheme_name").orEmpty()
-                else -> "Calendar item"
+                else -> L10n.t(this@showEventEditorDialog, "mobile.event_dialog.new_subtitle")
             }
             if (subtitle.isNotBlank()) {
                 addView(text(subtitle, theme.textMuted, 12f, false).apply {
@@ -352,12 +364,12 @@ import kotlin.math.roundToInt
         val form = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(16), 0, dp(16), dp(4))
-            addView(dialogLabel("Title"))
+            addView(dialogLabel(L10n.t(this@showEventEditorDialog, "event.field.title")))
             addView(titleInput, LinearLayout.LayoutParams(-1, dp(42)).apply { setMargins(0, 0, 0, dp(9)) })
             if (!editing) {
-                addView(dialogSpinnerField("Scheme", scheme), LinearLayout.LayoutParams(-1, -2).apply { setMargins(0, 0, 0, dp(8)) })
+                addView(dialogSpinnerField(L10n.t(this@showEventEditorDialog, "event.field.scheme"), scheme), LinearLayout.LayoutParams(-1, -2).apply { setMargins(0, 0, 0, dp(8)) })
             }
-            addView(dialogLabel("Type"))
+            addView(dialogLabel(L10n.t(this@showEventEditorDialog, "event.field.type")))
             addView(kindRow, LinearLayout.LayoutParams(-1, -2).apply { setMargins(0, dp(2), 0, dp(9)) })
         }
         lateinit var dateField: DialogField
@@ -369,9 +381,9 @@ import kotlin.math.roundToInt
         fun refreshScheduleFields() {
             val activeKind = selectedKind()
             dateField.value.text = dialogDateLabel(selectedLocalDate)
-            startField.label.text = if (activeKind == "reminder") "At" else "Start"
+            startField.label.text = if (activeKind == "reminder") L10n.t(this@showEventEditorDialog, "event.field.at") else L10n.t(this@showEventEditorDialog, "event.field.start")
             startField.value.text = dialogTimeLabel(startTime)
-            endField.label.text = if (activeKind == "assignment") "Due" else "End"
+            endField.label.text = if (activeKind == "assignment") L10n.t(this@showEventEditorDialog, "event.field.due") else L10n.t(this@showEventEditorDialog, "event.field.end")
             endField.value.text = dialogTimeLabel(endTime)
             dateField.view.visibility = if (activeKind == "task") View.GONE else View.VISIBLE
             startField.view.visibility = if (activeKind == "event" || activeKind == "reminder") View.VISIBLE else View.GONE
@@ -379,19 +391,19 @@ import kotlin.math.roundToInt
             notificationFieldView.visibility = if (activeKind == "task") View.GONE else View.VISIBLE
             repeatFieldView.visibility = if (activeKind == "task") View.GONE else View.VISIBLE
         }
-        dateField = dialogField("Date", dialogDateLabel(selectedLocalDate), enabled = !readOnly) {
+        dateField = dialogField(L10n.t(this, "event.field.date"), dialogDateLabel(selectedLocalDate), enabled = !readOnly) {
             DatePickerDialog(this, dateDialogTheme(), { _, year, month, day ->
                 selectedLocalDate = LocalDate.of(year, month + 1, day)
                 refreshScheduleFields()
             }, selectedLocalDate.year, selectedLocalDate.monthValue - 1, selectedLocalDate.dayOfMonth).show()
         }
-        startField = dialogField("Start", dialogTimeLabel(startTime), enabled = !readOnly) {
+        startField = dialogField(L10n.t(this, "event.field.start"), dialogTimeLabel(startTime), enabled = !readOnly) {
             TimePickerDialog(this, timeDialogTheme(), { _, hour, minute ->
                 startTime = LocalTime.of(hour, minute)
                 refreshScheduleFields()
             }, startTime.hour, startTime.minute, timeFormat24()).show()
         }
-        endField = dialogField("End", dialogTimeLabel(endTime), enabled = !readOnly) {
+        endField = dialogField(L10n.t(this, "event.field.end"), dialogTimeLabel(endTime), enabled = !readOnly) {
             TimePickerDialog(this, timeDialogTheme(), { _, hour, minute ->
                 endTime = LocalTime.of(hour, minute)
                 refreshScheduleFields()
@@ -400,8 +412,8 @@ import kotlin.math.roundToInt
         form.addView(dateField.view, LinearLayout.LayoutParams(-1, -2).apply { setMargins(0, 0, 0, dp(7)) })
         form.addView(startField.view, LinearLayout.LayoutParams(-1, -2).apply { setMargins(0, 0, 0, dp(7)) })
         form.addView(endField.view, LinearLayout.LayoutParams(-1, -2).apply { setMargins(0, 0, 0, dp(8)) })
-        notificationFieldView = dialogSpinnerField("Notification", notification)
-        repeatFieldView = dialogSpinnerField("Repeat", repeat)
+        notificationFieldView = dialogSpinnerField(L10n.t(this, "event.field.notification"), notification)
+        repeatFieldView = dialogSpinnerField(L10n.t(this, "event.field.repeat"), repeat)
         form.addView(notificationFieldView, LinearLayout.LayoutParams(-1, -2).apply { setMargins(0, 0, 0, dp(8)) })
         form.addView(repeatFieldView, LinearLayout.LayoutParams(-1, -2).apply { setMargins(0, 0, 0, dp(8)) })
         form.addView(weekdayRow, LinearLayout.LayoutParams(-1, -2).apply { setMargins(0, 0, 0, dp(10)) })
@@ -423,7 +435,7 @@ import kotlin.math.roundToInt
             form.addView(completedRow, LinearLayout.LayoutParams(-1, dp(46)).apply { setMargins(0, dp(2), 0, dp(8)) })
         }
         if (readOnly) {
-            form.addView(text("Imported calendar items are read-only.", theme.textMuted, 12f, false), LinearLayout.LayoutParams(-1, -2).apply { setMargins(0, 0, 0, dp(8)) })
+            form.addView(text(L10n.t(this, "mobile.event_dialog.read_only_notice"), theme.textMuted, 12f, false), LinearLayout.LayoutParams(-1, -2).apply { setMargins(0, 0, 0, dp(8)) })
         }
         kindValues.forEach { value ->
             kindChips[value]?.setOnClickListener {
@@ -475,7 +487,7 @@ import kotlin.math.roundToInt
                     )
                 }
                 if (occurrence.optBoolean("is_recurring", false)) {
-                    showOccurrenceScopeDialog("Recurring task", occurrence, forDelete = false) { scope ->
+                    showOccurrenceScopeDialog(L10n.t(this, "mobile.occurrence_scope.recurring_task_title"), occurrence, forDelete = false) { scope ->
                         commit(scope)
                     }
                 } else {
@@ -518,12 +530,12 @@ import kotlin.math.roundToInt
             if (occurrence == null) return
             val delete = { scope: String -> deleteEventOccurrence(occurrence, scope) }
             if (occurrence.optBoolean("is_recurring", false)) {
-                showOccurrenceScopeDialog("Delete recurring task?", occurrence, forDelete = true, onScope = delete)
+                showOccurrenceScopeDialog(L10n.t(this, "mobile.occurrence_scope.delete_recurring_task_title"), occurrence, forDelete = true, onScope = delete)
             } else {
                 AlertDialog.Builder(this)
-                    .setTitle("Delete this task?")
-                    .setNegativeButton("Cancel", null)
-                    .setPositiveButton("Delete") { _, _ -> delete("all_events") }
+                    .setTitle(L10n.t(this, "mobile.event_dialog.delete_task_question"))
+                    .setNegativeButton(L10n.t(this, "common.cancel"), null)
+                    .setPositiveButton(L10n.t(this, "common.delete")) { _, _ -> delete("all_events") }
                     .show()
             }
             dialog.dismiss()
@@ -533,13 +545,13 @@ import kotlin.math.roundToInt
             gravity = Gravity.CENTER_VERTICAL
             setPadding(dp(12), dp(6), dp(12), dp(12))
             if (editing && !readOnly) {
-                addView(dialogActionButton("Delete", danger = true) { deleteAndDismiss() }, LinearLayout.LayoutParams(-2, dp(38)))
+                addView(dialogActionButton(L10n.t(this@showEventEditorDialog, "common.delete"), danger = true) { deleteAndDismiss() }, LinearLayout.LayoutParams(-2, dp(38)))
             }
             addView(View(this@showEventEditorDialog), LinearLayout.LayoutParams(0, 1, 1f))
-            addView(dialogActionButton(if (readOnly) "Done" else "Cancel") { dialog.dismiss() }, LinearLayout.LayoutParams(-2, dp(38)).apply {
+            addView(dialogActionButton(if (readOnly) L10n.t(this@showEventEditorDialog, "common.done") else L10n.t(this@showEventEditorDialog, "common.cancel")) { dialog.dismiss() }, LinearLayout.LayoutParams(-2, dp(38)).apply {
                 setMargins(0, 0, dp(8), 0)
             })
-            addView(dialogActionButton(if (readOnly) "Open Scheme" else "Save", primary = !readOnly) { saveAndDismiss() }, LinearLayout.LayoutParams(-2, dp(38)))
+            addView(dialogActionButton(if (readOnly) L10n.t(this@showEventEditorDialog, "mobile.event_dialog.open_scheme_button") else L10n.t(this@showEventEditorDialog, "common.save"), primary = !readOnly) { saveAndDismiss() }, LinearLayout.LayoutParams(-2, dp(38)))
         })
 
         dialog = AlertDialog.Builder(this)
@@ -604,21 +616,24 @@ import kotlin.math.roundToInt
         onCancel: (() -> Unit)? = null,
         onScope: (String) -> Unit
     ) {
-        val choices = mutableListOf("This task" to "this_event")
+        val choices = mutableListOf(L10n.t(this, "mobile.occurrence_scope.this_task") to "this_event")
         if (occurrence.optBoolean("can_delete_future", false)) {
-            choices.add("This and future tasks" to "all_future")
+            choices.add(L10n.t(this, "mobile.occurrence_scope.this_and_future_tasks") to "all_future")
         }
-        choices.add("All tasks" to "all_events")
+        choices.add(L10n.t(this, "mobile.occurrence_scope.all_tasks") to "all_events")
         var chose = false
         // No setMessage here: AlertDialog drops the item list when a message is
         // set, which left this dialog with nothing but Cancel.
         AlertDialog.Builder(this)
-            .setTitle(if (forDelete) "$title — which tasks should be deleted?" else "$title — which tasks should these changes apply to?")
+            .setTitle(
+                if (forDelete) L10n.t(this, "mobile.occurrence_scope.delete_question", mapOf("title" to title))
+                else L10n.t(this, "mobile.occurrence_scope.apply_question", mapOf("title" to title))
+            )
             .setItems(choices.map { it.first }.toTypedArray()) { _, which ->
                 chose = true
                 onScope(choices[which].second)
             }
-            .setNegativeButton("Cancel", null)
+            .setNegativeButton(L10n.t(this, "common.cancel"), null)
             .setOnDismissListener { if (!chose) onCancel?.invoke() }
             .show()
     }
@@ -686,9 +701,15 @@ import kotlin.math.roundToInt
 
     internal fun MainActivity.showMarkerDialog(schemeId: String, itemId: String) {
         val markers = arrayOf("checkbox", "blank", "bullet", "numbered")
+        val markerLabels = arrayOf(
+            L10n.t(this, "mobile.marker.checkbox"),
+            L10n.t(this, "mobile.marker.blank"),
+            L10n.t(this, "mobile.marker.bullet"),
+            L10n.t(this, "mobile.marker.numbered")
+        )
         AlertDialog.Builder(this)
-            .setTitle("Marker")
-            .setItems(markers) { _, which ->
+            .setTitle(L10n.t(this, "mobile.marker.title"))
+            .setItems(markerLabels) { _, which ->
                 mutate(obj("type" to "set_item_marker", "scheme_id" to schemeId, "item_id" to itemId, "marker" to markers[which]))
             }
             .show()
@@ -740,14 +761,18 @@ import kotlin.math.roundToInt
         }
         form.addView(date, spaced())
         form.addView(time)
+        val dialogTitle = when (kind) {
+            "start" -> L10n.t(this, "event.field.start")
+            "end" -> L10n.t(this, "event.field.end")
+            else -> kind.replaceFirstChar(Char::titlecase)
+        }
         AlertDialog.Builder(this)
-            .setTitle(kind.replaceFirstChar(Char::titlecase))
+            .setTitle(dialogTitle)
             .setView(form)
-            .setPositiveButton("Save") { _, _ ->
+            .setPositiveButton(L10n.t(this, "common.save")) { _, _ ->
                 val localDate = LocalDate.of(date.year, date.month + 1, date.dayOfMonth)
                 mutate(obj("type" to "set_item_date", "scheme_id" to schemeId, "item_id" to itemId, "kind" to kind, "date" to MobileDateFormatting.iso(localDate, time.hour, time.minute)))
             }
-            .setNegativeButton("Cancel", null)
+            .setNegativeButton(L10n.t(this, "common.cancel"), null)
             .show()
     }
-

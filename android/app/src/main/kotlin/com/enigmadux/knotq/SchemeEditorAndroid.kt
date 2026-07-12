@@ -796,7 +796,8 @@ internal class SchemeEditText(context: android.content.Context) : EditText(conte
 
             drawGuides(canvas, markerRect, line.indent, previous?.indent ?: 0, next?.indent ?: 0, firstTop, rowBottom)
             val lineOrdinal = if (line.marker == "numbered") numberedOrdinalAt(lines, index) else 1
-            drawMarker(canvas, markerRect, line.marker, line.done, lineOrdinal)
+            val textBaseline = (totalPaddingTop + layout.getLineBaseline(firstVisual) - scrollY).toFloat()
+            drawMarker(canvas, markerRect, line.marker, line.done, lineOrdinal, textBaseline)
             line.annotation?.let { annotation ->
                 drawAnnotationBar(
                     canvas = canvas,
@@ -870,7 +871,14 @@ internal class SchemeEditText(context: android.content.Context) : EditText(conte
         }
     }
 
-    internal fun drawMarker(canvas: Canvas, rect: RectF, marker: String, done: Boolean, ordinal: Int) {
+    internal fun drawMarker(
+        canvas: Canvas,
+        rect: RectF,
+        marker: String,
+        done: Boolean,
+        ordinal: Int,
+        textBaseline: Float
+    ) {
         when (marker) {
             "checkbox" -> {
                 chromePaint.style = Paint.Style.FILL
@@ -899,15 +907,15 @@ internal class SchemeEditText(context: android.content.Context) : EditText(conte
                 canvas.drawCircle(rect.centerX(), rect.centerY(), dp(2.2f), chromePaint)
             }
             "numbered" -> {
-                // iOS: ordinal right-aligned inside the marker slot, vertically
-                // centered — same indentation column as the other markers.
+                // iOS/desktop: ordinal is right-aligned in the marker slot, but
+                // shares the row's text baseline instead of being centered in the
+                // smaller checkbox-sized rect.
                 chromePaint.style = Paint.Style.FILL
                 chromePaint.typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
                 chromePaint.textSize = dp(12f)
                 chromePaint.color = accentColor
                 chromePaint.textAlign = Paint.Align.RIGHT
-                val baseline = rect.centerY() - (chromePaint.ascent() + chromePaint.descent()) / 2f
-                canvas.drawText("$ordinal.", rect.right, baseline, chromePaint)
+                canvas.drawText("$ordinal.", rect.right, textBaseline, chromePaint)
                 chromePaint.textAlign = Paint.Align.LEFT
                 chromePaint.typeface = Typeface.DEFAULT
             }

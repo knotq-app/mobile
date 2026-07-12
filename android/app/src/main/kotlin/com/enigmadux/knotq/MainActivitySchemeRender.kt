@@ -116,14 +116,14 @@ import kotlin.math.roundToInt
             gravity = Gravity.CENTER_VERTICAL
             setPadding(dp(12), 0, dp(12), 0)
             background = underline(theme.bgApp)
-            addView(iconChipImage(R.drawable.ic_knotq_chevron_left_24, "Back", iconSize = 20) {
+            addView(iconChipImage(R.drawable.ic_knotq_chevron_left_24, L10n.t(this@renderSchemeEditor, "common.back"), iconSize = 20) {
                 activeEditor()?.let { commitSchemeDocument(schemeId, it, rerender = false) }
                 exitSchemeEditor()
             })
             addView(View(this@renderSchemeEditor), LinearLayout.LayoutParams(0, 1, 1f))
             // Insert-table lives on the format toolbar; no separate header chip.
             addView(FrameLayout(this@renderSchemeEditor).apply {
-                contentDescription = "Color"
+                contentDescription = L10n.t(this@renderSchemeEditor, "mobile.scheme.color_swatch_label")
                 background = rounded(theme.buttonBg, dp(7))
                 addView(View(this@renderSchemeEditor).apply {
                     background = rounded(schemeColor(scheme.optInt("color_index")), dp(4), theme.borderOverlay)
@@ -131,11 +131,11 @@ import kotlin.math.roundToInt
                 setOnClickListener { showColorDialog(schemeId) }
             }, LinearLayout.LayoutParams(dp(32), dp(28)))
             if (!scheme.optBoolean("is_daily_queue", false)) {
-                addView(iconChipImage(R.drawable.ic_knotq_archive_24, "Archive", iconSize = 17) {
+                addView(iconChipImage(R.drawable.ic_knotq_archive_24, L10n.t(this@renderSchemeEditor, "sidebar.context.archive"), iconSize = 17) {
                     AlertDialog.Builder(this@renderSchemeEditor)
-                        .setTitle("Archive \"${scheme.optString("display_name", scheme.optString("name"))}\"?")
-                        .setNegativeButton("Cancel", null)
-                        .setPositiveButton("Archive") { _, _ ->
+                        .setTitle(L10n.t(this@renderSchemeEditor, "mobile.scheme.archive_confirm_title", mapOf("name" to scheme.optString("display_name", scheme.optString("name")))))
+                        .setNegativeButton(L10n.t(this@renderSchemeEditor, "common.cancel"), null)
+                        .setPositiveButton(L10n.t(this@renderSchemeEditor, "sidebar.context.archive")) { _, _ ->
                             activeEditor()?.let { commitSchemeDocument(schemeId, it, rerender = false) }
                             mutate(obj("type" to "delete_scheme", "scheme_id" to schemeId))
                             exitSchemeEditor()
@@ -216,7 +216,7 @@ import kotlin.math.roundToInt
             editorScroll.scrollTo(0, max(0, editorBody.bottom - editorScroll.height))
         }
         if (readOnly) {
-            root.addView(text("Imported calendar schemes are read-only.", theme.textMuted, 12f, false).apply {
+            root.addView(text(L10n.t(this, "mobile.scheme.read_only_notice"), theme.textMuted, 12f, false).apply {
                 gravity = Gravity.CENTER
                 setBackgroundColor(theme.bgToolbar)
             }, LinearLayout.LayoutParams(-1, dp(38)))
@@ -294,6 +294,17 @@ import kotlin.math.roundToInt
             }
         }
         refreshError()
+        if (pendingTitleFocusSchemeId == schemeId && !scheme.optBoolean("is_read_only", false)) {
+            pendingTitleFocusSchemeId = null
+            input.post {
+                input.requestFocus()
+                input.selectAll()
+                input.post {
+                    (getSystemService(Context.INPUT_METHOD_SERVICE) as? InputMethodManager)
+                        ?.showSoftInput(input, InputMethodManager.SHOW_IMPLICIT)
+                }
+            }
+        }
 
         return LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -312,7 +323,7 @@ import kotlin.math.roundToInt
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
             setPadding(dp(12), 0, dp(12), 0)
-            addView(iconChipImage(R.drawable.ic_knotq_chevron_left_24, "Back", iconSize = 20) {
+            addView(iconChipImage(R.drawable.ic_knotq_chevron_left_24, L10n.t(this@renderDaily, "common.back"), iconSize = 20) {
                 currentFocus?.clearFocus()
                 selectedTab = TAB_HOME
                 selectedSchemeId = null
@@ -337,7 +348,7 @@ import kotlin.math.roundToInt
         // days only earn a section when they're today, yesterday, or selected.
         val dayViews = LinkedHashMap<String, View>()
         if (days.isEmpty()) {
-            list.addView(emptyState("Daily not ready", "Could not create the daily queue."))
+            list.addView(emptyState(L10n.t(this, "mobile.daily.not_ready_title"), L10n.t(this, "mobile.daily.not_ready_detail")))
         } else {
             days.forEach { day ->
                 val date = day.optString("date")
@@ -427,7 +438,7 @@ import kotlin.math.roundToInt
     /// unselected day selects it.
     internal fun MainActivity.dailyDayEditor(day: JSONObject): View {
         val date = day.optString("date")
-        val scheme = day.optJSONObject("scheme") ?: return emptyState(MobileDateFormatting.fullDay(date), "Daily not ready")
+        val scheme = day.optJSONObject("scheme") ?: return emptyState(MobileDateFormatting.fullDay(date), L10n.t(this, "mobile.daily.not_ready_title"))
         val schemeId = scheme.optString("id")
         val selected = date == selectedDate.toString()
         val empty = isDailyEntryEmpty(day)
@@ -524,7 +535,7 @@ import kotlin.math.roundToInt
     internal fun MainActivity.renderSearch(): View {
         val root = page()
         val query = edit("").apply {
-            hint = "Search KnotQ"
+            hint = L10n.t(this@renderSearch, "search.placeholder")
             setSingleLine(true)
             background = rounded(theme.bgModal, dp(7), theme.borderOverlay)
             setPadding(dp(12), 0, dp(12), 0)
@@ -538,7 +549,7 @@ import kotlin.math.roundToInt
                 addView(FrameLayout(this@renderSearch).apply {
                     background = rounded(theme.buttonBg, dp(7))
                     addView(
-                        iconImage(R.drawable.ic_knotq_chevron_left_24, theme.textPrimary, "Back"),
+                        iconImage(R.drawable.ic_knotq_chevron_left_24, theme.textPrimary, L10n.t(this@renderSearch, "common.back")),
                         FrameLayout.LayoutParams(dp(20), dp(20), Gravity.CENTER)
                     )
                     setOnClickListener { exitSearch() }
@@ -574,13 +585,13 @@ import kotlin.math.roundToInt
     internal fun MainActivity.renderSearchResults(results: LinearLayout, query: String) {
         results.removeAllViews()
         if (query.isBlank()) {
-            results.addView(emptyState("Search KnotQ", "Find anything across all your schemes."))
+            results.addView(emptyState(L10n.t(this, "search.placeholder"), L10n.t(this, "mobile.search.empty_subtitle")))
             return
         }
         try {
             val hits = bridge.requestArray(obj("type" to "search", "query" to query))
             if (hits.length() == 0) {
-                results.addView(emptyState("No results", "Nothing matched “$query”."))
+                results.addView(emptyState(L10n.t(this, "search.no_results"), L10n.t(this, "mobile.search.no_results_detail", mapOf("query" to query))))
                 return
             }
             hits.forEachIndexedObject { idx, hit ->
@@ -607,14 +618,14 @@ import kotlin.math.roundToInt
                 results.addView(row, rowParams())
             }
         } catch (error: RuntimeException) {
-            showError("Could not save edits", error.message)
+            showError(L10n.t(this, "mobile.editor.could_not_save_edits"), error.message)
         }
     }
 
     internal fun MainActivity.renderSettings(): LinearLayout {
         if (settingsShowingArchive) return renderArchivePage()
         val root = page()
-        root.addView(sectionHeader("Settings"))
+        root.addView(sectionHeader(L10n.t(this, "settings.header.title")))
         root.addView(syncSettingsCard(), spaced())
         val settings = snapshot.optJSONObject("settings")
         val themeMode = settings?.optString("theme_mode", "system") ?: "system"
@@ -625,38 +636,41 @@ import kotlin.math.roundToInt
             ?: DEFAULT_ASSIGNMENT_NOTIFICATION_OFFSET_SECS
         val googleAccountCount = settings?.optInt("google_account_count", 0) ?: 0
 
-        root.addView(settingsSection("Appearance"))
+        root.addView(settingsSection(L10n.t(this, "settings.appearance.section")))
         root.addView(settingsGroup(
-            choiceRow("System", selected = themeMode == "system") { mutate(obj("type" to "set_theme_mode", "theme_mode" to "system")) },
-            choiceRow("Dark", selected = themeMode == "dark") { mutate(obj("type" to "set_theme_mode", "theme_mode" to "dark")) },
-            choiceRow("Light", selected = themeMode == "light") { mutate(obj("type" to "set_theme_mode", "theme_mode" to "light")) }
+            choiceRow(L10n.t(this, "settings.appearance.theme_system"), selected = themeMode == "system") { mutate(obj("type" to "set_theme_mode", "theme_mode" to "system")) },
+            choiceRow(L10n.t(this, "settings.appearance.theme_dark"), selected = themeMode == "dark") { mutate(obj("type" to "set_theme_mode", "theme_mode" to "dark")) },
+            choiceRow(L10n.t(this, "settings.appearance.theme_light"), selected = themeMode == "light") { mutate(obj("type" to "set_theme_mode", "theme_mode" to "light")) }
         ))
 
-        root.addView(settingsSection("Time"))
+        root.addView(settingsSection(L10n.t(this, "settings.time.section")))
         root.addView(settingsGroup(
-            choiceRow("12-hour", selected = timeFormat == "twelve_hour") { mutate(obj("type" to "set_time_format", "time_format" to "twelve_hour")) },
-            choiceRow("24-hour", selected = timeFormat == "twenty_four_hour") { mutate(obj("type" to "set_time_format", "time_format" to "twenty_four_hour")) }
+            choiceRow(L10n.t(this, "settings.time.clock_12h"), selected = timeFormat == "twelve_hour") { mutate(obj("type" to "set_time_format", "time_format" to "twelve_hour")) },
+            choiceRow(L10n.t(this, "settings.time.clock_24h"), selected = timeFormat == "twenty_four_hour") { mutate(obj("type" to "set_time_format", "time_format" to "twenty_four_hour")) }
         ))
 
-        root.addView(settingsSection("Notifications"))
+        root.addView(settingsSection(L10n.t(this, "settings.notifications.section")))
         root.addView(settingsGroup(
-            settingsLinkRow("Events", notificationLeadTimeLabel(eventOffset, eventDefault = true)) {
-                showNotificationDefaultDialog("Event reminders", eventOffset, eventDefaultNotificationOptions) { next ->
+            settingsLinkRow(L10n.t(this, "settings.notifications.events_label"), notificationLeadTimeLabel(eventOffset, eventDefault = true)) {
+                showNotificationDefaultDialog(L10n.t(this, "mobile.settings.event_reminders_title"), eventOffset, eventDefaultNotificationOptions) { next ->
                     mutate(obj("type" to "set_notification_defaults", "event_offset_secs" to next, "assignment_offset_secs" to assignmentOffset))
                 }
             },
-            settingsLinkRow("Assignments", notificationLeadTimeLabel(assignmentOffset, eventDefault = false)) {
-                showNotificationDefaultDialog("Assignment reminders", assignmentOffset, assignmentDefaultNotificationOptions) { next ->
+            settingsLinkRow(L10n.t(this, "settings.notifications.assignments_label"), notificationLeadTimeLabel(assignmentOffset, eventDefault = false)) {
+                showNotificationDefaultDialog(L10n.t(this, "mobile.settings.assignment_reminders_title"), assignmentOffset, assignmentDefaultNotificationOptions) { next ->
                     mutate(obj("type" to "set_notification_defaults", "event_offset_secs" to eventOffset, "assignment_offset_secs" to next))
                 }
             }
         ))
 
-        root.addView(settingsSection("Google Calendar"))
+        root.addView(settingsSection(L10n.t(this, "settings.google_calendar.section")))
         if (googleAccountCount > 0) {
             root.addView(settingsGroup(
-                settingsLinkRow(if (googleSyncInProgress) "Syncing…" else "Sync Google Calendars", "$googleAccountCount connected") { syncGoogleCalendars() },
-                settingsLinkRow(if (googleAuthInProgress) "Connecting…" else "Connect another account") { startGoogleCalendarImport() }
+                settingsLinkRow(
+                    if (googleSyncInProgress) L10n.t(this, "mobile.settings.google_syncing") else L10n.t(this, "mobile.settings.sync_google_calendars"),
+                    L10n.t(this, "mobile.settings.google_accounts_connected", mapOf("count" to googleAccountCount.toString()))
+                ) { syncGoogleCalendars() },
+                settingsLinkRow(if (googleAuthInProgress) L10n.t(this, "mobile.settings.google_connecting") else L10n.t(this, "mobile.settings.connect_another_google_account")) { startGoogleCalendarImport() }
             ))
             googleCalendarStatus?.takeIf { it.isNotBlank() }?.let { status ->
                 root.addView(text(status, theme.textMuted, 12f, false).apply {
@@ -665,14 +679,14 @@ import kotlin.math.roundToInt
             }
         } else {
             root.addView(settingsGroup(
-                settingsLinkRow(if (googleAuthInProgress) "Connecting…" else "Connect Google Calendar") { startGoogleCalendarImport() }
+                settingsLinkRow(if (googleAuthInProgress) L10n.t(this, "mobile.settings.google_connecting") else L10n.t(this, "mobile.settings.connect_google_calendar")) { startGoogleCalendarImport() }
             ))
         }
 
-        root.addView(settingsSection("Archive"))
+        root.addView(settingsSection(L10n.t(this, "sidebar.context.archive")))
         val schemes = archivedSchemes()
         root.addView(settingsGroup(
-            settingsLinkRow("Archived items", schemes.length().toString()) {
+            settingsLinkRow(L10n.t(this, "mobile.settings.archived_items"), schemes.length().toString()) {
                 settingsShowingArchive = true
                 render()
             }
@@ -689,12 +703,12 @@ import kotlin.math.roundToInt
         // is blocked until they verify, so the card prompts for that instead.
         val needsVerification = session != null && session.supportsSync != true && syncEmailVerified == false
         val badge = when {
-            session != null && syncOffline -> "Offline"
-            cancelled -> "Cancelled"
-            session?.supportsSync == true -> "Enabled"
-            needsVerification -> "Verify email"
-            session != null -> "Upgrade"
-            else -> "Available"
+            session != null && syncOffline -> L10n.t(this, "sync.status.offline")
+            cancelled -> L10n.t(this, "settings.sync.badge_cancelled")
+            session?.supportsSync == true -> L10n.t(this, "mobile.sync.badge_enabled")
+            needsVerification -> L10n.t(this, "mobile.sync.badge_verify_email")
+            session != null -> L10n.t(this, "mobile.sync.badge_upgrade")
+            else -> L10n.t(this, "settings.sync.badge_available")
         }
         val badgeFg = when {
             session != null && syncOffline -> if (theme.isDark) rgb(0xf8d38d) else rgb(0x9a4b00)
@@ -709,11 +723,11 @@ import kotlin.math.roundToInt
             else -> adjustAlpha(if (theme.isDark) rgb(0x3b82f6) else rgb(0x2f67cf), if (theme.isDark) 0.16f else 0.09f)
         }
         val detail = when {
-            session != null && syncOffline -> "Sync will retry when your connection is back."
-            cancelled -> "Sync stays active until your billing period ends."
-            needsVerification -> "Verify your email to subscribe — check your inbox for the link."
+            session != null && syncOffline -> L10n.t(this, "mobile.sync.detail_offline")
+            cancelled -> L10n.t(this, "mobile.sync.detail_cancelled")
+            needsVerification -> L10n.t(this, "mobile.sync.detail_needs_verification")
             session != null -> session.email
-            else -> "Sign in to keep this workspace available across devices."
+            else -> L10n.t(this, "settings.sync.detail_available")
         }
         return LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -733,7 +747,7 @@ import kotlin.math.roundToInt
                 })
                 addView(LinearLayout(this@syncSettingsCard).apply {
                     orientation = LinearLayout.VERTICAL
-                    addView(text("KnotQ Sync", theme.textPrimary, 15f, true), LinearLayout.LayoutParams(-1, dp(18)))
+                    addView(text(L10n.t(this@syncSettingsCard, "settings.sync.title"), theme.textPrimary, 15f, true), LinearLayout.LayoutParams(-1, dp(18)))
                     addView(text(detail, theme.textSoft, 11f, false).apply {
                         maxLines = 2
                     }, LinearLayout.LayoutParams(-1, dp(30)))
@@ -748,7 +762,7 @@ import kotlin.math.roundToInt
                 orientation = LinearLayout.HORIZONTAL
                 gravity = Gravity.CENTER_VERTICAL
                 if (session == null) {
-                    addView(syncCardButton("Sign in", primary = true) { showSyncAccountDialog() }, LinearLayout.LayoutParams(0, dp(32), 1f))
+                    addView(syncCardButton(L10n.t(this@syncSettingsCard, "sync.sign_in"), primary = true) { showSyncAccountDialog() }, LinearLayout.LayoutParams(0, dp(32), 1f))
                 } else {
                     // iOS layout: a primary action on the left (Resync when enabled,
                     // Re-enable/Subscribe otherwise) and account housekeeping behind a
@@ -758,13 +772,13 @@ import kotlin.math.roundToInt
                     val leftAction: () -> Unit
                     when {
                         cancelled -> {
-                            leftLabel = "Re-enable"; leftPrimary = true; leftAction = { reEnableSyncSubscription() }
+                            leftLabel = L10n.t(this@syncSettingsCard, "account.reenable.label"); leftPrimary = true; leftAction = { reEnableSyncSubscription() }
                         }
                         needsVerification -> {
                             leftLabel = when {
-                                resendVerificationInProgress -> "Sending..."
-                                resendVerificationCooldown > 0 -> "Resend in ${resendVerificationCooldown}s"
-                                else -> "Resend verification"
+                                resendVerificationInProgress -> L10n.t(this@syncSettingsCard, "account.verify.sending")
+                                resendVerificationCooldown > 0 -> L10n.t(this@syncSettingsCard, "mobile.sync.resend_in_seconds", mapOf("seconds" to resendVerificationCooldown.toString()))
+                                else -> L10n.t(this@syncSettingsCard, "mobile.sync.resend_verification")
                             }
                             leftPrimary = true
                             leftAction = { resendVerificationEmail() }
@@ -773,17 +787,17 @@ import kotlin.math.roundToInt
                             // Primary action is to start the Google Play billing flow
                             // (iOS parity). Restoring an existing purchase stays in the
                             // "Manage" menu for the new-device / reinstall case.
-                            leftLabel = if (purchaseInProgress) "Subscribing..." else "Subscribe"
+                            leftLabel = if (purchaseInProgress) L10n.t(this@syncSettingsCard, "mobile.sync.subscribing") else L10n.t(this@syncSettingsCard, "account.subscribe.label")
                             leftPrimary = true
                             leftAction = { startGooglePlaySubscribe() }
                         }
                         else -> {
-                            leftLabel = if (syncInProgress) "Resyncing..." else "Resync"; leftPrimary = false; leftAction = { syncOnce() }
+                            leftLabel = if (syncInProgress) L10n.t(this@syncSettingsCard, "sync.action.resyncing") else L10n.t(this@syncSettingsCard, "sync.action.resync"); leftPrimary = false; leftAction = { syncOnce() }
                         }
                     }
                     addView(syncCardButton(leftLabel, primary = leftPrimary, listener = leftAction),
                         LinearLayout.LayoutParams(0, dp(32), 1f).apply { setMargins(0, 0, dp(8), 0) })
-                    addView(syncCardButton("Manage") { showSyncAccountDialog() }, LinearLayout.LayoutParams(-2, dp(32)))
+                    addView(syncCardButton(L10n.t(this@syncSettingsCard, "account.manage.label")) { showSyncAccountDialog() }, LinearLayout.LayoutParams(-2, dp(32)))
                 }
             }, LinearLayout.LayoutParams(-1, dp(32)).apply {
                 setMargins(0, dp(8), 0, 0)
@@ -893,14 +907,14 @@ import kotlin.math.roundToInt
                 addView(LinearLayout(this@itemRow).apply {
                     orientation = LinearLayout.HORIZONTAL
                     gravity = Gravity.CENTER_VERTICAL
-                    addView(smallAction("Marker") { showMarkerDialog(schemeId, item.optString("id")) })
-                    addView(smallAction("Out") {
+                    addView(smallAction(L10n.t(this@itemRow, "mobile.scheme.item_action_marker")) { showMarkerDialog(schemeId, item.optString("id")) })
+                    addView(smallAction(L10n.t(this@itemRow, "mobile.scheme.item_action_outdent")) {
                         mutate(obj("type" to "set_item_indent", "scheme_id" to schemeId, "item_id" to item.optString("id"), "indent" to max(item.optInt("indent") - 1, 0)))
                     })
-                    addView(smallAction("In") {
+                    addView(smallAction(L10n.t(this@itemRow, "mobile.scheme.item_action_indent")) {
                         mutate(obj("type" to "set_item_indent", "scheme_id" to schemeId, "item_id" to item.optString("id"), "indent" to min(item.optInt("indent") + 1, 8)))
                     })
-                    addView(smallAction("Date") { showDateKindDialog(schemeId, item.optString("id")) })
+                    addView(smallAction(L10n.t(this@itemRow, "mobile.scheme.item_action_date")) { showDateKindDialog(schemeId, item.optString("id")) })
                     addView(text(item.optString("kind").replaceFirstChar(Char::titlecase), theme.textMuted, 11f, true))
                 })
             }, LinearLayout.LayoutParams(0, -2, 1f).apply { setMargins(dp(8), 0, 0, 0) })
@@ -910,4 +924,3 @@ import kotlin.math.roundToInt
             }
         }
     }
-

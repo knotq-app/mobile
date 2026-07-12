@@ -17,47 +17,47 @@ struct SyncSettingsCard: View {
     private var state: SyncPanelState {
         if model.syncSession != nil && model.syncOffline {
             return SyncPanelState(
-                badge: "Offline",
-                detail: "Sync will retry when your connection is back.",
+                badge: L10n.t("sync.status.offline"),
+                detail: L10n.t("mobile.sync.offline_detail"),
                 badgeBackground: theme.isDark ? Color(hex: 0xf59e0b).opacity(0.16) : Color(hex: 0xd97706).opacity(0.10),
                 badgeForeground: theme.isDark ? Color(hex: 0xf8d38d) : Color(hex: 0x9a4b00)
             )
         }
         if model.syncSession?.supportsSync == true && model.subscriptionCancelled {
             return SyncPanelState(
-                badge: "Cancelled",
-                detail: "Sync stays active until your billing period ends. Re-enable to keep it.",
+                badge: L10n.t("settings.sync.badge_cancelled"),
+                detail: L10n.t("mobile.sync.cancelled_detail"),
                 badgeBackground: theme.isDark ? Color(hex: 0xf59e0b).opacity(0.16) : Color(hex: 0xd97706).opacity(0.10),
                 badgeForeground: theme.isDark ? Color(hex: 0xf8d38d) : Color(hex: 0x9a4b00)
             )
         }
         if model.syncSession?.supportsSync == true {
             return SyncPanelState(
-                badge: "Subscribed",
-                detail: "Workspace sync is active for this account.",
+                badge: L10n.t("settings.sync.badge_subscribed"),
+                detail: L10n.t("settings.sync.detail_subscribed"),
                 badgeBackground: theme.isDark ? Color(hex: 0x30d158).opacity(0.15) : Color(hex: 0x1f8f4d).opacity(0.09),
                 badgeForeground: theme.isDark ? Color(hex: 0x9af0b6) : Color(hex: 0x176b38)
             )
         }
         if model.syncSession != nil && model.emailVerified == false {
             return SyncPanelState(
-                badge: "Verify email",
-                detail: "Verify your email to subscribe — check your inbox for the link.",
+                badge: L10n.t("mobile.sync.badge_verify_email"),
+                detail: L10n.t("mobile.sync.verify_email_detail"),
                 badgeBackground: theme.isDark ? Color(hex: 0xf59e0b).opacity(0.16) : Color(hex: 0xd97706).opacity(0.10),
                 badgeForeground: theme.isDark ? Color(hex: 0xf8d38d) : Color(hex: 0x9a4b00)
             )
         }
         if model.syncSession != nil {
             return SyncPanelState(
-                badge: "Not Subscribed",
-                detail: "Subscribe to keep this workspace available across devices.",
+                badge: L10n.t("settings.sync.badge_not_subscribed"),
+                detail: L10n.t("settings.sync.detail_not_subscribed"),
                 badgeBackground: theme.isDark ? Color(hex: 0xf59e0b).opacity(0.16) : Color(hex: 0xd97706).opacity(0.10),
                 badgeForeground: theme.isDark ? Color(hex: 0xf8d38d) : Color(hex: 0x9a4b00)
             )
         }
         return SyncPanelState(
-            badge: "Available",
-            detail: "Sign in to keep this workspace available across devices.",
+            badge: L10n.t("settings.sync.badge_available"),
+            detail: L10n.t("settings.sync.detail_available"),
             badgeBackground: theme.isDark ? Color(hex: 0x3b82f6).opacity(0.16) : Color(hex: 0x2f67cf).opacity(0.09),
             badgeForeground: theme.isDark ? Color(hex: 0x9bc2ff) : Color(hex: 0x235ebe)
         )
@@ -103,7 +103,7 @@ struct SyncSettingsCard: View {
                     .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
 
                 VStack(alignment: .leading, spacing: 3) {
-                    Text("KnotQ Sync")
+                    Text(L10n.t("settings.sync.title"))
                         .font(.system(size: 15, weight: .semibold))
                         .foregroundStyle(theme.textPrimary)
                     Text(detail)
@@ -140,7 +140,7 @@ struct SyncSettingsCard: View {
             // Straight to the browser in create-account mode — the hosted page
             // handles "already have an account? sign in", so there's no need for
             // an in-app chooser sheet first.
-            Button("Sign in") {
+            Button(L10n.t("sync.sign_in")) {
                 Task { await model.beginBrowserSignIn(mode: .createAccount) }
             }
             .buttonStyle(SyncCardButtonStyle(theme: theme, prominence: .primary))
@@ -155,7 +155,7 @@ struct SyncSettingsCard: View {
                 Button {
                     Task { await model.reEnableSyncSubscription() }
                 } label: {
-                    Text("Re-enable")
+                    Text(L10n.t("account.reenable.label"))
                         .lineLimit(1)
                         .frame(maxWidth: .infinity)
                 }
@@ -173,7 +173,7 @@ struct SyncSettingsCard: View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 8) {
                 if model.syncProducts.isEmpty {
-                    Text("Loading subscription options…")
+                    Text(L10n.t("sync.products.loading"))
                         .font(.system(size: 11))
                         .foregroundStyle(theme.textMuted)
                         .frame(maxWidth: .infinity, alignment: .leading)
@@ -183,7 +183,7 @@ struct SyncSettingsCard: View {
                             Task { await model.purchaseSync(product) }
                         } label: {
                             HStack(spacing: 8) {
-                                Text(model.syncProducts.count == 1 ? "Subscribe" : product.displayName)
+                                Text(model.syncProducts.count == 1 ? L10n.t("account.subscribe.label") : product.displayName)
                                     .lineLimit(1)
                                 Spacer(minLength: 8)
                                 Text(product.displayPrice)
@@ -215,8 +215,8 @@ struct SyncSettingsCard: View {
                     .foregroundStyle(theme.textMuted)
                     .fixedSize(horizontal: false, vertical: true)
                 HStack(spacing: 12) {
-                    Link("Terms of Use", destination: SyncSettingsCard.termsURL)
-                    Link("Privacy Policy", destination: SyncSettingsCard.privacyURL)
+                    Link(L10n.t("sync.disclosure.terms_of_use"), destination: SyncSettingsCard.termsURL)
+                    Link(L10n.t("sync.disclosure.privacy_policy"), destination: SyncSettingsCard.privacyURL)
                 }
                 .font(.system(size: 10, weight: .medium))
                 .tint(theme.accent)
@@ -230,30 +230,31 @@ struct SyncSettingsCard: View {
 
     private func disclosureText(for product: Product) -> String {
         let period = product.subscription
-            .map { Self.periodDescription($0.subscriptionPeriod) } ?? "period"
-        return "\(product.displayPrice) per \(period), billed to your Apple Account. "
-            + "Your subscription renews automatically unless cancelled at least 24 hours "
-            + "before the end of the current period. Manage or cancel anytime in Settings."
+            .map { Self.periodDescription($0.subscriptionPeriod) } ?? L10n.t("sync.disclosure.period_generic")
+        return L10n.t("sync.disclosure.subscription_terms", [
+            "price": product.displayPrice,
+            "period": period,
+        ])
     }
 
     /// "month" / "year" / "2 weeks" etc. for the auto-renew disclosure.
     private static func periodDescription(_ period: Product.SubscriptionPeriod) -> String {
-        let unit: String
+        let key: String
         switch period.unit {
-        case .day: unit = "day"
-        case .week: unit = "week"
-        case .month: unit = "month"
-        case .year: unit = "year"
-        @unknown default: unit = "period"
+        case .day: key = "sync.disclosure.period_days"
+        case .week: key = "sync.disclosure.period_weeks"
+        case .month: key = "sync.disclosure.period_months"
+        case .year: key = "sync.disclosure.period_years"
+        @unknown default: return L10n.t("sync.disclosure.period_generic")
         }
-        return period.value == 1 ? unit : "\(period.value) \(unit)s"
+        return L10n.plural(key, period.value)
     }
 
     /// Shown when the account email isn't verified: subscribing is blocked, so we
     /// explain why and offer to resend the verification link (with a soft cooldown).
     private var verifyEmailActions: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("Your email isn't verified. Verify it to subscribe — check your inbox for the link.")
+            Text(L10n.t("account.verify.notice"))
                 .font(.system(size: 11))
                 .lineSpacing(1)
                 .foregroundStyle(theme.isDark ? Color(hex: 0xf8d38d) : Color(hex: 0x9a4b00))
@@ -275,9 +276,11 @@ struct SyncSettingsCard: View {
     }
 
     private var resendLabel: String {
-        if model.resendVerificationInProgress { return "Sending…" }
-        if model.resendVerificationCooldown > 0 { return "Resend in \(model.resendVerificationCooldown)s" }
-        return "Resend verification email"
+        if model.resendVerificationInProgress { return L10n.t("account.verify.sending") }
+        if model.resendVerificationCooldown > 0 {
+            return L10n.t("account.verify.resend_countdown", ["seconds": "\(model.resendVerificationCooldown)"])
+        }
+        return L10n.t("account.verify.resend")
     }
 
     /// Account housekeeping (sign out, cancel, delete) lives behind one standard
@@ -288,32 +291,32 @@ struct SyncSettingsCard: View {
             // (new device / reinstall). AppStore.sync() forces an Apple Account
             // auth prompt, so keep it out of the way until it's actually needed.
             if model.syncSession?.supportsSync != true {
-                Button("Restore Purchases") {
+                Button(L10n.t("mobile.sync.restore_purchases_ios")) {
                     Task { await model.restorePurchases() }
                 }
                 .disabled(model.purchaseInProgress)
             }
-            Button("Sign Out") {
+            Button(L10n.t("mobile.sync.sign_out")) {
                 model.signOutSync()
             }
             if model.syncSession?.supportsSync == true {
                 if model.subscriptionCancelled {
-                    Button("Re-enable Subscription") {
+                    Button(L10n.t("mobile.sync.reenable_subscription")) {
                         Task { await model.reEnableSyncSubscription() }
                     }
                     .disabled(model.syncAccountActionInProgress)
                 } else {
-                    Button("Cancel Subscription", role: .destructive) {
+                    Button(L10n.t("mobile.settings.cancel_sync_subscription_confirm"), role: .destructive) {
                         showingCancelConfirm = true
                     }
                 }
             }
-            Button("Delete Account", role: .destructive) {
+            Button(L10n.t("mobile.sync.delete_account"), role: .destructive) {
                 showingDeleteAccount = true
             }
         } label: {
             HStack(spacing: 4) {
-                Text("Manage")
+                Text(L10n.t("account.manage.label"))
                 Image(systemName: "chevron.down")
                     .font(.system(size: 9, weight: .semibold))
             }
@@ -335,10 +338,10 @@ struct SyncSettingsCard: View {
                 HStack(spacing: 6) {
                     ProgressView()
                         .controlSize(.small)
-                    Text("Resyncing...")
+                    Text(L10n.t("sync.action.resyncing"))
                 }
             } else {
-                Text("Resync")
+                Text(L10n.t("sync.action.resync"))
             }
         }
         .buttonStyle(SyncCardButtonStyle(theme: theme))
@@ -394,15 +397,15 @@ private struct DeleteSyncAccountSheet: View {
 
                 if model.syncAccountActionInProgress {
                     Section {
-                        ProgressView(awaitingCode ? "Deleting account..." : "Sending code...")
+                        ProgressView(awaitingCode ? L10n.t("mobile.delete_account.deleting_progress") : L10n.t("mobile.delete_account.sending_code_progress"))
                     }
                 }
             }
-            .navigationTitle("Delete Account")
+            .navigationTitle(L10n.t("mobile.sync.delete_account"))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") {
+                    Button(L10n.t("common.cancel")) {
                         model.pendingDeletionChallengeId = nil
                         dismiss()
                     }
@@ -410,12 +413,12 @@ private struct DeleteSyncAccountSheet: View {
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     if awaitingCode {
-                        Button("Delete", role: .destructive) {
+                        Button(L10n.t("common.delete"), role: .destructive) {
                             Task { await confirmDeletion() }
                         }
                         .disabled(!canConfirmCode)
                     } else {
-                        Button("Send Code") {
+                        Button(L10n.t("mobile.delete_account.send_code")) {
                             Task { await requestDeletion() }
                         }
                         .disabled(!canRequestDeletion)
@@ -435,41 +438,41 @@ private struct DeleteSyncAccountSheet: View {
         if hasActiveStoreSubscription {
             Section {
                 Label {
-                    Text("Deleting your account does **not** cancel your \(subscriptionStoreName) subscription. \(subscriptionStoreName) keeps billing you until you cancel it there. Cancel it first, then delete.")
+                    Text(.init(L10n.t("mobile.delete_account.store_subscription_warning", ["store": subscriptionStoreName])))
                 } icon: {
                     Image(systemName: "exclamationmark.triangle.fill")
                         .foregroundStyle(.orange)
                 }
-                Button("Manage \(subscriptionStoreName) Subscription") {
+                Button(L10n.t("mobile.delete_account.manage_store_subscription", ["store": subscriptionStoreName])) {
                     Task { await manageSubscription() }
                 }
                 .disabled(model.syncAccountActionInProgress)
             } header: {
-                Text("Cancel your subscription first")
+                Text(L10n.t("mobile.delete_account.cancel_subscription_first_header"))
             }
         }
 
         Section {
             if let email = model.syncSession?.email {
-                LabeledContent("Account", value: email)
+                LabeledContent(L10n.t("mobile.delete_account.account_label"), value: email)
             }
-            TextField("Email", text: $emailConfirmation)
+            TextField(L10n.t("mobile.delete_account.email_placeholder"), text: $emailConfirmation)
                 .keyboardType(.emailAddress)
                 .textInputAutocapitalization(.never)
                 .autocorrectionDisabled()
                 .focused($focusedField, equals: .email)
-            SecureField("Password", text: $password)
+            SecureField(L10n.t("mobile.delete_account.password_placeholder"), text: $password)
                 .textContentType(.password)
                 .focused($focusedField, equals: .password)
         } header: {
-            Text("Confirm Deletion")
+            Text(L10n.t("mobile.delete_account.confirm_section_header"))
         } footer: {
-            Text("We'll email you a one-time code to confirm. Deletion schedules your sync account and cloud data for removal after a 14-day grace period. Local workspace files stay on this device. Sign in again within 14 days to cancel.")
+            Text(L10n.t("mobile.delete_account.confirm_footer"))
         }
 
         if hasActiveWebSubscription {
             Section {
-                Button("Cancel Subscription") {
+                Button(L10n.t("mobile.settings.cancel_sync_subscription_confirm")) {
                     Task { await manageSubscription() }
                 }
                 .disabled(model.syncAccountActionInProgress)
@@ -481,14 +484,16 @@ private struct DeleteSyncAccountSheet: View {
     @ViewBuilder
     private var codeSection: some View {
         Section {
-            TextField("Code", text: $code)
+            TextField(L10n.t("mobile.delete_account.code_placeholder"), text: $code)
                 .keyboardType(.numberPad)
                 .textContentType(.oneTimeCode)
                 .focused($focusedField, equals: .code)
         } header: {
-            Text("Enter Confirmation Code")
+            Text(L10n.t("mobile.delete_account.code_section_header"))
         } footer: {
-            Text("Enter the 6-digit code we emailed to \(model.syncSession?.email ?? "your account") to schedule deletion.")
+            Text(L10n.t("mobile.delete_account.code_footer", [
+                "email": model.syncSession?.email ?? L10n.t("mobile.delete_account.email_fallback"),
+            ]))
         }
     }
 

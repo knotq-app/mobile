@@ -75,7 +75,7 @@ fn list_google_events_once(
             params.push(("syncToken", token.clone()));
             params.push(("showDeleted", "true".to_string()));
         } else {
-            params.push(("showDeleted", "false".to_string()));
+            params.push(("showDeleted", "true".to_string()));
         }
         if let Some(token) = &page_token {
             params.push(("pageToken", token.clone()));

@@ -85,7 +85,9 @@ pub(super) fn exchange_auth_code(
         .context("parse Google OAuth token response")
 }
 
-pub(super) fn refresh_google_access_token_if_needed(account: &mut GoogleOAuthAccount) -> Result<()> {
+pub(super) fn refresh_google_access_token_if_needed(
+    account: &mut GoogleOAuthAccount,
+) -> Result<()> {
     let still_valid = account
         .expires_at
         .is_some_and(|expires_at| expires_at > Utc::now() + Duration::seconds(60));

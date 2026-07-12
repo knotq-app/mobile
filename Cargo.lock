@@ -1069,6 +1069,7 @@ name = "knotq-date-util"
 version = "0.1.0"
 dependencies = [
  "chrono",
+ "knotq-l10n",
  "knotq-model",
 ]
 
@@ -1094,6 +1095,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "knotq-l10n"
+version = "0.1.0"
+dependencies = [
+ "serde_json",
+]
+
+[[package]]
 name = "knotq-mobile-core"
 version = "0.1.0"
 dependencies = [
@@ -1103,6 +1111,7 @@ dependencies = [
  "knotq-commands",
  "knotq-date-util",
  "knotq-index",
+ "knotq-l10n",
  "knotq-model",
  "knotq-notifications",
  "knotq-state",

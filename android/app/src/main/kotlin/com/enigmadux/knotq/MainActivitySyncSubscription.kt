@@ -204,9 +204,9 @@ internal fun MainActivity.reEnableSyncSubscription() {
             syncInProgress = false
             result.onSuccess { updated ->
                 installSyncSession(updated)
-                showError("Subscription re-enabled", "Your subscription will renew again.")
+                showError(L10n.t(this, "mobile.subscription.reenabled_title"), L10n.t(this, "web.account.status_resume_success"))
             }.onFailure { error ->
-                showError("Could not update account", error.message)
+                showError(L10n.t(this, "mobile.account.error_update_title"), error.message)
             }
         }
     }.start()
@@ -216,7 +216,7 @@ internal fun MainActivity.openSubscriptionStorePage(url: String) {
     try {
         startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
     } catch (error: ActivityNotFoundException) {
-        showError("Could not open subscriptions", error.message)
+        showError(L10n.t(this, "mobile.subscription.error_open_title"), error.message)
     }
 }
 
@@ -230,9 +230,9 @@ internal fun MainActivity.openSyncAccountPage() {
         .build()
     try {
         startActivity(Intent(Intent.ACTION_VIEW, accountUri))
-        Toast.makeText(this, "Continue on knotq.com.", Toast.LENGTH_SHORT).show()
+        Toast.makeText(this, L10n.t(this, "mobile.account.continue_on_web_toast"), Toast.LENGTH_SHORT).show()
     } catch (error: ActivityNotFoundException) {
-        showError("Could not open account page", error.message)
+        showError(L10n.t(this, "mobile.account.error_open_page_title"), error.message)
     }
 }
 
@@ -255,7 +255,7 @@ internal fun MainActivity.confirmDeleteSyncAccount() {
     if (hasActiveStoreSub) {
         form.addView(
             text(
-                "Cancel your Google Play subscription first. Deleting your account does NOT cancel store billing — Google Play keeps charging you until you cancel it there.",
+                L10n.t(this, "mobile.account_delete.google_play_warning"),
                 theme.accent,
                 13f,
                 true
@@ -265,7 +265,7 @@ internal fun MainActivity.confirmDeleteSyncAccount() {
     }
     form.addView(
         text(
-            "This schedules your sync account and cloud data for deletion after a 14-day grace period. Your local workspace stays on this device. Sign in again within 14 days to cancel the deletion.",
+            L10n.t(this, "mobile.account_delete.schedule_notice"),
             theme.textDim,
             13f,
             false
@@ -273,40 +273,40 @@ internal fun MainActivity.confirmDeleteSyncAccount() {
         spaced()
     )
     val emailField = EditText(this).apply {
-        hint = "Email (${session.email})"
+        hint = L10n.t(this@confirmDeleteSyncAccount, "mobile.account_delete.email_hint", mapOf("email" to session.email))
         inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_EMAIL_ADDRESS
         setSingleLine(true)
     }
     form.addView(emailField, spaced())
     val passwordField = EditText(this).apply {
-        hint = "Current password"
+        hint = L10n.t(this@confirmDeleteSyncAccount, "mobile.account_delete.current_password_hint")
         inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
         setSingleLine(true)
     }
     form.addView(passwordField)
 
     val builder = AlertDialog.Builder(this)
-        .setTitle("Delete account")
+        .setTitle(L10n.t(this, "web.account.delete_account_title"))
         .setView(form)
-        .setNegativeButton("Cancel", null)
+        .setNegativeButton(L10n.t(this, "common.cancel"), null)
     if (hasActiveStoreSub) {
-        builder.setNeutralButton("Manage subscription") { _, _ ->
+        builder.setNeutralButton(L10n.t(this, "mobile.account_delete.manage_subscription_button")) { _, _ ->
             openSubscriptionStorePage(PLAY_SUBSCRIPTIONS_URL)
         }
     }
     val dialog = builder
-        .setPositiveButton("Delete", null)
+        .setPositiveButton(L10n.t(this, "common.delete"), null)
         .create()
     dialog.setOnShowListener {
         dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
             val confirmEmail = emailField.text.toString().trim()
             if (!confirmEmail.equals(session.email, ignoreCase = true)) {
-                showError("Email did not match", "Type your account email to confirm deletion.")
+                showError(L10n.t(this, "mobile.account_delete.email_mismatch_title"), L10n.t(this, "mobile.account_delete.email_mismatch_message"))
                 return@setOnClickListener
             }
             val password = passwordField.text.toString()
             if (password.isEmpty()) {
-                showError("Password required", "Enter your current password to delete this account.")
+                showError(L10n.t(this, "mobile.account_delete.password_required_title"), L10n.t(this, "web.account.error_password_required_delete"))
                 return@setOnClickListener
             }
             dialog.dismiss()
@@ -343,12 +343,12 @@ internal fun MainActivity.deleteSyncAccount(confirmEmail: String, password: Stri
             result.onSuccess { response ->
                 val challengeId = response.optString("challenge_id")
                 if (challengeId.isEmpty()) {
-                    showError("Could not delete account", "The sync API did not return a confirmation code.")
+                    showError(L10n.t(this, "mobile.account_delete.error_title"), L10n.t(this, "web.account.error_no_confirmation_code"))
                 } else {
                     showDeletionCodeDialog(challengeId, response.optString("dev_code").ifEmpty { null })
                 }
             }.onFailure { error ->
-                showError("Could not delete account", error.message)
+                showError(L10n.t(this, "mobile.account_delete.error_title"), error.message)
             }
         }
     }.start()
@@ -362,7 +362,7 @@ internal fun MainActivity.showDeletionCodeDialog(challengeId: String, devCode: S
     }
     form.addView(
         text(
-            "Enter the 6-digit code we emailed to ${session.email} to schedule deletion of your account.",
+            L10n.t(this, "mobile.account_delete.code_prompt", mapOf("email" to session.email)),
             theme.textDim,
             13f,
             false
@@ -370,23 +370,23 @@ internal fun MainActivity.showDeletionCodeDialog(challengeId: String, devCode: S
         spaced()
     )
     val codeField = EditText(this).apply {
-        hint = "Code"
+        hint = L10n.t(this@showDeletionCodeDialog, "mobile.account_delete.code_hint")
         setText(devCode.orEmpty())
         inputType = InputType.TYPE_CLASS_NUMBER
         setSingleLine(true)
     }
     form.addView(codeField)
     val dialog = AlertDialog.Builder(this)
-        .setTitle("Confirm account deletion")
+        .setTitle(L10n.t(this, "mobile.account_delete.confirm_title"))
         .setView(form)
-        .setNegativeButton("Cancel", null)
-        .setPositiveButton("Delete account", null)
+        .setNegativeButton(L10n.t(this, "common.cancel"), null)
+        .setPositiveButton(L10n.t(this, "web.account.delete_account_action"), null)
         .create()
     dialog.setOnShowListener {
         dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
             val code = codeField.text.toString().trim()
             if (code.length != 6) {
-                showError("Enter the code", "Enter the 6-digit code we emailed you.")
+                showError(L10n.t(this, "mobile.account_delete.enter_code_title"), L10n.t(this, "web.account.error_code_invalid"))
                 return@setOnClickListener
             }
             dialog.dismiss()
@@ -421,11 +421,11 @@ internal fun MainActivity.deleteSyncAccountVerify(challengeId: String, code: Str
             result.onSuccess {
                 signOutSync()
                 showError(
-                    "Account deletion scheduled",
-                    "Your account and cloud data are scheduled for deletion. Sign in again within 14 days to cancel. Your local workspace stays on this device."
+                    L10n.t(this, "mobile.account_delete.scheduled_title"),
+                    L10n.t(this, "mobile.account_delete.scheduled_message")
                 )
             }.onFailure { error ->
-                showError("Could not delete account", error.message)
+                showError(L10n.t(this, "mobile.account_delete.error_title"), error.message)
             }
         }
     }.start()
@@ -444,10 +444,10 @@ internal fun MainActivity.cancelSubscriptionAction() {
 
 internal fun MainActivity.confirmCancelSyncSubscription() {
     AlertDialog.Builder(this)
-        .setTitle("Cancel sync subscription?")
-        .setMessage("Your local workspace stays on this device. Paid sync may remain available until the current billing period ends.")
-        .setNegativeButton("Keep sync", null)
-        .setPositiveButton("Cancel subscription") { _, _ -> cancelSyncSubscription() }
+        .setTitle(L10n.t(this, "mobile.subscription.cancel_confirm_title"))
+        .setMessage(L10n.t(this, "mobile.subscription.cancel_confirm_message"))
+        .setNegativeButton(L10n.t(this, "mobile.subscription.keep_sync_button"), null)
+        .setPositiveButton(L10n.t(this, "account.confirm.cancel_subscription_confirm")) { _, _ -> cancelSyncSubscription() }
         .show()
 }
 
@@ -476,13 +476,13 @@ internal fun MainActivity.cancelSyncSubscription() {
             result.onSuccess { updated ->
                 installSyncSession(updated)
                 if (updated.supportsSync) {
-                    showError("Subscription cancelled", "Sync remains available until the current billing period ends.")
+                    showError(L10n.t(this, "mobile.subscription.cancelled_title"), L10n.t(this, "mobile.subscription.cancelled_message"))
                 } else {
-                    showError("Sync turned off", "Your local workspace stays on this device, and you can sign in again later to re-enable sync.")
+                    showError(L10n.t(this, "mobile.subscription.sync_off_title"), L10n.t(this, "mobile.subscription.sync_off_message"))
                 }
                 refreshAccountStatus()
             }.onFailure { error ->
-                showError("Could not update account", error.message)
+                showError(L10n.t(this, "mobile.account.error_update_title"), error.message)
             }
         }
     }.start()
@@ -508,10 +508,10 @@ internal fun MainActivity.resendVerificationEmail() {
         runOnUiThread {
             resendVerificationInProgress = false
             result.onSuccess {
-                showError("Verification email sent", "Check your inbox, then reopen Settings.")
+                showError(L10n.t(this, "account.verify.email_sent"), L10n.t(this, "mobile.account.verify_sent_message"))
                 startResendCooldown(60)
             }.onFailure { error ->
-                showError("Could not resend", error.message)
+                showError(L10n.t(this, "mobile.account.error_resend_title"), error.message)
             }
             render()
         }
@@ -555,7 +555,10 @@ internal fun MainActivity.ensureBillingClient(onReady: (BillingClient) -> Unit) 
                 runOnUiThread {
                     purchaseInProgress = false
                     render()
-                    showError("Store unavailable", result.debugMessage.ifEmpty { "Google Play billing is unavailable." })
+                    showError(
+                        L10n.t(this@ensureBillingClient, "mobile.subscription.store_unavailable_title"),
+                        result.debugMessage.ifEmpty { L10n.t(this@ensureBillingClient, "mobile.subscription.play_billing_unavailable") }
+                    )
                 }
             }
         }
@@ -574,8 +577,8 @@ internal fun MainActivity.startGooglePlaySubscribe() {
     // account can't redeem.
     if (syncEmailVerified == false) {
         showError(
-            "Verify your email",
-            "Verify your email before subscribing — check your inbox for the link."
+            L10n.t(this, "mobile.subscription.verify_email_title"),
+            L10n.t(this, "sync.error.email_not_verified")
         )
         return
     }
@@ -592,10 +595,7 @@ private fun MainActivity.showSubscriptionDisclosure(onContinue: () -> Unit) {
     }
     form.addView(
         text(
-            "KnotQ Sync is an auto-renewing subscription billed through your Google " +
-                "Play account. It renews automatically each period unless you cancel at " +
-                "least 24 hours before the period ends; manage or cancel anytime in Google " +
-                "Play. The price and billing period are shown on the next screen.",
+            L10n.t(this, "mobile.subscription.disclosure_body"),
             theme.textDim,
             13f,
             false
@@ -604,23 +604,23 @@ private fun MainActivity.showSubscriptionDisclosure(onContinue: () -> Unit) {
     )
     val links = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
     links.addView(
-        text("Terms of Use", theme.accent, 13f, true).apply {
+        text(L10n.t(this, "mobile.subscription.terms_of_use"), theme.accent, 13f, true).apply {
             setPadding(0, dp(4), dp(18), dp(2))
             setOnClickListener { openSubscriptionStorePage(TERMS_OF_USE_URL) }
         }
     )
     links.addView(
-        text("Privacy Policy", theme.accent, 13f, true).apply {
+        text(L10n.t(this, "mobile.subscription.privacy_policy"), theme.accent, 13f, true).apply {
             setPadding(0, dp(4), 0, dp(2))
             setOnClickListener { openSubscriptionStorePage(PRIVACY_POLICY_URL) }
         }
     )
     form.addView(links)
     AlertDialog.Builder(this, alertDialogTheme())
-        .setTitle("KnotQ Sync subscription")
+        .setTitle(L10n.t(this, "mobile.subscription.disclosure_title"))
         .setView(form)
-        .setNegativeButton("Cancel", null)
-        .setPositiveButton("Continue") { _, _ -> onContinue() }
+        .setNegativeButton(L10n.t(this, "common.cancel"), null)
+        .setPositiveButton(L10n.t(this, "mobile.subscription.disclosure_continue")) { _, _ -> onContinue() }
         .show()
 }
 
@@ -643,7 +643,7 @@ private fun MainActivity.launchSyncBillingFlow() {
                 runOnUiThread {
                     purchaseInProgress = false
                     render()
-                    showError("Subscription unavailable", "The sync subscription isn't available on this device yet.")
+                    showError(L10n.t(this, "mobile.subscription.unavailable_title"), L10n.t(this, "mobile.subscription.unavailable_message"))
                 }
                 return@queryProductDetailsAsync
             }
@@ -674,7 +674,7 @@ internal fun MainActivity.restoreGooglePlayPurchases() {
                 verifyGooglePlayPurchase(active)
             } else {
                 runOnUiThread {
-                    showError("Nothing to restore", "No active Google Play subscription was found for this Google account.")
+                    showError(L10n.t(this, "mobile.subscription.nothing_to_restore_title"), L10n.t(this, "mobile.subscription.nothing_to_restore_message"))
                 }
             }
         }
@@ -712,11 +712,11 @@ internal fun MainActivity.verifyGooglePlayPurchase(purchase: Purchase) {
             result.onSuccess { updated ->
                 installSyncSession(updated)
                 if (updated.supportsSync) {
-                    showError("Subscribed", "Sync is now enabled on this account.")
+                    showError(L10n.t(this, "settings.sync.badge_subscribed"), L10n.t(this, "mobile.subscription.subscribed_message"))
                 }
             }.onFailure { error ->
                 render()
-                showError("Could not verify purchase", error.message)
+                showError(L10n.t(this, "mobile.subscription.error_verify_purchase_title"), error.message)
             }
         }
     }.start()

@@ -181,27 +181,27 @@ final class EditorTableCellEditor: UIView, UITextViewDelegate {
         stack.insetsLayoutMarginsFromSafeArea = false
         backdrop.contentView.addSubview(stack)
 
-        let dismissButton = accessoryIconButton("keyboard.chevron.compact.down", label: "Done editing cell") { [weak self] in
+        let dismissButton = accessoryIconButton("keyboard.chevron.compact.down", label: L10n.t("editor.table.done_editing_cell")) { [weak self] in
             self?.flush()
             self?.onRequestEnd?()
         }
 
         let rowMenu = structureMenuButton(
-            title: "Rows",
+            title: L10n.t("editor.table.rows_menu_title"),
             systemImage: "tablecells",
             actions: [
-                (title: "Insert Row Above", systemImage: "arrow.up.to.line", action: .insertRowAbove, destructive: false),
-                (title: "Insert Row Below", systemImage: "arrow.down.to.line", action: .insertRowBelow, destructive: false),
-                (title: "Delete Row", systemImage: "trash", action: .deleteRow, destructive: true)
+                (title: L10n.t("editor.table.insert_row_above"), systemImage: "arrow.up.to.line", action: .insertRowAbove, destructive: false),
+                (title: L10n.t("editor.table.insert_row_below"), systemImage: "arrow.down.to.line", action: .insertRowBelow, destructive: false),
+                (title: L10n.t("editor.context.delete_row"), systemImage: "trash", action: .deleteRow, destructive: true)
             ]
         )
         let columnMenu = structureMenuButton(
-            title: "Columns",
+            title: L10n.t("editor.table.columns_menu_title"),
             systemImage: "tablecells",
             actions: [
-                (title: "Insert Column Left", systemImage: "arrow.left.to.line", action: .insertColumnLeft, destructive: false),
-                (title: "Insert Column Right", systemImage: "arrow.right.to.line", action: .insertColumnRight, destructive: false),
-                (title: "Delete Column", systemImage: "trash", action: .deleteColumn, destructive: true)
+                (title: L10n.t("editor.table.insert_column_left"), systemImage: "arrow.left.to.line", action: .insertColumnLeft, destructive: false),
+                (title: L10n.t("editor.table.insert_column_right"), systemImage: "arrow.right.to.line", action: .insertColumnRight, destructive: false),
+                (title: L10n.t("editor.context.delete_column"), systemImage: "trash", action: .deleteColumn, destructive: true)
             ]
         )
         rowMenuButton = rowMenu

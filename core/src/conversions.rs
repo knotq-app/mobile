@@ -8,8 +8,9 @@ use knotq_date_util::upcoming_range;
 use knotq_index::IndexedWorkspace;
 use knotq_model::{
     ColumnId, GoogleOAuthAccount, ImageAssetFormat, ImageInline, ImportedCalendarSource, Inline,
-    Item, ItemContent, ItemId, ItemKind, ItemMarker, NotificationDefaults, OccurrenceId, Recurrence,
-    RowId, Scheme, Table, TableCell, TableColumn, TableRow, ThemeMode, TimeFormat, Workspace,
+    Item, ItemContent, ItemId, ItemKind, ItemMarker, NotificationDefaults, OccurrenceId,
+    Recurrence, RowId, Scheme, Table, TableCell, TableColumn, TableRow, ThemeMode, TimeFormat,
+    Workspace,
 };
 use knotq_notifications::{NotificationLeadTimes, ScheduledNotification};
 use sha2::{Digest, Sha256};
@@ -17,8 +18,9 @@ use sha2::{Digest, Sha256};
 use crate::media_sync::{mobile_item_image_assets, mobile_media_to_item_media};
 use crate::parsing::{parse_datetime_opt, parse_id, parse_marker};
 use crate::{
-    MobileCellLine, MobileInline, MobileItem, MobileItemMedia, MobileNode, MobileNotificationRequest,
-    MobileOccurrence, MobileTable, MobileTableCell, MobileTableColumn, MobileTableRow,
+    MobileCellLine, MobileInline, MobileItem, MobileItemMedia, MobileNode,
+    MobileNotificationRequest, MobileOccurrence, MobileTable, MobileTableCell, MobileTableColumn,
+    MobileTableRow,
 };
 
 // Conversions between the domain model (`knotq_model`) and the UniFFI-facing
@@ -237,7 +239,6 @@ impl MobileCellLine {
     }
 }
 
-
 impl MobileOccurrence {
     pub(crate) fn from_context(
         workspace: &Workspace,
@@ -285,7 +286,6 @@ impl MobileOccurrence {
     }
 }
 
-
 impl MobileNotificationRequest {
     pub(crate) fn from_scheduled(notification: ScheduledNotification) -> Self {
         let occurrence_json = serde_json::to_string(&notification.occurrence).unwrap_or_default();
@@ -311,7 +311,6 @@ impl MobileNotificationRequest {
         }
     }
 }
-
 
 pub(crate) fn mobile_upcoming(
     indexed: &IndexedWorkspace,
@@ -364,7 +363,37 @@ pub(crate) fn format_datetime(dt: DateTime<Utc>) -> String {
 }
 
 pub(crate) fn format_daily_label(date: NaiveDate) -> String {
-    date.format("%a, %b %-d").to_string()
+    // chrono's %a/%b always emit English; route the names through the catalog.
+    use chrono::{Datelike, Month, Weekday};
+    let weekday = match date.weekday() {
+        Weekday::Mon => "common.weekday_short.mon",
+        Weekday::Tue => "common.weekday_short.tue",
+        Weekday::Wed => "common.weekday_short.wed",
+        Weekday::Thu => "common.weekday_short.thu",
+        Weekday::Fri => "common.weekday_short.fri",
+        Weekday::Sat => "common.weekday_short.sat",
+        Weekday::Sun => "common.weekday_short.sun",
+    };
+    let month = match Month::try_from(date.month() as u8).unwrap_or(Month::January) {
+        Month::January => "common.month_short.jan",
+        Month::February => "common.month_short.feb",
+        Month::March => "common.month_short.mar",
+        Month::April => "common.month_short.apr",
+        Month::May => "common.month_short.may",
+        Month::June => "common.month_short.jun",
+        Month::July => "common.month_short.jul",
+        Month::August => "common.month_short.aug",
+        Month::September => "common.month_short.sep",
+        Month::October => "common.month_short.oct",
+        Month::November => "common.month_short.nov",
+        Month::December => "common.month_short.dec",
+    };
+    format!(
+        "{}, {} {}",
+        knotq_l10n::t(weekday),
+        knotq_l10n::t(month),
+        date.day()
+    )
 }
 
 pub(crate) fn marker_str(marker: ItemMarker) -> &'static str {
@@ -412,7 +441,9 @@ pub(crate) fn time_format_str(time_format: TimeFormat) -> &'static str {
     }
 }
 
-pub(crate) fn mobile_notification_lead_times(defaults: NotificationDefaults) -> NotificationLeadTimes {
+pub(crate) fn mobile_notification_lead_times(
+    defaults: NotificationDefaults,
+) -> NotificationLeadTimes {
     NotificationLeadTimes {
         reminder_offset_secs: 0,
         event_offset_secs: defaults.event_offset_secs,

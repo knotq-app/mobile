@@ -55,10 +55,36 @@ pub(crate) fn google_calendar_sources(workspace: &Workspace) -> Vec<ExistingGoog
             Some(ExistingGoogleCalendarSource {
                 account_id: source.account_id.clone(),
                 calendar_id: source.calendar_id.clone(),
-                sync_token: source.sync_token.clone(),
+                sync_token: if google_calendar_scheme_needs_exception_repair(scheme) {
+                    None
+                } else {
+                    source.sync_token.clone()
+                },
             })
         })
         .collect()
+}
+
+fn google_calendar_scheme_needs_exception_repair(scheme: &Scheme) -> bool {
+    scheme.items.iter().any(|item| {
+        let Some(external) = item.external.as_ref() else {
+            return false;
+        };
+        if external.provider != CalendarProvider::Google || external.instance_id.is_some() {
+            return false;
+        }
+        let Some(recurrence) = item.repeats.as_ref() else {
+            return false;
+        };
+        if recurrence.rrules.is_empty() {
+            return false;
+        }
+        let Some(raw_import) = recurrence.raw_import.as_ref() else {
+            return true;
+        };
+        raw_import.content_type == "application/vnd.google.calendar.event+json"
+            && !raw_import.data.contains("\"originalStartTime\"")
+    })
 }
 
 pub(crate) fn google_calendar_scheme_ids(
@@ -157,11 +183,9 @@ fn import_google_account_calendars(
             }
         };
 
-        let mut items = events
-            .events
-            .iter()
-            .filter_map(|event| google_event_to_item(account, &calendar.id, event))
-            .collect::<Vec<_>>();
+        let recurrence_exdates = google_recurring_exception_exdates(&events.events);
+        let mut items =
+            google_events_to_items(account, &calendar.id, &events.events, &recurrence_exdates);
         sort_imported_items(&mut items);
 
         let deleted = events
@@ -184,6 +208,7 @@ fn import_google_account_calendars(
             full_sync: events.full_sync,
             items,
             deleted,
+            recurrence_exdates,
         });
     }
 

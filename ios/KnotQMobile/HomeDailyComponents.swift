@@ -151,7 +151,7 @@ struct HomeQuickActions: View {
     let onOpenDaily: () -> Void
 
     var body: some View {
-        glassButton("Daily", "checklist", action: onOpenDaily)
+        glassButton(L10n.t("menu.daily"), "checklist", action: onOpenDaily)
     }
 
     private func glassButton(_ title: String, _ icon: String, action: @escaping () -> Void) -> some View {
@@ -182,8 +182,8 @@ struct HomeQuickWriteButtons: View {
 
     var body: some View {
         HStack(spacing: 10) {
-            quickButton(icon: "checklist", label: "Daily", action: onOpenDaily)
-            quickButton(icon: "pencil", label: "New Scheme", action: onNewScheme)
+            quickButton(icon: "checklist", label: L10n.t("menu.daily"), action: onOpenDaily)
+            quickButton(icon: "pencil", label: L10n.t("mobile.home.new_scheme"), action: onNewScheme)
         }
     }
 
@@ -228,7 +228,7 @@ struct HomeDailyPreview: View {
                     RoundedRectangle(cornerRadius: 3)
                         .fill(dailyQueueColor(dark: theme.isDark))
                         .frame(width: 12, height: 12)
-                    Text("Daily")
+                    Text(L10n.t("menu.daily"))
                         .font(.system(size: 15, weight: .semibold))
                     Text(AppModel.displayDate(entry?.date ?? AppModel.dateOnly(selectedDate)))
                         .font(.system(size: 12, weight: .semibold))
@@ -240,7 +240,7 @@ struct HomeDailyPreview: View {
                 }
 
                 if previewItems.isEmpty {
-                    Text("No open daily items")
+                    Text(L10n.t("mobile.home.no_open_daily_items"))
                         .font(.system(size: 13))
                         .foregroundStyle(theme.textMuted)
                         .frame(maxWidth: .infinity, minHeight: 24, alignment: .leading)

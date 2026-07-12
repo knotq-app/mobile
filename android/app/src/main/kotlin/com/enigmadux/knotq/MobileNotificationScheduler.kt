@@ -30,16 +30,18 @@ internal object MobileNotificationScheduler {
     const val ACTION_SNOOZE_1_DAY = "knotq.snooze.1d"
     const val ACTION_SNOOZE_1_WEEK = "knotq.snooze.1w"
 
+    // Values are L10n catalog keys (not raw text) since this list is built at
+    // object-init time, before a Context is available to resolve strings.
     private val snoozeActions = listOf(
-        ACTION_SNOOZE_1_MINUTE to "Snooze 1m",
-        ACTION_SNOOZE_5_MINUTES to "Snooze 5m",
-        ACTION_SNOOZE_10_MINUTES to "Snooze 10m",
-        ACTION_SNOOZE_15_MINUTES to "Snooze 15m",
-        ACTION_SNOOZE_30_MINUTES to "Snooze 30m",
-        ACTION_SNOOZE_1_HOUR to "Snooze 1h",
-        ACTION_SNOOZE_2_HOURS to "Snooze 2h",
-        ACTION_SNOOZE_1_DAY to "Snooze 1d",
-        ACTION_SNOOZE_1_WEEK to "Snooze 1w"
+        ACTION_SNOOZE_1_MINUTE to "mobile.notifications.snooze_1m",
+        ACTION_SNOOZE_5_MINUTES to "mobile.notifications.snooze_5m",
+        ACTION_SNOOZE_10_MINUTES to "mobile.notifications.snooze_10m",
+        ACTION_SNOOZE_15_MINUTES to "mobile.notifications.snooze_15m",
+        ACTION_SNOOZE_30_MINUTES to "mobile.notifications.snooze_30m",
+        ACTION_SNOOZE_1_HOUR to "mobile.notifications.snooze_1h",
+        ACTION_SNOOZE_2_HOURS to "mobile.notifications.snooze_2h",
+        ACTION_SNOOZE_1_DAY to "mobile.notifications.snooze_1d",
+        ACTION_SNOOZE_1_WEEK to "mobile.notifications.snooze_1w"
     )
 
     private const val CHANNEL_ID = "knotq-reminders"
@@ -152,7 +154,8 @@ internal object MobileNotificationScheduler {
         val fireAt = intent.getStringExtra(EXTRA_FIRE_AT)
             ?.let { runCatching { Instant.parse(it) }.getOrNull() }
         val title = intent.getStringExtra(EXTRA_TITLE)?.ifBlank { "KnotQ" } ?: "KnotQ"
-        val body = intent.getStringExtra(EXTRA_BODY)?.ifBlank { "Scheduled item" } ?: "Scheduled item"
+        val fallbackBody = L10n.t(appContext, "mobile.notifications.fallback_body")
+        val body = intent.getStringExtra(EXTRA_BODY)?.ifBlank { fallbackBody } ?: fallbackBody
         val manager = appContext.getSystemService(NotificationManager::class.java)
         val builder = Notification.Builder(appContext, CHANNEL_ID)
             .setSmallIcon(R.mipmap.ic_launcher)
@@ -175,11 +178,19 @@ internal object MobileNotificationScheduler {
                 .setUsesChronometer(true)
                 .setChronometerCountDown(true)
         }
-        snoozeActions.forEach { (action, title) ->
-            builder.addAction(notificationAction(appContext, id, action, title, intent))
+        snoozeActions.forEach { (action, titleKey) ->
+            builder.addAction(notificationAction(appContext, id, action, L10n.t(appContext, titleKey), intent))
         }
         val notification = builder
-            .addAction(notificationAction(appContext, id, ACTION_MARK_DONE, "Mark done", intent))
+            .addAction(
+                notificationAction(
+                    appContext,
+                    id,
+                    ACTION_MARK_DONE,
+                    L10n.t(appContext, "mobile.notifications.mark_done"),
+                    intent
+                )
+            )
             .build()
         manager.notify(id, 0, notification)
     }
@@ -298,10 +309,10 @@ internal object MobileNotificationScheduler {
         val manager = context.getSystemService(NotificationManager::class.java)
         val channel = NotificationChannel(
             CHANNEL_ID,
-            "KnotQ reminders",
+            L10n.t(context, "mobile.notifications.channel_name"),
             NotificationManager.IMPORTANCE_HIGH
         ).apply {
-            description = "Calendar reminders and assignments from KnotQ"
+            description = L10n.t(context, "mobile.notifications.channel_description")
             enableVibration(true)
         }
         manager.createNotificationChannel(channel)

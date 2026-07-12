@@ -80,6 +80,7 @@ import com.android.billingclient.api.QueryPurchasesParams
 import com.google.android.play.core.review.ReviewManagerFactory
 import org.json.JSONArray
 import org.json.JSONObject
+import java.time.DayOfWeek
 import java.time.Instant
 import java.time.LocalDate
 import java.time.LocalTime
@@ -101,9 +102,16 @@ import kotlin.math.min
 import kotlin.math.roundToInt
 
     internal fun MainActivity.showItemActions(schemeId: String, item: JSONObject, index: Int, count: Int) {
-        val actions = arrayOf("Move Up", "Move Down", "Indent", "Outdent", "Edit", "Delete")
+        val actions = arrayOf(
+            L10n.t(this, "mobile.action.move_up"),
+            L10n.t(this, "mobile.action.move_down"),
+            L10n.t(this, "mobile.action.indent"),
+            L10n.t(this, "mobile.action.outdent"),
+            L10n.t(this, "common.edit"),
+            L10n.t(this, "common.delete")
+        )
         AlertDialog.Builder(this)
-            .setTitle(item.optString("text").ifEmpty { "Item" })
+            .setTitle(item.optString("text").ifEmpty { L10n.t(this, "sidebar.context.item") })
             .setItems(actions) { _, which ->
                 when (which) {
                     0 -> if (index > 0) mutate(obj("type" to "reorder_item", "scheme_id" to schemeId, "from" to index, "to" to index - 1))
@@ -123,16 +131,22 @@ import kotlin.math.roundToInt
         if (nodeOrScheme.optBoolean("is_read_only", false)) {
             AlertDialog.Builder(this)
                 .setTitle(nodeOrScheme.optString("name", nodeOrScheme.optString("display_name")))
-                .setItems(arrayOf("Open Scheme")) { _, _ -> openScheme(id) }
+                .setItems(arrayOf(L10n.t(this, "mobile.action.open_scheme"))) { _, _ -> openScheme(id) }
                 .show()
             return
         }
         AlertDialog.Builder(this)
             .setTitle(nodeOrScheme.optString("name", nodeOrScheme.optString("display_name")))
-            .setItems(arrayOf("Rename", "Color", "Reorder", "Move to Folder", "Archive")) { _, which ->
+            .setItems(arrayOf(
+                L10n.t(this, "common.rename"),
+                L10n.t(this, "mobile.action.color"),
+                L10n.t(this, "mobile.action.reorder"),
+                L10n.t(this, "mobile.action.move_to_folder"),
+                L10n.t(this, "sidebar.context.archive")
+            )) { _, which ->
                 when (which) {
                     0 -> showNameDialog(
-                        "Rename Scheme",
+                        L10n.t(this, "mobile.scheme.rename_title"),
                         nodeOrScheme.optString("name", nodeOrScheme.optString("display_name")),
                         { validateSchemeName(it, folderId = parentFolderIdForScheme(id), excludingId = id, checkDuplicates = !isDaily) }
                     ) { name -> mutate(obj("type" to "rename_scheme", "scheme_id" to id, "name" to name)) }
@@ -199,24 +213,29 @@ import kotlin.math.roundToInt
     internal fun MainActivity.showFolderActions(node: JSONObject) {
         AlertDialog.Builder(this)
             .setTitle(node.optString("name"))
-            .setItems(arrayOf("New Scheme", "New Folder", "Rename", "Reorder", "Move to Folder", "Archive")) { _, which ->
+            .setItems(arrayOf(
+                L10n.t(this, "mobile.nav.new_scheme"),
+                L10n.t(this, "sidebar.context.new_folder"),
+                L10n.t(this, "common.rename"),
+                L10n.t(this, "mobile.action.reorder"),
+                L10n.t(this, "mobile.action.move_to_folder"),
+                L10n.t(this, "sidebar.context.archive")
+            )) { _, which ->
                 when (which) {
-                    0 -> showNameDialog("New Scheme", "", { validateSchemeName(it, folderId = node.optString("id")) }) { name ->
-                        mutate(obj("type" to "create_scheme", "folder_id" to node.optString("id"), "name" to name, "position" to 0))
-                    }
-                    1 -> showNameDialog("New Folder", "", { validateFolderName(it) }) { name ->
+                    0 -> quickCreateScheme(parentFolderId = node.optString("id"))
+                    1 -> showNameDialog(L10n.t(this, "sidebar.context.new_folder"), "", { validateFolderName(it) }) { name ->
                         mutate(obj("type" to "create_folder", "parent_id" to node.optString("id"), "name" to name))
                     }
-                    2 -> showNameDialog("Rename Folder", node.optString("name"), { validateFolderName(it, excludingId = node.optString("id")) }) { name ->
+                    2 -> showNameDialog(L10n.t(this, "mobile.folder.rename_title"), node.optString("name"), { validateFolderName(it, excludingId = node.optString("id")) }) { name ->
                         mutate(obj("type" to "rename_folder", "folder_id" to node.optString("id"), "name" to name))
                     }
                     3 -> showReorderDialog(node.optString("id"))
                     4 -> showMoveToFolderDialog("folder", node.optString("id"), excludedFolderId = node.optString("id"))
                     5 -> AlertDialog.Builder(this)
-                        .setTitle("Archive \"${node.optString("name")}\"?")
-                        .setMessage("The folder and everything inside it move to the archive.")
-                        .setNegativeButton("Cancel", null)
-                        .setPositiveButton("Archive") { _, _ ->
+                        .setTitle(L10n.t(this, "mobile.folder.archive_confirm_title", mapOf("name" to node.optString("name"))))
+                        .setMessage(L10n.t(this, "mobile.folder.archive_confirm_body"))
+                        .setNegativeButton(L10n.t(this, "common.cancel"), null)
+                        .setPositiveButton(L10n.t(this, "sidebar.context.archive")) { _, _ ->
                             mutate(obj("type" to "delete_folder", "folder_id" to node.optString("id")))
                         }
                         .show()
@@ -227,8 +246,8 @@ import kotlin.math.roundToInt
 
     internal fun MainActivity.showArchiveActions() {
         AlertDialog.Builder(this)
-            .setTitle("Archive")
-            .setItems(arrayOf("Empty Archive")) { _, which ->
+            .setTitle(L10n.t(this, "sidebar.context.archive"))
+            .setItems(arrayOf(L10n.t(this, "archive.empty_confirm_button"))) { _, which ->
                 if (which == 0) mutate(obj("type" to "empty_archive"))
             }
             .show()
@@ -247,11 +266,11 @@ import kotlin.math.roundToInt
             gravity = Gravity.CENTER_VERTICAL
             setPadding(dp(12), 0, dp(12), 0)
             background = underline(theme.bgApp)
-            addView(iconChipImage(R.drawable.ic_knotq_chevron_left_24, "Back", iconSize = 20) {
+            addView(iconChipImage(R.drawable.ic_knotq_chevron_left_24, L10n.t(this@renderArchivePage, "common.back"), iconSize = 20) {
                 settingsShowingArchive = false
                 render()
             })
-            addView(text("Archive", theme.textPrimary, 16f, true).apply {
+            addView(text(L10n.t(this@renderArchivePage, "sidebar.context.archive"), theme.textPrimary, 16f, true).apply {
                 gravity = Gravity.CENTER
             }, LinearLayout.LayoutParams(0, -1, 1f))
             addView(View(this@renderArchivePage), LinearLayout.LayoutParams(dp(32), dp(28)))
@@ -260,7 +279,7 @@ import kotlin.math.roundToInt
         val body = page()
         val nodes = snapshot.optJSONArray("archived_nodes") ?: JSONArray()
         if (nodes.length() == 0) {
-            body.addView(text("No archived items", theme.textMuted, 14f, false).apply {
+            body.addView(text(L10n.t(this, "mobile.archive.empty_state"), theme.textMuted, 14f, false).apply {
                 setPadding(dp(2), dp(10), 0, 0)
             })
         } else {
@@ -273,14 +292,14 @@ import kotlin.math.roundToInt
                 }
             }
             addRows(nodes, 0)
-            body.addView(text("Empty Archive", theme.danger, 14f, true).apply {
+            body.addView(text(L10n.t(this, "archive.empty_confirm_button"), theme.danger, 14f, true).apply {
                 setPadding(dp(2), dp(16), dp(8), dp(10))
                 setOnClickListener {
                     AlertDialog.Builder(this@renderArchivePage)
-                        .setTitle("Empty archive?")
-                        .setMessage("Permanently deletes every archived item. This can't be undone.")
-                        .setNegativeButton("Cancel", null)
-                        .setPositiveButton("Delete All") { _, _ -> mutate(obj("type" to "empty_archive")) }
+                        .setTitle(L10n.t(this@renderArchivePage, "archive.empty_confirm_title"))
+                        .setMessage(L10n.t(this@renderArchivePage, "mobile.archive.empty_confirm_body"))
+                        .setNegativeButton(L10n.t(this@renderArchivePage, "common.cancel"), null)
+                        .setPositiveButton(L10n.t(this@renderArchivePage, "mobile.archive.delete_all_button")) { _, _ -> mutate(obj("type" to "empty_archive")) }
                         .show()
                 }
             })
@@ -292,7 +311,7 @@ import kotlin.math.roundToInt
     internal fun MainActivity.archiveNodeRow(node: JSONObject, depth: Int): View {
         val isFolder = node.optString("kind") == "folder"
         val id = node.optString("id")
-        val name = node.optString("name").ifEmpty { if (isFolder) "Folder" else "Untitled" }
+        val name = node.optString("name").ifEmpty { if (isFolder) L10n.t(this, "sidebar.context.folder") else L10n.t(this, "sidebar.new_item_default_name") }
         fun restore() {
             mutate(obj(
                 "type" to if (isFolder) "restore_folder" else "restore_scheme",
@@ -301,10 +320,10 @@ import kotlin.math.roundToInt
         }
         fun confirmPermanentDelete() {
             AlertDialog.Builder(this)
-                .setTitle("Delete \"$name\" permanently?")
-                .setMessage(if (isFolder) "Deletes the folder and everything inside it. This can't be undone." else "This can't be undone.")
-                .setNegativeButton("Cancel", null)
-                .setPositiveButton("Delete") { _, _ ->
+                .setTitle(L10n.t(this, "mobile.archive.delete_confirm_title", mapOf("name" to name)))
+                .setMessage(if (isFolder) L10n.t(this, "mobile.archive.delete_confirm_body_folder") else L10n.t(this, "mobile.archive.delete_confirm_body_generic"))
+                .setNegativeButton(L10n.t(this, "common.cancel"), null)
+                .setPositiveButton(L10n.t(this, "common.delete")) { _, _ ->
                     mutate(obj(
                         "type" to if (isFolder) "permanently_delete_folder" else "permanently_delete_scheme",
                         (if (isFolder) "folder_id" else "scheme_id") to id
@@ -332,14 +351,14 @@ import kotlin.math.roundToInt
                 maxLines = 1
                 ellipsize = TextUtils.TruncateAt.END
             }, LinearLayout.LayoutParams(0, -2, 1f).apply { setMargins(dp(8), 0, dp(8), 0) })
-            addView(text("Restore", theme.accent, 13f, true).apply {
+            addView(text(L10n.t(this@archiveNodeRow, "sidebar.context.restore"), theme.accent, 13f, true).apply {
                 setPadding(dp(8), dp(8), dp(8), dp(8))
                 setOnClickListener { restore() }
             }, LinearLayout.LayoutParams(-2, -2))
             setOnLongClickListener {
                 AlertDialog.Builder(this@archiveNodeRow)
                     .setTitle(name)
-                    .setItems(arrayOf("Restore", "Delete Permanently")) { _, which ->
+                    .setItems(arrayOf(L10n.t(this@archiveNodeRow, "sidebar.context.restore"), L10n.t(this@archiveNodeRow, "mobile.action.delete_permanently"))) { _, which ->
                         when (which) {
                             0 -> restore()
                             1 -> confirmPermanentDelete()
@@ -354,7 +373,7 @@ import kotlin.math.roundToInt
     internal fun MainActivity.showArchivedSchemeActions(scheme: JSONObject) {
         AlertDialog.Builder(this)
             .setTitle(scheme.optString("display_name"))
-            .setItems(arrayOf("Restore", "Delete Permanently")) { _, which ->
+            .setItems(arrayOf(L10n.t(this, "sidebar.context.restore"), L10n.t(this, "mobile.action.delete_permanently"))) { _, which ->
                 when (which) {
                     0 -> mutate(obj("type" to "restore_scheme", "scheme_id" to scheme.optString("id")))
                     1 -> mutate(obj("type" to "permanently_delete_scheme", "scheme_id" to scheme.optString("id")))
@@ -394,8 +413,8 @@ import kotlin.math.roundToInt
         val dialog = AlertDialog.Builder(this)
             .setTitle(title)
             .setView(form)
-            .setPositiveButton("Save", null)
-            .setNegativeButton("Cancel", null)
+            .setPositiveButton(L10n.t(this, "common.save"), null)
+            .setNegativeButton(L10n.t(this, "common.cancel"), null)
             .create()
         dialog.setOnShowListener {
             refreshError()
@@ -462,12 +481,12 @@ import kotlin.math.roundToInt
         container.addView(LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            addView(iconChipImage(R.drawable.ic_knotq_chevron_left_24, "Previous month", iconSize = 18) {
+            addView(iconChipImage(R.drawable.ic_knotq_chevron_left_24, L10n.t(this@showMonthPickerDialog, "mobile.month_picker.previous"), iconSize = 18) {
                 displayMonth = displayMonth.minusMonths(1)
                 renderMonth()
             })
             addView(title, LinearLayout.LayoutParams(0, dp(38), 1f))
-            addView(iconChipImage(R.drawable.ic_knotq_chevron_right_24, "Next month", iconSize = 18) {
+            addView(iconChipImage(R.drawable.ic_knotq_chevron_right_24, L10n.t(this@showMonthPickerDialog, "mobile.month_picker.next"), iconSize = 18) {
                 displayMonth = displayMonth.plusMonths(1)
                 renderMonth()
             })
@@ -490,8 +509,13 @@ import kotlin.math.roundToInt
     internal fun MainActivity.monthWeekdayRow(): View =
         LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
-            listOf("S", "M", "T", "W", "T", "F", "S").forEach { label ->
-                addView(text(label, theme.textMuted, 11f, true).apply {
+            // Locale-aware narrow weekday initials (mirrors MainActivityCalendarTimeline's
+            // day-of-week header) rather than a hardcoded English "S M T W T F S" row.
+            listOf(
+                DayOfWeek.SUNDAY, DayOfWeek.MONDAY, DayOfWeek.TUESDAY, DayOfWeek.WEDNESDAY,
+                DayOfWeek.THURSDAY, DayOfWeek.FRIDAY, DayOfWeek.SATURDAY
+            ).forEach { dayOfWeek ->
+                addView(text(dayOfWeek.getDisplayName(TextStyle.NARROW, Locale.getDefault()), theme.textMuted, 11f, true).apply {
                     gravity = Gravity.CENTER
                 }, LinearLayout.LayoutParams(0, -1, 1f))
             }
@@ -551,7 +575,7 @@ import kotlin.math.roundToInt
                 }
             byDate
         }.getOrElse { error ->
-            showError("Calendar", error.message)
+            showError(L10n.t(this, "menu.calendar"), error.message)
             emptyMap()
         }
     }
@@ -575,7 +599,7 @@ import kotlin.math.roundToInt
         ensureDaily()
         dailyScheme()?.let { scheme ->
             showItemDialog(scheme.optString("id"), null)
-        } ?: toast("Daily not ready")
+        } ?: toast(L10n.t(this, "mobile.daily.not_ready_toast"))
     }
 
     internal fun MainActivity.ensureDaily() {
@@ -597,7 +621,11 @@ import kotlin.math.roundToInt
         loadSnapshot()
     }
 
-    internal fun MainActivity.mutate(body: JSONObject) {
+    internal fun MainActivity.mutate(
+        body: JSONObject,
+        renderAfter: Boolean = true,
+        onSuccess: ((JSONObject) -> Unit)? = null
+    ) {
         // Run the core write + snapshot read OFF the main thread (serial = FIFO, so
         // edit order holds) so an in-flight sync holding the core lock can't hang the
         // UI. The snapshot is re-read here and applied on the main thread; the UI
@@ -620,13 +648,71 @@ import kotlin.math.roundToInt
                     snapshot = snap
                     configureGoogleSyncPolling()
                     rescheduleNotifications()
-                    render()
+                    if (renderAfter) render()
+                    onSuccess?.invoke(snap)
                     requestSyncSoon()
                 }.onFailure { error ->
-                    showError("Could not save", error.message)
+                    showError(L10n.t(this, "mobile.errors.could_not_save_title"), error.message)
                 }
             }
         }
+    }
+
+    internal fun MainActivity.quickCreateScheme(parentFolderId: String? = null) {
+        val name = nextUntitledSchemeName(parentFolderId)
+        val beforeIds = schemeIdSet(snapshot)
+        val body = obj("type" to "create_scheme", "name" to name, "position" to 0)
+        if (!parentFolderId.isNullOrBlank()) {
+            body.put("folder_id", parentFolderId)
+        }
+        mutate(body, renderAfter = false) { refreshed ->
+            val createdId = firstNewSchemeId(refreshed, beforeIds) ?: newestSchemeIdNamed(refreshed, name)
+            if (createdId == null) {
+                render()
+            } else {
+                pendingTitleFocusSchemeId = createdId
+                openScheme(createdId)
+            }
+        }
+    }
+
+    internal fun MainActivity.nextUntitledSchemeName(parentFolderId: String? = null): String {
+        val base = L10n.t(this, "sidebar.new_item_default_name")
+        if (validateSchemeName(base, folderId = parentFolderId) == null) return base
+        for (index in 2 until 10_000) {
+            val candidate = "$base $index"
+            if (validateSchemeName(candidate, folderId = parentFolderId) == null) return candidate
+        }
+        return "$base ${System.currentTimeMillis() / 1000}"
+    }
+
+    private fun schemeIdSet(snap: JSONObject): Set<String> {
+        val ids = HashSet<String>()
+        snap.optJSONArray("schemes")?.forEachObject { scheme ->
+            scheme.optString("id").takeIf { it.isNotBlank() }?.let(ids::add)
+        }
+        return ids
+    }
+
+    private fun firstNewSchemeId(snap: JSONObject, beforeIds: Set<String>): String? {
+        val schemes = snap.optJSONArray("schemes") ?: return null
+        for (index in 0 until schemes.length()) {
+            val scheme = schemes.optJSONObject(index) ?: continue
+            val id = scheme.optString("id")
+            if (id.isNotBlank() && id !in beforeIds) return id
+        }
+        return null
+    }
+
+    private fun newestSchemeIdNamed(snap: JSONObject, name: String): String? {
+        val schemes = snap.optJSONArray("schemes") ?: return null
+        for (index in schemes.length() - 1 downTo 0) {
+            val scheme = schemes.optJSONObject(index) ?: continue
+            if (scheme.optString("display_name", scheme.optString("name")) == name) {
+                return scheme.optString("id").takeIf { it.isNotBlank() }
+            }
+        }
+        return null
     }
 
     internal fun MainActivity.loadSnapshot() {
@@ -782,7 +868,7 @@ import kotlin.math.roundToInt
     internal fun MainActivity.moveNavigatorNode(kind: String, nodeId: String, delta: Int) {
         when (applyNodeMove(kind, nodeId, delta)) {
             true -> { rescheduleNotifications(); render() }
-            false -> toast("Already there")
+            false -> toast(L10n.t(this, "mobile.common.already_there_toast"))
         }
     }
 
@@ -815,8 +901,8 @@ import kotlin.math.roundToInt
     // up/down (instead of reopening the context menu for each single step, as iOS
     // drag-to-reorder avoids). Highlights the item the sheet was opened for.
     internal fun MainActivity.showReorderDialog(nodeId: String) {
-        val parentId = parentFolderIdForNode(nodeId) ?: return toast("Cannot reorder this item")
-        val parentName = nodeById(parentId, snapshot.optJSONObject("root"))?.optString("name")?.takeIf { it.isNotBlank() && parentId != rootFolderId() } ?: "Home"
+        val parentId = parentFolderIdForNode(nodeId) ?: return toast(L10n.t(this, "mobile.reorder.cannot_reorder_toast"))
+        val parentName = nodeById(parentId, snapshot.optJSONObject("root"))?.optString("name")?.takeIf { it.isNotBlank() && parentId != rootFolderId() } ?: L10n.t(this, "mobile.nav.tab_home")
         val list = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(12), dp(8), dp(12), dp(8))
@@ -840,7 +926,7 @@ import kotlin.math.roundToInt
             val children = siblings()
             val lastIndex = children.length() - 1
             if (children.length() == 0) {
-                list.addView(text("Nothing to reorder", theme.textMuted, 13f, false))
+                list.addView(text(L10n.t(this, "mobile.reorder.empty"), theme.textMuted, 13f, false))
             }
             for (i in 0 until children.length()) {
                 val child = children.optJSONObject(i) ?: continue
@@ -859,10 +945,10 @@ import kotlin.math.roundToInt
                         addView(colorSquare(schemeColor(child.optInt("color_index")), 10), LinearLayout.LayoutParams(dp(10), dp(10)).apply { setMargins(dp(4), 0, dp(4), 0) })
                     }
                     addView(text(child.optString("name").ifEmpty { child.optString("display_name") }, theme.textPrimary, 14f, highlight || isFolder).apply { maxLines = 1; ellipsize = TextUtils.TruncateAt.END }, LinearLayout.LayoutParams(0, -1, 1f).apply { setMargins(dp(6), 0, 0, 0) })
-                    addView(moveButton(R.drawable.ic_knotq_chevron_up_24, "Move up", i > 0) {
+                    addView(moveButton(R.drawable.ic_knotq_chevron_up_24, L10n.t(this@showReorderDialog, "mobile.reorder.move_up"), i > 0) {
                         if (applyNodeMove(childKind, childId, -1)) { changed = true; rebuild() }
                     })
-                    addView(moveButton(R.drawable.ic_knotq_chevron_down_24, "Move down", i < lastIndex) {
+                    addView(moveButton(R.drawable.ic_knotq_chevron_down_24, L10n.t(this@showReorderDialog, "mobile.reorder.move_down"), i < lastIndex) {
                         if (applyNodeMove(childKind, childId, 1)) { changed = true; rebuild() }
                     })
                 }
@@ -871,27 +957,27 @@ import kotlin.math.roundToInt
         }
         rebuild()
         val dialog = AlertDialog.Builder(this)
-            .setTitle("Reorder · $parentName")
+            .setTitle(L10n.t(this, "mobile.reorder.title", mapOf("parent" to parentName)))
             .setView(scrollView)
-            .setPositiveButton("Done", null)
+            .setPositiveButton(L10n.t(this, "common.done"), null)
             .create()
         dialog.setOnDismissListener { if (changed) render() }
         dialog.show()
     }
 
     internal fun MainActivity.showMoveToFolderDialog(kind: String, nodeId: String, excludedFolderId: String? = null) {
-        val root = snapshot.optJSONObject("root") ?: return toast("Cannot move this item")
-        val currentParentId = parentFolderIdForNode(nodeId) ?: return toast("Cannot move this item")
-        val destinations = mutableListOf(FolderDestination(root.optString("id"), "Home", 0))
+        val root = snapshot.optJSONObject("root") ?: return toast(L10n.t(this, "mobile.move_to_folder.cannot_move_toast"))
+        val currentParentId = parentFolderIdForNode(nodeId) ?: return toast(L10n.t(this, "mobile.move_to_folder.cannot_move_toast"))
+        val destinations = mutableListOf(FolderDestination(root.optString("id"), L10n.t(this, "mobile.nav.tab_home"), 0))
         collectFolderDestinations(root.optJSONArray("children"), 1, excludedFolderId, destinations)
         AlertDialog.Builder(this)
-            .setTitle("Move To Folder")
+            .setTitle(L10n.t(this, "mobile.move_to_folder.title"))
             .setItems(destinations.map { destination ->
-                "${"   ".repeat(destination.depth)}${destination.name}${if (destination.id == currentParentId) "  (current)" else ""}"
+                "${"   ".repeat(destination.depth)}${destination.name}${if (destination.id == currentParentId) "  " + L10n.t(this, "mobile.move_to_folder.current_suffix") else ""}"
             }.toTypedArray()) { _, which ->
                 val destination = destinations[which]
-                if (destination.id == currentParentId) return@setItems toast("Already there")
-                val target = nodeById(destination.id, root) ?: return@setItems toast("Cannot find folder")
+                if (destination.id == currentParentId) return@setItems toast(L10n.t(this, "mobile.common.already_there_toast"))
+                val target = nodeById(destination.id, root) ?: return@setItems toast(L10n.t(this, "mobile.move_to_folder.cannot_find_folder_toast"))
                 val position = target.optJSONArray("children")?.length() ?: 0
                 mutate(obj("type" to "move_node", "kind" to kind, "id" to nodeId, "folder_id" to destination.id, "position" to position))
             }
@@ -934,4 +1020,3 @@ import kotlin.math.roundToInt
         }
         return out
     }
-

@@ -17,6 +17,7 @@ uuid = { version = "1", features = ["v4", "serde"] }
 knotq-commands = { path = "../desktop/commands" }
 knotq-date-util = { path = "../desktop/date-util" }
 knotq-index = { path = "../desktop/index" }
+knotq-l10n = { path = "../shared/l10n" }
 knotq-model = { path = "../shared/model" }
 knotq-notifications = { path = "../desktop/notifications" }
 knotq-rrule = { path = "../desktop/rrule" }

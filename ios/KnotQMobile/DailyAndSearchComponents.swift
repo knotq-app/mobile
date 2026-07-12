@@ -47,7 +47,7 @@ struct DailyFeedPane: View {
             }
 
             if visibleEntries.isEmpty {
-                EmptyState(title: "Daily not ready", detail: "Could not create the daily queue.", theme: theme)
+                EmptyState(title: L10n.t("mobile.daily.not_ready_title"), detail: L10n.t("mobile.daily.not_ready_detail"), theme: theme)
             } else {
                 // The feed is hosted in a custom UIKit scroll container rather
                 // than a SwiftUI `ScrollView { LazyVStack { ... } }`. Each day is
@@ -134,7 +134,7 @@ struct DailyEditorNavigationBar: View {
                 Image(systemName: "chevron.left")
             }
             .buttonStyle(DailyBackButtonStyle(theme: theme))
-            .accessibilityLabel("Back")
+            .accessibilityLabel(L10n.t("common.back"))
 
             Spacer()
         }
@@ -334,7 +334,7 @@ struct DesktopItemRow: View {
             .padding(.leading, CGFloat(item.indent) * 18)
 
             VStack(alignment: .leading, spacing: 6) {
-                TextField("Item", text: $draft, axis: .vertical)
+                TextField(L10n.t("sidebar.context.item"), text: $draft, axis: .vertical)
                     .textFieldStyle(.plain)
                     .font(.system(size: 14))
                     .foregroundStyle(item.done ? theme.textMuted : theme.textPrimary)
@@ -391,15 +391,15 @@ struct DesktopItemRow: View {
         .padding(.horizontal, 8)
         .background(index % 2 == 1 ? theme.rowAlt : Color.clear, in: RoundedRectangle(cornerRadius: 3))
         .contextMenu {
-            Button("Move Up", systemImage: "arrow.up") {
+            Button(L10n.t("mobile.daily.move_up"), systemImage: "arrow.up") {
                 model.reorderItem(schemeID: schemeID, from: index, to: max(index - 1, 0))
             }
             .disabled(index == 0)
-            Button("Move Down", systemImage: "arrow.down") {
+            Button(L10n.t("mobile.daily.move_down"), systemImage: "arrow.down") {
                 model.reorderItem(schemeID: schemeID, from: index, to: min(index + 1, count - 1))
             }
             .disabled(index >= count - 1)
-            Button("Delete", systemImage: "trash", role: .destructive) {
+            Button(L10n.t("common.delete"), systemImage: "trash", role: .destructive) {
                 pendingItemDelete = true
             }
         }
@@ -408,16 +408,16 @@ struct DesktopItemRow: View {
                 .presentationDetents([.fraction(0.50)])
         }
         .confirmationDialog(
-            "Delete item?",
+            L10n.t("mobile.daily.delete_item_confirm_title"),
             isPresented: $pendingItemDelete,
             titleVisibility: .visible
         ) {
-            Button("Delete", role: .destructive) {
+            Button(L10n.t("common.delete"), role: .destructive) {
                 model.deleteItem(schemeID: schemeID, itemID: item.id)
             }
-            Button("Cancel", role: .cancel) {}
+            Button(L10n.t("common.cancel"), role: .cancel) {}
         } message: {
-            Text("This can't be undone.")
+            Text(L10n.t("mobile.daily.delete_item_confirm_message"))
         }
     }
 
@@ -449,7 +449,7 @@ struct IPadSearchDetail: View {
     var body: some View {
         List {
             if model.searchHits.isEmpty {
-                Text(query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "Search across all schemes." : "No results.")
+                Text(query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? L10n.t("mobile.search.empty_hint") : L10n.t("mobile.search.no_results"))
                     .font(.system(size: 15))
                     .foregroundStyle(theme.textMuted)
                     .frame(maxWidth: .infinity, alignment: .center)
@@ -475,7 +475,7 @@ struct IPadSearchDetail: View {
         .scrollContentBackground(.hidden)
         .background(theme.bgApp)
         .autocorrectionDisabled()
-        .navigationTitle("Search")
+        .navigationTitle(L10n.t("mobile.search.nav_title"))
         .navigationBarTitleDisplayMode(.inline)
     }
 }
@@ -540,7 +540,7 @@ struct DesktopSearchPane: View {
                 HStack(spacing: 8) {
                     Image(systemName: "magnifyingglass")
                         .foregroundStyle(theme.textMuted)
-                    TextField("Search KnotQ", text: $query)
+                    TextField(L10n.t("search.placeholder"), text: $query)
                         .textFieldStyle(.plain)
                         .font(.system(size: 16))
                         .focused($searchFocused)

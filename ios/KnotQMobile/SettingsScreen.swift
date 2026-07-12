@@ -22,26 +22,26 @@ struct SettingsScreen: View {
             .listRowBackground(Color.clear)
             .listRowSeparator(.hidden)
 
-            Section("Appearance") {
-                Picker("Theme", selection: Binding(
+            Section(L10n.t("settings.appearance.section")) {
+                Picker(L10n.t("settings.appearance.theme_label"), selection: Binding(
                     get: { model.snapshot?.settings.themeMode ?? "system" },
                     set: { model.setThemeMode($0) }
                 )) {
-                    Text("Dark").tag("dark")
-                    Text("Light").tag("light")
-                    Text("System").tag("system")
+                    Text(L10n.t("settings.appearance.theme_dark")).tag("dark")
+                    Text(L10n.t("settings.appearance.theme_light")).tag("light")
+                    Text(L10n.t("settings.appearance.theme_system")).tag("system")
                 }
                 .pickerStyle(.menu)
             }
             .listRowBackground(theme.bgModal)
 
-            Section("Time") {
-                Picker("Clock", selection: Binding(
+            Section(L10n.t("settings.time.section")) {
+                Picker(L10n.t("settings.time.clock_label"), selection: Binding(
                     get: { model.snapshot?.settings.timeFormat ?? "twelve_hour" },
                     set: { model.setTimeFormat($0) }
                 )) {
-                    Text("12-hour").tag("twelve_hour")
-                    Text("24-hour").tag("twenty_four_hour")
+                    Text(L10n.t("settings.time.clock_12h")).tag("twelve_hour")
+                    Text(L10n.t("settings.time.clock_24h")).tag("twenty_four_hour")
                 }
             }
             .listRowBackground(theme.bgModal)
@@ -54,7 +54,7 @@ struct SettingsScreen: View {
         }
         .scrollContentBackground(.hidden)
         .background(theme.bgApp)
-        .navigationTitle("Settings")
+        .navigationTitle(L10n.t("settings.header.title"))
         .task {
             // Load products when an account has no entitlement, so the paywall can
             // show real prices.
@@ -63,16 +63,16 @@ struct SettingsScreen: View {
             }
         }
         .confirmationDialog(
-            "Cancel sync subscription?",
+            L10n.t("mobile.settings.cancel_sync_subscription_title"),
             isPresented: $showingCancelConfirm,
             titleVisibility: .visible
         ) {
-            Button("Cancel Subscription", role: .destructive) {
+            Button(L10n.t("mobile.settings.cancel_sync_subscription_confirm"), role: .destructive) {
                 Task { await model.cancelSyncSubscription() }
             }
-            Button("Keep Sync", role: .cancel) {}
+            Button(L10n.t("mobile.settings.keep_sync"), role: .cancel) {}
         } message: {
-            Text("Your local workspace stays on this device. Paid sync may remain available until the current billing period ends.")
+            Text(L10n.t("mobile.settings.cancel_sync_subscription_message"))
         }
     }
 }
@@ -85,10 +85,10 @@ struct GoogleCalendarSettingsSection: View {
     var body: some View {
         let accounts = model.snapshot?.settings.googleAccounts ?? []
 
-        Section("Google Calendar") {
+        Section(L10n.t("settings.google_calendar.section")) {
             if accounts.isEmpty {
-                LabeledContent("Status") {
-                    Text("Not connected")
+                LabeledContent(L10n.t("settings.google_calendar.status_label")) {
+                    Text(L10n.t("settings.google_calendar.not_connected"))
                         .foregroundStyle(theme.textMuted)
                 }
             } else {
@@ -108,9 +108,9 @@ struct GoogleCalendarSettingsSection: View {
                     Task { await model.syncGoogleCalendars() }
                 } label: {
                     if model.googleSyncInProgress {
-                        Label("Syncing Google Calendars", systemImage: "arrow.triangle.2.circlepath")
+                        Label(L10n.t("settings.google_calendar.syncing_button"), systemImage: "arrow.triangle.2.circlepath")
                     } else {
-                        Label("Sync Google Calendars", systemImage: "arrow.triangle.2.circlepath")
+                        Label(L10n.t("settings.google_calendar.sync_all_button"), systemImage: "arrow.triangle.2.circlepath")
                     }
                 }
                 .disabled(model.googleSyncInProgress || model.googleAuthInProgress)
@@ -118,7 +118,7 @@ struct GoogleCalendarSettingsSection: View {
         }
         .listRowBackground(theme.bgModal)
         .confirmationDialog(
-            "Unlink Google Calendar account?",
+            L10n.t("settings.google_calendar.unlink_confirm_title"),
             isPresented: Binding(
                 get: { accountPendingUnlink != nil },
                 set: { isPresented in
@@ -129,17 +129,17 @@ struct GoogleCalendarSettingsSection: View {
             ),
             titleVisibility: .visible
         ) {
-            Button("Unlink", role: .destructive) {
+            Button(L10n.t("settings.google_calendar.unlink_button"), role: .destructive) {
                 guard let account = accountPendingUnlink else { return }
                 model.unlinkGoogleCalendarAccount(account)
                 accountPendingUnlink = nil
             }
-            Button("Keep Account", role: .cancel) {
+            Button(L10n.t("settings.google_calendar.keep_account"), role: .cancel) {
                 accountPendingUnlink = nil
             }
         } message: {
-            let title = accountPendingUnlink?.title ?? "this account"
-            Text("KnotQ will stop refreshing calendars for \(title). Imported calendar schemes stay in your workspace.")
+            let title = accountPendingUnlink?.title ?? L10n.t("settings.google_calendar.unlink_fallback_name")
+            Text(L10n.t("settings.google_calendar.unlink_confirm_message", ["name": title]))
         }
     }
 }
@@ -161,7 +161,7 @@ private struct GoogleCalendarAccountSettingsRow: View {
                     .foregroundStyle(theme.textMuted)
             }
             Spacer(minLength: 12)
-            Button("Unlink", role: .destructive, action: onUnlink)
+            Button(L10n.t("settings.google_calendar.unlink_button"), role: .destructive, action: onUnlink)
                 .buttonStyle(.borderless)
                 .font(.system(size: 13, weight: .semibold))
         }

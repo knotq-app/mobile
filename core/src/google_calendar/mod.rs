@@ -31,14 +31,15 @@ pub(crate) use sync::{
 };
 pub(crate) use types::{
     ExistingGoogleCalendarSource, GoogleCalendarImportResult, GoogleExternalEventKey,
-    GoogleOAuthConfig, ImportedGoogleCalendar,
+    GoogleOAuthConfig, GoogleRecurrenceExdate, ImportedGoogleCalendar,
 };
 
 // Re-export the internal items submodules share with one another so that each
 // submodule can `use super::*` and resolve sibling symbols.
 use apply::{
     collect_google_calendar_scheme_ids, google_calendar_color_index, google_calendar_name,
-    google_calendar_scheme_matches, google_event_key, google_event_to_item, sort_imported_items,
+    google_calendar_scheme_matches, google_event_key, google_events_to_items,
+    google_recurring_exception_exdates, sort_imported_items,
 };
 use http::{google_http_error, list_google_calendars, list_google_events};
 use oauth::{

@@ -28,6 +28,7 @@ pub(crate) struct ImportedGoogleCalendar {
     pub(crate) full_sync: bool,
     pub(crate) items: Vec<Item>,
     pub(crate) deleted: Vec<GoogleExternalEventKey>,
+    pub(crate) recurrence_exdates: Vec<GoogleRecurrenceExdate>,
 }
 
 #[derive(Clone, Copy)]
@@ -40,6 +41,12 @@ pub(super) enum GoogleCalendarImportMode {
 pub(crate) struct GoogleExternalEventKey {
     pub(super) event_id: String,
     pub(super) instance_id: Option<String>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct GoogleRecurrenceExdate {
+    pub(super) event_id: String,
+    pub(super) original_start: CalendarDateTime,
 }
 
 #[derive(Deserialize)]
@@ -96,6 +103,7 @@ pub(super) struct GoogleEvent {
     pub(super) updated: Option<DateTime<Utc>>,
     pub(super) recurrence: Option<Vec<String>>,
     pub(super) recurring_event_id: Option<String>,
+    pub(super) original_start_time: Option<GoogleEventDateTime>,
 }
 
 #[derive(Clone, Deserialize, serde::Serialize)]

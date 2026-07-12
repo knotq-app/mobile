@@ -30,7 +30,7 @@
 		010000000000000000000015 /* KnotQUpcomingWidget.swift in Sources */ = {isa = PBXBuildFile; fileRef = 020000000000000000000019 /* KnotQUpcomingWidget.swift */; };
 		010000000000000000000016 /* WidgetKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 020000000000000000000017 /* WidgetKit.framework */; };
 		010000000000000000000017 /* SwiftUI.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 020000000000000000000018 /* SwiftUI.framework */; };
-		010000000000000000000018 /* KnotQUpcomingWidget.appex in Embed App Extensions */ = {isa = PBXBuildFile; fileRef = 02000000000000000000001C /* KnotQUpcomingWidget.appex */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
+		010000000000000000000018 /* KnotQUpcomingWidget.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 02000000000000000000001C /* KnotQUpcomingWidget.appex */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
 		01000000000000000000001D /* ContentView+Components.swift in Sources */ = {isa = PBXBuildFile; fileRef = 02000000000000000000001D /* ContentView+Components.swift */; };
 		01000000000000000000001E /* SchemeEditorView+Components.swift in Sources */ = {isa = PBXBuildFile; fileRef = 02000000000000000000001E /* SchemeEditorView+Components.swift */; };
 		01000000000000000000001F /* Theme+Colors.swift in Sources */ = {isa = PBXBuildFile; fileRef = 02000000000000000000001F /* Theme+Colors.swift */; };
@@ -48,18 +48,16 @@
 		01000000000000000000002B /* SchemeEditorTextInput.swift in Sources */ = {isa = PBXBuildFile; fileRef = 02000000000000000000002B /* SchemeEditorTextInput.swift */; };
 		01000000000000000000002C /* SchemeEditorTextView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 02000000000000000000002C /* SchemeEditorTextView.swift */; };
 		01000000000000000000002D /* SchemeEditorSheets.swift in Sources */ = {isa = PBXBuildFile; fileRef = 02000000000000000000002D /* SchemeEditorSheets.swift */; };
-		01000000000000000000006A /* SchemeEditorRemoteMerge.swift in Sources */ = {isa = PBXBuildFile; fileRef = 02000000000000000000006A /* SchemeEditorRemoteMerge.swift */; };
 		01000000000000000000002E /* GoogleService-Info.plist in Resources */ = {isa = PBXBuildFile; fileRef = 02000000000000000000002E /* GoogleService-Info.plist */; };
 		01000000000000000000002F /* BackgroundSyncCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 02000000000000000000002F /* BackgroundSyncCoordinator.swift */; };
 		010000000000000000000030 /* BackgroundTasks.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 020000000000000000000030 /* BackgroundTasks.framework */; };
-			010000000000000000000031 /* FirebaseCore in Frameworks */ = {isa = PBXBuildFile; productRef = 0F0000000000000000000002 /* FirebaseCore */; };
-			010000000000000000000032 /* FirebaseMessaging in Frameworks */ = {isa = PBXBuildFile; productRef = 0F0000000000000000000003 /* FirebaseMessaging */; };
-			010000000000000000000033 /* MobileDate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 020000000000000000000033 /* MobileDate.swift */; };
-			010000000000000000000034 /* ScheduleFormComponents.swift in Sources */ = {isa = PBXBuildFile; fileRef = 020000000000000000000034 /* ScheduleFormComponents.swift */; };
-			010000000000000000000035 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = 020000000000000000000035 /* PrivacyInfo.xcprivacy */; };
-			010000000000000000000036 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = 020000000000000000000036 /* PrivacyInfo.xcprivacy */; };
-			010000000000000000000040 /* MarkerConcealmentTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 020000000000000000000040 /* MarkerConcealmentTests.swift */; };
-			01000000000000000000006B /* RemoteMergeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 02000000000000000000006B /* RemoteMergeTests.swift */; };
+		010000000000000000000031 /* FirebaseCore in Frameworks */ = {isa = PBXBuildFile; productRef = 0F0000000000000000000002 /* FirebaseCore */; };
+		010000000000000000000032 /* FirebaseMessaging in Frameworks */ = {isa = PBXBuildFile; productRef = 0F0000000000000000000003 /* FirebaseMessaging */; };
+		010000000000000000000033 /* MobileDate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 020000000000000000000033 /* MobileDate.swift */; };
+		010000000000000000000034 /* ScheduleFormComponents.swift in Sources */ = {isa = PBXBuildFile; fileRef = 020000000000000000000034 /* ScheduleFormComponents.swift */; };
+		010000000000000000000035 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = 020000000000000000000035 /* PrivacyInfo.xcprivacy */; };
+		010000000000000000000036 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = 020000000000000000000036 /* PrivacyInfo.xcprivacy */; };
+		010000000000000000000040 /* MarkerConcealmentTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 020000000000000000000040 /* MarkerConcealmentTests.swift */; };
 		010000000000000000000050 /* SchemeEditorLayoutManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 020000000000000000000050 /* SchemeEditorLayoutManager.swift */; };
 		010000000000000000000051 /* SchemeEditorBlockAttachment.swift in Sources */ = {isa = PBXBuildFile; fileRef = 020000000000000000000051 /* SchemeEditorBlockAttachment.swift */; };
 		010000000000000000000052 /* SchemeEditorTableCellEditor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 020000000000000000000052 /* SchemeEditorTableCellEditor.swift */; };
@@ -86,6 +84,12 @@
 		010000000000000000000067 /* EditorCoordinator+Editing.swift in Sources */ = {isa = PBXBuildFile; fileRef = 020000000000000000000067 /* EditorCoordinator+Editing.swift */; };
 		010000000000000000000068 /* EditorCoordinator+Processing.swift in Sources */ = {isa = PBXBuildFile; fileRef = 020000000000000000000068 /* EditorCoordinator+Processing.swift */; };
 		010000000000000000000069 /* EditorCoordinator+Toolbar.swift in Sources */ = {isa = PBXBuildFile; fileRef = 020000000000000000000069 /* EditorCoordinator+Toolbar.swift */; };
+		01000000000000000000006A /* SchemeEditorRemoteMerge.swift in Sources */ = {isa = PBXBuildFile; fileRef = 02000000000000000000006A /* SchemeEditorRemoteMerge.swift */; };
+		01000000000000000000006B /* RemoteMergeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 02000000000000000000006B /* RemoteMergeTests.swift */; };
+		01000000000000000000006C /* L10n.swift in Sources */ = {isa = PBXBuildFile; fileRef = 02000000000000000000006C /* L10n.swift */; };
+		01000000000000000000006D /* Localizable.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = 02000000000000000000006D /* Localizable.xcstrings */; };
+		01000000000000000000006E /* Localizable.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = 02000000000000000000006D /* Localizable.xcstrings */; };
+		01000000000000000000006F /* L10n.swift in Sources */ = {isa = PBXBuildFile; fileRef = 02000000000000000000006C /* L10n.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -106,15 +110,15 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXCopyFilesBuildPhase section */
-		0C0000000000000000000001 /* Embed App Extensions */ = {
+		0C0000000000000000000001 /* Embed Foundation Extensions */ = {
 			isa = PBXCopyFilesBuildPhase;
 			buildActionMask = 2147483647;
 			dstPath = "";
 			dstSubfolderSpec = 13;
 			files = (
-				010000000000000000000018 /* KnotQUpcomingWidget.appex in Embed App Extensions */,
+				010000000000000000000018 /* KnotQUpcomingWidget.appex in Embed Foundation Extensions */,
 			);
-			name = "Embed App Extensions";
+			name = "Embed Foundation Extensions";
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXCopyFilesBuildPhase section */
@@ -165,16 +169,14 @@
 		02000000000000000000002B /* SchemeEditorTextInput.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SchemeEditorTextInput.swift; sourceTree = "<group>"; };
 		02000000000000000000002C /* SchemeEditorTextView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SchemeEditorTextView.swift; sourceTree = "<group>"; };
 		02000000000000000000002D /* SchemeEditorSheets.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SchemeEditorSheets.swift; sourceTree = "<group>"; };
-		02000000000000000000006A /* SchemeEditorRemoteMerge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SchemeEditorRemoteMerge.swift; sourceTree = "<group>"; };
 		02000000000000000000002E /* GoogleService-Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = "GoogleService-Info.plist"; sourceTree = "<group>"; };
 		02000000000000000000002F /* BackgroundSyncCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BackgroundSyncCoordinator.swift; sourceTree = "<group>"; };
-			020000000000000000000030 /* BackgroundTasks.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = BackgroundTasks.framework; path = System/Library/Frameworks/BackgroundTasks.framework; sourceTree = SDKROOT; };
-			020000000000000000000033 /* MobileDate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MobileDate.swift; sourceTree = "<group>"; };
-			020000000000000000000034 /* ScheduleFormComponents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScheduleFormComponents.swift; sourceTree = "<group>"; };
-			020000000000000000000035 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
-			020000000000000000000036 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
-			020000000000000000000040 /* MarkerConcealmentTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MarkerConcealmentTests.swift; sourceTree = "<group>"; };
-			02000000000000000000006B /* RemoteMergeTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RemoteMergeTests.swift; sourceTree = "<group>"; };
+		020000000000000000000030 /* BackgroundTasks.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = BackgroundTasks.framework; path = System/Library/Frameworks/BackgroundTasks.framework; sourceTree = SDKROOT; };
+		020000000000000000000033 /* MobileDate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MobileDate.swift; sourceTree = "<group>"; };
+		020000000000000000000034 /* ScheduleFormComponents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScheduleFormComponents.swift; sourceTree = "<group>"; };
+		020000000000000000000035 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
+		020000000000000000000036 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
+		020000000000000000000040 /* MarkerConcealmentTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MarkerConcealmentTests.swift; sourceTree = "<group>"; };
 		020000000000000000000041 /* KnotQMobileTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = KnotQMobileTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		020000000000000000000050 /* SchemeEditorLayoutManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SchemeEditorLayoutManager.swift; sourceTree = "<group>"; };
 		020000000000000000000051 /* SchemeEditorBlockAttachment.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SchemeEditorBlockAttachment.swift; sourceTree = "<group>"; };
@@ -202,6 +204,10 @@
 		020000000000000000000067 /* EditorCoordinator+Editing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "EditorCoordinator+Editing.swift"; sourceTree = "<group>"; };
 		020000000000000000000068 /* EditorCoordinator+Processing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "EditorCoordinator+Processing.swift"; sourceTree = "<group>"; };
 		020000000000000000000069 /* EditorCoordinator+Toolbar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "EditorCoordinator+Toolbar.swift"; sourceTree = "<group>"; };
+		02000000000000000000006A /* SchemeEditorRemoteMerge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SchemeEditorRemoteMerge.swift; sourceTree = "<group>"; };
+		02000000000000000000006B /* RemoteMergeTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RemoteMergeTests.swift; sourceTree = "<group>"; };
+		02000000000000000000006C /* L10n.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = L10n.swift; sourceTree = "<group>"; };
+		02000000000000000000006D /* Localizable.xcstrings */ = {isa = PBXFileReference; lastKnownFileType = text.json.xcstrings; path = Localizable.xcstrings; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -287,12 +293,14 @@
 				02000000000000000000000A /* SearchScreen.swift */,
 				02000000000000000000000B /* SettingsScreen.swift */,
 				02000000000000000000000C /* SharedViews.swift */,
-					02000000000000000000000D /* KnotQMobile-Bridging-Header.h */,
-					02000000000000000000000E /* Info.plist */,
-					020000000000000000000035 /* PrivacyInfo.xcprivacy */,
-					02000000000000000000002E /* GoogleService-Info.plist */,
-					020000000000000000000014 /* KnotQMobile.entitlements */,
-					020000000000000000000011 /* Assets.xcassets */,
+				02000000000000000000000D /* KnotQMobile-Bridging-Header.h */,
+				02000000000000000000000E /* Info.plist */,
+				020000000000000000000035 /* PrivacyInfo.xcprivacy */,
+				02000000000000000000002E /* GoogleService-Info.plist */,
+				020000000000000000000014 /* KnotQMobile.entitlements */,
+				020000000000000000000011 /* Assets.xcassets */,
+				02000000000000000000006D /* Localizable.xcstrings */,
+				02000000000000000000006C /* L10n.swift */,
 				020000000000000000000066 /* SchemeTextView.swift */,
 				020000000000000000000067 /* EditorCoordinator+Editing.swift */,
 				020000000000000000000068 /* EditorCoordinator+Processing.swift */,
@@ -333,10 +341,10 @@
 		040000000000000000000004 /* KnotQUpcomingWidget */ = {
 			isa = PBXGroup;
 			children = (
-					020000000000000000000019 /* KnotQUpcomingWidget.swift */,
-					02000000000000000000001A /* Info.plist */,
-					020000000000000000000036 /* PrivacyInfo.xcprivacy */,
-					02000000000000000000001B /* KnotQUpcomingWidget.entitlements */,
+				020000000000000000000019 /* KnotQUpcomingWidget.swift */,
+				02000000000000000000001A /* Info.plist */,
+				020000000000000000000036 /* PrivacyInfo.xcprivacy */,
+				02000000000000000000001B /* KnotQUpcomingWidget.entitlements */,
 			);
 			path = KnotQUpcomingWidget;
 			sourceTree = "<group>";
@@ -375,7 +383,7 @@
 				060000000000000000000001 /* Sources */,
 				030000000000000000000001 /* Frameworks */,
 				070000000000000000000001 /* Resources */,
-				0C0000000000000000000001 /* Embed App Extensions */,
+				0C0000000000000000000001 /* Embed Foundation Extensions */,
 			);
 			buildRules = (
 			);
@@ -383,12 +391,12 @@
 				0E0000000000000000000001 /* PBXTargetDependency */,
 			);
 			name = KnotQMobile;
-			productName = KnotQMobile;
-			productReference = 02000000000000000000000F /* KnotQMobile.app */;
 			packageProductDependencies = (
 				0F0000000000000000000002 /* FirebaseCore */,
 				0F0000000000000000000003 /* FirebaseMessaging */,
 			);
+			productName = KnotQMobile;
+			productReference = 02000000000000000000000F /* KnotQMobile.app */;
 			productType = "com.apple.product-type.application";
 		};
 		050000000000000000000002 /* KnotQUpcomingWidget */ = {
@@ -434,7 +442,7 @@
 			attributes = {
 				BuildIndependentTargetsInParallel = 1;
 				LastSwiftUpdateCheck = 2650;
-				LastUpgradeCheck = 2650;
+				LastUpgradeCheck = 2660;
 				TargetAttributes = {
 					050000000000000000000001 = {
 						CreatedOnToolsVersion = 26.5;
@@ -465,6 +473,37 @@
 			knownRegions = (
 				en,
 				Base,
+				es,
+				fr,
+				de,
+				it,
+				"pt-BR",
+				"pt-PT",
+				nl,
+				sv,
+				da,
+				nb,
+				fi,
+				pl,
+				cs,
+				sk,
+				hu,
+				ro,
+				el,
+				ru,
+				uk,
+				tr,
+				ar,
+				he,
+				hi,
+				id,
+				ms,
+				th,
+				vi,
+				ja,
+				ko,
+				"zh-Hans",
+				"zh-Hant",
 			);
 			mainGroup = 040000000000000000000001;
 			minimizedProjectReferenceProxies = 1;
@@ -487,19 +526,21 @@
 		070000000000000000000001 /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
-				files = (
-					01000000000000000000000E /* Assets.xcassets in Resources */,
-					01000000000000000000002E /* GoogleService-Info.plist in Resources */,
-					010000000000000000000035 /* PrivacyInfo.xcprivacy in Resources */,
-				);
+			files = (
+				01000000000000000000000E /* Assets.xcassets in Resources */,
+				01000000000000000000002E /* GoogleService-Info.plist in Resources */,
+				010000000000000000000035 /* PrivacyInfo.xcprivacy in Resources */,
+				01000000000000000000006D /* Localizable.xcstrings in Resources */,
+			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 		070000000000000000000002 /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
-				files = (
-					010000000000000000000036 /* PrivacyInfo.xcprivacy in Resources */,
-				);
+			files = (
+				010000000000000000000036 /* PrivacyInfo.xcprivacy in Resources */,
+				01000000000000000000006E /* Localizable.xcstrings in Resources */,
+			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 		070000000000000000000003 /* Resources */ = {
@@ -539,6 +580,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				010000000000000000000001 /* KnotQMobileApp.swift in Sources */,
+				01000000000000000000006C /* L10n.swift in Sources */,
 				010000000000000000000002 /* Models.swift in Sources */,
 				01000000000000000000000D /* Generated/KnotQMobileCore.swift in Sources */,
 				010000000000000000000003 /* RustBridge.swift in Sources */,
@@ -607,6 +649,7 @@
 			files = (
 				010000000000000000000014 /* WidgetSnapshotStore.swift in Sources */,
 				010000000000000000000015 /* KnotQUpcomingWidget.swift in Sources */,
+				01000000000000000000006F /* L10n.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -642,6 +685,8 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
+				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
+				CLANG_ANALYZER_LOCALIZABILITY_NONLOCALIZED = YES;
 				CLANG_ANALYZER_NONNULL = YES;
 				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
 				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
@@ -672,8 +717,10 @@
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				COPY_PHASE_STRIP = NO;
 				DEBUG_INFORMATION_FORMAT = dwarf;
+				DEVELOPMENT_TEAM = T35KD9JHQ6;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
 				ENABLE_TESTABILITY = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = NO;
 				GCC_C_LANGUAGE_STANDARD = gnu17;
 				GCC_DYNAMIC_NO_PIC = NO;
 				GCC_NO_COMMON_BLOCKS = YES;
@@ -693,6 +740,7 @@
 				MTL_FAST_MATH = YES;
 				ONLY_ACTIVE_ARCH = YES;
 				SDKROOT = iphoneos;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
 				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
 			};
@@ -702,6 +750,8 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
+				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
+				CLANG_ANALYZER_LOCALIZABILITY_NONLOCALIZED = YES;
 				CLANG_ANALYZER_NONNULL = YES;
 				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
 				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
@@ -732,8 +782,10 @@
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				COPY_PHASE_STRIP = NO;
 				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				DEVELOPMENT_TEAM = T35KD9JHQ6;
 				ENABLE_NS_ASSERTIONS = NO;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = NO;
 				GCC_C_LANGUAGE_STANDARD = gnu17;
 				GCC_NO_COMMON_BLOCKS = YES;
 				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
@@ -746,6 +798,7 @@
 				MTL_ENABLE_DEBUG_INFO = NO;
 				MTL_FAST_MATH = YES;
 				SDKROOT = iphoneos;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SWIFT_COMPILATION_MODE = wholemodule;
 				SWIFT_OPTIMIZATION_LEVEL = "-O";
 				VALIDATE_PRODUCT = YES;
@@ -755,14 +808,13 @@
 		0A0000000000000000000003 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				APS_ENVIRONMENT = development;
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_ENTITLEMENTS = KnotQMobile/KnotQMobile.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_ASSET_PATHS = "";
-				DEVELOPMENT_TEAM = T35KD9JHQ6;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = KnotQMobile/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = KnotQ;
@@ -793,14 +845,13 @@
 		0A0000000000000000000004 /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				APS_ENVIRONMENT = production;
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_ENTITLEMENTS = KnotQMobile/KnotQMobile.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_ASSET_PATHS = "";
-				DEVELOPMENT_TEAM = T35KD9JHQ6;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = KnotQMobile/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = KnotQ;
@@ -836,7 +887,6 @@
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = T35KD9JHQ6;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = KnotQUpcomingWidget/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
@@ -863,7 +913,6 @@
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = T35KD9JHQ6;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = KnotQUpcomingWidget/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
@@ -888,7 +937,6 @@
 				BUNDLE_LOADER = "$(TEST_HOST)";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = T35KD9JHQ6;
 				GENERATE_INFOPLIST_FILE = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
 				MARKETING_VERSION = 1.0;
@@ -907,7 +955,6 @@
 				BUNDLE_LOADER = "$(TEST_HOST)";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = T35KD9JHQ6;
 				GENERATE_INFOPLIST_FILE = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
 				MARKETING_VERSION = 1.0;

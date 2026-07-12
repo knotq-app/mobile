@@ -20,8 +20,8 @@ enum SyncAuthMode: String, CaseIterable, Identifiable {
 
     var title: String {
         switch self {
-        case .signIn: "Sign In"
-        case .createAccount: "Create Account"
+        case .signIn: L10n.t("mobile.auth.sign_in")
+        case .createAccount: L10n.t("mobile.auth.create_account")
         }
     }
 }
@@ -116,9 +116,9 @@ struct DesktopUpcomingRail: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 10) {
-                UpcomingSection(title: "Assignments", empty: "None", occurrences: assignments, theme: theme, timeFormat: timeFormat, onToggleOccurrence: onToggleOccurrence, onOpenOccurrence: onOpenOccurrence)
-                UpcomingSection(title: "Reminders", empty: "None", occurrences: reminders, theme: theme, timeFormat: timeFormat, onToggleOccurrence: onToggleOccurrence, onOpenOccurrence: onOpenOccurrence)
-                UpcomingSection(title: "Upcoming", empty: "None today", occurrences: upcomingEvents, theme: theme, timeFormat: timeFormat, onToggleOccurrence: onToggleOccurrence, onOpenOccurrence: onOpenOccurrence)
+                UpcomingSection(title: L10n.t("upcoming.section.assignments"), empty: L10n.t("upcoming.empty.none"), occurrences: assignments, theme: theme, timeFormat: timeFormat, onToggleOccurrence: onToggleOccurrence, onOpenOccurrence: onOpenOccurrence)
+                UpcomingSection(title: L10n.t("upcoming.section.reminders"), empty: L10n.t("upcoming.empty.none"), occurrences: reminders, theme: theme, timeFormat: timeFormat, onToggleOccurrence: onToggleOccurrence, onOpenOccurrence: onOpenOccurrence)
+                UpcomingSection(title: L10n.t("upcoming.section.upcoming"), empty: L10n.t("upcoming.empty.none_today"), occurrences: upcomingEvents, theme: theme, timeFormat: timeFormat, onToggleOccurrence: onToggleOccurrence, onOpenOccurrence: onOpenOccurrence)
             }
             .padding(.horizontal, 4)
             .padding(.top, 8)
@@ -197,21 +197,21 @@ struct IPadSidebar: View {
                 .padding(.bottom, 10)
 
             VStack(spacing: 2) {
-                row(.calendar, title: "Calendar", icon: "calendar", color: theme.textPrimary)
-                row(.daily, title: "Daily", icon: "checklist", color: dailyQueueColor(dark: theme.isDark))
-                row(.settings, title: "Settings", icon: "gearshape", color: theme.textDim)
+                row(.calendar, title: L10n.t("menu.calendar"), icon: "calendar", color: theme.textPrimary)
+                row(.daily, title: L10n.t("menu.daily"), icon: "checklist", color: dailyQueueColor(dark: theme.isDark))
+                row(.settings, title: L10n.t("settings.header.title"), icon: "gearshape", color: theme.textDim)
             }
             .padding(.horizontal, 10)
 
             HStack(spacing: 6) {
-                Text("Schemes")
+                Text(L10n.t("onboarding.step.schemes.title"))
                     .font(.footnote.weight(.semibold))
                     .foregroundStyle(theme.textDim)
                 Spacer(minLength: 0)
                 Menu {
-                    Button("New Scheme", systemImage: "doc.badge.plus", action: onNewScheme)
-                    Button("Folder", systemImage: "folder.badge.plus", action: onNewFolder)
-                    Button("Google Calendar", systemImage: "calendar.badge.plus") {
+                    Button(L10n.t("mobile.sidebar.new_scheme"), systemImage: "doc.badge.plus", action: onNewScheme)
+                    Button(L10n.t("sidebar.context.folder"), systemImage: "folder.badge.plus", action: onNewFolder)
+                    Button(L10n.t("settings.google_calendar.section"), systemImage: "calendar.badge.plus") {
                         onGoogleCalendar(nil)
                     }
                 } label: {
@@ -249,7 +249,7 @@ struct IPadSidebar: View {
                 .foregroundStyle(theme.textDim)
                 .frame(width: 18)
 
-            TextField("Search", text: searchQuery)
+            TextField(L10n.t("mobile.search.nav_title"), text: searchQuery)
                 .autocorrectionDisabled()
                 .textInputAutocapitalization(.never)
                 .submitLabel(.search)
@@ -280,7 +280,7 @@ struct IPadSidebar: View {
         if searchQuery.wrappedValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             EmptyView()
         } else if searchHits.isEmpty {
-            Text("No results.")
+            Text(L10n.t("mobile.search.no_results"))
                 .font(.system(size: 13))
                 .foregroundStyle(theme.textMuted)
                 .frame(maxWidth: .infinity, alignment: .leading)

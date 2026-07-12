@@ -14,12 +14,12 @@ enum MobilePane: String, CaseIterable, Identifiable {
 
     var title: String {
         switch self {
-        case .home: "Home"
-        case .calendar: "Calendar"
-        case .scheme: "Scheme"
-        case .daily: "Daily"
-        case .search: "Search"
-        case .settings: "Settings"
+        case .home: L10n.t("mobile.pane.home")
+        case .calendar: L10n.t("menu.calendar")
+        case .scheme: L10n.t("mobile.pane.scheme")
+        case .daily: L10n.t("menu.daily")
+        case .search: L10n.t("mobile.search.nav_title")
+        case .settings: L10n.t("settings.header.title")
         }
     }
 
@@ -192,7 +192,7 @@ struct ContentView: View {
             // Paint it with the theme background so those gaps match the app.
             .onAppear { applyWindowBackground(theme.bgApp) }
             .onChange(of: theme.isDark) { _, _ in applyWindowBackground(theme.bgApp) }
-            .alert("KnotQ", isPresented: Binding(
+            .alert(L10n.t("mobile.app_name"), isPresented: Binding(
                 get: { model.errorMessage != nil },
                 set: { showing in
                     if !showing {
@@ -200,7 +200,7 @@ struct ContentView: View {
                     }
                 }
             )) {
-                Button("OK", role: .cancel) {
+                Button(L10n.t("common.ok"), role: .cancel) {
                     model.dismissErrorMessage()
                 }
             } message: {
@@ -262,7 +262,7 @@ struct ContentView: View {
             .presentationDragIndicator(.visible)
         }
         .sheet(isPresented: $showingNewFolder) {
-                NameSheet(title: "New Folder", placeholder: "Folder name", validator: { name in
+                NameSheet(title: L10n.t("menu.new_folder"), placeholder: L10n.t("mobile.folder.name_placeholder"), validator: { name in
                     WorkspaceNameValidation.folderError(name, root: model.snapshot?.root)
                 }) { name in
                     model.createFolder(name: name)
@@ -270,7 +270,7 @@ struct ContentView: View {
                 }
                 .presentationDetents([.height(220)])
             }
-        .confirmationDialog("Recurring Task", isPresented: Binding(
+        .confirmationDialog(L10n.t("mobile.event.recurring_task_title"), isPresented: Binding(
             get: { pendingOccurrenceMove != nil },
             set: { showing in
                 if !showing { cancelPendingOccurrenceMove() }
@@ -285,9 +285,9 @@ struct ContentView: View {
             Button(EventOccurrenceScope.allEvents.label) {
                 applyPendingOccurrenceMove(scope: .allEvents)
             }
-            Button("Cancel", role: .cancel) { cancelPendingOccurrenceMove() }
+            Button(L10n.t("common.cancel"), role: .cancel) { cancelPendingOccurrenceMove() }
         } message: {
-            Text("Which tasks should this move apply to?")
+            Text(L10n.t("mobile.event.move_scope_prompt"))
         }
         .onAppear {
             model.ensureTodayDailyQueue()
@@ -383,7 +383,7 @@ struct ContentView: View {
                 }
             )
             .navigationSplitViewColumnWidth(min: 220, ideal: 264, max: 340)
-            .navigationTitle("KnotQ")
+            .navigationTitle(L10n.t("mobile.app_name"))
         } detail: {
             HStack(spacing: 0) {
                 // Separator right after the sidebar — shown for every detail view,
@@ -471,7 +471,7 @@ struct ContentView: View {
                 onNewFolder: { showingNewFolder = true },
                 onGoogleCalendar: { startGoogleCalendarImport(parentID: $0) }
             )
-            .navigationTitle("Home")
+            .navigationTitle(L10n.t("mobile.pane.home"))
             .navigationBarTitleDisplayMode(.inline)
         case .calendar, .home, .search:
             // Upcoming rail between the sidebar and the timeline, mirroring the
@@ -534,7 +534,7 @@ struct ContentView: View {
                 )
                 .onboardingTarget(.scheme)
             } else {
-                EmptyState(title: "Pick a scheme", detail: "Choose a scheme from the sidebar.", theme: theme)
+                EmptyState(title: L10n.t("mobile.scheme.pick_title"), detail: L10n.t("mobile.scheme.pick_detail_sidebar"), theme: theme)
             }
         case .daily:
             DailyFeedPane(
@@ -565,7 +565,7 @@ struct ContentView: View {
             .onboardingTarget(.daily)
         case .settings:
             SettingsForm(theme: theme)
-                .navigationTitle("Settings")
+                .navigationTitle(L10n.t("settings.header.title"))
                 .navigationBarTitleDisplayMode(.inline)
         }
     }
@@ -642,7 +642,7 @@ struct ContentView: View {
                 )
                 .onboardingTarget(.scheme)
             } else {
-                EmptyState(title: "Pick a scheme", detail: "Choose a scheme from Home.", theme: theme)
+                EmptyState(title: L10n.t("mobile.scheme.pick_title"), detail: L10n.t("mobile.scheme.pick_detail_home"), theme: theme)
             }
         case .daily:
             DailyFeedPane(
@@ -831,7 +831,7 @@ struct ContentView: View {
     }
 
     private func nextUntitledSchemeName() -> String {
-        let base = "Untitled"
+        let base = L10n.t("sidebar.new_item_default_name")
         if WorkspaceNameValidation.schemeError(base, root: model.snapshot?.root) == nil {
             return base
         }

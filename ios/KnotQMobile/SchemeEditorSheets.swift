@@ -13,20 +13,20 @@ struct AddItemSheet: View {
     var body: some View {
         NavigationStack {
             Form {
-                TextField("Item", text: $text, axis: .vertical)
-                Picker("Marker", selection: $marker) {
+                TextField(L10n.t("sidebar.context.item"), text: $text, axis: .vertical)
+                Picker(L10n.t("mobile.item.marker_label"), selection: $marker) {
                     ForEach(Marker.allCases) { marker in
                         Label(marker.label, systemImage: marker.icon).tag(marker)
                     }
                 }
             }
-            .navigationTitle("New Item")
+            .navigationTitle(L10n.t("sidebar.context.new_item"))
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") { dismiss() }
+                    Button(L10n.t("common.cancel")) { dismiss() }
                 }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Add") {
+                    Button(L10n.t("mobile.item.add_action")) {
                         if todayDaily {
                             model.addTodayDailyItem(text: text, marker: marker)
                         } else if let schemeID {
@@ -101,17 +101,17 @@ struct ItemDateSheet: View {
                     }
                 }
             }
-            .navigationTitle("Schedule")
+            .navigationTitle(L10n.t("mobile.item.schedule_title"))
             .navigationBarTitleDisplayMode(.inline)
             .onAppear {
                 promoteMarkerToTaskIfNeeded()
             }
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") { dismiss() }
+                    Button(L10n.t("common.cancel")) { dismiss() }
                 }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Save") { save() }
+                    Button(L10n.t("common.save")) { save() }
                 }
             }
         }

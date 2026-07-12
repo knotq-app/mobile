@@ -137,17 +137,17 @@ import kotlin.math.roundToInt
             setPadding(dp(8), dp(10), dp(8), dp(8))
             background = rounded(theme.bgSidebar, dp(10), theme.borderOverlay)
         }
-        panel.addView(navSpecial("Home", theme.accent, selectedTab == TAB_HOME) {
+        panel.addView(navSpecial(L10n.t(this, "mobile.nav.home"), theme.accent, selectedTab == TAB_HOME) {
             selectedTab = TAB_HOME
             selectedSchemeId = null
             render()
         })
-        panel.addView(navSpecial("Calendar", theme.textPrimary, selectedTab == TAB_CALENDAR) {
+        panel.addView(navSpecial(L10n.t(this, "menu.calendar"), theme.textPrimary, selectedTab == TAB_CALENDAR) {
             selectedTab = TAB_CALENDAR
             selectedSchemeId = null
             render()
         })
-        panel.addView(navSpecial("Daily", if (theme.isDark) rgb(0xb8c9e8) else rgb(0x5a7aad), selectedTab == TAB_DAILY) {
+        panel.addView(navSpecial(L10n.t(this, "menu.daily"), if (theme.isDark) rgb(0xb8c9e8) else rgb(0x5a7aad), selectedTab == TAB_DAILY) {
             selectedTab = TAB_DAILY
             selectedSchemeId = null
             ensureDaily()
@@ -162,7 +162,7 @@ import kotlin.math.roundToInt
         panel.addView(LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            addView(iconActionChip(GLYPH_ADD, "New") { showNewMenu() }, LinearLayout.LayoutParams(0, dp(30), 1f))
+            addView(iconActionChip(GLYPH_ADD, L10n.t(this@renderNavigator, "sidebar.footer.new")) { showNewMenu() }, LinearLayout.LayoutParams(0, dp(30), 1f))
             addView(chip(GLYPH_SETTINGS) {
                 selectedTab = TAB_SETTINGS
                 selectedSchemeId = null
@@ -184,13 +184,13 @@ import kotlin.math.roundToInt
         body.addView(homeQuickActions(), LinearLayout.LayoutParams(-1, dp(34)).apply {
             setMargins(0, 0, 0, dp(14))
         })
-        body.addView(sectionHeader("Today"))
+        body.addView(sectionHeader(L10n.t(this, "event.date.today")))
         body.addView(homeDailySummaryRow(), LinearLayout.LayoutParams(-1, dp(48)).apply {
             setMargins(0, 0, 0, dp(8))
         })
-        addOccurrenceSection(body, "Today", "None today", todayOccurrences())
+        addOccurrenceSection(body, L10n.t(this, "event.date.today"), L10n.t(this, "upcoming.empty.none_today"), todayOccurrences())
 
-        body.addView(sectionHeader("Schemes"))
+        body.addView(sectionHeader(L10n.t(this, "onboarding.step.schemes.title")))
         val tree = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(0, dp(2), 0, dp(2))
@@ -199,7 +199,7 @@ import kotlin.math.roundToInt
             addNode(tree, it, 0, spacious = true)
         }
         if (tree.childCount == 0) {
-            tree.addView(text("No schemes", theme.textMuted, 13f, false).apply {
+            tree.addView(text(L10n.t(this, "mobile.home.no_schemes"), theme.textMuted, 13f, false).apply {
                 setPadding(dp(8), dp(6), dp(8), dp(10))
             })
         }
@@ -210,7 +210,7 @@ import kotlin.math.roundToInt
             val combined = JSONArray()
             calendar().optJSONArray("overdue")?.forEachObject { if (combined.length() < 14) combined.put(it) }
             calendar().optJSONArray("upcoming")?.forEachObject { if (combined.length() < 14) combined.put(it) }
-            addOccurrenceSection(body, "Upcoming", "Nothing scheduled", combined)
+            addOccurrenceSection(body, L10n.t(this, "upcoming.section.upcoming"), L10n.t(this, "mobile.home.nothing_scheduled"), combined)
         }
         root.addView(scroll(body), LinearLayout.LayoutParams(-1, 0, 1f))
         return root
@@ -230,7 +230,7 @@ import kotlin.math.roundToInt
         val combined = JSONArray()
         calendar().optJSONArray("overdue")?.forEachObject { if (combined.length() < 14) combined.put(it) }
         calendar().optJSONArray("upcoming")?.forEachObject { if (combined.length() < 14) combined.put(it) }
-        addOccurrenceSection(body, "Upcoming", "Nothing scheduled", combined)
+        addOccurrenceSection(body, L10n.t(this, "upcoming.section.upcoming"), L10n.t(this, "mobile.home.nothing_scheduled"), combined)
         root.addView(scroll(body), LinearLayout.LayoutParams(-1, 0, 1f))
         return root
     }
@@ -241,8 +241,8 @@ import kotlin.math.roundToInt
             gravity = Gravity.CENTER_VERTICAL
             setPadding(dp(12), 0, dp(12), 0)
             background = rounded(theme.bgModal, dp(8), theme.borderOverlay)
-            addView(text("Search KnotQ", theme.textMuted, 14f, false), LinearLayout.LayoutParams(0, -1, 1f))
-            addView(iconImage(R.drawable.ic_knotq_search_24, theme.textMuted, "Search"), LinearLayout.LayoutParams(dp(28), dp(ICON_SEARCH_VECTOR_SIZE_DP)))
+            addView(text(L10n.t(this@homeSearchEntry, "search.placeholder"), theme.textMuted, 14f, false), LinearLayout.LayoutParams(0, -1, 1f))
+            addView(iconImage(R.drawable.ic_knotq_search_24, theme.textMuted, L10n.t(this@homeSearchEntry, "mobile.a11y.search")), LinearLayout.LayoutParams(dp(28), dp(ICON_SEARCH_VECTOR_SIZE_DP)))
             setOnClickListener {
                 selectedTab = TAB_SEARCH
                 selectedSchemeId = null
@@ -257,8 +257,8 @@ import kotlin.math.roundToInt
         root.addView(LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            addView(text("Schemes", theme.textPrimary, 20f, true), LinearLayout.LayoutParams(0, dp(34), 1f))
-            addView(iconSquareImage(R.drawable.ic_knotq_plus_24, "New", iconSize = 17) { showNewMenu() }, LinearLayout.LayoutParams(dp(30), dp(30)))
+            addView(text(L10n.t(this@phoneSchemesSection, "onboarding.step.schemes.title"), theme.textPrimary, 20f, true), LinearLayout.LayoutParams(0, dp(34), 1f))
+            addView(iconSquareImage(R.drawable.ic_knotq_plus_24, L10n.t(this@phoneSchemesSection, "sidebar.footer.new"), iconSize = 17) { showNewMenu() }, LinearLayout.LayoutParams(dp(30), dp(30)))
         }, LinearLayout.LayoutParams(-1, dp(37)).apply {
             setMargins(dp(2), 0, dp(2), dp(3))
         })
@@ -301,7 +301,7 @@ import kotlin.math.roundToInt
         val date = entry?.optString("date") ?: selectedDate.toString()
         val detail = when {
             openCount == 0 -> MobileDateFormatting.shortDay(date)
-            else -> "${MobileDateFormatting.shortDay(date)} · $openCount"
+            else -> L10n.t(this, "mobile.home.daily_row_open_count", mapOf("day" to MobileDateFormatting.shortDay(date), "count" to openCount.toString()))
         }
         return LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
@@ -310,7 +310,7 @@ import kotlin.math.roundToInt
             addView(colorSquare(dailyAccent(), 10), LinearLayout.LayoutParams(dp(10), dp(10)).apply {
                 setMargins(0, 0, dp(9), 0)
             })
-            addView(text("Daily", theme.textPrimary, 14f, true), LinearLayout.LayoutParams(-2, -1))
+            addView(text(L10n.t(this@homeDailySchemeRow, "menu.daily"), theme.textPrimary, 14f, true), LinearLayout.LayoutParams(-2, -1))
             addView(text(detail, theme.textSoft, 12f, true).apply {
                 setPadding(dp(9), 0, 0, 0)
             }, LinearLayout.LayoutParams(0, -1, 1f))
@@ -344,19 +344,17 @@ import kotlin.math.roundToInt
             addView(LinearLayout(this@homeQuickActions).apply {
                 orientation = LinearLayout.HORIZONTAL
                 gravity = Gravity.CENTER_VERTICAL
-                addView(iconActionChip(GLYPH_TICK, "Daily Item") { addDailyItemFromHome() }, marginRight(dp(6), -2, dp(30)))
-                addView(iconActionChip(GLYPH_CALENDAR, "Calendar") { showCalendarItemDialog() }, marginRight(dp(6), -2, dp(30)))
-                addView(iconActionChip(GLYPH_EDIT, "New Scheme") {
-                    showNameDialog("New Scheme", "", { validateSchemeName(it, folderId = rootFolderId()) }) { name ->
-                        mutate(obj("type" to "create_scheme", "name" to name, "position" to 0))
-                    }
+                addView(iconActionChip(GLYPH_TICK, L10n.t(this@homeQuickActions, "mobile.home.action_daily_item")) { addDailyItemFromHome() }, marginRight(dp(6), -2, dp(30)))
+                addView(iconActionChip(GLYPH_CALENDAR, L10n.t(this@homeQuickActions, "menu.calendar")) { showCalendarItemDialog() }, marginRight(dp(6), -2, dp(30)))
+                addView(iconActionChip(GLYPH_EDIT, L10n.t(this@homeQuickActions, "mobile.new_menu.new_scheme")) {
+                    quickCreateScheme()
                 }, marginRight(dp(6), -2, dp(30)))
-                addView(iconActionChip(GLYPH_FOLDER, "New Folder") {
-                    showNameDialog("New Folder", "", { validateFolderName(it) }) { name ->
+                addView(iconActionChip(GLYPH_FOLDER, L10n.t(this@homeQuickActions, "sidebar.context.new_folder")) {
+                    showNameDialog(L10n.t(this@homeQuickActions, "sidebar.context.new_folder"), "", { validateFolderName(it) }) { name ->
                         mutate(obj("type" to "create_folder", "name" to name))
                     }
                 }, LinearLayout.LayoutParams(-2, dp(30)))
-                addView(iconActionChip(GLYPH_CLOUD, "Google") { startGoogleCalendarImport() }, LinearLayout.LayoutParams(-2, dp(30)))
+                addView(iconActionChip(GLYPH_CLOUD, L10n.t(this@homeQuickActions, "mobile.home.action_google")) { startGoogleCalendarImport() }, LinearLayout.LayoutParams(-2, dp(30)))
             })
         }
 
@@ -366,7 +364,12 @@ import kotlin.math.roundToInt
         val itemCount = scheme?.optJSONArray("items")?.length() ?: 0
         val doneCount = countDoneItems(scheme)
         val date = entry?.optString("date") ?: selectedDate.toString()
-        val detail = if (itemCount == 0) "No items" else "$doneCount / $itemCount complete"
+        val detail = if (itemCount == 0) {
+            L10n.t(this, "sidebar.empty_items")
+        } else {
+            L10n.t(this, "mobile.home.daily_progress", mapOf("done" to doneCount.toString(), "total" to itemCount.toString()))
+        }
+        val summaryText = L10n.t(this, "mobile.home.daily_summary_row", mapOf("day" to MobileDateFormatting.shortDay(date), "detail" to detail))
         return LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
@@ -377,8 +380,8 @@ import kotlin.math.roundToInt
             })
             addView(LinearLayout(this@homeDailySummaryRow).apply {
                 orientation = LinearLayout.VERTICAL
-                addView(text("Daily", theme.textPrimary, 14f, true), LinearLayout.LayoutParams(-1, dp(20)))
-                addView(text("${MobileDateFormatting.shortDay(date)} · $detail", theme.textDim, 12f, false), LinearLayout.LayoutParams(-1, dp(17)))
+                addView(text(L10n.t(this@homeDailySummaryRow, "menu.daily"), theme.textPrimary, 14f, true), LinearLayout.LayoutParams(-1, dp(20)))
+                addView(text(summaryText, theme.textDim, 12f, false), LinearLayout.LayoutParams(-1, dp(17)))
             }, LinearLayout.LayoutParams(0, -2, 1f))
             addView(text(GLYPH_ADD, theme.textPrimary, ICON_ROW_SIZE_SP, true).apply {
                 gravity = Gravity.CENTER
@@ -416,7 +419,7 @@ import kotlin.math.roundToInt
             setBackgroundColor(theme.bgApp)
         }
         val body = page()
-        body.addView(sectionHeader("Schemes"))
+        body.addView(sectionHeader(L10n.t(this, "onboarding.step.schemes.title")))
         body.addView(dailyShortcutRow(), LinearLayout.LayoutParams(-1, dp(30)).apply {
             setMargins(0, 0, 0, dp(6))
         })
@@ -441,7 +444,7 @@ import kotlin.math.roundToInt
             addView(colorSquare(dailyAccent(), 9), LinearLayout.LayoutParams(dp(9), dp(9)).apply {
                 setMargins(0, 0, dp(7), 0)
             })
-            addView(text("Daily", theme.textPrimary, 13f, true).apply { maxLines = 1 }, LinearLayout.LayoutParams(0, -1, 1f))
+            addView(text(L10n.t(this@dailyShortcutRow, "menu.daily"), theme.textPrimary, 13f, true).apply { maxLines = 1 }, LinearLayout.LayoutParams(0, -1, 1f))
             addView(text(GLYPH_RIGHT, theme.textMuted, ICON_TOOL_SIZE_SP, true).apply { gravity = Gravity.CENTER }, LinearLayout.LayoutParams(dp(16), -1))
             setOnClickListener {
                 selectedTab = TAB_DAILY
@@ -455,7 +458,7 @@ import kotlin.math.roundToInt
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
         }
-        val title = if (schemes.length() == 0) "Archive" else "Archive ${schemes.length()}"
+        val title = if (schemes.length() == 0) L10n.t(this, "sidebar.context.archive") else L10n.t(this, "mobile.home.archive_count_header", mapOf("count" to schemes.length().toString()))
         root.addView(text(title, theme.textDim, if (compact) 12f else 14f, true).apply {
             setPadding(dp(if (compact) 6 else 8), dp(if (compact) 5 else 8), dp(6), dp(if (compact) 4 else 6))
             setOnLongClickListener {
@@ -465,7 +468,7 @@ import kotlin.math.roundToInt
         })
         if (schemes.length() == 0) {
             if (!compact) {
-                root.addView(text("No archived schemes", theme.textMuted, 13f, false).apply {
+                root.addView(text(L10n.t(this, "mobile.home.no_archived_schemes"), theme.textMuted, 13f, false).apply {
                     setPadding(dp(8), 0, dp(8), dp(4))
                 })
             }
@@ -499,4 +502,3 @@ import kotlin.math.roundToInt
                 true
             }
         }
-

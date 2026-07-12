@@ -189,23 +189,23 @@ import kotlin.math.roundToInt
             background = rounded(theme.bgModal, dp(16), theme.borderOverlay)
         }
         card.addView(brandMark(60), LinearLayout.LayoutParams(dp(60), dp(60)).apply { bottomMargin = dp(14) })
-        card.addView(text("KnotQ", theme.textPrimary, 24f, true).apply { gravity = Gravity.CENTER })
+        card.addView(text(L10n.t(this, "mobile.onboarding.account_overlay_title"), theme.textPrimary, 24f, true).apply { gravity = Gravity.CENTER })
         card.addView(
-            text("Local-first planning with optional sync.", theme.textSoft, 13f, false).apply {
+            text(L10n.t(this, "mobile.onboarding.account_overlay_subtitle"), theme.textSoft, 13f, false).apply {
                 gravity = Gravity.CENTER
             },
             LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(4); bottomMargin = dp(18) }
         )
         card.addView(
-            onboardingButton("Sign in or create account", true) { showSyncAccountDialog() },
+            onboardingButton(L10n.t(this, "mobile.onboarding.sign_in_button"), true) { showSyncAccountDialog() },
             LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = dp(10) }
         )
         card.addView(
-            onboardingButton("Continue without account", false) { finishOnboarding() },
+            onboardingButton(L10n.t(this, "mobile.onboarding.continue_without_account_button"), false) { finishOnboarding() },
             LinearLayout.LayoutParams(-1, -2)
         )
         card.addView(
-            text("You can add or remove sync later from Settings.", theme.textMuted, 11f, false).apply {
+            text(L10n.t(this, "mobile.onboarding.sync_footnote"), theme.textMuted, 11f, false).apply {
                 gravity = Gravity.CENTER
             },
             LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(14) }
@@ -314,11 +314,11 @@ import kotlin.math.roundToInt
         }
         if (onboardingStep > 0) {
             buttons.addView(
-                onboardingButton("Back", false) { onboardingBack() },
+                onboardingButton(L10n.t(this, "common.back"), false) { onboardingBack() },
                 LinearLayout.LayoutParams(-2, -2).apply { rightMargin = dp(8) }
             )
         }
-        buttons.addView(text("Skip", theme.textMuted, 13f, true).apply {
+        buttons.addView(text(L10n.t(this, "onboarding.tour.skip"), theme.textMuted, 13f, true).apply {
             setPadding(dp(4), dp(10), dp(12), dp(10))
             setOnClickListener { finishOnboarding() }
         }, LinearLayout.LayoutParams(-2, -2))
@@ -327,7 +327,7 @@ import kotlin.math.roundToInt
             onboardingButton(
                 // "Continue" leads into the sign-in prompt; "Done" finishes when the
                 // user is already signed in (mirrors iOS).
-                if (isLast) (if (syncSession == null) "Continue" else "Done") else "Next",
+                if (isLast) (if (syncSession == null) L10n.t(this, "onboarding.tour.continue") else L10n.t(this, "common.done")) else L10n.t(this, "onboarding.tour.next"),
                 true
             ) { onboardingAdvance() },
             LinearLayout.LayoutParams(-2, -2)

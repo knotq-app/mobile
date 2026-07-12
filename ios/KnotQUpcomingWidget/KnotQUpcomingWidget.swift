@@ -94,13 +94,13 @@ private struct KnotQUpcomingWidgetView: View {
                 )
                 .frame(height: 38, alignment: .center)
                 if visibleItems.count > 1 {
-                    Text("+ \(visibleItems.count - 1) more")
+                    Text(L10n.plural("calendar.month.more_count", visibleItems.count - 1))
                         .font(.caption2.monospacedDigit())
                         .foregroundStyle(theme.textMuted)
                         .lineLimit(1)
                 }
             } else {
-                Text("Nothing scheduled")
+                Text(L10n.t("mobile.home.nothing_scheduled"))
                     .font(.caption)
                     .foregroundStyle(theme.textMuted)
                     .lineLimit(2)
@@ -113,7 +113,7 @@ private struct KnotQUpcomingWidgetView: View {
         VStack(alignment: .leading, spacing: dense ? 0 : 2) {
             currentDateHeader
             if visibleItems.isEmpty {
-                Text("Nothing scheduled")
+                Text(L10n.t("mobile.home.nothing_scheduled"))
                     .font(.system(size: 12))
                     .foregroundStyle(theme.textMuted)
                     .padding(.horizontal, 2)
@@ -247,7 +247,7 @@ private struct KnotQUpcomingWidgetView: View {
     }
 
     private var inlineSummary: String {
-        guard let first = visibleItems.first else { return "Nothing scheduled" }
+        guard let first = visibleItems.first else { return L10n.t("mobile.home.nothing_scheduled") }
         let count = max(0, visibleItems.count - 1)
         let suffix = count > 0 ? " +\(count)" : ""
         return "\(timeLabel(for: first)) • \(title(for: first))\(suffix)"
@@ -255,15 +255,15 @@ private struct KnotQUpcomingWidgetView: View {
 
     private func title(for item: KnotQWidgetOccurrence) -> String {
         let trimmed = item.title.trimmingCharacters(in: .whitespacesAndNewlines)
-        return trimmed.isEmpty ? item.kind.capitalized : trimmed
+        return trimmed.isEmpty ? kindLabel(for: item.kind) : trimmed
     }
 
     private func timeLabel(for item: KnotQWidgetOccurrence) -> String {
         if item.kind == "reminder", let start = item.start {
-            return "At \(formattedDateTime(start))"
+            return L10n.t("upcoming.when.at", ["when": formattedDateTime(start)])
         }
         if item.kind == "assignment", let end = item.end {
-            return "Due \(formattedDateTime(end))"
+            return L10n.t("upcoming.when.due", ["when": formattedDateTime(end)])
         }
         if let start = item.start, let end = item.end {
             return formattedRange(start: start, end: end)
@@ -272,9 +272,9 @@ private struct KnotQUpcomingWidgetView: View {
             return formattedDateTime(start)
         }
         if let end = item.end {
-            return "Due \(formattedDateTime(end))"
+            return L10n.t("upcoming.when.due", ["when": formattedDateTime(end)])
         }
-        return item.kind.capitalized
+        return kindLabel(for: item.kind)
     }
 
     private func formattedRange(start: String, end: String) -> String {
@@ -310,7 +310,7 @@ private struct KnotQUpcomingWidgetView: View {
         guard let date = Self.iso.date(from: raw) else { return raw }
         let formatter = DateFormatter()
         formatter.locale = Locale(identifier: "en_US_POSIX")
-        formatter.dateFormat = entry.snapshot.timeFormat == "twenty_four_hour" ? "HH:mm" : "h:mm"
+        formatter.dateFormat = entry.snapshot.timeFormat == "twenty_four_hour" ? "HH:mm" : "h:mm a"
         return formatter.string(from: date)
     }
 
@@ -389,7 +389,7 @@ private struct WidgetOccurrenceCompactRow: View {
 
     private var titleLabel: String {
         let title = item.title.trimmingCharacters(in: .whitespacesAndNewlines)
-        return title.isEmpty ? item.kind.capitalized : title
+        return title.isEmpty ? kindLabel(for: item.kind) : title
     }
 
     private var schemeAccent: Color {
@@ -490,6 +490,15 @@ private func schemeColor(index: Int32, dark: Bool) -> Color {
     let lightPalette: [UInt32] = [0xb84433, 0xc47400, 0x28764f, 0x2563a6, 0x735aa6, 0xe0a800]
     let palette = dark ? darkPalette : lightPalette
     return Color(hex: palette[Int(index) % palette.count])
+}
+
+private func kindLabel(for kind: String) -> String {
+    switch kind {
+    case "reminder": L10n.t("mobile.widget.kind.reminder")
+    case "assignment": L10n.t("mobile.widget.kind.assignment")
+    case "event": L10n.t("mobile.widget.kind.event")
+    default: kind.capitalized
+    }
 }
 
 private func upcomingDatePrefix(for date: Date) -> String {

@@ -59,32 +59,32 @@ private struct OnboardingStep {
 // Upcoming lives on Home on mobile, so it stays there.
 private let onboardingSteps: [OnboardingStep] = [
     OnboardingStep(
-        title: "Welcome to KnotQ",
-        body: "KnotQ is a single app for calendar events, reminders, assignments, and general notes. It aims to be simple yet functional.",
+        title: L10n.t("onboarding.step.welcome.title"),
+        body: L10n.t("onboarding.step.welcome.body"),
         target: nil,
         focusPane: .home
     ),
     OnboardingStep(
-        title: "Calendar",
-        body: "Your calendar holds events, assignments, and reminders. Long-press to add a task.",
+        title: L10n.t("onboarding.step.calendar.title"),
+        body: L10n.t("mobile.onboarding.calendar_body"),
         target: .calendar,
         focusPane: .calendar
     ),
     OnboardingStep(
-        title: "Schemes",
-        body: "Schemes are editable outlines for projects, notes, and plans. Add start and end times to any line to turn it into a calendar item.",
+        title: L10n.t("onboarding.step.schemes.title"),
+        body: L10n.t("onboarding.step.schemes.body"),
         target: .scheme,
         focusPane: .scheme
     ),
     OnboardingStep(
-        title: "Daily",
-        body: "Daily is a special, default scheme. Write an optimistic task list each day and check off the ones you complete.",
+        title: L10n.t("onboarding.step.daily.title"),
+        body: L10n.t("onboarding.step.daily.body"),
         target: .daily,
         focusPane: .daily
     ),
     OnboardingStep(
-        title: "Upcoming",
-        body: "Upcoming gathers nearby events, assignments, and reminders. You can mark tasks complete right from here.",
+        title: L10n.t("onboarding.step.upcoming.title"),
+        body: L10n.t("onboarding.step.upcoming.body"),
         target: .upcoming,
         focusPane: .home
     )
@@ -153,9 +153,9 @@ struct OnboardingOverlay: View {
                 .shadow(color: .black.opacity(0.18), radius: 8, y: 4)
 
             VStack(spacing: 6) {
-                Text("Enable Sync?")
+                Text(L10n.t("onboarding.sync_prompt.title"))
                     .font(.system(size: 30, weight: .bold))
-                Text("Sync is $3.99 a month and lets you share your workspace across devices. Local-only is fully free.")
+                Text(L10n.t("onboarding.sync_prompt.body"))
                     .font(.system(size: 15, weight: .medium))
                     .foregroundStyle(theme.textSoft)
                     .multilineTextAlignment(.center)
@@ -164,14 +164,14 @@ struct OnboardingOverlay: View {
 
             VStack(spacing: 10) {
                 onboardingAction(
-                    title: "Sign Up",
+                    title: L10n.t("mobile.auth.sign_up"),
                     icon: "person.crop.circle.badge.plus"
                 ) {
                     authenticate(mode: .createAccount)
                 }
 
                 onboardingAction(
-                    title: "Sign In",
+                    title: L10n.t("mobile.auth.sign_in"),
                     icon: "person.crop.circle"
                 ) {
                     authenticate(mode: .signIn)
@@ -180,7 +180,7 @@ struct OnboardingOverlay: View {
                 Button {
                     onComplete()
                 } label: {
-                    Label("Continue Free", systemImage: "internaldrive")
+                    Label(L10n.t("mobile.onboarding.continue_free"), systemImage: "internaldrive")
                         .font(.system(size: 15, weight: .semibold))
                         .frame(maxWidth: .infinity)
                         .frame(height: 46)
@@ -189,7 +189,7 @@ struct OnboardingOverlay: View {
                 .disabled(model.syncAuthInProgress)
             }
 
-            Text("You can subscribe later from Settings.")
+            Text(L10n.t("mobile.onboarding.subscribe_later_note"))
                 .font(.footnote)
                 .foregroundStyle(theme.textSoft)
                 .multilineTextAlignment(.center)
@@ -356,7 +356,7 @@ struct OnboardingOverlay: View {
                 Button {
                     advance()
                 } label: {
-                    Text(isLast ? (model.syncSession == nil ? "Continue" : "Done") : "Next")
+                    Text(isLast ? (model.syncSession == nil ? L10n.t("onboarding.tour.continue") : L10n.t("common.done")) : L10n.t("onboarding.tour.next"))
                         .font(.system(size: 15, weight: .semibold))
                         .padding(.horizontal, 18)
                         .frame(height: 40)

@@ -15,7 +15,7 @@ struct CalendarScreen: View {
                         VStack(spacing: 2) {
                             Text("\(MobileDate.formatDay(calendar.startDate)) - \(MobileDate.formatDay(calendar.endDate))")
                                 .font(.headline)
-                            Button("Today") {
+                            Button(L10n.t("event.date.today")) {
                                 model.weekOffset = 0
                                 model.selectedDate = Date()
                                 model.refresh()
@@ -30,7 +30,7 @@ struct CalendarScreen: View {
                 }
 
                 if !calendar.overdue.isEmpty {
-                    Section("Overdue") {
+                    Section(L10n.t("mobile.calendar.overdue_section")) {
                         ForEach(calendar.overdue) { occurrence in
                             OccurrenceRow(occurrence: occurrence)
                         }
@@ -40,7 +40,7 @@ struct CalendarScreen: View {
                 ForEach(calendar.visibleDays) { day in
                     Section(MobileDate.formatFullDay(day.date)) {
                         if day.occurrences.isEmpty {
-                            Text("No calendar items")
+                            Text(L10n.t("mobile.calendar.no_items"))
                                 .foregroundStyle(.secondary)
                         } else {
                             ForEach(day.occurrences) { occurrence in
@@ -51,7 +51,7 @@ struct CalendarScreen: View {
                 }
 
                 if !calendar.upcoming.isEmpty {
-                    Section("Upcoming") {
+                    Section(L10n.t("upcoming.section.upcoming")) {
                         ForEach(calendar.upcoming) { occurrence in
                             OccurrenceRow(occurrence: occurrence)
                         }
@@ -59,7 +59,7 @@ struct CalendarScreen: View {
                 }
             }
         }
-        .navigationTitle("Calendar")
+        .navigationTitle(L10n.t("sidebar.calendar_label"))
         .refreshable { model.refresh() }
     }
 }
@@ -128,8 +128,8 @@ private struct EventScopePrompt: Identifiable {
 
     var message: String {
         switch action {
-        case .save: "Which tasks should these changes apply to?"
-        case .delete: "Which tasks should be deleted?"
+        case .save: L10n.t("mobile.calendar.scope_save_message")
+        case .delete: L10n.t("mobile.calendar.scope_delete_message")
         }
     }
 }
@@ -207,7 +207,7 @@ struct EventEditorSheet: View {
         NavigationStack {
             Form {
                 Section {
-                    TextField("Title", text: $title)
+                    TextField(L10n.t("mobile.calendar.title_placeholder"), text: $title)
                         .disabled(readOnly)
                     // Scheme lives with the title — they're usually set together.
                     if !isEditing {
@@ -223,7 +223,7 @@ struct EventEditorSheet: View {
                         disabled: readOnly
                     )
                     if isEditing && !readOnly {
-                        Toggle("Completed", isOn: $completed)
+                        Toggle(L10n.t("mobile.calendar.completed_toggle"), isOn: $completed)
                     }
                     if hasStart || hasEnd {
                         NotificationLeadTimePicker(selection: notificationOffsetBinding, disabled: readOnly)
@@ -246,13 +246,13 @@ struct EventEditorSheet: View {
                         EventSchemeTransferPicker(
                             selection: $schemeID,
                             currentSchemeID: currentSchemeID,
-                            currentSchemeName: editingOccurrence?.schemeName ?? "Scheme",
+                            currentSchemeName: editingOccurrence?.schemeName ?? L10n.t("mobile.calendar.scheme_fallback_name"),
                             theme: theme
                         )
                         .disabled(readOnly)
                     } footer: {
                         if !readOnly {
-                            Text("Move this task to a different scheme.")
+                            Text(L10n.t("mobile.calendar.move_task_footer"))
                         }
                     }
                 }
@@ -260,22 +260,22 @@ struct EventEditorSheet: View {
                 if isEditing && !readOnly {
                     Section {
                         Button(role: .destructive) { requestDelete() } label: {
-                            Label("Delete", systemImage: "trash")
+                            Label(L10n.t("common.delete"), systemImage: "trash")
                         }
                     }
                 }
             }
             .contentMargins(.top, 6, for: .scrollContent)
-            .navigationTitle(readOnly ? "Task Details" : (isEditing ? "Edit" : "New"))
+            .navigationTitle(readOnly ? L10n.t("mobile.calendar.task_details_title") : (isEditing ? L10n.t("common.edit") : L10n.t("mobile.calendar.new_title")))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 if !readOnly {
                     ToolbarItem(placement: .cancellationAction) {
-                        Button("Cancel") { dismiss() }
+                        Button(L10n.t("common.cancel")) { dismiss() }
                     }
                 }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button(readOnly ? "Done" : "Save") {
+                    Button(readOnly ? L10n.t("common.done") : L10n.t("common.save")) {
                         if readOnly {
                             dismiss()
                         } else {
@@ -284,13 +284,13 @@ struct EventEditorSheet: View {
                     }
                 }
             }
-            .confirmationDialog("Delete this task?", isPresented: $showDeleteConfirm, titleVisibility: .visible) {
-                Button("Delete", role: .destructive) {
+            .confirmationDialog(L10n.t("mobile.calendar.delete_task_confirm_title"), isPresented: $showDeleteConfirm, titleVisibility: .visible) {
+                Button(L10n.t("common.delete"), role: .destructive) {
                     deleteEditing(scope: .allEvents)
                 }
-                Button("Cancel", role: .cancel) {}
+                Button(L10n.t("common.cancel"), role: .cancel) {}
             }
-            .confirmationDialog("Recurring Task", isPresented: Binding(
+            .confirmationDialog(L10n.t("mobile.calendar.recurring_task_title"), isPresented: Binding(
                 get: { scopePrompt != nil },
                 set: { showing in
                     if !showing { scopePrompt = nil }
@@ -313,7 +313,7 @@ struct EventEditorSheet: View {
                         }
                     }
                 }
-                Button("Cancel", role: .cancel) { scopePrompt = nil }
+                Button(L10n.t("common.cancel"), role: .cancel) { scopePrompt = nil }
             } message: {
                 Text(scopePrompt?.message ?? "")
             }
@@ -534,31 +534,31 @@ struct AddCalendarItemSheet: View {
         NavigationStack {
             Form {
                 Section {
-                    TextField("Title", text: $text)
+                    TextField(L10n.t("mobile.calendar.title_placeholder"), text: $text)
                     CalendarSchemePicker(selection: $selectedSchemeID, theme: theme)
                 }
 
                 Section {
                     CalendarKindSelector(selection: $kind)
-                    DatePicker("Date", selection: $date, displayedComponents: .date)
+                    DatePicker(L10n.t("mobile.calendar.date_field"), selection: $date, displayedComponents: .date)
                     if kind == .event || kind == .reminder {
-                        DatePicker(kind == .event ? "Start" : "At", selection: $start)
+                        DatePicker(kind == .event ? L10n.t("event.field.start") : L10n.t("event.field.at"), selection: $start)
                     }
                     if kind == .event || kind == .assignment {
-                        DatePicker(kind == .event ? "End" : "Due", selection: $end)
+                        DatePicker(kind == .event ? L10n.t("event.field.end") : L10n.t("event.field.due"), selection: $end)
                     }
                     if kind != .task {
                         NotificationLeadTimePicker(selection: notificationOffsetBinding)
                     }
                 }
             }
-            .navigationTitle("New")
+            .navigationTitle(L10n.t("mobile.calendar.new_title"))
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") { dismiss() }
+                    Button(L10n.t("common.cancel")) { dismiss() }
                 }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Add") {
+                    Button(L10n.t("mobile.calendar.add_button")) {
                         let kind = kind
                         let text = text
                         let date = date

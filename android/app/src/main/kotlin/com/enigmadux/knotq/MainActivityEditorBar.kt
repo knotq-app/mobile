@@ -100,6 +100,44 @@ import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.roundToInt
 
+internal data class EditorLineBounds(val start: Int, val end: Int)
+
+internal data class EditorLineEdit(
+    val bounds: EditorLineBounds,
+    val replacement: String,
+    val selection: Int,
+)
+
+internal fun currentEditorLineBounds(value: String, cursor: Int): EditorLineBounds {
+    if (value.isEmpty()) return EditorLineBounds(0, 0)
+    val clamped = cursor.coerceIn(0, value.length)
+    val logicalCursor = if (clamped == value.length && value.endsWith("\n")) {
+        max(0, clamped - 1)
+    } else {
+        clamped
+    }
+    val previousNewline = if (logicalCursor <= 0) -1 else value.lastIndexOf('\n', logicalCursor - 1)
+    val start = (previousNewline + 1).coerceIn(0, value.length)
+    val nextNewline = value.indexOf('\n', logicalCursor)
+    val end = (if (nextNewline < 0) value.length else nextNewline).coerceIn(start, value.length)
+    return EditorLineBounds(start, end)
+}
+
+internal fun currentEditorLineEdit(
+    value: String,
+    cursor: Int,
+    transform: (String) -> String,
+): EditorLineEdit {
+    val bounds = currentEditorLineBounds(value, cursor)
+    val replacement = transform(value.substring(bounds.start, bounds.end))
+    val nextLength = value.length - (bounds.end - bounds.start) + replacement.length
+    return EditorLineEdit(
+        bounds = bounds,
+        replacement = replacement,
+        selection = (bounds.start + replacement.length).coerceIn(0, nextLength),
+    )
+}
+
     internal fun MainActivity.editorFormatBar(schemeId: String? = null, editor: EditText? = null): View {
         fun targetEditor(): EditText? = editor ?: activeEditor()
         fun targetSchemeId(): String? = schemeId ?: targetEditor()?.let { editorSchemeIds[it] }
@@ -261,12 +299,8 @@ import kotlin.math.roundToInt
 
     internal fun MainActivity.activeMarkerForEditor(editor: EditText): String {
         val value = editor.text?.toString().orEmpty()
-        val cursor = editor.logicalSelectionStart().coerceIn(0, value.length)
-        val start = value.lastIndexOf('\n', (cursor - 1).coerceAtLeast(0)).let { if (it < 0) 0 else it + 1 }
-        val newline = value.indexOf('\n', cursor)
-        val end = if (newline < 0) value.length else newline
-        if (start > end) return "blank"
-        return parseEditorLine(value.substring(start, end)).marker
+        val bounds = currentEditorLineBounds(value, editor.logicalSelectionStart())
+        return parseEditorLine(value.substring(bounds.start, bounds.end)).marker
     }
 
     internal fun MainActivity.activeEditor(): EditText? {
@@ -349,11 +383,9 @@ import kotlin.math.roundToInt
         val selStart = editor.selectionStart.coerceIn(0, value.length)
         val selEnd = editor.selectionEnd.coerceIn(0, value.length)
         val (start, end) = if (selStart == selEnd) {
-            val lineStart = value.lastIndexOf('\n', (selStart - 1).coerceAtLeast(0)).let { if (it < 0) 0 else it + 1 }
-            val nl = value.indexOf('\n', selStart)
-            val lineEnd = if (nl < 0) value.length else nl
-            val prefixLen = chromePrefixLength(value.substring(lineStart, lineEnd))
-            Pair((lineStart + prefixLen).coerceAtMost(lineEnd), lineEnd)
+            val bounds = currentEditorLineBounds(value, selStart)
+            val prefixLen = chromePrefixLength(value.substring(bounds.start, bounds.end))
+            Pair((bounds.start + prefixLen).coerceAtMost(bounds.end), bounds.end)
         } else {
             Pair(min(selStart, selEnd), max(selStart, selEnd))
         }
@@ -412,13 +444,9 @@ import kotlin.math.roundToInt
 
     internal fun MainActivity.editCurrentLine(editor: EditText, transform: (String) -> String) {
         val value = editor.text.toString()
-        val cursor = editor.logicalSelectionStart().coerceIn(0, value.length)
-        val start = value.lastIndexOf('\n', (cursor - 1).coerceAtLeast(0)).let { if (it < 0) 0 else it + 1 }
-        val newline = value.indexOf('\n', cursor)
-        val end = if (newline < 0) value.length else newline
-        val replacement = transform(value.substring(start, end))
-        editor.text.replace(start, end, replacement)
-        editor.setSelection((start + replacement.length).coerceAtMost(editor.text.length))
+        val edit = currentEditorLineEdit(value, editor.logicalSelectionStart(), transform)
+        editor.text.replace(edit.bounds.start, edit.bounds.end, edit.replacement)
+        editor.setSelection(edit.selection.coerceIn(0, editor.text.length))
     }
 
     internal fun MainActivity.editLine(editor: EditText, lineIndex: Int, transform: (String) -> String) {
@@ -565,4 +593,3 @@ import kotlin.math.roundToInt
             toast("No image picker available")
         }
     }
-

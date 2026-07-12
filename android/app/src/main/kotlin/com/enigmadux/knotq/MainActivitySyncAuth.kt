@@ -112,37 +112,54 @@ internal fun MainActivity.showSyncAccountDialog() {
         val session = syncSession ?: return
         // Lead with the action that matters for the current state: syncing when
         // it is on, subscribing when it is off. Destructive actions stay last.
-        val subscriptionAction =
-            if (syncSubscriptionCancelled) "Re-enable subscription" else "Cancel subscription"
+        val subscriptionLabel =
+            if (syncSubscriptionCancelled) L10n.t(this, "account.menu.reenable_subscription") else L10n.t(this, "account.confirm.cancel_subscription_confirm")
+        val subscriptionHandler: () -> Unit =
+            if (syncSubscriptionCancelled) { { reEnableSyncSubscription() } } else { { cancelSubscriptionAction() } }
         val needsVerification = !session.supportsSync && syncEmailVerified == false
-        val actions = if (session.supportsSync) {
+        val actions: List<String>
+        val handlers: List<() -> Unit>
+        if (session.supportsSync) {
             // "Resync" is the dedicated card button (iOS parity), so this menu is
             // just account housekeeping.
-            mutableListOf(subscriptionAction, "Sign out", "Delete account")
+            actions = listOf(subscriptionLabel, L10n.t(this, "account.menu.sign_out"), L10n.t(this, "mobile.account.delete_account"))
+            handlers = listOf(subscriptionHandler, { signOutSync() }, { confirmDeleteSyncAccount() })
         } else if (needsVerification) {
             // Subscribing is blocked until the email is verified, so offer the resend
             // instead of a Subscribe entry that would fail.
-            mutableListOf(
-                "Resend verification email",
-                "Restore purchases",
-                "Sign out",
-                "Delete account"
+            actions = listOf(
+                L10n.t(this, "account.verify.resend"),
+                L10n.t(this, "mobile.sync.restore_purchases"),
+                L10n.t(this, "account.menu.sign_out"),
+                L10n.t(this, "mobile.account.delete_account")
+            )
+            handlers = listOf(
+                { resendVerificationEmail() },
+                { restoreGooglePlayPurchases() },
+                { signOutSync() },
+                { confirmDeleteSyncAccount() }
             )
         } else {
-            mutableListOf(
-                "Subscribe with Google Play",
-                "Restore purchases",
-                "Sign out",
-                "Delete account"
+            actions = listOf(
+                L10n.t(this, "mobile.sync.subscribe_google_play"),
+                L10n.t(this, "mobile.sync.restore_purchases"),
+                L10n.t(this, "account.menu.sign_out"),
+                L10n.t(this, "mobile.account.delete_account")
+            )
+            handlers = listOf(
+                { startGooglePlaySubscribe() },
+                { restoreGooglePlayPurchases() },
+                { signOutSync() },
+                { confirmDeleteSyncAccount() }
             )
         }
         val stateLine = when {
-            syncOffline -> "Offline - sync will retry when your connection is back."
+            syncOffline -> L10n.t(this, "mobile.sync.state_offline")
             session.supportsSync && syncSubscriptionCancelled ->
-                "Cancelled - sync stays active until the billing period ends."
-            session.supportsSync -> "Sync is on for this account."
-            needsVerification -> "Verify your email to subscribe - check your inbox."
-            else -> "Sync is off - subscribe to turn it on."
+                L10n.t(this, "mobile.sync.state_cancelled")
+            session.supportsSync -> L10n.t(this, "mobile.sync.state_on")
+            needsVerification -> L10n.t(this, "mobile.sync.state_needs_verification")
+            else -> L10n.t(this, "mobile.sync.state_off")
         }
         // NOTE: AlertDialog shows EITHER a message OR an items list, not both
         // (message wins). This is the "Manage" menu, so the actions must render —
@@ -150,19 +167,8 @@ internal fun MainActivity.showSyncAccountDialog() {
         // sync card, so carry only a concise state line in the title here.
         AlertDialog.Builder(this)
             .setTitle(stateLine)
-            .setItems(actions.toTypedArray()) { _, which ->
-                when (actions[which]) {
-                    "Sync now" -> syncOnce()
-                    "Subscribe with Google Play" -> startGooglePlaySubscribe()
-                    "Resend verification email" -> resendVerificationEmail()
-                    "Restore purchases" -> restoreGooglePlayPurchases()
-                    "Cancel subscription" -> cancelSubscriptionAction()
-                    "Re-enable subscription" -> reEnableSyncSubscription()
-                    "Sign out" -> signOutSync()
-                    "Delete account" -> confirmDeleteSyncAccount()
-                }
-            }
-            .setNegativeButton("Close", null)
+            .setItems(actions.toTypedArray()) { _, which -> handlers[which]() }
+            .setNegativeButton(L10n.t(this, "common.close"), null)
             .show()
         // Re-check the lifecycle so a cancellation made elsewhere is reflected.
         refreshAccountStatus()
@@ -172,11 +178,11 @@ internal fun MainActivity.showSyncAccountDialog() {
     syncLoginChallenge = null
 
     AlertDialog.Builder(this)
-        .setTitle("Sync account")
-        .setMessage("KnotQ will open your browser to sign in, then return here automatically.")
-        .setNegativeButton("Cancel", null)
-        .setNeutralButton("Create account") { _, _ -> beginBrowserSyncAuth(createAccount = true) }
-        .setPositiveButton("Sign in") { _, _ -> beginBrowserSyncAuth(createAccount = false) }
+        .setTitle(L10n.t(this, "mobile.sync.dialog_title"))
+        .setMessage(L10n.t(this, "mobile.sync.browser_signin_message"))
+        .setNegativeButton(L10n.t(this, "common.cancel"), null)
+        .setNeutralButton(L10n.t(this, "mobile.sync.create_account")) { _, _ -> beginBrowserSyncAuth(createAccount = true) }
+        .setPositiveButton(L10n.t(this, "sync.sign_in")) { _, _ -> beginBrowserSyncAuth(createAccount = false) }
         .show()
 }
 
@@ -199,10 +205,10 @@ internal fun MainActivity.beginBrowserSyncAuth(createAccount: Boolean) {
     syncAuthInProgress = true
     try {
         startActivity(Intent(Intent.ACTION_VIEW, authUrl))
-        Toast.makeText(this, "Continue in your browser.", Toast.LENGTH_SHORT).show()
+        Toast.makeText(this, L10n.t(this, "mobile.sync.continue_in_browser"), Toast.LENGTH_SHORT).show()
     } catch (error: ActivityNotFoundException) {
         clearPendingSyncBrowserAuth()
-        showError("Sign in failed", error.message)
+        showError(L10n.t(this, "mobile.sync.sign_in_failed_title"), error.message)
     } finally {
         syncAuthInProgress = false
     }
@@ -231,19 +237,19 @@ internal fun MainActivity.handleSyncBrowserCallback(uri: Uri?): Boolean {
     val state = uri.getQueryParameter("state").orEmpty()
     if (state != pending.state) {
         clearPendingSyncBrowserAuth()
-        showError("Sign in failed", "Sign-in could not be verified. Please try again.")
+        showError(L10n.t(this, "mobile.sync.sign_in_failed_title"), L10n.t(this, "mobile.sync.callback_state_mismatch"))
         return true
     }
     val errorCode = uri.getQueryParameter("error").orEmpty()
     if (errorCode.isNotEmpty()) {
         clearPendingSyncBrowserAuth()
-        showError("Sign in failed", authorizeErrorMessage(errorCode))
+        showError(L10n.t(this, "mobile.sync.sign_in_failed_title"), authorizeErrorMessage(errorCode))
         return true
     }
     val code = uri.getQueryParameter("code").orEmpty()
     if (code.isEmpty()) {
         clearPendingSyncBrowserAuth()
-        showError("Sign in failed", "Sign-in did not complete.")
+        showError(L10n.t(this, "mobile.sync.sign_in_failed_title"), L10n.t(this, "mobile.sync.callback_incomplete"))
         return true
     }
 
@@ -271,10 +277,10 @@ internal fun MainActivity.handleSyncBrowserCallback(uri: Uri?): Boolean {
             result.onSuccess { session ->
                 syncLoginChallenge = null
                 installSyncSession(session)
-                Toast.makeText(this, "Signed in as ${session.email}", Toast.LENGTH_SHORT).show()
+                Toast.makeText(this, L10n.t(this, "mobile.sync.signed_in_as", mapOf("email" to session.email)), Toast.LENGTH_SHORT).show()
                 syncOnce()
             }.onFailure { error ->
-                showError("Sign in failed", error.message)
+                showError(L10n.t(this, "mobile.sync.sign_in_failed_title"), error.message)
             }
         }
     }.start()
@@ -330,7 +336,7 @@ internal fun MainActivity.signInToSync(apiBaseRaw: String, emailRaw: String, pas
     val apiBase = normalizeApiBase(apiBaseRaw)
     val email = emailRaw.trim()
     if (apiBase.isEmpty() || email.isEmpty() || password.isEmpty()) {
-        showError("Sign in failed", "Enter your sync API, email, and password")
+        showError(L10n.t(this, "mobile.sync.sign_in_failed_title"), L10n.t(this, "mobile.sync.enter_credentials_prompt"))
         return
     }
     syncAuthInProgress = true
@@ -342,13 +348,13 @@ internal fun MainActivity.signInToSync(apiBaseRaw: String, emailRaw: String, pas
                 val session = start.session
                 if (session != null) {
                     installSyncSession(session)
-                    Toast.makeText(this, "Signed in as ${session.email}", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(this, L10n.t(this, "mobile.sync.signed_in_as", mapOf("email" to session.email)), Toast.LENGTH_SHORT).show()
                 } else if (start.challenge != null) {
                     syncLoginChallenge = start.challenge
                     showLoginCodeDialog(start.challenge)
                 }
             }.onFailure { error ->
-                showError("Sign in failed", error.message)
+                showError(L10n.t(this, "mobile.sync.sign_in_failed_title"), error.message)
             }
         }
     }.start()
@@ -359,7 +365,7 @@ internal fun MainActivity.createSyncAccount(apiBaseRaw: String, emailRaw: String
     val apiBase = normalizeApiBase(apiBaseRaw)
     val email = emailRaw.trim()
     if (apiBase.isEmpty() || email.isEmpty() || password.isEmpty()) {
-        showError("Account creation failed", "Enter your sync API, email, and password")
+        showError(L10n.t(this, "mobile.sync.account_creation_failed_title"), L10n.t(this, "mobile.sync.enter_credentials_prompt"))
         return
     }
     syncAuthInProgress = true
@@ -375,10 +381,10 @@ internal fun MainActivity.createSyncAccount(apiBaseRaw: String, emailRaw: String
             result.onSuccess { session ->
                 syncLoginChallenge = null
                 installSyncSession(session)
-                Toast.makeText(this, "Signed in as ${session.email}", Toast.LENGTH_SHORT).show()
+                Toast.makeText(this, L10n.t(this, "mobile.sync.signed_in_as", mapOf("email" to session.email)), Toast.LENGTH_SHORT).show()
                 syncOnce()
             }.onFailure { error ->
-                showError("Account creation failed", error.message)
+                showError(L10n.t(this, "mobile.sync.account_creation_failed_title"), error.message)
             }
         }
     }.start()
@@ -389,20 +395,20 @@ internal fun MainActivity.showLoginCodeDialog(challenge: SyncLoginChallenge) {
         orientation = LinearLayout.VERTICAL
         setPadding(dp(20), dp(8), dp(20), 0)
     }
-    form.addView(text("Enter the code sent to ${challenge.email}.", theme.textDim, 13f, false), spaced())
+    form.addView(text(L10n.t(this, "mobile.sync.enter_code_sent_to", mapOf("email" to challenge.email)), theme.textDim, 13f, false), spaced())
     val code = EditText(this).apply {
-        hint = "Code"
+        hint = L10n.t(this@showLoginCodeDialog, "mobile.sync.code_hint_label")
         setText(challenge.devCode.orEmpty())
         inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_CAP_CHARACTERS
         setSingleLine(true)
     }
     form.addView(code)
     val dialog = AlertDialog.Builder(this)
-        .setTitle("Verify sign in")
+        .setTitle(L10n.t(this, "mobile.sync.verify_sign_in_title"))
         .setView(form)
-        .setNegativeButton("Cancel", null)
-        .setNeutralButton("Different account", null)
-        .setPositiveButton("Verify", null)
+        .setNegativeButton(L10n.t(this, "common.cancel"), null)
+        .setNeutralButton(L10n.t(this, "mobile.sync.different_account"), null)
+        .setPositiveButton(L10n.t(this, "mobile.sync.verify_button"), null)
         .create()
     dialog.setOnShowListener {
         dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
@@ -422,7 +428,7 @@ internal fun MainActivity.verifyLoginCode(codeRaw: String) {
     val challenge = syncLoginChallenge ?: return
     val code = codeRaw.trim()
     if (code.isEmpty()) {
-        showError("Verification failed", "Enter the code we emailed you.")
+        showError(L10n.t(this, "mobile.sync.verification_failed_title"), L10n.t(this, "mobile.sync.enter_code_prompt"))
         return
     }
     syncAuthInProgress = true
@@ -442,10 +448,10 @@ internal fun MainActivity.verifyLoginCode(codeRaw: String) {
             result.onSuccess { session ->
                 syncLoginChallenge = null
                 installSyncSession(session)
-                Toast.makeText(this, "Signed in as ${session.email}", Toast.LENGTH_SHORT).show()
+                Toast.makeText(this, L10n.t(this, "mobile.sync.signed_in_as", mapOf("email" to session.email)), Toast.LENGTH_SHORT).show()
                 syncOnce()
             }.onFailure { error ->
-                showError("Verification failed", error.message)
+                showError(L10n.t(this, "mobile.sync.verification_failed_title"), error.message)
             }
         }
     }.start()

@@ -19,7 +19,7 @@ struct ArchiveNavigatorSection: View {
                     Image(systemName: "archivebox")
                         .font(.system(size: compact ? 10 : 11, weight: .semibold))
                         .frame(width: compact ? 12 : 14)
-                    Text("Archive")
+                    Text(L10n.t("sidebar.trash.label"))
                         .font(.system(size: compact ? 12 : 13, weight: .medium))
                     Spacer(minLength: 0)
                     if !schemes.isEmpty {
@@ -38,7 +38,7 @@ struct ArchiveNavigatorSection: View {
             }
             .buttonStyle(.plain)
             .contextMenu {
-                Button("Empty Archive", systemImage: "trash", role: .destructive) {
+                Button(L10n.t("sidebar.context.empty_archive"), systemImage: "trash", role: .destructive) {
                     confirmEmptyArchive = .emptyArchive(count: schemes.count)
                 }
                 .disabled(schemes.isEmpty)
@@ -46,7 +46,7 @@ struct ArchiveNavigatorSection: View {
 
             if expanded {
                 if schemes.isEmpty {
-                    Text("No archived schemes")
+                    Text(L10n.t("archive.no_archived_schemes"))
                         .font(.system(size: compact ? 11 : 12))
                         .foregroundStyle(theme.textMuted)
                         .padding(.horizontal, compact ? 25 : 28)
@@ -78,7 +78,7 @@ struct ArchiveSchemeRow: View {
             allowsFullSwipe: false,
             action: { confirmPermanentDelete = .permanentlyDeleteScheme(scheme) }
         ) {
-            Label("Delete", systemImage: "trash")
+            Label(L10n.t("common.delete"), systemImage: "trash")
         } content: {
             HStack(spacing: 7) {
                 RoundedRectangle(cornerRadius: 2)
@@ -95,10 +95,10 @@ struct ArchiveSchemeRow: View {
             .frame(height: compact ? 22 : 25)
         }
         .contextMenu {
-            Button("Restore", systemImage: "arrow.uturn.backward") {
+            Button(L10n.t("sidebar.context.restore"), systemImage: "arrow.uturn.backward") {
                 model.restoreScheme(id: scheme.id)
             }
-            Button("Delete Permanently", systemImage: "trash", role: .destructive) {
+            Button(L10n.t("archive.delete_permanently_button"), systemImage: "trash", role: .destructive) {
                 confirmPermanentDelete = .permanentlyDeleteScheme(scheme)
             }
         }
@@ -122,14 +122,14 @@ struct SettingsArchiveSection: View {
         Section {
             NavigationLink(value: SettingsRoute.archive) {
                 HStack(spacing: 10) {
-                    Label("Archived Items", systemImage: "archivebox")
+                    Label(L10n.t("archive.archived_items_label"), systemImage: "archivebox")
                     Spacer(minLength: 0)
                     Text("\(schemes.count)")
                         .foregroundStyle(theme.textMuted)
                 }
             }
         } header: {
-            Text("Archive")
+            Text(L10n.t("sidebar.trash.label"))
         }
         .listRowBackground(theme.bgModal)
     }
@@ -151,7 +151,7 @@ struct SettingsArchiveList: View {
         Form {
             Section {
                 if nodes.isEmpty {
-                    Text("No archived items")
+                    Text(L10n.t("archive.no_archived_items"))
                         .foregroundStyle(theme.textMuted)
                         .listRowSeparator(.hidden)
                 } else {
@@ -159,7 +159,7 @@ struct SettingsArchiveList: View {
                         SettingsArchiveNodeRow(node: row.node, depth: row.depth, theme: theme)
                             .listRowSeparator(.hidden)
                     }
-                    Button("Empty Archive", systemImage: "trash", role: .destructive) {
+                    Button(L10n.t("sidebar.context.empty_archive"), systemImage: "trash", role: .destructive) {
                         confirmEmptyArchive = .emptyArchive(count: archivedSchemeCount)
                     }
                     .listRowSeparator(.hidden)
@@ -169,7 +169,7 @@ struct SettingsArchiveList: View {
         }
         .scrollContentBackground(.hidden)
         .background(theme.bgApp)
-        .navigationTitle("Archive")
+        .navigationTitle(L10n.t("sidebar.trash.label"))
         .destructiveConfirmation(target: $confirmEmptyArchive) { _ in
             model.emptyArchive()
         }
@@ -222,11 +222,11 @@ struct SettingsArchiveNodeRow: View {
                     .fill(schemeColor(node.colorIndex ?? 0, dark: theme.isDark).opacity(0.72))
                     .frame(width: 11, height: 11)
             }
-            Text(node.name.isEmpty ? (isFolder ? "Folder" : "Untitled") : node.name)
+            Text(node.name.isEmpty ? (isFolder ? L10n.t("sidebar.context.folder") : L10n.t("sidebar.new_item_default_name")) : node.name)
                 .foregroundStyle(theme.textPrimary)
                 .lineLimit(1)
             Spacer(minLength: 0)
-            Button("Restore") {
+            Button(L10n.t("sidebar.context.restore")) {
                 restore()
             }
             .buttonStyle(.borderless)
@@ -234,10 +234,10 @@ struct SettingsArchiveNodeRow: View {
         .padding(.leading, CGFloat(depth) * 16)
         .contentShape(Rectangle())
         .contextMenu {
-            Button("Restore", systemImage: "arrow.uturn.backward") {
+            Button(L10n.t("sidebar.context.restore"), systemImage: "arrow.uturn.backward") {
                 restore()
             }
-            Button("Delete Permanently", systemImage: "trash", role: .destructive) {
+            Button(L10n.t("archive.delete_permanently_button"), systemImage: "trash", role: .destructive) {
                 confirmPermanentDelete = deleteTarget
             }
         }
@@ -245,7 +245,7 @@ struct SettingsArchiveNodeRow: View {
             Button(role: .destructive) {
                 confirmPermanentDelete = deleteTarget
             } label: {
-                Label("Delete", systemImage: "trash")
+                Label(L10n.t("common.delete"), systemImage: "trash")
             }
         }
         .destructiveConfirmation(target: $confirmPermanentDelete) { _ in

@@ -22,6 +22,7 @@ chrono.workspace = true
 knotq-commands.workspace = true
 knotq-date-util.workspace = true
 knotq-index.workspace = true
+knotq-l10n.workspace = true
 knotq-model.workspace = true
 knotq-notifications.workspace = true
 knotq-state.workspace = true

@@ -429,7 +429,7 @@ struct IntegratedSchemeEditorPane: View {
                                 .frame(width: 38, height: 38)
                         }
                         .buttonStyle(SchemeTopLipIconButton(theme: theme))
-                        .accessibilityLabel("Back")
+                        .accessibilityLabel(L10n.t("common.back"))
                     }
                 } else {
                     SchemeEditorGlassSurface(theme: theme, minWidth: 38) {
@@ -440,7 +440,7 @@ struct IntegratedSchemeEditorPane: View {
                             Image(systemName: "chevron.left")
                         }
                         .buttonStyle(SchemeTopLipIconButton(theme: theme))
-                        .accessibilityLabel("Back")
+                        .accessibilityLabel(L10n.t("common.back"))
                     }
                 }
             }
@@ -1029,7 +1029,7 @@ private struct SchemeArchiveButton: View {
                 .contentShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
         }
         .buttonStyle(.plain)
-        .accessibilityLabel("Archive")
+        .accessibilityLabel(L10n.t("sidebar.context.archive"))
     }
 }
 
@@ -1073,7 +1073,7 @@ private struct SchemeColorPickerButton: View {
             }
         }
         .buttonStyle(.plain)
-        .accessibilityLabel("Color")
+        .accessibilityLabel(L10n.t("mobile.scheme.color_label"))
         .popover(isPresented: $showingPicker, arrowEdge: .top) {
             SchemeColorPickerPopover(
                 scheme: scheme,
@@ -1125,7 +1125,7 @@ private struct SchemeColorPickerPopover: View {
                     .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
                 }
                 .buttonStyle(.plain)
-                .accessibilityLabel("Color")
+                .accessibilityLabel(L10n.t("mobile.scheme.color_label"))
             }
         }
         .padding(8)
