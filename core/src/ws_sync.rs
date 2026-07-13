@@ -158,11 +158,21 @@ fn ws_server_push_error(status: Option<u16>, code: String) -> anyhow::Error {
     if is_unauthorized(status, &code) {
         return anyhow!("sync backend rejected request: {code}");
     }
+    // See media_sync::mobile_sync_push_http_error — must NOT become
+    // SyncPushRejected, or the engine's reseed self-heal would rebuild and
+    // re-push a full snapshot only to be rejected the same way again.
+    if is_protocol_outdated(status, &code) {
+        return anyhow!("sync backend rejected request: {code}");
+    }
     anyhow::Error::new(SyncPushRejected { code })
 }
 
 fn is_unauthorized(status: Option<u16>, code: &str) -> bool {
     status == Some(401) || code == "unauthorized"
+}
+
+fn is_protocol_outdated(status: Option<u16>, code: &str) -> bool {
+    status == Some(426) || code == "client_protocol_outdated"
 }
 
 // ── lifecycle on MobileCoreInner ────────────────────────────────────────────
@@ -246,5 +256,13 @@ mod tests {
             .downcast_ref::<SyncPushRejected>()
             .expect("content rejection should drive push self-heal");
         assert_eq!(rejected.code, "crdt_schema_invalid");
+    }
+
+    #[test]
+    fn ws_push_protocol_outdated_is_not_push_rejected() {
+        let err = ws_server_push_error(Some(426), "client_protocol_outdated".to_string());
+
+        assert!(err.downcast_ref::<SyncPushRejected>().is_none());
+        assert!(format!("{err:#}").contains("client_protocol_outdated"));
     }
 }

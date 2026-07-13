@@ -244,12 +244,51 @@ fn mobile_sync_push_http_error(error: ureq::Error) -> anyhow::Error {
             if status == 401 || code == "unauthorized" {
                 return anyhow!("sync backend rejected request: {code}");
             }
+            // 426 (Upgrade Required) / client_protocol_outdated means this build
+            // is below the server's sync protocol floor. Must NOT become
+            // SyncPushRejected: reseeding and re-pushing would just be rejected
+            // the same way until the app is updated.
+            if status == 426 || code == "client_protocol_outdated" {
+                return anyhow!("sync backend rejected request: {code}");
+            }
             if (400..500).contains(&status) {
                 return anyhow::Error::new(knotq_sync::SyncPushRejected { code });
             }
             anyhow!("sync backend rejected request: {code}")
         }
         error => anyhow!("sync backend request failed: {error}"),
+    }
+}
+
+#[cfg(test)]
+mod push_http_error_tests {
+    use super::mobile_sync_push_http_error;
+
+    fn status_error(status: u16, body: &str) -> ureq::Error {
+        let response = ureq::Response::new(status, "status", body).expect("synthetic response");
+        ureq::Error::Status(status, response)
+    }
+
+    fn error_body(code: &str) -> String {
+        format!(r#"{{"code":"{code}","message":"test"}}"#)
+    }
+
+    #[test]
+    fn push_426_is_not_push_rejected() {
+        // Must NOT become SyncPushRejected: reseeding and re-pushing would just
+        // be rejected the same way until the app is updated.
+        let err = mobile_sync_push_http_error(status_error(426, &error_body("client_protocol_outdated")));
+        assert!(err.downcast_ref::<knotq_sync::SyncPushRejected>().is_none());
+        assert!(format!("{err:#}").contains("client_protocol_outdated"));
+    }
+
+    #[test]
+    fn push_4xx_content_rejection_still_uses_push_rejected() {
+        let err = mobile_sync_push_http_error(status_error(409, &error_body("document_epoch_stale")));
+        let rejected = err
+            .downcast_ref::<knotq_sync::SyncPushRejected>()
+            .expect("content rejection should drive push self-heal");
+        assert_eq!(rejected.code, "document_epoch_stale");
     }
 }
 
