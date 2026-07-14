@@ -1,5 +1,22 @@
 use super::*;
 
+pub(crate) struct CommitEventEdit {
+    pub(crate) scheme_id: SchemeId,
+    pub(crate) item_id: ItemId,
+    pub(crate) occurrence: OccurrenceId,
+    pub(crate) occurrence_index: usize,
+    pub(crate) title: String,
+    pub(crate) occurrence_start: Option<DateTime<Utc>>,
+    pub(crate) occurrence_end: Option<DateTime<Utc>>,
+    pub(crate) draft_start: Option<DateTime<Utc>>,
+    pub(crate) draft_end: Option<DateTime<Utc>>,
+    pub(crate) draft_repeats: Option<Recurrence>,
+    pub(crate) draft_notification_offset_secs: Option<i64>,
+    pub(crate) notification_dirty: bool,
+    pub(crate) draft_done: bool,
+    pub(crate) scope: DateEditScope,
+}
+
 impl MobileCoreInner {
     pub(crate) fn open(app_dir: PathBuf) -> Result<Self> {
         let workspace_dir = app_dir.join("workspace");
@@ -326,23 +343,23 @@ impl MobileCoreInner {
         Ok(true)
     }
 
-    pub(crate) fn commit_event_edit(
-        &mut self,
-        scheme_id: SchemeId,
-        item_id: ItemId,
-        occurrence: OccurrenceId,
-        occurrence_index: usize,
-        title: String,
-        occurrence_start: Option<DateTime<Utc>>,
-        occurrence_end: Option<DateTime<Utc>>,
-        draft_start: Option<DateTime<Utc>>,
-        draft_end: Option<DateTime<Utc>>,
-        draft_repeats: Option<Recurrence>,
-        draft_notification_offset_secs: Option<i64>,
-        notification_dirty: bool,
-        draft_done: bool,
-        scope: DateEditScope,
-    ) -> Result<()> {
+    pub(crate) fn commit_event_edit(&mut self, edit: CommitEventEdit) -> Result<()> {
+        let CommitEventEdit {
+            scheme_id,
+            item_id,
+            occurrence,
+            occurrence_index,
+            title,
+            occurrence_start,
+            occurrence_end,
+            draft_start,
+            draft_end,
+            draft_repeats,
+            draft_notification_offset_secs,
+            notification_dirty,
+            draft_done,
+            scope,
+        } = edit;
         if self.workspace.is_scheme_read_only(scheme_id) {
             return Err(anyhow!("scheme is read-only"));
         }

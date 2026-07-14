@@ -671,22 +671,22 @@ impl MobileCore {
         scope: String,
     ) -> Result<(), MobileError> {
         self.lock()?
-            .commit_event_edit(
-                parse_id(&scheme_id)?,
-                parse_id(&item_id)?,
-                parse_occurrence_json(&occurrence_json)?,
-                position_from_i32(occurrence_index)?,
+            .commit_event_edit(crate::mobile_core_inner_ops::CommitEventEdit {
+                scheme_id: parse_id(&scheme_id)?,
+                item_id: parse_id(&item_id)?,
+                occurrence: parse_occurrence_json(&occurrence_json)?,
+                occurrence_index: position_from_i32(occurrence_index)?,
                 title,
-                parse_datetime_opt(occurrence_start.as_deref())?,
-                parse_datetime_opt(occurrence_end.as_deref())?,
-                parse_datetime_opt(start.as_deref())?,
-                parse_datetime_opt(end.as_deref())?,
-                recurrence_from_rrule(rrule),
-                notification_offset_secs.map(i64::from),
+                occurrence_start: parse_datetime_opt(occurrence_start.as_deref())?,
+                occurrence_end: parse_datetime_opt(occurrence_end.as_deref())?,
+                draft_start: parse_datetime_opt(start.as_deref())?,
+                draft_end: parse_datetime_opt(end.as_deref())?,
+                draft_repeats: recurrence_from_rrule(rrule),
+                draft_notification_offset_secs: notification_offset_secs.map(i64::from),
                 notification_dirty,
-                done,
-                parse_date_edit_scope(&scope)?,
-            )
+                draft_done: done,
+                scope: parse_date_edit_scope(&scope)?,
+            })
             .map_err(Into::into)
     }
 
