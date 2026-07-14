@@ -1,10 +1,6 @@
 use super::*;
 use crate::conversions::format_datetime;
-use chrono::{Local, TimeZone};
-use knotq_model::{
-    CalendarProvider, ImportedCalendarSource, ReplicaId, SchemeSource, SyncDocumentKind,
-};
-use knotq_sync::LocalSyncState;
+use chrono::TimeZone;
 
 #[test]
 fn mobile_tables_are_visible_editable_and_preserved_by_document_saves() {

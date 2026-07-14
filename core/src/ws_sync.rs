@@ -45,14 +45,14 @@ impl RawSocket for TgSocket {
             {
                 Ok(None)
             }
-            Err(err) => Err(io::Error::new(ErrorKind::Other, err.to_string())),
+            Err(err) => Err(io::Error::other(err.to_string())),
         }
     }
 
     fn send(&mut self, text: &str) -> io::Result<()> {
         self.socket
             .send(Message::Text(text.to_string()))
-            .map_err(|err| io::Error::new(ErrorKind::Other, err.to_string()))
+            .map_err(|err| io::Error::other(err.to_string()))
     }
 
     fn close(&mut self) {
@@ -79,7 +79,7 @@ struct TgFactory {
 impl RawSocketFactory for TgFactory {
     fn connect(&self) -> io::Result<Box<dyn RawSocket>> {
         let token = (self.token_provider)()
-            .ok_or_else(|| io::Error::new(ErrorKind::Other, "no auth token for ws connect"))?;
+            .ok_or_else(|| io::Error::other("no auth token for ws connect"))?;
         let uri = self
             .ws_url
             .parse::<tungstenite::http::Uri>()
@@ -87,7 +87,7 @@ impl RawSocketFactory for TgFactory {
         let request =
             ClientRequestBuilder::new(uri).with_header("Authorization", format!("Bearer {token}"));
         let (socket, _response) = tungstenite::connect(request)
-            .map_err(|err| io::Error::new(ErrorKind::Other, err.to_string()))?;
+            .map_err(|err| io::Error::other(err.to_string()))?;
         Ok(Box::new(TgSocket { socket }))
     }
 }

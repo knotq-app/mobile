@@ -1,5 +1,4 @@
 use super::*;
-use crate::conversions::format_datetime;
 use chrono::{Local, TimeZone};
 use knotq_model::{
     CalendarProvider, ImportedCalendarSource, ReplicaId, SchemeSource, SyncDocumentKind,

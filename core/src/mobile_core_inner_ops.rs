@@ -475,10 +475,9 @@ impl MobileCoreInner {
             notification_permission: NotificationPermissionState::default(),
             local_scheduler_supported: Some(true),
         };
-        match client.register_device(&request) {
-            Ok(_) => self.registered_push_token = Some(token),
-            // Best effort: leave the marker unset so the next sync retries.
-            Err(_) => {}
+        // Best effort: on failure leave the marker unset so the next sync retries.
+        if client.register_device(&request).is_ok() {
+            self.registered_push_token = Some(token);
         }
     }
 
