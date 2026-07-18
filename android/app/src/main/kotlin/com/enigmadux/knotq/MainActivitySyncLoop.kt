@@ -252,6 +252,7 @@ internal fun MainActivity.scheduleBackgroundSyncWork() {
 }
 
 internal fun MainActivity.cancelBackgroundSyncWork() {
+    if (!BuildConfig.ACCOUNTS_ENABLED) return
     runCatching { WorkManager.getInstance(this).cancelUniqueWork(BACKGROUND_SYNC_WORK) }
 }
 

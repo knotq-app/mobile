@@ -307,8 +307,10 @@ class MainActivity : Activity() {
             }
             rescheduleNotifications()
             sharedBridge = bridge
-            registerForPushNotifications()
-            handleIncomingAuthIntent(intent?.data)
+            if (BuildConfig.ACCOUNTS_ENABLED) {
+                registerForPushNotifications()
+                handleIncomingAuthIntent(intent?.data)
+            }
         } catch (error: Throwable) {
             theme = UiTheme.dark
             showFatal(error.message)
@@ -319,16 +321,14 @@ class MainActivity : Activity() {
         super.onStart()
         isInForeground = true
         if (!::bridge.isInitialized) return
-        // Pick up credentials the background worker may have rotated (or a
-        // session it invalidated) while the app was backgrounded.
-        syncSession = loadSyncSession()
-        // Re-check the entitlement + subscription lifecycle before resuming the poll
-        // so a subscription bought (or changed) while the app was closed — the common
-        // "subscribe, reopen the app, see it" flow — shows up without waiting for the
-        // access token to expire. Runs first so it claims the in-progress guard ahead
-        // of the poll's first sync (which then no-ops until it returns).
-        refreshSubscriptionStatus()
-        startSyncPolling()
+        if (BuildConfig.ACCOUNTS_ENABLED) {
+            // Pick up credentials the background worker may have rotated (or a
+            // session it invalidated) while the app was backgrounded.
+            syncSession = loadSyncSession()
+            // Re-check entitlement + subscription lifecycle before polling resumes.
+            refreshSubscriptionStatus()
+            startSyncPolling()
+        }
         configureGoogleSyncPolling()
         // The app may have been backgrounded across midnight; roll the daily/home
         // "today" forward so it isn't stuck on yesterday.
@@ -363,11 +363,13 @@ class MainActivity : Activity() {
 
     override fun onStop() {
         isInForeground = false
-        syncPollHandler.removeCallbacks(syncPollRunnable)
-        stopWsNudge()
-        val flushEditSync = syncEditPending
-        syncPollHandler.removeCallbacks(syncEditRunnable)
-        syncEditPending = false
+        val flushEditSync = if (BuildConfig.ACCOUNTS_ENABLED) syncEditPending else false
+        if (BuildConfig.ACCOUNTS_ENABLED) {
+            syncPollHandler.removeCallbacks(syncPollRunnable)
+            stopWsNudge()
+            syncPollHandler.removeCallbacks(syncEditRunnable)
+            syncEditPending = false
+        }
         googleSyncHandler.removeCallbacks(googleSyncRunnable)
         googleSyncPollingActive = false
         if (::bridge.isInitialized) {
@@ -378,38 +380,39 @@ class MainActivity : Activity() {
                 notifReschedulePending = false
                 rescheduleNotificationsNow()
             }
-            // Mirror iOS applicationDidEnterBackground: keep workspace data fresh
-            // via periodic background refresh while signed in to sync.
-            scheduleBackgroundSyncWork()
-            if (flushEditSync) {
-                // A debounced edit hadn't pushed yet. Push it over the still-live
-                // socket first (fastest path — no fresh TLS handshake), then tear the
-                // socket down. The one-off worker is the durable fallback: it
-                // refreshes the token and re-pushes if the fast socket push didn't
-                // get through before the process froze. Mirrors iOS
-                // flushPendingEditSyncAndTeardown().
-                flushEditsOverWsThenStop()
-                enqueueOneTimeSync(this)
-            } else {
-                // Nothing pending — just drop the socket (FCM + the 3h refresh cover
-                // background wakeups).
-                stopWsSync()
+            if (BuildConfig.ACCOUNTS_ENABLED) {
+                // Mirror iOS applicationDidEnterBackground: keep workspace data fresh
+                // via periodic background refresh while signed in to sync.
+                scheduleBackgroundSyncWork()
+                if (flushEditSync) {
+                    // A debounced edit hadn't pushed yet. Push it over the live
+                    // socket first, then tear the socket down. The one-off worker is
+                    // the durable fallback.
+                    flushEditsOverWsThenStop()
+                    enqueueOneTimeSync(this)
+                } else {
+                    stopWsSync()
+                }
             }
-        } else {
+        } else if (BuildConfig.ACCOUNTS_ENABLED) {
             stopWsSync()
         }
         super.onStop()
     }
 
     override fun onDestroy() {
-        syncPollHandler.removeCallbacks(syncPollRunnable)
-        syncPollHandler.removeCallbacks(syncEditRunnable)
-        syncEditPending = false
-        stopWsNudge()
-        stopWsSync()
+        if (BuildConfig.ACCOUNTS_ENABLED) {
+            syncPollHandler.removeCallbacks(syncPollRunnable)
+            syncPollHandler.removeCallbacks(syncEditRunnable)
+            syncEditPending = false
+            stopWsNudge()
+            stopWsSync()
+        }
         googleSyncHandler.removeCallbacks(googleSyncRunnable)
-        billingClient?.endConnection()
-        billingClient = null
+        if (BuildConfig.ACCOUNTS_ENABLED) {
+            billingClient?.endConnection()
+            billingClient = null
+        }
         sharedBridge = null
         if (::bridge.isInitialized) {
             bridge.close()
@@ -420,7 +423,9 @@ class MainActivity : Activity() {
     override fun onNewIntent(intent: Intent?) {
         super.onNewIntent(intent)
         setIntent(intent)
-        handleIncomingAuthIntent(intent?.data)
+        if (BuildConfig.ACCOUNTS_ENABLED) {
+            handleIncomingAuthIntent(intent?.data)
+        }
     }
 
     internal fun maybeRequestStoreReview() {
