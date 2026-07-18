@@ -108,7 +108,11 @@ struct OnboardingOverlay: View {
         ZStack {
             switch phase {
             case .account:
+                #if ACCOUNTS_ENABLED
                 accountPhase
+                #else
+                guidePhase
+                #endif
             case .guide:
                 guidePhase
             }
@@ -119,6 +123,7 @@ struct OnboardingOverlay: View {
 
     /// Sign-in happens in the browser; the account prompt is the last onboarding
     /// step, so a landed session completes onboarding.
+    #if ACCOUNTS_ENABLED
     private func authenticate(mode: SyncAuthMode) {
         Task {
             await model.beginBrowserSignIn(mode: mode)
@@ -127,9 +132,11 @@ struct OnboardingOverlay: View {
             }
         }
     }
+    #endif
 
     // MARK: Account phase
 
+    #if ACCOUNTS_ENABLED
     private var accountPhase: some View {
         ZStack {
             Color.black.opacity(0.62)
@@ -202,6 +209,7 @@ struct OnboardingOverlay: View {
         }
         .shadow(color: .black.opacity(0.28), radius: 22, y: 10)
     }
+    #endif
 
     private func onboardingAction(
         title: String,
@@ -379,6 +387,7 @@ struct OnboardingOverlay: View {
     /// After the tutorial: surface the sign-in / stay-local prompt,
     /// unless the user is already signed in, in which case onboarding is complete.
     private func finishTutorial() {
+        #if ACCOUNTS_ENABLED
         if model.syncSession != nil {
             onComplete()
         } else {
@@ -386,6 +395,9 @@ struct OnboardingOverlay: View {
                 phase = .account
             }
         }
+        #else
+        onComplete()
+        #endif
     }
 
     private func advance() {

@@ -6,6 +6,7 @@ import SwiftUI
 import UIKit
 
 extension AppModel {
+#if ACCOUNTS_ENABLED
     /// Hand the Rust core a push token (e.g. an FCM token from Firebase) so the
     /// next sync registers this device for silent background wake-ups.
     func setPushToken(_ token: String, environment: String = "production") {
@@ -27,20 +28,32 @@ extension AppModel {
         guard let bridge else { return }
         bridge.enqueue({ try $0.noteRemoteChanged() }) { _ in }
     }
+#else
+    // Accounts/sync disabled: no-op stubs so shared callers still compile.
+    func setPushToken(_ token: String, environment: String = "production") {}
+    func noteRemoteChanged() {}
+#endif
 
+#if ACCOUNTS_ENABLED
     /// One-shot sync used by background app refresh and silent pushes. Guarded so it
     /// can't race the foreground poll; returns whether remote changes were applied.
     @discardableResult
-    func runBackgroundSync() async -> Bool {
+    func runBackgroundSync(preferLiveSocket: Bool = false) async -> Bool {
         guard !syncInProgress, let session = syncSession, session.supportsSync else { return false }
         syncInProgress = true
         defer { syncInProgress = false }
-        // Background resyncs ride plain HTTP. The socket should already be down
-        // (the scenePhase handler tears it down), but if iOS suspended us before
-        // that teardown ran, the core still holds a client whose socket died with
-        // the suspension — drop it so the pull can't stall on a zombie transport.
-        // Foreground re-opens it on scenePhase .active.
-        if UIApplication.shared.applicationState == .background {
+        // Background resyncs normally ride plain HTTP. The socket should already be
+        // down (the scenePhase handler tears it down), but if iOS suspended us
+        // before that teardown ran, the core still holds a client whose socket died
+        // with the suspension — drop it so the pull can't stall on a zombie
+        // transport. Foreground re-opens it on scenePhase .active.
+        //
+        // A flush fired the instant the app blurs/backgrounds is the exception: the
+        // socket is still alive, so `preferLiveSocket` keeps it up and this sync's
+        // push rides the already-open connection (no fresh TLS handshake) — the
+        // fastest way to get a just-made edit to peers. The caller tears the socket
+        // down afterward (see flushPendingEditSyncAndTeardown).
+        if !preferLiveSocket, UIApplication.shared.applicationState == .background {
             stopWsSync()
         }
         guard await refreshSyncSessionIfNeeded() == .ready else { return false }
@@ -103,6 +116,10 @@ extension AppModel {
             }
         }
     }
+#else
+    @discardableResult
+    func runBackgroundSync(preferLiveSocket: Bool = false) async -> Bool { false }
+#endif
 
     /// One-shot background maintenance used by BGAppRefreshTask. Cloud sync runs
     /// whenever eligible; Google Calendar sync is throttled separately because it
@@ -117,6 +134,7 @@ extension AppModel {
         return remoteChanged || googleSynced
     }
 
+#if ACCOUNTS_ENABLED
     func syncOnce() async {
         // Set the in-progress guard before refreshing so concurrent callers bail
         // out — two simultaneous refreshes would replay the same (single-use)
@@ -183,8 +201,9 @@ extension AppModel {
     /// Push that follows a local edit, debounced so a burst of edits coalesces
     /// into one sync instead of pushing on every mutation. Leading-window like
     /// desktop: the first edit of a burst arms the timer and later edits don't
-    /// postpone it. The 30 s foreground poll backstops a continuous edit, and
-    /// `flushPendingEditSync()` pushes before the app suspends.
+    /// postpone it. The 30 s foreground poll backstops a continuous edit, and the
+    /// blur/background flush (see `flushPendingEditSyncOverWebSocket`) pushes over
+    /// the live socket before the app suspends.
     func scheduleEditSync() {
         guard syncSession != nil, pendingEditSyncTask == nil else { return }
         pendingEditSyncTask = Task { [weak self] in
@@ -195,18 +214,48 @@ extension AppModel {
         }
     }
 
-    /// Flush a debounced edit immediately, wrapped in a background assertion so a
-    /// push armed just before the app suspends isn't stranded until the next
-    /// BGAppRefreshTask (~3 h) or foreground. No-op when no edit is pending.
-    func flushPendingEditSync() {
+    /// Blur (scenePhase `.inactive`): the app just lost focus but the socket is
+    /// still alive. If a local edit is still debounced, push it over the *live*
+    /// socket right now — the fastest way to get it to peers (no fresh TLS
+    /// handshake) — instead of waiting out the 400 ms debounce, the 30 s poll, or
+    /// the background flush. The socket is deliberately left up because the app may
+    /// return to active immediately (a transient blur: Control Center, a banner, an
+    /// incoming call). Wrapped in a background assertion so the push completes even
+    /// if the blur turns into a full background. No-op when no edit is pending.
+    func flushPendingEditSyncOverWebSocket() {
         guard pendingEditSyncTask != nil else { return }
         pendingEditSyncTask?.cancel()
         pendingEditSyncTask = nil
         Task { [weak self] in
             guard let self else { return }
-            _ = await self.withBackgroundAssertion("knotq.flush-edit-sync") {
-                await self.runBackgroundSync()
+            _ = await self.withBackgroundAssertion("knotq.flush-edit-sync.blur") {
+                await self.runBackgroundSync(preferLiveSocket: true)
             }
+        }
+    }
+
+    /// Backgrounding (scenePhase `.background`): flush any still-pending edit over
+    /// the live socket, THEN tear the socket down. Order matters — the teardown runs
+    /// only after the push completes, so the push rides the open socket instead of a
+    /// fresh HTTP handshake, and the two operations share one serial Task so a
+    /// separate `stopWsSync()` can't race ahead of the push. The socket is always
+    /// dropped afterward (a socket left open into a suspended process becomes a
+    /// zombie that stalls the next pull); FCM + the ~3 h refresh cover wakeups.
+    /// Normally `.inactive` already flushed the edit, so this is usually a plain
+    /// teardown, but it still flushes as a safety net for the edit-then-background
+    /// path that skips a distinct `.inactive`.
+    func flushPendingEditSyncAndTeardown() {
+        let hadPendingEdit = pendingEditSyncTask != nil
+        pendingEditSyncTask?.cancel()
+        pendingEditSyncTask = nil
+        Task { [weak self] in
+            guard let self else { return }
+            if hadPendingEdit {
+                _ = await self.withBackgroundAssertion("knotq.flush-edit-sync") {
+                    await self.runBackgroundSync(preferLiveSocket: true)
+                }
+            }
+            self.stopWsSync()
         }
     }
 
@@ -284,6 +333,16 @@ extension AppModel {
             return .deferred
         }
     }
+#else
+    // Accounts/sync disabled: no-op stubs preserving signatures for shared callers.
+    func syncOnce() async {}
+    func scheduleSync() {}
+    func scheduleEditSync() {}
+    func flushPendingEditSyncOverWebSocket() {}
+    func flushPendingEditSyncAndTeardown() {}
+    func refreshSyncSessionForAccountAction() async -> Bool { false }
+    func refreshSyncSessionIfNeeded(force: Bool = false) async -> SyncSessionRefreshResult { .sessionDead }
+#endif
 
     /// Run a short, critical async network call under a UIKit background-task
     /// assertion so it can finish even if the user backgrounds the app mid-request.
@@ -449,6 +508,7 @@ extension AppModel {
         }
     }
 
+#if ACCOUNTS_ENABLED
     /// Open the persistent sync WebSocket for the current session (online, poll-free
     /// sync; `sync_once`'s pull/push then ride the socket). Idempotent in the core.
     func startWsSync() {
@@ -522,6 +582,14 @@ extension AppModel {
             }
         }
     }
+#else
+    // Accounts/sync disabled: no-op stubs preserving signatures for shared callers.
+    func startWsSync() {}
+    func stopWsSync() {}
+    func wsPendingChanged() async -> Bool { false }
+    func isWsConnected() async -> Bool { false }
+    func startSyncPolling() {}
+#endif
 
     func configureGoogleSyncPolling(accountCount: Int32) {
         if accountCount <= 0 {

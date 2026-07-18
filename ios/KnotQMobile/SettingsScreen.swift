@@ -1,4 +1,3 @@
-import StoreKit
 import SwiftUI
 
 struct SettingsScreen: View {
@@ -11,7 +10,7 @@ struct SettingsScreen: View {
     }
 
     var body: some View {
-        Form {
+        let form = Form {
             Section {
                 SyncSettingsCard(
                     theme: theme,
@@ -55,6 +54,9 @@ struct SettingsScreen: View {
         .scrollContentBackground(.hidden)
         .background(theme.bgApp)
         .navigationTitle(L10n.t("settings.header.title"))
+
+        #if ACCOUNTS_ENABLED
+        form
         .task {
             // Load products when an account has no entitlement, so the paywall can
             // show real prices.
@@ -74,6 +76,9 @@ struct SettingsScreen: View {
         } message: {
             Text(L10n.t("mobile.settings.cancel_sync_subscription_message"))
         }
+        #else
+        form
+        #endif
     }
 }
 

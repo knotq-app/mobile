@@ -47,6 +47,9 @@ use parsing::*;
 mod crdt_changes;
 use crdt_changes::mobile_crdt_change_set_for_command;
 
+// Sync internals stay compiled in every configuration; when `accounts` is off
+// they are unreferenced (the UDL sync fns stub out), so silence dead-code here.
+#[cfg_attr(not(feature = "accounts"), allow(dead_code))]
 mod media_sync;
 use media_sync::{
     mobile_download_missing_media_assets, mobile_media_to_item_media,
@@ -63,8 +66,10 @@ use conversions::{
 };
 
 mod mobile_core_api;
+#[cfg_attr(not(feature = "accounts"), allow(dead_code))]
 mod mobile_core_inner_ops;
 mod mobile_core_inner_views;
+#[cfg_attr(not(feature = "accounts"), allow(dead_code))]
 mod ws_sync;
 
 #[cfg(test)]
@@ -122,6 +127,7 @@ impl From<anyhow::Error> for MobileError {
     }
 }
 
+#[cfg_attr(not(feature = "accounts"), allow(dead_code))]
 pub struct MobileCore {
     inner: Mutex<MobileCoreInner>,
     // Shared handle to inner.ws_changed, read lock-free by `ws_pending_changed` so
@@ -154,6 +160,7 @@ impl MobileCore {
     }
 }
 
+#[cfg_attr(not(feature = "accounts"), allow(dead_code))]
 struct MobileCoreInner {
     workspace_path: PathBuf,
     settings_path: PathBuf,
@@ -198,6 +205,7 @@ struct MobileCoreInner {
 /// nothing-to-push syncs to this interval breaks that loop. Kept well under the
 /// shells' poll interval (~30s) so the periodic pull is unaffected, and bypassed
 /// whenever there are local edits queued so user changes never wait on it.
+#[cfg_attr(not(feature = "accounts"), allow(dead_code))]
 const MIN_REMOTE_SYNC_INTERVAL: std::time::Duration = std::time::Duration::from_secs(10);
 
 struct GoogleCalendarApplyResult {

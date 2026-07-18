@@ -5,6 +5,9 @@ import StoreKit
 import SwiftUI
 import UIKit
 
+// Entire sign-in / StoreKit / account / subscription surface. Compiled out when
+// the `accounts` flag is off (shipped builds); every caller is gated to match.
+#if ACCOUNTS_ENABLED
 extension AppModel {
     /// Start a browser-based sign-in (or account creation): open the hosted sign-in
     /// page with a custom-scheme redirect + PKCE, then exchange the returned
@@ -659,3 +662,4 @@ extension AppModel {
         }
     }
 }
+#endif

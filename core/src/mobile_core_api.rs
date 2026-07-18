@@ -958,39 +958,90 @@ impl MobileCore {
             .map_err(Into::into)
     }
 
+    // ---------------------------------------------------------------------
+    // Accounts/sync surface. These 8 functions stay in the UDL unconditionally
+    // (generated bindings expect them), but when the `accounts` feature is OFF
+    // their bodies stub to safe no-ops/defaults so shipped builds carry no
+    // sign-in/sync/billing behavior. Real impls are `#[cfg(feature = "accounts")]`.
+    // ---------------------------------------------------------------------
+
+    #[cfg(feature = "accounts")]
     pub fn sync_once(&self, api_base: String, bearer_token: String) -> Result<bool, MobileError> {
         self.lock()?
             .sync_once(&api_base, &bearer_token)
             .map_err(Into::into)
     }
 
+    #[cfg(not(feature = "accounts"))]
+    pub fn sync_once(
+        &self,
+        _api_base: String,
+        _bearer_token: String,
+    ) -> Result<bool, MobileError> {
+        Ok(false)
+    }
+
+    #[cfg(feature = "accounts")]
     pub fn take_sync_notice(&self) -> Result<Option<String>, MobileError> {
         Ok(self.lock()?.sync_notice.take())
+    }
+
+    #[cfg(not(feature = "accounts"))]
+    pub fn take_sync_notice(&self) -> Result<Option<String>, MobileError> {
+        Ok(None)
     }
 
     /// Open a persistent WebSocket for online, poll-free sync. While connected,
     /// `sync_once`'s pull/push ride the socket and a peer's push triggers a prompt
     /// sync (see `ws_pending_changed`). Idempotent; re-points on an account change.
+    #[cfg(feature = "accounts")]
     pub fn start_ws_sync(&self, api_base: String, bearer_token: String) -> Result<(), MobileError> {
         self.lock()?.start_ws_sync(&api_base, &bearer_token);
         Ok(())
     }
 
+    #[cfg(not(feature = "accounts"))]
+    pub fn start_ws_sync(
+        &self,
+        _api_base: String,
+        _bearer_token: String,
+    ) -> Result<(), MobileError> {
+        Ok(())
+    }
+
     /// Tear down the WebSocket (sign-out, app backgrounded). Sync falls back to HTTP.
+    #[cfg(feature = "accounts")]
     pub fn stop_ws_sync(&self) -> Result<(), MobileError> {
         self.lock()?.stop_ws_sync();
         Ok(())
     }
 
+    #[cfg(not(feature = "accounts"))]
+    pub fn stop_ws_sync(&self) -> Result<(), MobileError> {
+        Ok(())
+    }
+
+    #[cfg(feature = "accounts")]
     pub fn is_ws_connected(&self) -> Result<bool, MobileError> {
         Ok(self.lock()?.is_ws_connected())
+    }
+
+    #[cfg(not(feature = "accounts"))]
+    pub fn is_ws_connected(&self) -> Result<bool, MobileError> {
+        Ok(false)
     }
 
     /// Whether a server `changed` nudge is waiting. The shell polls this while
     /// connected and calls `sync_once` promptly when true (which clears it). Read
     /// lock-free so the poll is never blocked behind an in-flight `sync_once`.
+    #[cfg(feature = "accounts")]
     pub fn ws_pending_changed(&self) -> Result<bool, MobileError> {
         Ok(self.ws_changed.load(std::sync::atomic::Ordering::SeqCst))
+    }
+
+    #[cfg(not(feature = "accounts"))]
+    pub fn ws_pending_changed(&self) -> Result<bool, MobileError> {
+        Ok(false)
     }
 
     /// Flag that a peer pushed — the shell calls this when a silent FCM wake-up
@@ -1000,14 +1051,21 @@ impl MobileCore {
     /// "Recent" is measured on a monotonic clock that pauses while the device
     /// sleeps, so without this flag a background wake can silently pull nothing
     /// and a peer's change (often a notification) is missed until the next wake.
+    #[cfg(feature = "accounts")]
     pub fn note_remote_changed(&self) -> Result<(), MobileError> {
         self.ws_changed.store(true, std::sync::atomic::Ordering::SeqCst);
+        Ok(())
+    }
+
+    #[cfg(not(feature = "accounts"))]
+    pub fn note_remote_changed(&self) -> Result<(), MobileError> {
         Ok(())
     }
 
     /// Hand the core a push token (e.g. an FCM registration token) so the next
     /// sync registers this device for silent background wake-ups. An empty token
     /// clears the registration. Channel is FCM; environment is "sandbox"/"production".
+    #[cfg(feature = "accounts")]
     pub fn set_push_registration(
         &self,
         token: String,
@@ -1029,6 +1087,15 @@ impl MobileCore {
             _ => PushEnvironment::Sandbox,
         });
         inner.push_token = Some(token);
+        Ok(())
+    }
+
+    #[cfg(not(feature = "accounts"))]
+    pub fn set_push_registration(
+        &self,
+        _token: String,
+        _environment: String,
+    ) -> Result<(), MobileError> {
         Ok(())
     }
 

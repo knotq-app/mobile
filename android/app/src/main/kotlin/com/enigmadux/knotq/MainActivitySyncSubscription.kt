@@ -112,6 +112,7 @@ import kotlin.math.roundToInt
 /// single-use refresh token is never replayed concurrently. Guarded by the poll
 /// loop's in-progress flag for the same reason.
 internal fun MainActivity.refreshSubscriptionStatus() {
+    if (!BuildConfig.ACCOUNTS_ENABLED) return
     if (syncInProgress) return
     val session = syncSession ?: return
     if (session.refreshToken.isEmpty()) return
@@ -535,6 +536,8 @@ internal fun MainActivity.startResendCooldown(seconds: Int) {
 // --- Google Play billing ---
 
 internal fun MainActivity.ensureBillingClient(onReady: (BillingClient) -> Unit) {
+    // Play Billing only initializes for the accounts/subscription flow.
+    if (!BuildConfig.ACCOUNTS_ENABLED) return
     val existing = billingClient
     if (existing != null && existing.isReady) {
         onReady(existing)
@@ -570,6 +573,7 @@ internal fun MainActivity.ensureBillingClient(onReady: (BillingClient) -> Unit) 
 }
 
 internal fun MainActivity.startGooglePlaySubscribe() {
+    if (!BuildConfig.ACCOUNTS_ENABLED) return
     if (syncSession == null) return
     if (purchaseInProgress) return
     // Subscribing is gated on a confirmed email (the backend rejects the verify call
@@ -662,6 +666,7 @@ private fun MainActivity.launchSyncBillingFlow() {
 }
 
 internal fun MainActivity.restoreGooglePlayPurchases() {
+    if (!BuildConfig.ACCOUNTS_ENABLED) return
     if (syncSession == null || purchaseInProgress) return
     ensureBillingClient { client ->
         val params = QueryPurchasesParams.newBuilder()

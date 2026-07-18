@@ -14,6 +14,11 @@ required-features = ["bindgen-cli"]
 [features]
 default = []
 bindgen-cli = ["uniffi/cli"]
+# Compile-time gate for all accounts/sign-in/sync/billing/subscription behavior.
+# OFF (default) = shipped/release builds: the sync UDL functions stub to safe
+# no-ops. ON = dev/sandbox builds: full behavior as today. Flip via the build
+# wiring (Debug xcconfig / android debug buildType) — see build-rust.sh + pbxproj.
+accounts = []
 
 [dependencies]
 anyhow.workspace = true

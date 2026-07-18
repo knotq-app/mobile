@@ -24,7 +24,7 @@ struct KnotQMobileApp: App {
                 .onAppear {
                     MobileReviewPrompt.maybeRequestReview()
                 }
-                .onChange(of: scenePhase) { _, phase in
+                .onChange(of: scenePhase) { phase in
                     switch phase {
                     case .active:
                         // Advance the daily/home "today" if the day rolled over while
@@ -35,20 +35,28 @@ struct KnotQMobileApp: App {
                         // changed) while it was backgrounded shows up without waiting for
                         // the access token to expire. Cold launch and sign-in are covered
                         // by startSyncPolling's own refresh.
+                        #if ACCOUNTS_ENABLED
                         Task { await model.refreshSubscriptionStatus() }
+                        #endif
                         MobileReviewPrompt.maybeRequestReview()
                         // Re-open the sync socket on return to the foreground.
                         model.startWsSync()
+                    case .inactive:
+                        // Blur: the app just lost focus but the socket is still alive.
+                        // Push a still-debounced edit over it right away so a quick
+                        // edit-then-switch reaches peers immediately, rather than
+                        // waiting for the debounce/poll or the slower background flush.
+                        // The socket stays up (the app may return to active at once).
+                        model.flushPendingEditSyncOverWebSocket()
                     case .background:
-                        // Push a still-debounced edit before we suspend, so editing then
-                        // backgrounding doesn't strand the change until the ~3 h refresh.
-                        model.flushPendingEditSync()
+                        // Flush any still-pending edit over the live socket, THEN tear
+                        // the socket down (order matters — the push must ride the open
+                        // socket, not a fresh HTTP handshake). Usually `.inactive`
+                        // already flushed, so this is mostly the teardown.
+                        model.flushPendingEditSyncAndTeardown()
                         // Apply a reschedule the debounce deferred — its trailing timer
                         // never fires once we're suspended.
                         MobileNotificationScheduler.shared.flushPendingReschedule()
-                        // Tear the socket down while suspended (FCM + the 3h refresh
-                        // cover background wakeups).
-                        model.stopWsSync()
                     default:
                         break
                     }

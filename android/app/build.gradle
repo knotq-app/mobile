@@ -52,8 +52,16 @@ android {
     }
 
     buildTypes {
+        debug {
+            // Dev/sandbox builds ship the accounts/sync/billing surface.
+            buildConfigField "boolean", "ACCOUNTS_ENABLED", "true"
+        }
         release {
             minifyEnabled false
+            // Shipped builds compile out sign-in/sync/subscription; the sync UDL
+            // fns stub in the (feature-off) Rust core and the Kotlin guards below
+            // fall through to "Coming soon".
+            buildConfigField "boolean", "ACCOUNTS_ENABLED", "false"
             if (hasReleaseSigning) {
                 signingConfig signingConfigs.release
             }

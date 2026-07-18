@@ -380,20 +380,33 @@ extension DayTimelineUIKitView {
 
         var slots: [Slot] = []
         for key in groupOrder {
-            guard let members = groups[key], let primary = members.first,
-                  let startMinute = minuteOfDay(primary.start) ?? minuteOfDay(primary.end) else { continue }
+            guard let members = groups[key], let primary = members.first else { continue }
             let minimumDuration: CGFloat = primary.kind == "event" ? 30 : 45
-            var endMinute = max(startMinute + minimumDuration, minuteOfDay(primary.end) ?? startMinute + minimumDuration)
             // When several same-time items share the block, reserve enough of the
             // timeline span to fit every stacked row, so neighbouring blocks lane
             // out around it instead of being overdrawn by the taller block.
+            var reservedSpan = minimumDuration
             if members.count > 1 {
                 let contentHeight = DayTimelineEventBlockView.contentHeight(
                     for: primary,
                     mergedCount: members.count,
                     timeFormat: timeFormat
                 )
-                endMinute = max(endMinute, startMinute + contentHeight / Self.hourHeight * 60)
+                reservedSpan = max(reservedSpan, contentHeight / Self.hourHeight * 60)
+            }
+            let startMinute: CGFloat
+            let endMinute: CGFloat
+            if primary.kind == "assignment" {
+                // An assignment is anchored to its deadline: the block grows
+                // upward so its bottom stroke sits at the due time, mirroring
+                // the desktop calendar (see calendar/layout.rs estimate_range_y).
+                guard let dueMinute = minuteOfDay(primary.end) ?? minuteOfDay(primary.start) else { continue }
+                endMinute = dueMinute
+                startMinute = max(0, dueMinute - reservedSpan)
+            } else {
+                guard let anchorMinute = minuteOfDay(primary.start) ?? minuteOfDay(primary.end) else { continue }
+                startMinute = anchorMinute
+                endMinute = max(startMinute + reservedSpan, minuteOfDay(primary.end) ?? startMinute + reservedSpan)
             }
             slots.append(Slot(occurrence: primary, occurrences: members, startMinute: startMinute, endMinute: endMinute))
         }
@@ -433,7 +446,6 @@ extension DayTimelineUIKitView {
         return placed.map { placement in
             let slot = placement.slot
             let subWidth = geometry.columnWidth / CGFloat(max(1, placement.laneCount))
-            let y = Self.timeYOffset + slot.startMinute / 60 * Self.hourHeight
             let minimumHeight: CGFloat = slot.occurrence.kind == "event" ? 20 : 34
             var height = max(minimumHeight, (slot.endMinute - slot.startMinute) / 60 * Self.hourHeight - 2)
             if slot.occurrences.count > 1 {
@@ -442,6 +454,16 @@ extension DayTimelineUIKitView {
                     mergedCount: slot.occurrences.count,
                     timeFormat: timeFormat
                 ))
+            }
+            // Assignments hang from their deadline: the frame's bottom edge (and
+            // its stroke line) lands exactly on the due time, and any height
+            // clamps grow the block upward instead of pushing it past the line.
+            let y: CGFloat
+            if slot.occurrence.kind == "assignment" {
+                let dueY = Self.timeYOffset + slot.endMinute / 60 * Self.hourHeight
+                y = max(Self.timeYOffset, dueY - height)
+            } else {
+                y = Self.timeYOffset + slot.startMinute / 60 * Self.hourHeight
             }
             let frame = CGRect(
                 x: columnX + CGFloat(placement.lane) * subWidth + 1,

@@ -1,4 +1,6 @@
+#if ACCOUNTS_ENABLED
 import StoreKit
+#endif
 import SwiftUI
 
 private struct SyncPanelState {
@@ -15,6 +17,14 @@ struct SyncSettingsCard: View {
     @State private var showingDeleteAccount = false
 
     private var state: SyncPanelState {
+        #if !ACCOUNTS_ENABLED
+        return SyncPanelState(
+            badge: L10n.t("web.download.get_app"),
+            detail: L10n.t("web.account.sync_promo_tagline"),
+            badgeBackground: theme.isDark ? Color(hex: 0x3b82f6).opacity(0.16) : Color(hex: 0x2f67cf).opacity(0.09),
+            badgeForeground: theme.isDark ? Color(hex: 0x9bc2ff) : Color(hex: 0x235ebe)
+        )
+        #else
         if model.syncSession != nil && model.syncOffline {
             return SyncPanelState(
                 badge: L10n.t("sync.status.offline"),
@@ -61,17 +71,22 @@ struct SyncSettingsCard: View {
             badgeBackground: theme.isDark ? Color(hex: 0x3b82f6).opacity(0.16) : Color(hex: 0x2f67cf).opacity(0.09),
             badgeForeground: theme.isDark ? Color(hex: 0x9bc2ff) : Color(hex: 0x235ebe)
         )
+        #endif
     }
 
     private var detail: String {
+        #if !ACCOUNTS_ENABLED
+        return state.detail
+        #else
         if model.syncSession != nil && model.syncOffline {
             return state.detail
         }
         return model.syncSession?.email ?? state.detail
+        #endif
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 11) {
+        let card = VStack(alignment: .leading, spacing: 11) {
             header
             bodyContent
         }
@@ -82,8 +97,11 @@ struct SyncSettingsCard: View {
                 .stroke(syncPanelBorder, lineWidth: 1)
         }
         .shadow(color: Color.black.opacity(theme.isDark ? 0.30 : 0.09), radius: theme.isDark ? 10 : 7, x: 0, y: theme.isDark ? 5 : 3)
+
+        #if ACCOUNTS_ENABLED
+        card
         .task { await loadProductsIfNeeded() }
-        .onChange(of: model.syncSession?.supportsSync) { _, supportsSync in
+        .onChange(of: model.syncSession?.supportsSync) { supportsSync in
             guard supportsSync == false else { return }
             Task { await model.loadSyncProducts() }
         }
@@ -91,6 +109,9 @@ struct SyncSettingsCard: View {
             DeleteSyncAccountSheet(theme: theme)
                 .environmentObject(model)
         }
+        #else
+        card
+        #endif
     }
 
     private var header: some View {
@@ -128,6 +149,7 @@ struct SyncSettingsCard: View {
 
     @ViewBuilder
     private var bodyContent: some View {
+        #if ACCOUNTS_ENABLED
         if let session = model.syncSession {
             if session.supportsSync {
                 enabledActions
@@ -147,8 +169,16 @@ struct SyncSettingsCard: View {
             .frame(maxWidth: .infinity)
             .disabled(model.syncAuthInProgress)
         }
+        #else
+        Text(L10n.t("mobile.sync.coming_soon_detail"))
+            .font(.system(size: 12))
+            .lineSpacing(1)
+            .foregroundStyle(theme.textSoft)
+            .fixedSize(horizontal: false, vertical: true)
+        #endif
     }
 
+    #if ACCOUNTS_ENABLED
     private var enabledActions: some View {
         HStack(spacing: 8) {
             if model.subscriptionCancelled {
@@ -347,6 +377,7 @@ struct SyncSettingsCard: View {
         .buttonStyle(SyncCardButtonStyle(theme: theme))
         .disabled(model.syncInProgress || model.syncAccountActionInProgress)
     }
+    #endif
 
     private var syncPanelBackground: Color {
         theme.isDark ? Color(hex: 0x3b82f6).opacity(0.086) : Color(hex: 0xeaf2ff)
@@ -356,6 +387,7 @@ struct SyncSettingsCard: View {
         theme.isDark ? Color(hex: 0x7aa0ff).opacity(0.27) : Color(hex: 0x2f67cf).opacity(0.22)
     }
 
+    #if ACCOUNTS_ENABLED
     private func loadProductsIfNeeded() async {
         guard let session = model.syncSession else { return }
         // Refresh the subscription lifecycle so a cancelled-but-active subscription
@@ -366,8 +398,10 @@ struct SyncSettingsCard: View {
             await model.loadSyncProducts()
         }
     }
+    #endif
 }
 
+#if ACCOUNTS_ENABLED
 private struct DeleteSyncAccountSheet: View {
     @EnvironmentObject private var model: AppModel
     @Environment(\.dismiss) private var dismiss
@@ -598,3 +632,4 @@ private struct SyncCardButtonStyle: ButtonStyle {
         }
     }
 }
+#endif

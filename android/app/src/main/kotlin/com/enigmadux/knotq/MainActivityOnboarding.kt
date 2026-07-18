@@ -145,8 +145,9 @@ import kotlin.math.roundToInt
     internal fun MainActivity.onboardingAdvance() {
         if (onboardingStep >= ONBOARDING_STEPS.size - 1) {
             // After the tour: surface the sign-in / stay-local prompt, unless the user
-            // is already signed in (mirrors iOS finishTutorial()).
-            if (syncSession == null) {
+            // is already signed in (mirrors iOS finishTutorial()). When accounts are
+            // compiled out (release), skip the sign-in prompt and finish local-only.
+            if (BuildConfig.ACCOUNTS_ENABLED && syncSession == null) {
                 onboardingPhase = ONBOARDING_ACCOUNT
                 showOnboardingOverlay()
             } else {

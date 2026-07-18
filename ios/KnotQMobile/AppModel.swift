@@ -65,7 +65,7 @@ final class AppModel: ObservableObject {
     // the persistent socket a push is a cheap frame (no HTTP round-trip), and the
     // `syncInProgress` guard already caps it to one in-flight sync at a time, so
     // this can be short like desktop's WS local-change debounce (~300 ms). The 30 s
-    // foreground poll + flushPendingEditSync() remain the backstops.
+    // foreground poll + the blur/background flush remain the backstops.
     static let editSyncDebounceNanos: UInt64 = 400_000_000
 
     let bridge: RustBridge?
@@ -119,8 +119,10 @@ final class AppModel: ObservableObject {
             )
         }
         refresh()
+        #if ACCOUNTS_ENABLED
         startSyncPolling()
         startTransactionListener()
+        #endif
         #if DEBUG
         if !seededScreenshotFixture {
             seedEditorImageFixture()

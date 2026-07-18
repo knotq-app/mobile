@@ -695,6 +695,34 @@ import kotlin.math.roundToInt
     }
 
     internal fun MainActivity.syncSettingsCard(): View {
+        // Accounts/sync are compiled out of release builds. Keep the card slot but
+        // render a "coming soon" message instead of any sign-in/sync/subscribe UI.
+        if (!BuildConfig.ACCOUNTS_ENABLED) {
+            return LinearLayout(this).apply {
+                orientation = LinearLayout.VERTICAL
+                setPadding(dp(12), dp(12), dp(12), dp(12))
+                background = rounded(
+                    if (theme.isDark) adjustAlpha(rgb(0x3b82f6), 0.086f) else rgb(0xeaf2ff),
+                    dp(8),
+                    if (theme.isDark) adjustAlpha(rgb(0x7aa0ff), 0.27f) else adjustAlpha(rgb(0x2f67cf), 0.22f)
+                )
+                elevation = dp(if (theme.isDark) 5 else 2).toFloat()
+                addView(LinearLayout(this@syncSettingsCard).apply {
+                    orientation = LinearLayout.HORIZONTAL
+                    gravity = Gravity.TOP
+                    addView(brandMark(34), LinearLayout.LayoutParams(dp(34), dp(34)).apply {
+                        setMargins(0, dp(2), dp(9), 0)
+                    })
+                    addView(LinearLayout(this@syncSettingsCard).apply {
+                        orientation = LinearLayout.VERTICAL
+                        addView(text(L10n.t(this@syncSettingsCard, "settings.sync.title"), theme.textPrimary, 15f, true), LinearLayout.LayoutParams(-1, dp(18)))
+                        addView(text("Cross-device sync and accounts are coming soon.", theme.textSoft, 11f, false).apply {
+                            maxLines = 3
+                        }, LinearLayout.LayoutParams(-1, -2))
+                    }, LinearLayout.LayoutParams(0, -2, 1f))
+                })
+            }
+        }
         val session = syncSession
         // Cancelled (won't renew) but still entitling: amber "Cancelled" badge, like
         // the not-yet-subscribed state, with a re-enable action below.

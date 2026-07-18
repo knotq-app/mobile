@@ -108,6 +108,11 @@ import kotlin.math.roundToInt
 // extracted as extension functions (same module) to shrink MainActivity.kt.
 
 internal fun MainActivity.showSyncAccountDialog() {
+    // Accounts/sign-in are compiled out of release builds.
+    if (!BuildConfig.ACCOUNTS_ENABLED) {
+        toast("Cross-device sync and accounts are coming soon.")
+        return
+    }
     if (syncSession != null) {
         val session = syncSession ?: return
         // Lead with the action that matters for the current state: syncing when

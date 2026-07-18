@@ -106,6 +106,7 @@ import kotlin.math.min
 import kotlin.math.roundToInt
 
 internal fun MainActivity.startSyncPolling() {
+    if (!BuildConfig.ACCOUNTS_ENABLED) return
     syncPollHandler.removeCallbacks(syncPollRunnable)
     if (syncSession != null) {
         // Bootstrap once, then rely entirely on the socket while in the foreground:
@@ -122,6 +123,7 @@ internal fun MainActivity.startSyncPolling() {
 /// Open the persistent sync WebSocket for the current session. While connected,
 /// `sync_once`'s pull/push ride the socket. Idempotent in the core.
 internal fun MainActivity.startWsSync() {
+    if (!BuildConfig.ACCOUNTS_ENABLED) return
     val session = syncSession ?: return
     if (!session.supportsSync) return
     // runCatching also absorbs the case where `bridge` isn't initialized yet.
@@ -145,6 +147,7 @@ internal fun MainActivity.stopWsSync() {
 /// held by an in-flight `sync_once` during network I/O; the actual `sync_once` is
 /// dispatched back to the main thread (it owns `syncSession`/`syncInProgress`).
 internal fun MainActivity.startWsNudge() {
+    if (!BuildConfig.ACCOUNTS_ENABLED) return
     if (wsNudgeActive) return
     wsNudgeActive = true
     Thread {
@@ -183,6 +186,37 @@ internal fun MainActivity.stopWsNudge() {
     wsNudgeActive = false
 }
 
+/// Backgrounding fast-flush: push a pending local edit over the *live* socket
+/// (the fastest path — no fresh TLS handshake), then tear the socket down. Runs
+/// on one background thread so the push is issued to the core before ws_stop and
+/// onStop never blocks. Best-effort: if the token is stale the push 401s
+/// harmlessly and the WorkManager fallback (enqueueOneTimeSync) does the proper
+/// token-refresh + re-push. The socket is always dropped afterward — left open
+/// into a frozen process it becomes a zombie that stalls the next pull. Mirrors
+/// iOS flushPendingEditSyncAndTeardown().
+internal fun MainActivity.flushEditsOverWsThenStop() {
+    if (!BuildConfig.ACCOUNTS_ENABLED) return
+    val session = syncSession
+    Thread {
+        if (session != null && session.supportsSync) {
+            // sync_once's pull/push prefer the live socket (FallbackTransport), so
+            // this rides the already-open connection. The core lock serializes it
+            // with any in-flight sync and with the ws_stop below, so the teardown
+            // can't cut in mid-push.
+            runCatching {
+                bridge.request(
+                    obj(
+                        "type" to "sync_once",
+                        "api_base" to session.apiBase,
+                        "bearer_token" to session.bearerToken
+                    )
+                )
+            }
+        }
+        runCatching { bridge.request(obj("type" to "ws_stop")) }
+    }.start()
+}
+
 /// Debounced sync after a local edit, matching desktop's local-change debounce:
 /// a burst of edits coalesces into one push (SYNC_EDIT_DEBOUNCE_MS) instead of
 /// syncing on every mutation. Leading-window — the first edit of a burst arms
@@ -190,6 +224,7 @@ internal fun MainActivity.stopWsNudge() {
 /// pushes within the window (the 30s poll and the onStop flush are the
 /// backstops; the in-progress guard handles overlap with the poll).
 internal fun MainActivity.requestSyncSoon() {
+    if (!BuildConfig.ACCOUNTS_ENABLED) return
     if (syncSession == null) return
     if (syncEditPending) return
     syncEditPending = true
@@ -199,6 +234,7 @@ internal fun MainActivity.requestSyncSoon() {
 /// Periodic background refresh while signed in — the Android counterpart of
 /// the iOS BGAppRefreshTask (3h cadence, network required).
 internal fun MainActivity.scheduleBackgroundSyncWork() {
+    if (!BuildConfig.ACCOUNTS_ENABLED) return
     val workManager = runCatching { WorkManager.getInstance(this) }.getOrNull() ?: return
     val session = syncSession
     if (session == null || !session.supportsSync) {
@@ -220,6 +256,7 @@ internal fun MainActivity.cancelBackgroundSyncWork() {
 }
 
 internal fun MainActivity.syncOnce() {
+    if (!BuildConfig.ACCOUNTS_ENABLED) return
     // The in-progress guard also serializes refresh: two concurrent refreshes
     // would replay the same single-use refresh token and trip the server's
     // reuse detection, revoking the session.

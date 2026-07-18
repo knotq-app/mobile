@@ -181,24 +181,37 @@ extension DayTimelineUIKitView {
             ? CGFloat(Self.hoursInDay * 60) - duration
             : CGFloat(Self.hoursInDay * 60 - 15)
         let proposedMinY = locationInClip.y - grabOffset.y
-        let rawMinute = (proposedMinY - Self.timeYOffset) / Self.hourHeight * 60
-        let snapped = (rawMinute / 15).rounded() * 15
-        let startMinute = max(0, min(maxStart, snapped))
         let width = min(activeDragStartFrame.width, geometry.columnWidth - 2)
         let sourceColumnOffset = activeDragStartFrame.minX - geometry.canvasX(forDayIndex: laid.dayIndex)
         let maxColumnOffset = max(1, geometry.columnWidth - width - 1)
         let columnOffset = min(max(1, sourceColumnOffset), maxColumnOffset)
+        let base = Calendar.current.startOfDay(for: dayDate(dayIndex))
+        if laid.occurrence.kind == "assignment" {
+            // The block hangs from its deadline, so snap the bottom edge (the
+            // due line) to the grid instead of the top, mirroring the static
+            // layout in laidEvents.
+            let rawDue = (proposedMinY + activeDragStartFrame.height - Self.timeYOffset) / Self.hourHeight * 60
+            let snappedDue = (rawDue / 15).rounded() * 15
+            let dueMinute = max(0, min(CGFloat(Self.hoursInDay * 60 - 15), snappedDue))
+            let frame = CGRect(
+                x: geometry.canvasX(forDayIndex: dayIndex) + columnOffset,
+                y: Self.timeYOffset + dueMinute / 60 * Self.hourHeight - activeDragStartFrame.height,
+                width: width,
+                height: activeDragStartFrame.height
+            )
+            let due = Calendar.current.date(byAdding: .minute, value: Int(dueMinute), to: base)
+            return DayTimelineMoveTarget(dayIndex: dayIndex, startMinute: dueMinute, frame: frame, start: nil, end: due)
+        }
+        let rawMinute = (proposedMinY - Self.timeYOffset) / Self.hourHeight * 60
+        let snapped = (rawMinute / 15).rounded() * 15
+        let startMinute = max(0, min(maxStart, snapped))
         let frame = CGRect(
             x: geometry.canvasX(forDayIndex: dayIndex) + columnOffset,
             y: Self.timeYOffset + startMinute / 60 * Self.hourHeight,
             width: width,
             height: activeDragStartFrame.height
         )
-        let base = Calendar.current.startOfDay(for: dayDate(dayIndex))
         let anchor = Calendar.current.date(byAdding: .minute, value: Int(startMinute), to: base)
-        if laid.occurrence.kind == "assignment" {
-            return DayTimelineMoveTarget(dayIndex: dayIndex, startMinute: startMinute, frame: frame, start: nil, end: anchor)
-        }
         if laid.occurrence.kind == "reminder" {
             return DayTimelineMoveTarget(dayIndex: dayIndex, startMinute: startMinute, frame: frame, start: anchor, end: nil)
         }

@@ -28,6 +28,8 @@ internal class BackgroundSyncWorker(
 ) : Worker(context, params) {
 
     override fun doWork(): Result {
+        // Accounts/sync are compiled out of release builds — no background sync.
+        if (!BuildConfig.ACCOUNTS_ENABLED) return Result.success()
         if (MainActivity.isInForeground) return Result.success()
         val prefs = applicationContext.getSharedPreferences("knotq", Context.MODE_PRIVATE)
         val raw = prefs.getString(SYNC_SESSION_PREF, null) ?: return Result.success()
@@ -193,6 +195,7 @@ internal class BackgroundSyncWorker(
 /// of triggers — an FCM push, an onStop flush — coalesces into one run rather
 /// than stacking redundant syncs.
 internal fun enqueueOneTimeSync(context: Context) {
+    if (!BuildConfig.ACCOUNTS_ENABLED) return
     runCatching {
         val request = OneTimeWorkRequest.Builder(BackgroundSyncWorker::class.java).build()
         WorkManager.getInstance(context)

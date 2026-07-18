@@ -95,7 +95,7 @@ struct SettingsForm: View {
     @State private var showingCancelConfirm = false
 
     var body: some View {
-        Form {
+        let form = Form {
             Section {
                 SyncSettingsCard(
                     theme: theme,
@@ -144,6 +144,9 @@ struct SettingsForm: View {
         .safeAreaInset(edge: .bottom) {
             Color.clear.frame(height: 96)
         }
+
+        #if ACCOUNTS_ENABLED
+        form
         .confirmationDialog(
             L10n.t("mobile.settings.cancel_sync_subscription_title"),
             isPresented: $showingCancelConfirm,
@@ -156,6 +159,9 @@ struct SettingsForm: View {
         } message: {
             Text(L10n.t("mobile.settings.cancel_sync_subscription_message"))
         }
+        #else
+        form
+        #endif
     }
 
     private var themeBinding: Binding<String> {

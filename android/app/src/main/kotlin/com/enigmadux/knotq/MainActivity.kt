@@ -364,9 +364,7 @@ class MainActivity : Activity() {
     override fun onStop() {
         isInForeground = false
         syncPollHandler.removeCallbacks(syncPollRunnable)
-        // Tear the socket down in the background (FCM + the 3h refresh cover wakeups).
         stopWsNudge()
-        stopWsSync()
         val flushEditSync = syncEditPending
         syncPollHandler.removeCallbacks(syncEditRunnable)
         syncEditPending = false
@@ -383,10 +381,22 @@ class MainActivity : Activity() {
             // Mirror iOS applicationDidEnterBackground: keep workspace data fresh
             // via periodic background refresh while signed in to sync.
             scheduleBackgroundSyncWork()
-            // A debounced edit hadn't pushed yet — flush it via a one-off worker so
-            // backgrounding right after typing doesn't strand the change until the
-            // 3 h refresh. Mirrors iOS flushPendingEditSync().
-            if (flushEditSync) enqueueOneTimeSync(this)
+            if (flushEditSync) {
+                // A debounced edit hadn't pushed yet. Push it over the still-live
+                // socket first (fastest path — no fresh TLS handshake), then tear the
+                // socket down. The one-off worker is the durable fallback: it
+                // refreshes the token and re-pushes if the fast socket push didn't
+                // get through before the process froze. Mirrors iOS
+                // flushPendingEditSyncAndTeardown().
+                flushEditsOverWsThenStop()
+                enqueueOneTimeSync(this)
+            } else {
+                // Nothing pending — just drop the socket (FCM + the 3h refresh cover
+                // background wakeups).
+                stopWsSync()
+            }
+        } else {
+            stopWsSync()
         }
         super.onStop()
     }
@@ -1201,8 +1211,14 @@ class MainActivity : Activity() {
         private fun updateDrag(y: Float, x: Float) {
             val laid = dragLaid ?: return
             val rowWidth = max(1, (width - gutterPx) / columns)
-            val rawMinute = snappedMinute(y - dragOffsetY + dragRect.height() / 2f, 15, true)
             val kind = laid.occ.optString("kind")
+            val rawMinute = if (kind == "assignment") {
+                // The block hangs from its deadline, so snap the bottom edge
+                // (the due line) to the grid, mirroring relayout.
+                snappedMinute(y - dragOffsetY + dragRect.height(), 15, true)
+            } else {
+                snappedMinute(y - dragOffsetY + dragRect.height() / 2f, 15, true)
+            }
             val maxStart = if (kind == "event") {
                 hoursInDay * 60 - dragDuration
             } else {
@@ -1224,7 +1240,11 @@ class MainActivity : Activity() {
             val sourceColumnWidth = max(1f, rowWidth.toFloat())
             val sourceOffset = dragOffsetX
             val clampedOffset = sourceOffset.coerceIn(0f, sourceColumnWidth - dragRect.width() - 1f)
-            val top = topOffset + snapped / 60f * hourPx
+            val top = if (kind == "assignment") {
+                topOffset + snapped / 60f * hourPx - dragRect.height()
+            } else {
+                topOffset + snapped / 60f * hourPx
+            }
             dragRect.set(columnLeft + clampedOffset, top, columnLeft + clampedOffset + laid.rect.width(), top + dragRect.height())
             invalidate()
         }
@@ -1268,9 +1288,18 @@ class MainActivity : Activity() {
                 occsArray.forEachObject { occ ->
                     val kind = occ.optString("kind")
                     if (kind == "procedure") return@forEachObject
+                    val minDur = if (kind == "event") 30f else 45f
+                    if (kind == "assignment") {
+                        // An assignment is anchored to its deadline: the block
+                        // grows upward so its bottom stroke sits at the due
+                        // time, mirroring iOS/desktop.
+                        val dueMin = (minuteOfDay(occ, "end") ?: minuteOfDay(occ, "start") ?: return@forEachObject)
+                            .coerceIn(0f, 1440f)
+                        slots.add(Slot(occ, max(0f, dueMin - minDur), dueMin))
+                        return@forEachObject
+                    }
                     val rawStart = minuteOfDay(occ, "start") ?: minuteOfDay(occ, "end") ?: return@forEachObject
                     val startMin = rawStart.coerceIn(0f, 1440f)
-                    val minDur = if (kind == "event") 30f else 45f
                     val rawEnd = minuteOfDay(occ, "end")?.coerceIn(0f, 1440f) ?: (startMin + minDur)
                     slots.add(Slot(occ, startMin, max(startMin + minDur, rawEnd)))
                 }
@@ -1307,9 +1336,16 @@ class MainActivity : Activity() {
                     val slot = placement.slot
                     val kind = slot.occ.optString("kind")
                     val subWidth = colWidth.toFloat() / max(1, placement.laneCount)
-                    val y = topOffset + slot.startMin / 60f * hourPx
                     val minHeight = if (kind == "event") dp(20).toFloat() else dp(34).toFloat()
                     val height = max(minHeight, (slot.endMin - slot.startMin) / 60f * hourPx - 2f)
+                    // Assignments hang from their deadline: the rect's bottom
+                    // edge (its stroke line) lands exactly on the due time, and
+                    // any height clamps grow the block upward.
+                    val y = if (kind == "assignment") {
+                        max(topOffset.toFloat(), topOffset + slot.endMin / 60f * hourPx - height)
+                    } else {
+                        topOffset + slot.startMin / 60f * hourPx
+                    }
                     val x = columnX + placement.lane * subWidth + 1f
                     val rect = RectF(
                         x,
@@ -2214,6 +2250,9 @@ class MainActivity : Activity() {
     /// covers the common cold-start-with-existing-token case. Best-effort: if
     /// Play services are unavailable the listener simply never fires.
     internal fun registerForPushNotifications() {
+        // FCM push registration only exists to drive cross-device sync, which is
+        // compiled out of release builds.
+        if (!BuildConfig.ACCOUNTS_ENABLED) return
         runCatching {
             com.google.firebase.messaging.FirebaseMessaging.getInstance().token
                 .addOnSuccessListener { token ->

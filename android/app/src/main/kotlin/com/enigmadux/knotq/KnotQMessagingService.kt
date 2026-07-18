@@ -20,6 +20,8 @@ class KnotQMessagingService : FirebaseMessagingService() {
     /// the app is alive, hand it to the live core immediately; otherwise the
     /// queued sync (and `MainActivity` on next launch) picks it up from prefs.
     override fun onNewToken(token: String) {
+        // Accounts/sync (and thus FCM-driven sync) are compiled out of release builds.
+        if (!BuildConfig.ACCOUNTS_ENABLED) return
         PushRegistration.store(applicationContext, token)
         MainActivity.sharedBridge?.let { PushRegistration.apply(it, token) }
         enqueueOneTimeSync(applicationContext)
@@ -30,6 +32,7 @@ class KnotQMessagingService : FirebaseMessagingService() {
     /// syncing there). The message is data-only so this fires even when the app is
     /// backgrounded.
     override fun onMessageReceived(message: RemoteMessage) {
+        if (!BuildConfig.ACCOUNTS_ENABLED) return
         if (message.data["type"] != PushRegistration.SCHEDULE_CHANGED) return
         enqueueOneTimeSync(applicationContext)
     }
