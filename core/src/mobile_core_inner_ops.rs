@@ -564,6 +564,7 @@ impl MobileCoreInner {
         let reidentified_workspace = self
             .crdt
             .reidentify_workspace_document(self.workspace.sync.id)?;
+        let account_switched = reidentified_workspace.is_some();
 
         let mut sync_state = load_local_sync_state(&self.workspace_path).unwrap_or_default();
         // One-time recovery: clear stale pull cursors so this sync re-pulls and
@@ -602,24 +603,6 @@ impl MobileCoreInner {
                 update_v1: update.update_v1,
                 touched_items: update.touched_items,
             });
-            // Force re-seed this device's scheme content to the new account. The
-            // bootstrap only re-seeds documents the new server LACKS, so a scheme the
-            // new account already holds from another origin would otherwise never
-            // receive this device's content (the cross-account content gap). Full
-            // snapshots union idempotently; deterministic item creation dedupes items.
-            queue_account_switch_reseed(
-                &mut sync_state,
-                &self.crdt,
-                &self.workspace,
-                self.settings.replica_id,
-            );
-            self.next_sequence = sync_state
-                .pending
-                .iter()
-                .map(|edit| edit.local_sequence)
-                .max()
-                .unwrap_or(0)
-                + 1;
         }
 
         // Register this device (with its push token, if any) so the backend can
@@ -683,6 +666,25 @@ impl MobileCoreInner {
                     });
                 }
             }
+        }
+        if account_switched {
+            // Defer scheme reseeding until the destination account's workspace
+            // index has been pulled. A pre-pull reseed can leave source-only scheme
+            // documents pending after the destination index removes them, producing
+            // an avoidable schema-invalid orphan push.
+            queue_account_switch_reseed(
+                &mut sync_state,
+                &self.crdt,
+                &self.workspace,
+                self.settings.replica_id,
+            );
+            self.next_sequence = sync_state
+                .pending
+                .iter()
+                .map(|edit| edit.local_sequence)
+                .max()
+                .unwrap_or(0)
+                + 1;
         }
 
         mobile_upload_local_media_assets(
