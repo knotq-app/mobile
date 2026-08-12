@@ -672,11 +672,17 @@ impl MobileCoreInner {
             // index has been pulled. A pre-pull reseed can leave source-only scheme
             // documents pending after the destination index removes them, producing
             // an avoidable schema-invalid orphan push.
+            let reseed_excluded = pull
+                .skipped
+                .iter()
+                .map(|skipped| skipped.document)
+                .collect();
             queue_account_switch_reseed(
                 &mut sync_state,
                 &self.crdt,
                 &self.workspace,
                 self.settings.replica_id,
+                &reseed_excluded,
             );
             self.next_sequence = sync_state
                 .pending
