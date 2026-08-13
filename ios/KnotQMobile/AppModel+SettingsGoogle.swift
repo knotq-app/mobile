@@ -23,6 +23,26 @@ extension AppModel {
         }
     }
 
+    func setUpcomingDisplaySettings(
+        eventLookaheadDays: Int32,
+        reminderLookaheadDays: Int32,
+        assignmentLookaheadDays: Int32,
+        maximumItems: Int32,
+        showOverdue: Bool,
+        showCompleted: Bool
+    ) {
+        mutate {
+            try $0.setUpcomingDisplaySettings(
+                eventLookaheadDays: eventLookaheadDays,
+                reminderLookaheadDays: reminderLookaheadDays,
+                assignmentLookaheadDays: assignmentLookaheadDays,
+                maximumItems: maximumItems,
+                showOverdue: showOverdue,
+                showCompleted: showCompleted
+            )
+        }
+    }
+
     func resetWorkspace() {
         mutate { try $0.resetWorkspace() }
     }

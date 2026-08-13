@@ -17,8 +17,35 @@ pub(crate) struct CommitEventEdit {
     pub(crate) scope: DateEditScope,
 }
 
+/// Phase timing for `MobileCoreInner::open`, printed when `KNOTQ_LOAD_TIMING`
+/// is set. Cold launch blocks on `open` before a single frame is drawn, and the
+/// phases have unrelated causes (scheme XML parse, CRDT restore, a startup
+/// save), so a total tells you nothing actionable. Mirrors `KNOTQ_EDIT_TIMING`
+/// in `save_workspace`.
+struct LoadTiming {
+    enabled: bool,
+    at: std::time::Instant,
+}
+
+impl LoadTiming {
+    fn start() -> Self {
+        Self {
+            enabled: std::env::var_os("KNOTQ_LOAD_TIMING").is_some(),
+            at: std::time::Instant::now(),
+        }
+    }
+
+    fn phase(&mut self, label: &str) {
+        if self.enabled {
+            eprintln!("  open: {label} {}ms", self.at.elapsed().as_millis());
+        }
+        self.at = std::time::Instant::now();
+    }
+}
+
 impl MobileCoreInner {
     pub(crate) fn open(app_dir: PathBuf) -> Result<Self> {
+        let mut timing = LoadTiming::start();
         let workspace_dir = app_dir.join("workspace");
         let workspace_path = workspace_dir.join("workspace.json");
         let image_assets_dir = workspace_dir.join("assets/images");
@@ -35,9 +62,16 @@ impl MobileCoreInner {
                 make_default_workspace()
             }
         };
-        workspace.normalize_one_level_folders();
-        workspace.normalize_item_markers();
+        timing.phase("load_workspace");
+        // `|` not `||`: both normalizations must run, and the third is what mints
+        // any missing sync identity. Together they decide whether what we hold
+        // differs from what is on disk — see the save below.
+        let workspace_changed = workspace.normalize_one_level_folders()
+            | workspace.normalize_item_markers()
+            | workspace.ensure_sync_metadata();
+        timing.phase("normalize");
         let settings = load_app_settings(&settings_path).unwrap_or_default();
+        timing.phase("load_settings");
         if should_reset_workspace_dir && workspace_dir.exists() {
             // Preserve the unreadable workspace for recovery instead of
             // deleting it. If even the rename fails, keep going — the save
@@ -53,15 +87,28 @@ impl MobileCoreInner {
                 );
             }
         }
-        // Best-effort: a transient write failure (e.g. disk pressure) must not
-        // prevent startup. The loaded workspace lives in memory and every
-        // subsequent edit retries the save.
-        if let Err(error) = save_workspace(&workspace_path, &workspace) {
-            eprintln!("knotq: deferring workspace save at startup: {error:#}");
+        // Only write back what loading actually changed. A save here rewrites
+        // every scheme file, the index, the daily backup and a history snapshot
+        // — and it blocks the first frame, since the shell opens the core on the
+        // main actor. On the normal launch nothing changed, so persisting is
+        // pure launch latency; when normalization or sync-identity minting did
+        // change something it still has to reach disk before an OS notification
+        // action can depend on those ids. (Desktop gates its startup save the
+        // same way.) Best-effort: a transient write failure must not prevent
+        // startup — the workspace lives in memory and every edit retries.
+        if workspace_changed || should_reset_workspace_dir {
+            if let Err(error) = save_workspace(&workspace_path, &workspace) {
+                eprintln!("knotq: deferring workspace save at startup: {error:#}");
+            }
         }
+        timing.phase("save_workspace");
+        // Cheap now (`save_app_settings` skips an unchanged file), and still the
+        // path that seeds a first-launch settings.json and moves any plaintext
+        // token into the keychain.
         if let Err(error) = save_app_settings(&settings_path, &settings) {
             eprintln!("knotq: deferring settings save at startup: {error:#}");
         }
+        timing.phase("save_settings");
         let next_sequence = load_local_sync_state(&workspace_path)
             .unwrap_or_default()
             .pending
@@ -73,9 +120,12 @@ impl MobileCoreInner {
         // Restore the long-lived CRDT documents from disk with this replica's stable
         // deterministic clientID, so their Yjs identity survives restarts instead of
         // being rebuilt from plain data with a throwaway identity.
+        timing.phase("load_sync_state");
         let crdt_states = load_crdt_state(&workspace_path).unwrap_or_default();
+        timing.phase("load_crdt_state");
         let crdt =
             WorkspaceCrdtDocuments::from_states(&workspace, settings.replica_id, &crdt_states)?;
+        timing.phase("crdt_from_states");
         Ok(Self {
             workspace_path,
             settings_path,
@@ -84,6 +134,7 @@ impl MobileCoreInner {
             settings,
             crdt,
             next_sequence,
+            sync_state_cache: None,
             sync_notice: None,
             push_token: None,
             push_environment: None,
@@ -128,12 +179,24 @@ impl MobileCoreInner {
     }
 
     pub(crate) fn apply(&mut self, command: Command) -> Result<()> {
+        let t0 = std::time::Instant::now();
         let crdt_changes = mobile_crdt_change_set_for_command(&command);
         self.workspace.apply(command)?;
         self.workspace.normalize_one_level_folders();
         self.workspace.normalize_item_markers();
+        let t1 = std::time::Instant::now();
         self.record_crdt_changes(crdt_changes)?;
-        self.save_workspace()
+        let t2 = std::time::Instant::now();
+        let r = self.save_workspace();
+        if edit_timing_enabled() {
+            eprintln!(
+                "apply: command {:?}ms, crdt+pending {:?}ms, save_workspace {:?}ms",
+                (t1 - t0).as_millis(),
+                (t2 - t1).as_millis(),
+                t2.elapsed().as_millis()
+            );
+        }
+        r
     }
 
     /// Mark elapsed event occurrences complete in the background, mirroring the
@@ -444,9 +507,17 @@ impl MobileCoreInner {
             return Ok(());
         }
 
-        let mut sync_state = load_local_sync_state(&self.workspace_path).unwrap_or_default();
+        // This state is rewritten durably below on every edit. Reuse the exact
+        // version we successfully wrote last time instead of parsing a growing
+        // JSON queue again; take it so a failed save cannot leave a cache that
+        // claims an edit reached disk when it did not.
+        let mut sync_state = self
+            .sync_state_cache
+            .take()
+            .unwrap_or_else(|| load_local_sync_state(&self.workspace_path).unwrap_or_default());
         sync_state.workspace_id = Some(self.workspace.id);
         sync_state.replica_id = Some(self.settings.replica_id);
+
         let operation_id = OperationId::new();
         let local_sequence = self.next_sequence;
         self.next_sequence += 1;
@@ -463,7 +534,21 @@ impl MobileCoreInner {
                 touched_items: update.touched_items,
             });
         }
-        save_local_sync_state(&self.workspace_path, &sync_state)
+        // The queue only drains on a successful push, so a device that cannot
+        // push — signed out, offline for a long stretch, or a build with
+        // accounts compiled out — otherwise grows it by one entry per edit
+        // forever, and re-reads and re-writes the whole file on every later
+        // edit. Collapsing a document's backlog into a single full snapshot
+        // keeps every edit (it is the same content) while bounding the file, so
+        // enabling sync later still converges.
+        compact_pending_documents(&mut sync_state, MAX_PENDING_PER_DOCUMENT);
+        let saved = save_local_sync_state(&self.workspace_path, &sync_state);
+        if saved.is_ok() {
+            // Only cache what is actually on disk; a failed write must not leave
+            // the next edit building on state no reader would see.
+            self.sync_state_cache = Some(sync_state);
+        }
+        saved
     }
 
     pub(crate) fn register_push_device(&mut self, client: &MobileSyncHttpClient) {
@@ -516,6 +601,9 @@ impl MobileCoreInner {
         // devices that re-push on every sync form a feedback loop that barrages the
         // backend. Skip the round-trip when nothing local is queued and we synced
         // moments ago — see `should_coalesce_idle_sync`.
+        // The sync path rewrites this file around network I/O; drop the edit
+        // path's copy so it cannot go stale behind it.
+        self.sync_state_cache = None;
         let has_local_pending = load_local_sync_state(&self.workspace_path)
             .map(|state| !state.pending.is_empty())
             .unwrap_or(false);
@@ -763,12 +851,13 @@ impl MobileCoreInner {
         // re-pull adopts the squashed state and re-expresses the pending edits
         // against it, after which the push succeeds — mirroring the desktop
         // scheduler's single epoch retry.
-        if push_result
-            .as_ref()
-            .err()
-            .is_some_and(|err| err.downcast_ref::<knotq_sync::SyncPushEpochStale>().is_some())
-        {
-            eprintln!("mobile sync: push hit a stale document epoch; re-pulling to adopt and retrying");
+        if push_result.as_ref().err().is_some_and(|err| {
+            err.downcast_ref::<knotq_sync::SyncPushEpochStale>()
+                .is_some()
+        }) {
+            eprintln!(
+                "mobile sync: push hit a stale document epoch; re-pulling to adopt and retrying"
+            );
             let adoption = batch_pull_and_apply(
                 &transport,
                 &mut self.crdt,
@@ -818,9 +907,14 @@ impl MobileCoreInner {
             || media_downloaded)
     }
 
-    pub(crate) fn ensure_daily_queue(&mut self, date: NaiveDate) -> Result<SchemeId> {
+    /// Returns the queue's scheme id and whether this call had to create it.
+    /// Callers use the flag to skip a whole-workspace save on the (overwhelmingly
+    /// common) path where the queue already existed — every launch calls this,
+    /// and an unconditional save costs a full scheme-file + index + CRDT-state
+    /// write before the first frame.
+    pub(crate) fn ensure_daily_queue(&mut self, date: NaiveDate) -> Result<(SchemeId, bool)> {
         if let Some(id) = self.load_daily_queue_scheme_if_needed(date)? {
-            return Ok(id);
+            return Ok((id, false));
         }
         let id = daily_queue_scheme_id(date);
         let mut scheme = Scheme::new(daily_queue_scheme_name(date), DAILY_QUEUE_COLOR_INDEX);
@@ -836,7 +930,7 @@ impl MobileCoreInner {
                 .workspace()
                 .touch_scheme(id),
         )?;
-        Ok(id)
+        Ok((id, true))
     }
 
     pub(crate) fn complete_google_calendar_import(

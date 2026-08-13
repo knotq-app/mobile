@@ -81,6 +81,7 @@ import com.android.billingclient.api.QueryPurchasesParams
 import com.google.android.play.core.review.ReviewManagerFactory
 import org.json.JSONArray
 import org.json.JSONObject
+import java.lang.ref.WeakReference
 import java.time.Instant
 import java.time.LocalDate
 import java.time.LocalTime
@@ -139,6 +140,9 @@ class MainActivity : Activity() {
     internal val collapsedFolderIds = HashSet<String>()
     // Settings sub-page showing the hierarchical archive (iOS "Archived Items").
     internal var settingsShowingArchive = false
+    // Timing controls live on a dedicated page so the root settings list stays
+    // scannable on a phone instead of becoming a wall of selectors.
+    internal var settingsShowingTiming = false
     // Daily feed paging + scroll anchoring, mirroring the iOS bottom-pinned
     // feed: history grows by a month each time the user scrolls to the top.
     internal var dailyHistoryDays = 3
@@ -263,6 +267,41 @@ class MainActivity : Activity() {
         // other's in-memory workspace) and skips work while in the foreground.
         @Volatile internal var sharedBridge: RustBridge? = null
         @Volatile internal var isInForeground = false
+
+        // The live activity, so out-of-UI state changes (a "Done"/snooze tapped on
+        // a notification, handled in NotificationReceiver) can refresh it.
+        @Volatile private var liveActivity: WeakReference<MainActivity>? = null
+
+        // Set when the core was mutated from outside the UI. Consumed either
+        // immediately (activity in the foreground) or at the next onStart, so a
+        // change made while the app sat backgrounded is picked up on return
+        // instead of leaving a completed item on screen until the next launch.
+        @Volatile private var externalRefreshPending = false
+
+        /// Call after mutating the core from outside the activity's own UI flow.
+        /// Safe from any thread, and safe when no activity exists (a receiver can
+        /// run with the app never having been opened) — the flag then simply has
+        /// no one to apply to, and the next launch reads the fresh state anyway.
+        fun notifyExternalStateChanged() {
+            externalRefreshPending = true
+            val activity = liveActivity?.get() ?: return
+            activity.runOnUiThread { activity.consumeExternalRefresh() }
+        }
+    }
+
+    /// Rebuild the snapshot + UI if something outside the activity changed the
+    /// core. No-ops when nothing is pending, or while the activity is stopped
+    /// (onStart re-runs it), or before the bridge exists. Returns whether it
+    /// actually refreshed, so a caller that would otherwise refresh anyway can
+    /// skip a second rebuild.
+    internal fun consumeExternalRefresh(): Boolean {
+        if (!externalRefreshPending) return false
+        if (!isInForeground || isFinishing || isDestroyed) return false
+        if (!::bridge.isInitialized) return false
+        externalRefreshPending = false
+        loadSnapshot()
+        render()
+        return true
     }
 
     internal val purchasesUpdatedListener = PurchasesUpdatedListener { result, purchases ->
@@ -307,6 +346,7 @@ class MainActivity : Activity() {
             }
             rescheduleNotifications()
             sharedBridge = bridge
+            liveActivity = WeakReference(this)
             if (BuildConfig.ACCOUNTS_ENABLED) {
                 registerForPushNotifications()
                 handleIncomingAuthIntent(intent?.data)
@@ -330,6 +370,21 @@ class MainActivity : Activity() {
             startSyncPolling()
         }
         configureGoogleSyncPolling()
+        // Pick up a core mutation made while backgrounded — notably a "Done" or
+        // snooze tapped on a notification, which NotificationReceiver applies in
+        // this process without the (stopped) activity noticing.
+        if (!consumeExternalRefresh()) {
+            // Nothing changed the data, but time passed: the snapshot on screen was
+            // built when the app was last foregrounded and the core buckets
+            // occurrences against that moment, so returning hours later leaves items
+            // that are now overdue sitting under Upcoming. Skipped while an editor
+            // holds focus — render() rebuilds the shell and would drop the caret
+            // along with any not-yet-flushed typing.
+            if (activeEditor()?.isFocused != true) {
+                loadSnapshot()
+                render()
+            }
+        }
         // The app may have been backgrounded across midnight; roll the daily/home
         // "today" forward so it isn't stuck on yesterday.
         handleDayRolloverIfNeeded()
@@ -414,6 +469,9 @@ class MainActivity : Activity() {
             billingClient = null
         }
         sharedBridge = null
+        if (liveActivity?.get() === this) {
+            liveActivity = null
+        }
         if (::bridge.isInitialized) {
             bridge.close()
         }
@@ -470,8 +528,9 @@ class MainActivity : Activity() {
 
     @Suppress("DEPRECATION", "OVERRIDE_DEPRECATION")
     override fun onBackPressed() {
-        if (selectedTab == TAB_SETTINGS && settingsShowingArchive) {
+        if (selectedTab == TAB_SETTINGS && (settingsShowingArchive || settingsShowingTiming)) {
             settingsShowingArchive = false
+            settingsShowingTiming = false
             render()
             return
         }
@@ -612,6 +671,7 @@ class MainActivity : Activity() {
                 selectedTab = index
                 selectedSchemeId = null
                 settingsShowingArchive = false
+                settingsShowingTiming = false
                 if (index == TAB_CALENDAR && selectedDate != LocalDate.now()) {
                     selectedDate = LocalDate.now()
                     weekOffset = 0

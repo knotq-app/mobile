@@ -66,9 +66,7 @@ struct SchemeTextView: UIViewRepresentable {
         view.setContentHuggingPriority(.defaultLow, for: .horizontal)
         view.keyboardDismissMode = .none
         view.alwaysBounceVertical = true
-        view.autocapitalizationType = .sentences
-        view.smartDashesType = .no
-        view.smartQuotesType = .no
+        EditorDocumentInputTraits.apply(to: view)
         view.isEditable = !readOnly
         view.isSelectable = true
         view.configureTitle(title: schemeTitle, theme: theme, visible: showsTitle, editable: titleEditable, validator: titleValidator, onCommit: onRenameTitle)

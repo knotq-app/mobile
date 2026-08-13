@@ -541,21 +541,22 @@ import kotlin.math.roundToInt
             setPadding(dp(12), 0, dp(12), 0)
         }
         val results = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
-        // Back and the search field share one row.
+        // The search field and its way out share one row. The exit is not
+        // conditional on layout: a wide layout used to have no explicit way back
+        // at all, leaving system back as the only exit, and it matches the "x"
+        // beside the iPhone's search field.
         root.addView(LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            if (!isWideLayout()) {
-                addView(FrameLayout(this@renderSearch).apply {
-                    background = rounded(theme.buttonBg, dp(7))
-                    addView(
-                        iconImage(R.drawable.ic_knotq_chevron_left_24, theme.textPrimary, L10n.t(this@renderSearch, "common.back")),
-                        FrameLayout.LayoutParams(dp(20), dp(20), Gravity.CENTER)
-                    )
-                    setOnClickListener { exitSearch() }
-                }, LinearLayout.LayoutParams(dp(40), dp(40)).apply { setMargins(0, 0, dp(8), 0) })
-            }
             addView(query, LinearLayout.LayoutParams(0, dp(46), 1f))
+            addView(FrameLayout(this@renderSearch).apply {
+                background = rounded(theme.buttonBg, dp(20), theme.borderOverlay)
+                addView(
+                    iconImage(R.drawable.ic_knotq_close_24, theme.textPrimary, L10n.t(this@renderSearch, "mobile.home.clear_search")),
+                    FrameLayout.LayoutParams(dp(18), dp(18), Gravity.CENTER)
+                )
+                setOnClickListener { exitSearch() }
+            }, LinearLayout.LayoutParams(dp(40), dp(40)).apply { setMargins(dp(10), 0, 0, 0) })
         }, LinearLayout.LayoutParams(-1, -2).apply { setMargins(0, 0, 0, dp(10)) })
         root.addView(results)
         val searchNow = {
@@ -585,7 +586,8 @@ import kotlin.math.roundToInt
     internal fun MainActivity.renderSearchResults(results: LinearLayout, query: String) {
         results.removeAllViews()
         if (query.isBlank()) {
-            results.addView(emptyState(L10n.t(this, "search.placeholder"), L10n.t(this, "mobile.search.empty_subtitle")))
+            // Same prompt as iOS shows the moment its field takes focus.
+            results.addView(emptyState(L10n.t(this, "mobile.search.screen_title"), L10n.t(this, "mobile.search.empty_subtitle")))
             return
         }
         try {
@@ -624,16 +626,12 @@ import kotlin.math.roundToInt
 
     internal fun MainActivity.renderSettings(): LinearLayout {
         if (settingsShowingArchive) return renderArchivePage()
+        if (settingsShowingTiming) return renderTimingSettingsPage()
         val root = page()
         root.addView(sectionHeader(L10n.t(this, "settings.header.title")))
         root.addView(syncSettingsCard(), spaced())
         val settings = snapshot.optJSONObject("settings")
         val themeMode = settings?.optString("theme_mode", "system") ?: "system"
-        val timeFormat = settings?.optString("time_format", "twelve_hour") ?: "twelve_hour"
-        val eventOffset = settings?.optInt("event_notification_offset_secs", DEFAULT_EVENT_NOTIFICATION_OFFSET_SECS)
-            ?: DEFAULT_EVENT_NOTIFICATION_OFFSET_SECS
-        val assignmentOffset = settings?.optInt("assignment_notification_offset_secs", DEFAULT_ASSIGNMENT_NOTIFICATION_OFFSET_SECS)
-            ?: DEFAULT_ASSIGNMENT_NOTIFICATION_OFFSET_SECS
         val googleAccountCount = settings?.optInt("google_account_count", 0) ?: 0
 
         root.addView(settingsSection(L10n.t(this, "settings.appearance.section")))
@@ -643,23 +641,11 @@ import kotlin.math.roundToInt
             choiceRow(L10n.t(this, "settings.appearance.theme_light"), selected = themeMode == "light") { mutate(obj("type" to "set_theme_mode", "theme_mode" to "light")) }
         ))
 
-        root.addView(settingsSection(L10n.t(this, "settings.time.section")))
+        root.addView(settingsSection(L10n.t(this, "settings.timing.section")))
         root.addView(settingsGroup(
-            choiceRow(L10n.t(this, "settings.time.clock_12h"), selected = timeFormat == "twelve_hour") { mutate(obj("type" to "set_time_format", "time_format" to "twelve_hour")) },
-            choiceRow(L10n.t(this, "settings.time.clock_24h"), selected = timeFormat == "twenty_four_hour") { mutate(obj("type" to "set_time_format", "time_format" to "twenty_four_hour")) }
-        ))
-
-        root.addView(settingsSection(L10n.t(this, "settings.notifications.section")))
-        root.addView(settingsGroup(
-            settingsLinkRow(L10n.t(this, "settings.notifications.events_label"), notificationLeadTimeLabel(eventOffset, eventDefault = true)) {
-                showNotificationDefaultDialog(L10n.t(this, "mobile.settings.event_reminders_title"), eventOffset, eventDefaultNotificationOptions) { next ->
-                    mutate(obj("type" to "set_notification_defaults", "event_offset_secs" to next, "assignment_offset_secs" to assignmentOffset))
-                }
-            },
-            settingsLinkRow(L10n.t(this, "settings.notifications.assignments_label"), notificationLeadTimeLabel(assignmentOffset, eventDefault = false)) {
-                showNotificationDefaultDialog(L10n.t(this, "mobile.settings.assignment_reminders_title"), assignmentOffset, assignmentDefaultNotificationOptions) { next ->
-                    mutate(obj("type" to "set_notification_defaults", "event_offset_secs" to eventOffset, "assignment_offset_secs" to next))
-                }
+            settingsLinkRow(L10n.t(this, "settings.timing.title")) {
+                settingsShowingTiming = true
+                render()
             }
         ))
 
@@ -692,6 +678,175 @@ import kotlin.math.roundToInt
             }
         ))
         return root
+    }
+
+    internal fun MainActivity.renderTimingSettingsPage(): LinearLayout {
+        val settings = snapshot.optJSONObject("settings") ?: JSONObject()
+        val timeFormat = settings.optString("time_format", "twelve_hour")
+        val eventDays = settings.optInt("event_lookahead_days", 14)
+        val reminderDays = settings.optInt("reminder_lookahead_days", 14)
+        val assignmentDays = settings.optInt("assignment_lookahead_days", 14)
+        val maximumItems = settings.optInt("maximum_upcoming_items", 14)
+        val showOverdue = settings.optBoolean("show_overdue", true)
+        val showCompleted = settings.optBoolean("show_completed", true)
+        val eventOffset = settings.optInt("event_notification_offset_secs", DEFAULT_EVENT_NOTIFICATION_OFFSET_SECS)
+        val assignmentOffset = settings.optInt("assignment_notification_offset_secs", DEFAULT_ASSIGNMENT_NOTIFICATION_OFFSET_SECS)
+        val lookaheadOptions = listOf(1, 2, 3, 7, 14, 30, 90, 180, 365)
+        val itemLimitOptions = listOf(5, 10, 14, 20, 30, 50, 100)
+
+        fun updateUpcoming(
+            event: Int = eventDays,
+            reminder: Int = reminderDays,
+            assignment: Int = assignmentDays,
+            maximum: Int = maximumItems,
+            overdue: Boolean = showOverdue,
+            completed: Boolean = showCompleted,
+            renderAfter: Boolean = true,
+            onSuccess: ((JSONObject) -> Unit)? = null
+        ) {
+            mutate(
+                obj(
+                    "type" to "set_upcoming_display_settings",
+                    "event_lookahead_days" to event,
+                    "reminder_lookahead_days" to reminder,
+                    "assignment_lookahead_days" to assignment,
+                    "maximum_items" to maximum,
+                    "show_overdue" to overdue,
+                    "show_completed" to completed
+                ),
+                renderAfter = renderAfter,
+                onSuccess = onSuccess
+            )
+        }
+
+        val root = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setBackgroundColor(theme.bgApp)
+        }
+        root.addView(LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(dp(12), 0, dp(12), 0)
+            background = underline(theme.bgApp)
+            addView(iconChipImage(R.drawable.ic_knotq_chevron_left_24, L10n.t(this@renderTimingSettingsPage, "common.back"), iconSize = 20) {
+                settingsShowingTiming = false
+                render()
+            })
+            addView(text(L10n.t(this@renderTimingSettingsPage, "settings.timing.title"), theme.textPrimary, 16f, true).apply {
+                gravity = Gravity.CENTER
+            }, LinearLayout.LayoutParams(0, -1, 1f))
+            addView(View(this@renderTimingSettingsPage), LinearLayout.LayoutParams(dp(32), dp(28)))
+        }, LinearLayout.LayoutParams(-1, dp(44)))
+
+        val body = page()
+        body.addView(settingsSection(L10n.t(this, "settings.time.section")))
+        body.addView(settingsGroup(
+            choiceRow(L10n.t(this, "settings.time.clock_12h"), selected = timeFormat == "twelve_hour") {
+                mutate(obj("type" to "set_time_format", "time_format" to "twelve_hour"))
+            },
+            choiceRow(L10n.t(this, "settings.time.clock_24h"), selected = timeFormat == "twenty_four_hour") {
+                mutate(obj("type" to "set_time_format", "time_format" to "twenty_four_hour"))
+            }
+        ))
+
+        fun lookaheadRow(label: String, current: Int, update: (Int) -> Unit): View =
+            settingsLinkRow(label, lookaheadLabel(current)) {
+                showSettingsOptionDialog(label, current, lookaheadOptions.map { it to lookaheadLabel(it) }, update)
+            }
+
+        body.addView(settingsSection(L10n.t(this, "settings.display.upcoming_section")))
+        body.addView(settingsGroup(
+            lookaheadRow(L10n.t(this, "settings.notifications.events_label"), eventDays) { updateUpcoming(event = it) },
+            lookaheadRow(L10n.t(this, "upcoming.section.reminders"), reminderDays) { updateUpcoming(reminder = it) },
+            lookaheadRow(L10n.t(this, "upcoming.section.assignments"), assignmentDays) { updateUpcoming(assignment = it) }
+        ))
+        body.addView(text(L10n.t(this, "settings.display.lookahead_footer"), theme.textMuted, 12f, false).apply {
+            setPadding(dp(6), dp(6), dp(6), 0)
+        })
+
+        body.addView(settingsSection(L10n.t(this, "settings.display.visibility_section")))
+        body.addView(settingsGroup(
+            settingsToggleRow(L10n.t(this, "settings.display.show_overdue"), showOverdue) { updateUpcoming(overdue = it) },
+            settingsToggleRow(L10n.t(this, "settings.display.show_completed"), showCompleted) { updateUpcoming(completed = it) },
+            settingsLinkRow(L10n.t(this, "settings.display.maximum_items"), maximumItems.toString()) {
+                showSettingsOptionDialog(
+                    L10n.t(this, "settings.display.maximum_items"),
+                    maximumItems,
+                    itemLimitOptions.map { it to it.toString() }
+                ) { updateUpcoming(maximum = it) }
+            }
+        ))
+
+        body.addView(settingsSection(L10n.t(this, "settings.notifications.section")))
+        body.addView(settingsGroup(
+            settingsLinkRow(L10n.t(this, "settings.notifications.events_label"), notificationLeadTimeLabel(eventOffset, eventDefault = true)) {
+                showNotificationDefaultDialog(L10n.t(this, "mobile.settings.event_reminders_title"), eventOffset, eventDefaultNotificationOptions) { next ->
+                    mutate(obj("type" to "set_notification_defaults", "event_offset_secs" to next, "assignment_offset_secs" to assignmentOffset))
+                }
+            },
+            settingsLinkRow(L10n.t(this, "settings.notifications.assignments_label"), notificationLeadTimeLabel(assignmentOffset, eventDefault = false)) {
+                showNotificationDefaultDialog(L10n.t(this, "mobile.settings.assignment_reminders_title"), assignmentOffset, assignmentDefaultNotificationOptions) { next ->
+                    mutate(obj("type" to "set_notification_defaults", "event_offset_secs" to eventOffset, "assignment_offset_secs" to next))
+                }
+            }
+        ))
+
+        val usingDefaults = timeFormat == "twelve_hour" && eventDays == 14 && reminderDays == 14 &&
+            assignmentDays == 14 && maximumItems == 14 && showOverdue && showCompleted &&
+            eventOffset == DEFAULT_EVENT_NOTIFICATION_OFFSET_SECS &&
+            assignmentOffset == DEFAULT_ASSIGNMENT_NOTIFICATION_OFFSET_SECS
+        body.addView(View(this), LinearLayout.LayoutParams(-1, dp(16)))
+        body.addView(settingsGroup(settingsActionRow(L10n.t(this, "settings.display.restore_defaults"), enabled = !usingDefaults) {
+            updateUpcoming(
+                event = 14,
+                reminder = 14,
+                assignment = 14,
+                maximum = 14,
+                overdue = true,
+                completed = true,
+                renderAfter = false,
+                onSuccess = {
+                mutate(
+                    obj(
+                        "type" to "set_notification_defaults",
+                        "event_offset_secs" to DEFAULT_EVENT_NOTIFICATION_OFFSET_SECS,
+                        "assignment_offset_secs" to DEFAULT_ASSIGNMENT_NOTIFICATION_OFFSET_SECS
+                    ),
+                    renderAfter = false,
+                    onSuccess = {
+                        mutate(obj("type" to "set_time_format", "time_format" to "twelve_hour"))
+                    }
+                )
+            })
+        }))
+
+        root.addView(scroll(body), LinearLayout.LayoutParams(-1, 0, 1f))
+        return root
+    }
+
+    private fun MainActivity.lookaheadLabel(days: Int): String = when (days) {
+        7 -> L10n.plural(this, "sync.disclosure.period_weeks", 1)
+        14 -> L10n.plural(this, "sync.disclosure.period_weeks", 2)
+        30 -> L10n.plural(this, "sync.disclosure.period_months", 1)
+        90 -> L10n.plural(this, "sync.disclosure.period_months", 3)
+        180 -> L10n.plural(this, "sync.disclosure.period_months", 6)
+        365 -> L10n.plural(this, "sync.disclosure.period_years", 1)
+        else -> L10n.plural(this, "sync.disclosure.period_days", days)
+    }
+
+    private fun MainActivity.showSettingsOptionDialog(
+        title: String,
+        current: Int,
+        options: List<Pair<Int, String>>,
+        onSelect: (Int) -> Unit
+    ) {
+        val labels = options.map { (value, label) ->
+            if (value == current) "$label $GLYPH_TICK" else label
+        }.toTypedArray()
+        AlertDialog.Builder(this)
+            .setTitle(title)
+            .setItems(labels) { _, which -> onSelect(options[which].first) }
+            .show()
     }
 
     internal fun MainActivity.syncSettingsCard(): View {

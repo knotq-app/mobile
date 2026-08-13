@@ -559,7 +559,20 @@ import kotlin.math.roundToInt
             .create()
         onDismiss?.let { callback -> dialog.setOnDismissListener { callback() } }
         dialog.show()
-        card.requestFocus()
+        // Auto-focus the title only when composing a brand-new event so the keyboard
+        // is ready to type. Editing/read-only dialogs keep focus on the card to avoid
+        // an unwanted keyboard pop.
+        if (!editing && !readOnly) {
+            titleInput.post {
+                titleInput.requestFocus()
+                titleInput.post {
+                    (getSystemService(Context.INPUT_METHOD_SERVICE) as? InputMethodManager)
+                        ?.showSoftInput(titleInput, InputMethodManager.SHOW_IMPLICIT)
+                }
+            }
+        } else {
+            card.requestFocus()
+        }
         dialog.window?.setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))
         dialog.window?.setLayout(min(resources.displayMetrics.widthPixels - dp(32), dp(500)), ViewGroup.LayoutParams.WRAP_CONTENT)
     }

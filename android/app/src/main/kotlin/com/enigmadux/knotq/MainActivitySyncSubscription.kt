@@ -640,8 +640,10 @@ private fun MainActivity.launchSyncBillingFlow() {
         val params = QueryProductDetailsParams.newBuilder()
             .setProductList(listOf(product))
             .build()
-        client.queryProductDetailsAsync(params) { result, productDetailsList ->
-            val details = productDetailsList.firstOrNull()
+        // Billing 8.x wraps the result in QueryProductDetailsResult (was a bare
+        // List<ProductDetails> in 7.x); the fetched list lives on productDetailsList.
+        client.queryProductDetailsAsync(params) { result, productDetailsResult ->
+            val details = productDetailsResult.productDetailsList.firstOrNull()
             val offerToken = details?.subscriptionOfferDetails?.firstOrNull()?.offerToken
             if (result.responseCode != BillingClient.BillingResponseCode.OK || details == null || offerToken == null) {
                 runOnUiThread {

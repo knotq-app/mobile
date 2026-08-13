@@ -78,17 +78,29 @@ internal object MobileNotificationScheduler {
     fun isNotificationAction(action: String?): Boolean =
         action == ACTION_MARK_DONE || snoozeActions.any { it.first == action }
 
+    /// Run [block] against the app's core, reusing the activity's live bridge when
+    /// one exists. Opening a second `MobileCore` alongside it gives two instances
+    /// their own in-memory workspace over the same files, so whichever saves last
+    /// silently reverts the other's edit — the pattern BackgroundSyncWorker
+    /// already follows. Only a bridge we opened ourselves is closed.
+    private fun <T> withCore(context: Context, block: (RustBridge) -> T): T {
+        val shared = MainActivity.sharedBridge
+        val bridge = shared ?: RustBridge(context.applicationContext)
+        return try {
+            block(bridge)
+        } finally {
+            if (shared == null) bridge.close()
+        }
+    }
+
     fun refreshFromCore(context: Context) {
-        val bridge = RustBridge(context.applicationContext)
-        try {
+        withCore(context) { bridge ->
             val requests = bridge.requestArray(JSONObject().put("type", "pending_notifications"))
             reschedule(context, requests)
             clearStale(
                 context,
                 bridge.requestArray(JSONObject().put("type", "delivered_notifications_to_clear"))
             )
-        } finally {
-            bridge.close()
         }
     }
 
@@ -115,24 +127,39 @@ internal object MobileNotificationScheduler {
         ensureChannel(appContext)
 
         val stored = scheduledIds(appContext)
-        stored.forEach { cancelAlarm(appContext, it) }
 
         if (!hasPermission(appContext)) {
+            // We no longer have a way to show these notifications, so leave no
+            // stale wake-up alarms behind. This also keeps a later permission
+            // grant from delivering a schedule that was superseded while
+            // notifications were disabled.
+            stored.forEach { cancelAlarm(appContext, it) }
             saveScheduledIds(appContext, emptySet())
             return
         }
 
         val now = Instant.now()
         val desired = LinkedHashSet<String>()
+        val requestsToSchedule = ArrayList<Pair<JSONObject, Instant>>()
         for (index in 0 until requests.length()) {
             if (desired.size >= MAX_PENDING_NOTIFICATIONS) break
             val request = requests.optJSONObject(index) ?: continue
             val id = request.optString("id")
             val fireAt = request.optInstant(EXTRA_FIRE_AT) ?: continue
             if (id.isBlank() || !fireAt.isAfter(now)) continue
-            scheduleOne(appContext, request, fireAt)
             desired.add(id)
+            requestsToSchedule.add(request to fireAt)
         }
+
+        // Add/update desired alarms before tearing down anything. Reusing the
+        // same PendingIntent replaces that alarm atomically; cancelling every
+        // id first left a kill-window with no reminders armed and also called
+        // `NotificationManager.cancel` for delivered banners that were still
+        // relevant. Only notifications absent from the desired set are stale.
+        requestsToSchedule.forEach { (request, fireAt) ->
+            scheduleOne(appContext, request, fireAt)
+        }
+        (stored - desired).forEach { cancelAlarm(appContext, it) }
         saveScheduledIds(appContext, desired)
     }
 
@@ -208,13 +235,12 @@ internal object MobileNotificationScheduler {
             .put("item_id", intent.getStringExtra(EXTRA_ITEM_ID).orEmpty())
             .put("occurrence_json", intent.getStringExtra(EXTRA_OCCURRENCE_JSON).orEmpty())
             .put("trigger_at", intent.getStringExtra(EXTRA_TRIGGER_AT).orEmpty())
-        val bridge = RustBridge(appContext)
-        try {
-            bridge.request(body)
-        } finally {
-            bridge.close()
-        }
+        withCore(appContext) { it.request(body) }
         refreshFromCore(appContext)
+        // The receiver mutated the core behind a live (but stopped) activity's
+        // back. Without this the app still shows the item as pending when the
+        // user returns to it — stale until a full restart.
+        MainActivity.notifyExternalStateChanged()
     }
 
     private fun scheduleOne(context: Context, request: JSONObject, fireAt: Instant) {

@@ -2,15 +2,15 @@ use std::collections::HashSet;
 use std::path::Path;
 
 use anyhow::{anyhow, Result};
-use chrono::{DateTime, Local, NaiveDate, Utc};
+use chrono::{DateTime, Duration, Local, NaiveDate, Utc};
 use knotq_commands::recurrence_can_delete_future;
-use knotq_date_util::upcoming_range;
+use knotq_date_util::DateRange;
 use knotq_index::IndexedWorkspace;
 use knotq_model::{
     ColumnId, GoogleOAuthAccount, ImageAssetFormat, ImageInline, ImportedCalendarSource, Inline,
     Item, ItemContent, ItemId, ItemKind, ItemMarker, NotificationDefaults, OccurrenceId,
     Recurrence, RowId, Scheme, Table, TableCell, TableColumn, TableRow, ThemeMode, TimeFormat,
-    Workspace,
+    UpcomingDisplaySettings, Workspace,
 };
 use knotq_notifications::{NotificationLeadTimes, ScheduledNotification};
 use sha2::{Digest, Sha256};
@@ -315,10 +315,27 @@ impl MobileNotificationRequest {
 pub(crate) fn mobile_upcoming(
     indexed: &IndexedWorkspace,
     from: DateTime<Utc>,
+    lookahead: UpcomingDisplaySettings,
     limit: usize,
 ) -> Vec<knotq_index::calendar::OccurrenceWithContext> {
-    let mut occurrences = indexed.calendar_query().range(upcoming_range(from));
-    occurrences.retain(|event| occurrence_anchor(event) >= Some(from));
+    let maximum_days = lookahead
+        .event_lookahead_days
+        .max(lookahead.reminder_lookahead_days)
+        .max(lookahead.assignment_lookahead_days);
+    let mut occurrences = indexed.calendar_query().range(DateRange {
+        start: from,
+        end: from + Duration::days(i64::from(maximum_days)),
+    });
+    occurrences.retain(|event| {
+        let days = match event.occurrence.kind {
+            ItemKind::Event => lookahead.event_lookahead_days,
+            ItemKind::Reminder => lookahead.reminder_lookahead_days,
+            ItemKind::Assignment => lookahead.assignment_lookahead_days,
+            ItemKind::Procedure => return false,
+        };
+        occurrence_anchor(event)
+            .is_some_and(|anchor| anchor >= from && anchor < from + Duration::days(i64::from(days)))
+    });
 
     let mut seen_recurring_items = HashSet::new();
     let mut out = Vec::new();

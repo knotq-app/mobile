@@ -17,14 +17,14 @@ if (hasReleaseSigning) {
 
 android {
     namespace "com.enigmadux.knotq"
-    compileSdk 35
+    compileSdk 36
 
     defaultConfig {
         applicationId "com.enigmadux.knotq"
         minSdk 26
-        targetSdk 35
-        versionCode 8
-        versionName "1.0.5"
+        targetSdk 36
+        versionCode 11
+        versionName "1.0.6"
 
         // Explicit sync backend override. Empty by default, in which case the
         // build-type-derived default applies (debug → sandbox, release → prod;
@@ -60,10 +60,9 @@ android {
             minifyEnabled true
             shrinkResources true
             proguardFiles getDefaultProguardFile("proguard-android-optimize.txt")
-            // Shipped builds compile out sign-in/sync/subscription; the sync UDL
-            // fns stub in the (feature-off) Rust core and the Kotlin guards below
-            // fall through to "Coming soon".
-            buildConfigField "boolean", "ACCOUNTS_ENABLED", "false"
+            // Shipped Android builds include the account, sync, and subscription
+            // surface, backed by the release Rust core below.
+            buildConfigField "boolean", "ACCOUNTS_ENABLED", "true"
             if (hasReleaseSigning) {
                 signingConfig signingConfigs.release
             }
@@ -91,21 +90,16 @@ dependencies {
     // alignment, which Play rejects for 16 KB page-size devices.
     implementation "net.java.dev.jna:jna:5.17.0@aar"
     implementation "androidx.annotation:annotation:1.9.1"
-    // Account/sync-only libraries: compile all variants because the Kotlin partials
-    // share declarations, but only package them in debug. Release has
-    // ACCOUNTS_ENABLED=false plus R8 shrinking, so these guarded paths are removed.
-    compileOnly "com.android.billingclient:billing:7.1.1"
-    debugImplementation "com.android.billingclient:billing:7.1.1"
+    // Account/sync-only libraries are packaged in every build variant now that
+    // production Android builds ship the account surface too.
+    implementation "com.android.billingclient:billing:8.3.0"
     // Google Play in-app review prompt.
     implementation "com.google.android.play:review:2.0.2"
     // Periodic background sync while the app is backgrounded.
-    compileOnly "androidx.work:work-runtime:2.9.1"
-    debugImplementation "androidx.work:work-runtime:2.9.1"
+    implementation "androidx.work:work-runtime:2.9.1"
     // Firebase Cloud Messaging: silent data pushes wake the app to pull sync changes.
-    compileOnly platform("com.google.firebase:firebase-bom:33.7.0")
-    compileOnly "com.google.firebase:firebase-messaging"
-    debugImplementation platform("com.google.firebase:firebase-bom:33.7.0")
-    debugImplementation "com.google.firebase:firebase-messaging"
+    implementation platform("com.google.firebase:firebase-bom:33.7.0")
+    implementation "com.google.firebase:firebase-messaging"
 
     testImplementation "junit:junit:4.13.2"
 }

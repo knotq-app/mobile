@@ -80,14 +80,15 @@ internal class BackgroundSyncWorker(
             // skip the pull as "synced moments ago".
             runCatching { bridge.request(JSONObject().put("type", "note_remote_changed")) }
             var triedAuthRefresh = false
+            var pulledRemoteChange = false
             while (true) {
                 try {
-                    bridge.request(
+                    pulledRemoteChange = bridge.request(
                         JSONObject()
                             .put("type", "sync_once")
                             .put("api_base", apiBase)
                             .put("bearer_token", bearerToken)
-                    )
+                    ).optBoolean("changed", false)
                     break
                 } catch (error: MobileException) {
                     if (triedAuthRefresh || !isAuthRejection(error)) return Result.retry()
@@ -114,6 +115,14 @@ internal class BackgroundSyncWorker(
                     applicationContext,
                     bridge.requestArray(JSONObject().put("type", "pending_notifications"))
                 )
+            }
+            if (pulledRemoteChange) {
+                // This pull mutated the (stopped) activity's own in-memory core, and
+                // nothing else will tell it. The foreground poll on return doesn't
+                // cover it either: the change is already applied, so that sync reports
+                // changed=false and skips its loadSnapshot() — leaving the peer's edit
+                // invisible until the app is restarted.
+                MainActivity.notifyExternalStateChanged()
             }
             Result.success()
         } catch (error: RuntimeException) {

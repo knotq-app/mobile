@@ -172,7 +172,21 @@ struct EditorRichClipboardTable: Codable {
     }
 
     var mobileTable: MobileTable {
-        MobileTable(columns: columns.map(\.mobileColumn), rows: rows.map(\.mobileRow))
+        // Paste duplicates content, not model identity. Preserving these ids can
+        // collide with the source table; legacy clipboard payloads also contain
+        // labels such as `column-1`, which the UUID-backed core rejects during
+        // the editor's next live flush.
+        MobileTable(
+            columns: columns.map { column in
+                MobileTableColumn(id: UUID().uuidString, name: column.name)
+            },
+            rows: rows.map { row in
+                MobileTableRow(
+                    id: UUID().uuidString,
+                    cells: row.cells.map(\.mobileCellWithFreshLineIDs)
+                )
+            }
+        )
     }
 }
 
@@ -184,10 +198,6 @@ struct EditorRichClipboardTableColumn: Codable {
         id = column.id
         name = column.name
     }
-
-    var mobileColumn: MobileTableColumn {
-        MobileTableColumn(id: id, name: name)
-    }
 }
 
 struct EditorRichClipboardTableRow: Codable {
@@ -197,10 +207,6 @@ struct EditorRichClipboardTableRow: Codable {
     init(row: MobileTableRow) {
         id = row.id
         cells = row.cells.map(EditorRichClipboardTableCell.init(cell:))
-    }
-
-    var mobileRow: MobileTableRow {
-        MobileTableRow(id: id, cells: cells.map(\.mobileCell))
     }
 }
 
@@ -213,8 +219,21 @@ struct EditorRichClipboardTableCell: Codable {
         lines = cell.lines.map(EditorRichClipboardCellLine.init(line:))
     }
 
-    var mobileCell: MobileTableCell {
-        MobileTableCell(text: text, lines: lines.map(\.mobileLine))
+    var mobileCellWithFreshLineIDs: MobileTableCell {
+        MobileTableCell(
+            text: text,
+            lines: lines.map { line in
+                MobileCellLine(
+                    id: UUID().uuidString,
+                    text: line.text,
+                    marker: line.marker,
+                    done: line.done,
+                    start: line.start,
+                    end: line.end,
+                    media: line.media.map(\.mobileMedia)
+                )
+            }
+        )
     }
 }
 
@@ -235,17 +254,5 @@ struct EditorRichClipboardCellLine: Codable {
         start = line.start
         end = line.end
         media = line.media.map(EditorRichClipboardMedia.init(media:))
-    }
-
-    var mobileLine: MobileCellLine {
-        MobileCellLine(
-            id: id,
-            text: text,
-            marker: marker,
-            done: done,
-            start: start,
-            end: end,
-            media: media.map(\.mobileMedia)
-        )
     }
 }

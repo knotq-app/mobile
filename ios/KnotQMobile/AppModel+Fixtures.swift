@@ -143,6 +143,14 @@ extension AppModel {
         #endif
     }
 
+    /// The store screenshots are shot dark, but the fixture is also the only way
+    /// to drive the app into a known screen without tapping, and some things only
+    /// go wrong in light (a keyboard rendering against the wrong backdrop is
+    /// invisible on a dark one). `KNOTQ_SCREENSHOT_THEME=light` opts into that.
+    static var screenshotFixtureThemeMode: String {
+        ProcessInfo.processInfo.environment["KNOTQ_SCREENSHOT_THEME"] == "light" ? "light" : "dark"
+    }
+
     @discardableResult
     func seedScreenshotFixtureIfRequested() -> Bool {
         guard Self.screenshotFixtureRequested, let bridge else { return false }
@@ -156,7 +164,7 @@ extension AppModel {
             weekOffset = 0
 
             try bridge.resetWorkspace()
-            try bridge.setThemeMode("dark")
+            try bridge.setThemeMode(Self.screenshotFixtureThemeMode)
             try bridge.setTimeFormat("twelve_hour")
             try bridge.setNotificationDefaults(
                 eventOffsetSecs: 10 * 60,
@@ -263,7 +271,7 @@ extension AppModel {
             screenshotItem("Coursework", marker: .bullet),
             screenshotItem("Read philosophy chapter 8", marker: .checkbox, indent: 1, done: true),
             screenshotItem("Outline art history essay", marker: .checkbox, indent: 1),
-            screenshotItem("Prepare stats lab questions", marker: .checkbox, indent: 1, end: screenshotDate(dayOffset: 1, hour: 16, minute: 30)),
+            screenshotItem("Prepare stats lab questions", marker: .checkbox, indent: 1, end: screenshotDate(dayOffset: 1, hour: 16, minute: 45)),
             screenshotItem("Campus", marker: .bullet),
             screenshotItem("Reserve library study room", marker: .checkbox, indent: 1, done: true),
             screenshotItem("Meet writing tutor", marker: .checkbox, indent: 1),

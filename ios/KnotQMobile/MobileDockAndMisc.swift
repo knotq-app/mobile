@@ -80,6 +80,8 @@ struct DesktopSettingsPane: View {
                     switch route {
                     case .archive:
                         SettingsArchiveList(theme: theme)
+                    case .timing:
+                        TimingSettingsScreen(theme: theme)
                     }
                 }
         }
@@ -119,17 +121,13 @@ struct SettingsForm: View {
             .listRowBackground(theme.bgModal)
 
             Section {
-                Picker(L10n.t("settings.time.clock_label"), selection: timeBinding) {
-                    Text(L10n.t("settings.time.clock_12h")).tag("twelve_hour")
-                    Text(L10n.t("settings.time.clock_24h")).tag("twenty_four_hour")
+                NavigationLink(value: SettingsRoute.timing) {
+                    Label(L10n.t("settings.timing.title"), systemImage: "calendar.badge.clock")
                 }
-                .pickerStyle(.menu)
             } header: {
-                Text(L10n.t("settings.time.section"))
+                Text(L10n.t("settings.timing.section"))
             }
             .listRowBackground(theme.bgModal)
-
-            NotificationDefaultsSettingsSection(theme: theme)
 
             SettingsArchiveSection(schemes: model.snapshot?.archivedSchemes ?? [], theme: theme)
 
@@ -140,12 +138,21 @@ struct SettingsForm: View {
         }
         .scrollContentBackground(.hidden)
         .background(theme.bgApp)
+        // Give the title bar its own opaque backing. `scrollContentBackground`
+        // hides the form's background, and with it SwiftUI's cue to fade a
+        // material in behind the bar as content scrolls up — so rows slid under
+        // a fully transparent bar and collided with the title (a section header
+        // rendering straight through "Settings", and cards visible behind the
+        // status bar). Same colour as the form, so at the top of the scroll,
+        // where the large title sits on plain background, nothing looks added.
+        .toolbarBackground(.visible, for: .navigationBar)
+        .toolbarBackground(theme.bgApp, for: .navigationBar)
         .tint(theme.accent)
         .safeAreaInset(edge: .bottom) {
             Color.clear.frame(height: 96)
         }
 
-        #if ACCOUNTS_ENABLED
+        #if ACCOUNTS_ENABLED && IN_APP_PURCHASES_ENABLED
         form
         .confirmationDialog(
             L10n.t("mobile.settings.cancel_sync_subscription_title"),
@@ -171,18 +178,13 @@ struct SettingsForm: View {
         )
     }
 
-    private var timeBinding: Binding<String> {
-        Binding(
-            get: { model.snapshot?.settings.timeFormat ?? "twelve_hour" },
-            set: { model.setTimeFormat($0) }
-        )
-    }
 }
 
 struct SettingsHelpSection: View {
     let theme: KnotQTheme
 
     private let discordURL = URL(string: "https://discord.gg/zyeHB77scg")!
+    private let privacyURL = URL(string: "https://www.knotq.com/privacy.html")!
 
     var body: some View {
         Section {
@@ -201,6 +203,26 @@ struct SettingsHelpSection: View {
                             .font(.system(size: 12))
                             .foregroundStyle(theme.textSoft)
                     }
+
+                    Spacer(minLength: 12)
+
+                    Image(systemName: "arrow.up.forward")
+                        .font(.system(size: 12, weight: .bold))
+                        .foregroundStyle(theme.textDim)
+                }
+                .padding(.vertical, 2)
+            }
+
+            Link(destination: privacyURL) {
+                HStack(spacing: 12) {
+                    Image(systemName: "hand.raised.fill")
+                        .font(.system(size: 18, weight: .semibold))
+                        .foregroundStyle(theme.accent)
+                        .frame(width: 28, height: 28)
+
+                    Text(L10n.t("sync.disclosure.privacy_policy"))
+                        .font(.system(size: 15, weight: .semibold))
+                        .foregroundStyle(theme.textPrimary)
 
                     Spacer(minLength: 12)
 

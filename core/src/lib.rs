@@ -8,14 +8,13 @@ use knotq_commands::{
     event_popup_commit_commands, event_popup_delete_command, Command, DateEditScope,
     EventDeleteScope, EventPopupDraft, WorkspaceCommandExt,
 };
-use knotq_date_util::UPCOMING_LIMIT;
 use knotq_index::query::{SearchHitStatus, SearchOptions, SearchTarget};
 use knotq_index::IndexedWorkspace;
 use knotq_model::{
     daily_queue_scheme_id, daily_queue_sync_metadata, AppSettings, CalendarProvider, FolderId,
     GoogleOAuthAccount, ImageAssetFormat, ImageInline, Inline, Item, ItemContent, ItemId,
     ItemMarker, NodeRef, NotificationDefaults, OccurrenceId, OperationId, Recurrence, Scheme,
-    SchemeId, SchemeSource, Table, Workspace, DAILY_QUEUE_COLOR_INDEX,
+    SchemeId, SchemeSource, Table, UpcomingDisplaySettings, Workspace, DAILY_QUEUE_COLOR_INDEX,
 };
 use knotq_notifications::{
     completed_notification_keys, compute_due_notifications_with_lead_times,
@@ -27,16 +26,17 @@ use knotq_state::{
     RetainedCompletedItems,
 };
 use knotq_storage_json::{
-    load_app_settings, load_crdt_state, load_daily_queue_scheme,
+    edit_timing_enabled, load_app_settings, load_crdt_state, load_daily_queue_scheme,
     load_daily_queue_schemes_for_calendar_range, load_local_sync_state,
     load_workspace_with_options, save_app_settings, save_crdt_state, save_local_sync_state,
     save_workspace, WorkspaceLoadOptions,
 };
 use knotq_sync::{
-    batch_pull_and_apply, batch_push_pending, queue_account_switch_reseed,
-    queue_workspace_bootstrap_updates, DevicePlatform, NotificationPermissionState,
-    PendingCrdtEdit, PushChannel, PushEnvironment, RegisterDeviceRequest, WorkspaceCrdtChangeSet,
-    WorkspaceCrdtDocuments,
+    batch_pull_and_apply, batch_push_pending, compact_pending_documents,
+    queue_account_switch_reseed, queue_workspace_bootstrap_updates, DevicePlatform,
+    NotificationPermissionState, PendingCrdtEdit, PushChannel, PushEnvironment,
+    RegisterDeviceRequest, WorkspaceCrdtChangeSet, WorkspaceCrdtDocuments,
+    MAX_PENDING_PER_DOCUMENT,
 };
 mod google_calendar;
 use google_calendar::{GoogleCalendarImportResult, GoogleOAuthConfig};
@@ -81,6 +81,11 @@ const DAILY_QUEUE_MARKER_COLOR: u32 = 0x42a5f5;
 const MOBILE_DAILY_DEFAULT_HISTORY_DAYS: i32 = 3;
 const MOBILE_DAILY_MAX_HISTORY_DAYS: i32 = 3650;
 const MOBILE_DAILY_LOOKAHEAD_DAYS: i64 = 10;
+const MOBILE_UPCOMING_QUERY_LIMIT: usize = 512;
+const MOBILE_UPCOMING_MIN_LOOKAHEAD_DAYS: i32 = 1;
+const MOBILE_UPCOMING_MAX_LOOKAHEAD_DAYS: i32 = 365;
+const MOBILE_UPCOMING_MIN_ITEMS: i32 = 1;
+const MOBILE_UPCOMING_MAX_ITEMS: i32 = 100;
 const NOTIFICATION_HORIZON_DAYS: i64 = 14;
 const ACTION_SNOOZE_1_MINUTE: &str = "knotq.snooze.1m";
 const ACTION_SNOOZE_5_MINUTES: &str = "knotq.snooze.5m";
@@ -169,6 +174,11 @@ struct MobileCoreInner {
     settings: AppSettings,
     crdt: WorkspaceCrdtDocuments,
     next_sequence: u64,
+    /// The last `sync-state.json` this core wrote, kept so an edit does not have
+    /// to re-parse it. It is only ever populated by the edit path and taken (not
+    /// borrowed) on use, so any other writer — or a failure part-way — simply
+    /// leaves it empty and the next edit reloads from disk.
+    sync_state_cache: Option<knotq_sync::LocalSyncState>,
     sync_notice: Option<String>,
     // Push registration handed in from the platform (e.g. an FCM token from
     // Firebase). Registered with the backend during sync_once; `registered_push_token`
@@ -383,6 +393,12 @@ pub struct MobileSettings {
     pub time_format: String,
     pub event_notification_offset_secs: i32,
     pub assignment_notification_offset_secs: i32,
+    pub event_lookahead_days: i32,
+    pub reminder_lookahead_days: i32,
+    pub assignment_lookahead_days: i32,
+    pub maximum_upcoming_items: i32,
+    pub show_overdue: bool,
+    pub show_completed: bool,
     pub google_account_count: i32,
     pub google_accounts: Vec<MobileGoogleAccount>,
 }

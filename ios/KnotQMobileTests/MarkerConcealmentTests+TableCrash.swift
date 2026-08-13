@@ -727,7 +727,12 @@ extension MarkerConcealmentTests {
             return
         }
         XCTAssertEqual(table.columns.first?.name, "Column 1")
-        XCTAssertEqual(table.rows.first?.id, "row-1")
+        XCTAssertNotEqual(table.columns.first?.id, "column-1")
+        XCTAssertNotNil(UUID(uuidString: table.columns.first?.id ?? ""))
+        XCTAssertNotEqual(table.rows.first?.id, "row-1")
+        XCTAssertNotNil(UUID(uuidString: table.rows.first?.id ?? ""))
+        XCTAssertNotEqual(table.rows.first?.cells.first?.lines.first?.id, "cell-line")
+        XCTAssertNotNil(UUID(uuidString: table.rows.first?.cells.first?.lines.first?.id ?? ""))
     }
 
     func testControllerCommitFlushesActiveTableCellEdit() {

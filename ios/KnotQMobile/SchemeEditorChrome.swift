@@ -9,6 +9,112 @@ private struct EditorDateTarget: Identifiable {
     var id: String { itemID }
 }
 
+/// Takes the caret once the screen has finished arriving, except when the
+/// keyboard was safely presented on the source screen first.
+///
+/// Opening Daily or a scheme pushes a screen *and* focuses its editor, and
+/// raising the keyboard while that push is still animating is what made the
+/// keyboard's first presentation of the process render against an unresolved
+/// backdrop: a flat dark panel — rgb(152) against the settled light keyboard's
+/// rgb(219) — held for ~300 ms and then snapped to the real keyboard. It is a
+/// race, so it only shows up on some opens (9 of 16 cold opens of Daily
+/// reproduced it); waiting for the transition to end fixed 10 of 10. It is
+/// invisible in the dark theme, where a dark keyboard backdrop is what you
+/// expect to see anyway — which is why it survived an earlier round of this.
+///
+/// Nothing is lost by waiting: the pane already reserves the keyboard's height
+/// up front (see `KeyboardMetrics`), so the document is laid out for a keyboard
+/// that is about to arrive either way, and the caret still lands on the first
+/// frame the user can actually type into.
+@MainActor
+enum EditorAutoFocus {
+    /// Which field this open is for. The handoff has to be given to the same one
+    /// the open will end on: a new note focuses its *title*, and handing the
+    /// keyboard to the document first put a blinking caret in the body for ~0.5s
+    /// before the title took over and select-all highlighted it.
+    enum Target {
+        case document
+        case title
+    }
+
+    static func schedule(
+        in controller: EditorController,
+        target: Target = .document,
+        _ action: @escaping @MainActor () -> Void
+    ) {
+        // One tick first: at `onAppear` the text view isn't in the window yet, so
+        // there is no view controller to ask about the transition (and nothing to
+        // give first responder to).
+        DispatchQueue.main.async {
+            let transition = controller.view?.owningViewController?.transitionCoordinator
+                .map(EditorFocusPushTransition.init)
+            // The handoff keyboard's first presentation already happened on a
+            // settled source screen, so moving its responder to the mounted
+            // editor during the push is safe. Doing this now gives prediction
+            // the real document context while keyboard + navigation are still
+            // moving; waiting for the completion made the suggestion row pop in
+            // only after everything else had landed.
+            if let editor = controller.view {
+                EditorKeyboardHandoff.transfer(to: editor, target: target)
+            }
+            focus(after: transition) {
+                action()
+                // A transfer the destination refused (a still-read-only editor,
+                // a title that isn't editable yet) leaves the proxy holding the
+                // keyboard. Once the real focus has happened it is only litter.
+                EditorKeyboardHandoff.discardIfNotFirstResponder()
+            }
+        }
+    }
+
+    /// Split out from `schedule` so the rule — and only the rule — is testable
+    /// without staging a real navigation push.
+    static func focus(after transition: EditorFocusTransition?, _ action: @escaping @MainActor () -> Void) {
+        // No transition to wait for: the pane is already on screen, so focusing
+        // now is both safe and what the user expects.
+        guard let transition else {
+            action()
+            return
+        }
+        // A coordinator refuses new work once the transition is already ending,
+        // in which case the point of waiting has passed.
+        if !transition.runAfterTransition(action) {
+            action()
+        }
+    }
+}
+
+/// The part of a running screen transition `EditorAutoFocus` depends on.
+@MainActor
+protocol EditorFocusTransition {
+    /// Runs `completion` when the transition finishes. False if it could not be
+    /// scheduled at all.
+    func runAfterTransition(_ completion: @escaping @MainActor () -> Void) -> Bool
+}
+
+struct EditorFocusPushTransition: EditorFocusTransition {
+    let coordinator: UIViewControllerTransitionCoordinator
+
+    func runAfterTransition(_ completion: @escaping @MainActor () -> Void) -> Bool {
+        coordinator.animate(alongsideTransition: nil) { _ in
+            MainActor.assumeIsolated { completion() }
+        }
+    }
+}
+
+extension UIResponder {
+    /// The nearest view controller up the responder chain — the one whose
+    /// `transitionCoordinator` describes the push this view arrived in.
+    var owningViewController: UIViewController? {
+        var responder = next
+        while let current = responder {
+            if let controller = current as? UIViewController { return controller }
+            responder = current.next
+        }
+        return nil
+    }
+}
+
 @MainActor
 final class EditorController: ObservableObject {
     weak var view: EditorTextView?
@@ -21,6 +127,13 @@ final class EditorController: ObservableObject {
     // SwiftUI pane (and re-run updateUIView's layout-invalidating UIKit setters)
     // on every character.
     let editPulse = PassthroughSubject<Void, Never>()
+    // Bumped on every keystroke/structural edit, alongside `editPulse`. Async core
+    // writes capture it before enqueuing so their completion can tell "nothing
+    // happened while I was in flight" from "the user kept typing" — `isDirty` can't
+    // answer that (a flush deliberately leaves it set, see `flushLive`). A
+    // completion that reloads the text view MUST check it, or it reinstalls the
+    // pre-write text over keystrokes the user made during the write.
+    var editEpoch: UInt64 = 0
     // The items as of the last load/flush — what the core already knows from
     // this editor. A remote change that lands mid-edit diffs the live text
     // against this to tell the user's unflushed lines from everything else
@@ -146,8 +259,9 @@ final class EditorController: ObservableObject {
         _ = view?.resignFirstResponder()
     }
 
-    func focusTitle() {
-        view?.focusTitle()
+    @discardableResult
+    func focusTitle() -> Bool {
+        view?.focusTitle() ?? false
     }
 }
 
@@ -175,12 +289,24 @@ struct IntegratedSchemeEditorPane: View {
     @State private var imagePickerItem: PhotosPickerItem?
     // Debounced live-commit while typing (push-on-type, like desktop).
     @State private var liveFlushWork: DispatchWorkItem?
+    // A custom back button commits before changing navigation state, and the
+    // resulting disappearance commits again. Keep the epoch of the document
+    // submission currently in flight so those two lifecycle hooks cannot enqueue
+    // the same whole-document replacement twice. This deliberately is an epoch,
+    // rather than a boolean: typing again while a prior write is in flight must
+    // still submit the newer document when the pane disappears.
+    @State private var commitSubmissionEpoch: UInt64?
     // The scheme signature our own live flush produced, captured from the
     // refreshed snapshot. When `.onChange(of: signature(for:))` fires with
     // exactly this content it is our own edit echoing back — skip the reload
     // that would reset the caret. A genuine remote change carries a different
     // signature, so (unlike a boolean flag) this can never swallow one.
     @State private var selfFlushSignature: String?
+    // Set when `onAppear` found a core write for this scheme still in flight, so
+    // the initial load was postponed until the post-write snapshot exists.
+    @State private var awaitingWriteBeforeInitialLoad = false
+    /// When the wait above began, for `CoreTiming.deferredEditorLoad`.
+    @State private var deferredLoadStartedAt: CFAbsoluteTime?
 
     private var accent: Color {
         schemeColor(scheme.colorIndex, dark: theme.isDark)
@@ -251,7 +377,12 @@ struct IntegratedSchemeEditorPane: View {
                 ZStack(alignment: .topLeading) {
                     SchemeTextView(
                         controller: controller,
-                        items: scheme.items,
+                        // Read live off the tracker rather than via
+                        // `awaitingWriteBeforeInitialLoad`: that is set in
+                        // `onAppear`, which runs *after* the text view has been made
+                        // and seeded. Later passes can't undo the seeding either
+                        // way — `updateUIView` never reloads items.
+                        items: model.schemeWrites.initialEditorItems(for: scheme),
                         timeFormat: timeFormat,
                         theme: theme,
                         accent: accent,
@@ -285,7 +416,13 @@ struct IntegratedSchemeEditorPane: View {
                         onTableDeleteColumn: { hit in
                             model.deleteTableColumn(schemeID: scheme.id, itemID: hit.itemID, column: Int32(hit.column))
                         },
-                        readOnly: scheme.isReadOnly
+                        // Typing into the blank editor we show while waiting for
+                        // the first load would be committed as the WHOLE
+                        // document — the load that was going to fill it in has
+                        // not happened yet, so the flush sees one line where the
+                        // day's real content should be. Hold edits off for the
+                        // length of that wait instead.
+                        readOnly: scheme.isReadOnly || awaitingWriteBeforeInitialLoad
                     )
 
                 }
@@ -304,7 +441,7 @@ struct IntegratedSchemeEditorPane: View {
         .toolbarBackground(.hidden, for: .navigationBar)
         .background {
             if usesNativeNavigation && !transparentOverlayNavigation && !usesEmbeddedNavigationBar {
-                SchemeEditorTransparentNavigationBar()
+                TransparentNavigationBar()
             }
         }
         .toolbar {
@@ -316,23 +453,49 @@ struct IntegratedSchemeEditorPane: View {
             }
         }
         .onAppear {
-            loadDocument(force: true)
-            if autoFocusTitleOnAppear {
+            // A commit from the pane instance we are replacing (`onDisappear` →
+            // `commitDocument`) or its last live flush may still be on the bridge
+            // queue. `scheme` then holds the pre-write text, and loading it would
+            // both show the user stale content and install it as the baseline the
+            // eventual merge resolves against — which is how the in-flight edit got
+            // dropped. Wait for the write instead; the day/scheme renders empty for
+            // the length of one core write, then loads the real text.
+            if model.hasWriteInFlight(schemeID: scheme.id) {
+                awaitingWriteBeforeInitialLoad = true
+                deferredLoadStartedAt = CFAbsoluteTimeGetCurrent()
+                // The write can land between the body evaluation that armed the
+                // observer below and this point, leaving no change for it to
+                // see. That used to mean a brief flicker; now that waiting also
+                // makes the editor read-only it would mean a permanently blank,
+                // uneditable day, so re-check once this runloop turn is over.
                 DispatchQueue.main.async {
+                    guard awaitingWriteBeforeInitialLoad,
+                          !model.hasWriteInFlight(schemeID: scheme.id) else { return }
+                    finishDeferredInitialLoad()
+                }
+            } else {
+                loadDocument(force: true)
+            }
+            if autoFocusTitleOnAppear {
+                EditorAutoFocus.schedule(in: controller, target: .title) {
                     controller.focusTitle()
                     onAutoFocusTitleConsumed()
                 }
             } else if autoFocusOnAppear {
-                // Focus on the next runloop tick (once the text view is in the
-                // window) rather than after a fixed delay, so the caret + scroll
-                // land immediately instead of a beat later.
-                DispatchQueue.main.async {
+                EditorAutoFocus.schedule(in: controller) {
                     controller.focus()
                 }
             }
         }
+        .onChange(of: model.hasWriteInFlight(schemeID: scheme.id)) { _, inFlight in
+            guard !inFlight, awaitingWriteBeforeInitialLoad else { return }
+            finishDeferredInitialLoad()
+        }
         .onChange(of: signature(for: scheme)) { _, newValue in
             guard newValue != schemeSignature else { return }
+            // Still waiting on our own first load — the signature bookkeeping below
+            // (and especially the mid-edit merge) assumes a loaded document.
+            guard !awaitingWriteBeforeInitialLoad else { return }
             schemeSignature = newValue
             if newValue == selfFlushSignature {
                 // Our own live flush echoing back through the snapshot — the editor
@@ -395,6 +558,7 @@ struct IntegratedSchemeEditorPane: View {
         )
         .onDisappear {
             controller.blur()
+            EditorKeyboardHandoff.cancel()
             commitDocument()
         }
         .sheet(item: $dateTarget) { target in
@@ -516,6 +680,32 @@ struct IntegratedSchemeEditorPane: View {
         }
     }
 
+    /// The initial load this pane postponed while a core write was in flight.
+    private func finishDeferredInitialLoad() {
+        // This gap is exactly what the user sees as "every other day appeared
+        // instantly, this one took a moment": the day whose write is still in
+        // flight renders empty until it lands. It is one core write long, so if
+        // it is ever more than a frame or two, the cost is in the write.
+        if let since = deferredLoadStartedAt {
+            CoreTiming.deferredEditorLoad(seconds: CFAbsoluteTimeGetCurrent() - since)
+            deferredLoadStartedAt = nil
+        }
+        awaitingWriteBeforeInitialLoad = false
+        // Force: this pane has never loaded, so there is nothing of the user's to
+        // protect.
+        loadDocument(force: true)
+        // `onAppear`'s auto-focus ran while the editor was still read-only, where
+        // it can't take first responder (and wouldn't have built the formatting
+        // toolbar). Now that it's editable and loaded, give it the caret — still
+        // not before the push has landed, since a slow write can put us here
+        // while the screen is mid-transition.
+        if autoFocusTitleOnAppear {
+            EditorAutoFocus.schedule(in: controller, target: .title) { controller.focusTitle() }
+        } else if autoFocusOnAppear {
+            EditorAutoFocus.schedule(in: controller) { controller.focus() }
+        }
+    }
+
     private func loadDocument(force: Bool) {
         if !force && controller.isDirty { return }
         // A cell edit goes straight to the model and is shown optimistically by
@@ -528,25 +718,63 @@ struct IntegratedSchemeEditorPane: View {
         loadedSchemeID = scheme.id
     }
 
-    private func commitDocument() {
+    private func commitDocument(completion: (@MainActor () -> Void)? = nil) {
         liveFlushWork?.cancel()
         liveFlushWork = nil
+        // Never write back an editor that has not loaded yet: its text view is
+        // empty because we are still waiting for a core write, not because the
+        // document is. (The `readOnly` gate should keep it clean, but this is
+        // the path that would destroy the day, so it checks for itself.)
+        guard !awaitingWriteBeforeInitialLoad else {
+            completion?()
+            return
+        }
         guard !scheme.isReadOnly else {
             controller.isDirty = false
+            completion?()
             return
         }
         controller.flushCellEdit()
-        guard controller.isDirty else { return }
+        guard controller.isDirty else {
+            completion?()
+            return
+        }
         let edits = controller.commit()
+        let committedEpoch = controller.editEpoch
+        let committedSchemeID = scheme.id
+        // The pane can disappear synchronously after a custom back/archive
+        // button calls us. Its `onDisappear` is not a second user edit, so it
+        // must not place an identical replace behind the first one on the serial
+        // core queue. Besides wasted save work, that duplicate used to widen the
+        // stale-snapshot window that this editor is designed to avoid.
+        guard commitSubmissionEpoch != committedEpoch else {
+            completion?()
+            return
+        }
+        commitSubmissionEpoch = committedEpoch
         // The refreshed snapshot only exists once the async core write lands;
         // reloading from a synchronous read would re-install the pre-commit list.
         model.replaceSchemeItems(schemeID: scheme.id, items: edits) {
-            if let refreshed = model.scheme(id: scheme.id) {
+            if commitSubmissionEpoch == committedEpoch {
+                commitSubmissionEpoch = nil
+            }
+            // The reload below replaces the whole text view, so it may only run if
+            // the editor is still showing exactly what we committed. If the user
+            // typed while the write was in flight, or the pane was reused for
+            // another scheme (iPad keeps one editor across schemes), reloading
+            // would overwrite newer text with this older snapshot — the "my typing
+            // vanished, then came back a moment later" report. Skipping is safe:
+            // the edit that bumped the epoch also re-armed the live flush, so the
+            // newer text reaches the core on its own.
+            guard controller.editEpoch == committedEpoch,
+                  loadedSchemeID == committedSchemeID else { return }
+            if let refreshed = model.scheme(id: committedSchemeID) {
                 controller.load(items: refreshed.items, theme: theme, timeFormat: timeFormat)
                 schemeSignature = signature(for: refreshed)
             } else {
                 controller.isDirty = false
             }
+            completion?()
         }
     }
 
@@ -568,6 +796,9 @@ struct IntegratedSchemeEditorPane: View {
     /// push, so the edit rides the socket to other devices.
     private func flushLive() {
         liveFlushWork = nil
+        // See `commitDocument`: an unloaded editor's contents are not the
+        // document, so flushing them would replace it.
+        guard !awaitingWriteBeforeInitialLoad else { return }
         guard !scheme.isReadOnly, controller.isDirty else { return }
         controller.flushCellEdit()
         let edits = controller.commit()
@@ -590,12 +821,18 @@ struct IntegratedSchemeEditorPane: View {
 
     private func archiveCurrentScheme() {
         guard !scheme.isDailyQueue else { return }
-        commitDocument()
-        model.archiveScheme(id: scheme.id)
-        if usesNativeNavigation {
-            dismiss()
-        } else {
-            onBack?()
+        // Archiving is a distinct mutation on the same FIFO bridge queue. Queue
+        // it only after the editor replacement has completed, rather than merely
+        // after it was submitted. This also makes the navigation disappearance a
+        // no-op for the document: the first commit has already cleared its dirty
+        // state before the archive changes the visible scheme list.
+        commitDocument {
+            model.archiveScheme(id: scheme.id)
+            if usesNativeNavigation {
+                dismiss()
+            } else {
+                onBack?()
+            }
         }
     }
 
@@ -701,38 +938,70 @@ struct IntegratedSchemeEditorPane: View {
         // shoves the whole stack — the "button glitches, disappears, reappears
         // lower" symptom. The text view already shows the right content, so a
         // reload buys nothing on this path.
-        syncEditsToModel()
-        guard let itemID = controller.currentLineItemID(),
-              let currentScheme = model.scheme(id: scheme.id),
-              currentScheme.items.contains(where: { $0.id == itemID }) else { return }
-        dateTarget = EditorDateTarget(itemID: itemID)
+        // Resolve the target only once that flush has landed. Reading
+        // `model.scheme(id:)` straight after the call sees the PRE-write snapshot,
+        // so on a line the user just typed (never flushed, hence not in the core's
+        // list yet) the `contains` check failed and the date sheet silently
+        // refused to open. The completion also runs after `adoptItemIDs`, so
+        // `currentLineItemID()` is the core's id rather than a local placeholder.
+        syncEditsToModel {
+            guard let itemID = controller.currentLineItemID(),
+                  let currentScheme = model.scheme(id: scheme.id),
+                  currentScheme.items.contains(where: { $0.id == itemID }) else { return }
+            dateTarget = EditorDateTarget(itemID: itemID)
+        }
     }
 
     /// Flushes the editor's pending edits into the model without reloading the
     /// text view. Used before opening an item-scoped sheet (date/recurrence) so
     /// the sheet targets a persisted item while avoiding the self-sizing reflow
     /// that `commitDocument()`'s reload triggers in the Daily feed.
-    private func syncEditsToModel() {
+    /// `completion` runs once the model reflects the flush — immediately when
+    /// there was nothing to flush, otherwise from the core write's completion.
+    /// Callers that need to look the edited item up in the model must use it.
+    private func syncEditsToModel(completion: (@MainActor () -> Void)? = nil) {
         guard !scheme.isReadOnly else {
             controller.isDirty = false
+            completion?()
             return
         }
         controller.flushCellEdit()
-        guard controller.isDirty else { return }
+        guard controller.isDirty else {
+            completion?()
+            return
+        }
         let edits = controller.commit()
+        let syncedEpoch = controller.editEpoch
+        let syncedSchemeID = scheme.id
         model.replaceSchemeItems(schemeID: scheme.id, items: edits) {
             // Adopt the refreshed signature so the model mutation above doesn't
             // bounce back through `.onChange(of: signature(for:))` as a redundant
             // reload (which would reintroduce the reflow we're avoiding). Runs in
             // the completion because the snapshot only reflects the replace once
             // the async core write lands.
-            if let refreshed = model.scheme(id: scheme.id) {
-                controller.adoptItemIDs(from: refreshed.items)
-                controller.baselineItems = refreshed.items
-                schemeSignature = signature(for: refreshed)
+            guard loadedSchemeID == syncedSchemeID,
+                  let refreshed = model.scheme(id: syncedSchemeID) else {
+                // The pane moved on to another scheme mid-flight; a caller waiting
+                // to act on "the line I was editing" must not fire against it.
+                return
             }
+            controller.adoptItemIDs(from: refreshed.items)
+            controller.baselineItems = refreshed.items
+            schemeSignature = signature(for: refreshed)
+            // Only NOW is it safe to drop the dirty flag. Clearing it up front
+            // (as this used to) opened a window between enqueuing the write and
+            // it landing in which any snapshot republish took the
+            // `loadDocument(force: false)` branch and rebuilt the text view from
+            // the still-PRE-write snapshot — the user's typing vanishing, then
+            // reappearing once the write finally landed. It also let the pending
+            // live flush bail on `guard controller.isDirty`, stranding keystrokes
+            // made in that window. Keystrokes during the flight bump the epoch;
+            // leave the flag set for them so their own flush still runs.
+            if controller.editEpoch == syncedEpoch {
+                controller.isDirty = false
+            }
+            completion?()
         }
-        controller.isDirty = false
     }
 
     private func insertTableFromToolbar() {
@@ -812,7 +1081,16 @@ struct IntegratedSchemeEditorPane: View {
 }
 
 
-private struct SchemeEditorTransparentNavigationBar: UIViewControllerRepresentable {
+/// Makes the hosting `UINavigationController`'s bar fully transparent *and*
+/// translucent, which is what lets a pane's content extend up underneath it
+/// instead of starting below it. Shared by the scheme editor and the daily feed
+/// so the two read as the same screen — a daily that keeps the default opaque
+/// bar shows a dead strip across the top and clips its first line against it,
+/// where the editor's text flows right up past the back button.
+///
+/// Restores the bar's original appearance on teardown, so screens that *want*
+/// a normal bar (settings, archive) are unaffected.
+struct TransparentNavigationBar: UIViewControllerRepresentable {
     func makeCoordinator() -> Coordinator {
         Coordinator()
     }

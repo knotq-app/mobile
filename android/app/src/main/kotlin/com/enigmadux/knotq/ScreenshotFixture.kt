@@ -190,7 +190,7 @@ private fun MainActivity.launchPlanItems(): JSONArray = items(
     item("Coursework", "bullet"),
     item("Read philosophy chapter 8", "checkbox", indent = 1, done = true),
     item("Outline art history essay", "checkbox", indent = 1),
-    item("Prepare stats lab questions", "checkbox", indent = 1, end = sdate(1, 16, 30)),
+    item("Prepare stats lab questions", "checkbox", indent = 1, end = sdate(1, 16, 45)),
     item("Campus", "bullet"),
     item("Reserve library study room", "checkbox", indent = 1, done = true),
     item("Meet writing tutor", "checkbox", indent = 1),

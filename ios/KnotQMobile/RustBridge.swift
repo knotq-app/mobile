@@ -9,6 +9,22 @@ final class RustBridge: @unchecked Sendable {
     // sync. Serial + FIFO also preserves the submission order of edits.
     private let queue = DispatchQueue(label: "com.knotq.rust-bridge", qos: .userInitiated)
 
+    #if DEBUG
+    /// Debug-only slow-motion for core work, in milliseconds, from
+    /// `-KnotQSlowCoreWriteMillis <n>`.
+    ///
+    /// A write to a small document lands in about a millisecond, so the window
+    /// where the model still holds the pre-write snapshot is far too short to
+    /// hit from UI automation — which makes the staleness bugs it causes
+    /// untestable from the outside even though a large workspace, a CRDT encode
+    /// or a cold save widens the same window on a real device. Stretching it
+    /// makes those bugs reproducible on demand.
+    private static let slowCoreWork: TimeInterval = {
+        let millis = UserDefaults.standard.integer(forKey: "KnotQSlowCoreWriteMillis")
+        return millis > 0 ? TimeInterval(millis) / 1000 : 0
+    }()
+    #endif
+
     /// Run core work on the bridge queue and deliver the result on the main
     /// actor. Submission order is preserved (serial queue), so fire-and-forget
     /// mutations enqueued from the main thread apply in UI order.
@@ -18,6 +34,14 @@ final class RustBridge: @unchecked Sendable {
     ) {
         queue.async {
             let result = Result { try work(self) }
+            #if DEBUG
+            // After the work, so the delay models a slow core rather than a
+            // slow queue: the write itself has happened, only the completion
+            // that publishes it to the UI is still pending.
+            if Self.slowCoreWork > 0 {
+                Thread.sleep(forTimeInterval: Self.slowCoreWork)
+            }
+            #endif
             Task { @MainActor in
                 completion(result)
             }
@@ -113,7 +137,9 @@ final class RustBridge: @unchecked Sendable {
         try core.moveNode(kind: kind, id: id, folderId: folderID, position: position)
     }
 
-    func ensureDailyQueue(date: String) throws {
+    /// Returns whether the queue had to be created — see `ensureTodayDailyQueue`.
+    @discardableResult
+    func ensureDailyQueue(date: String) throws -> Bool {
         try core.ensureDailyQueue(date: date)
     }
 
@@ -307,6 +333,24 @@ final class RustBridge: @unchecked Sendable {
         try core.setNotificationDefaults(
             eventOffsetSecs: eventOffsetSecs,
             assignmentOffsetSecs: assignmentOffsetSecs
+        )
+    }
+
+    func setUpcomingDisplaySettings(
+        eventLookaheadDays: Int32,
+        reminderLookaheadDays: Int32,
+        assignmentLookaheadDays: Int32,
+        maximumItems: Int32,
+        showOverdue: Bool,
+        showCompleted: Bool
+    ) throws {
+        try core.setUpcomingDisplaySettings(
+            eventLookaheadDays: eventLookaheadDays,
+            reminderLookaheadDays: reminderLookaheadDays,
+            assignmentLookaheadDays: assignmentLookaheadDays,
+            maximumItems: maximumItems,
+            showOverdue: showOverdue,
+            showCompleted: showCompleted
         )
     }
 

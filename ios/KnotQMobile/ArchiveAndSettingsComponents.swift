@@ -112,6 +112,7 @@ struct ArchiveSchemeRow: View {
 /// detail column can pop them programmatically when the sidebar selection changes.
 enum SettingsRoute: Hashable {
     case archive
+    case timing
 }
 
 struct SettingsArchiveSection: View {

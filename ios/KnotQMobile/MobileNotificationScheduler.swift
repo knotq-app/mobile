@@ -1,4 +1,5 @@
 import Foundation
+import UIKit
 @preconcurrency import UserNotifications
 
 final class MobileNotificationScheduler: NSObject, UNUserNotificationCenterDelegate {
@@ -46,11 +47,73 @@ final class MobileNotificationScheduler: NSObject, UNUserNotificationCenterDeleg
         iso.formatOptions = [.withInternetDateTime]
     }
 
+    /// Actions that arrived before `configure(model:)` wired up the app model.
+    /// A cold launch straight into a notification action can deliver the response
+    /// before the SwiftUI scene has built `AppModel`; the old
+    /// `model?.handleNotificationAction(...)` optional-chained that away, silently
+    /// losing the user's tap (the item never got marked done at all).
+    @MainActor private var queuedActions: [MobileNotificationActionRequest] = []
+
     @MainActor
     func configure(model: AppModel) {
         self.model = model
+        prepareForLaunch()
+        guard !queuedActions.isEmpty else { return }
+        let pending = queuedActions
+        queuedActions.removeAll()
+        // Deferred into a Task: `configure` is called from `AppModel.init`, so the
+        // model is not fully constructed yet at this point.
+        Task { @MainActor in
+            for request in pending {
+                let changed = await model.handleNotificationActionNow(request)
+                if changed, model.syncSession?.supportsSync == true {
+                    _ = await model.runBackgroundSync()
+                }
+            }
+        }
+    }
+
+    /// Install the notification delegate as soon as UIKit has launched. This is
+    /// intentionally separate from `configure(model:)`: on a cold launch caused
+    /// by a notification button, UIKit can deliver the action before SwiftUI has
+    /// constructed `AppModel`. The action is queued until the model arrives.
+    @MainActor
+    func prepareForLaunch() {
         center.delegate = self
         registerCategories()
+    }
+
+    /// Apply a notification action and return only once the core write, snapshot
+    /// rebuild, widget publish and badge update have all landed.
+    @MainActor
+    func applyAction(_ request: MobileNotificationActionRequest) async {
+        guard let model else {
+            queuedActions.append(request)
+            return
+        }
+        // Marking done from the lock screen runs the app in the background, where
+        // iOS suspends the process the moment the delegate reports completion.
+        // The assertion buys the time for the widget/badge publish that follows
+        // the core write; without it they stay stale until the next launch.
+        var taskID = UIBackgroundTaskIdentifier.invalid
+        taskID = UIApplication.shared.beginBackgroundTask(withName: "knotq.notification-action") {
+            guard taskID != .invalid else { return }
+            UIApplication.shared.endBackgroundTask(taskID)
+            taskID = .invalid
+        }
+        let changed = await model.handleNotificationActionNow(request)
+        // Do not schedule this as a detached Task. Once the notification delegate
+        // calls its completion handler, iOS may suspend the process immediately,
+        // which previously made the server push a matter of luck. Keep the same
+        // background assertion through one bounded sync so a completed item is
+        // persisted locally first, then sent to entitled peers whenever possible.
+        if changed, model.syncSession?.supportsSync == true {
+            _ = await model.runBackgroundSync()
+        }
+        if taskID != .invalid {
+            UIApplication.shared.endBackgroundTask(taskID)
+            taskID = .invalid
+        }
     }
 
     @MainActor
@@ -282,10 +345,16 @@ final class MobileNotificationScheduler: NSObject, UNUserNotificationCenterDeleg
             occurrenceJSON: occurrenceJSON,
             triggerAt: triggerAt
         )
+        // The completion handler is deliberately NOT called here: returning from
+        // it tells iOS the app is done, and a backgrounded process is suspended
+        // right after — before the widget snapshot and icon badge are republished.
+        // UNUserNotificationCenterDelegate hands us a non-Sendable closure; it is
+        // only ever called once, on the main actor, from the Task below.
+        nonisolated(unsafe) let finish = completionHandler
         Task { @MainActor in
-            MobileNotificationScheduler.shared.model?.handleNotificationAction(request)
+            await MobileNotificationScheduler.shared.applyAction(request)
+            finish()
         }
-        completionHandler()
     }
 }
 

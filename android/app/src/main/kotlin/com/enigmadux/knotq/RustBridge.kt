@@ -83,7 +83,12 @@ internal class RustBridge(context: Context) : AutoCloseable {
                 body.getString("folder_id"),
                 body.getInt("position")
             )
-            "ensure_daily_queue" -> core.ensureDailyQueue(body.stringOrNull("date"))
+            // `created` lets the caller skip a snapshot rebuild on the common
+            // path where the day's queue is already there.
+            "ensure_daily_queue" -> return JSONObject().put(
+                "created",
+                core.ensureDailyQueue(body.stringOrNull("date"))
+            )
             "add_today_daily_item" -> core.addTodayDailyItem(
                 body.getString("today"),
                 body.getString("text"),
@@ -186,6 +191,14 @@ internal class RustBridge(context: Context) : AutoCloseable {
             "set_notification_defaults" -> core.setNotificationDefaults(
                 body.getInt("event_offset_secs"),
                 body.getInt("assignment_offset_secs")
+            )
+            "set_upcoming_display_settings" -> core.setUpcomingDisplaySettings(
+                body.getInt("event_lookahead_days"),
+                body.getInt("reminder_lookahead_days"),
+                body.getInt("assignment_lookahead_days"),
+                body.getInt("maximum_items"),
+                body.getBoolean("show_overdue"),
+                body.getBoolean("show_completed")
             )
             "reset_workspace" -> core.resetWorkspace()
             "apply_notification_action" -> return JSONObject().put(
@@ -397,6 +410,12 @@ internal class RustBridge(context: Context) : AutoCloseable {
         .put("time_format", timeFormat)
         .put("event_notification_offset_secs", eventNotificationOffsetSecs)
         .put("assignment_notification_offset_secs", assignmentNotificationOffsetSecs)
+        .put("event_lookahead_days", eventLookaheadDays)
+        .put("reminder_lookahead_days", reminderLookaheadDays)
+        .put("assignment_lookahead_days", assignmentLookaheadDays)
+        .put("maximum_upcoming_items", maximumUpcomingItems)
+        .put("show_overdue", showOverdue)
+        .put("show_completed", showCompleted)
         .put("google_account_count", googleAccountCount)
         .put("google_accounts", googleAccounts.toJsonArray { it.toJson() })
 

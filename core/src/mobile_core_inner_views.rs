@@ -93,7 +93,12 @@ impl MobileCoreInner {
                 }
             })
             .collect();
-        let upcoming = mobile_upcoming(&indexed, Utc::now(), UPCOMING_LIMIT)
+        let upcoming = mobile_upcoming(
+            &indexed,
+            Utc::now(),
+            self.settings.upcoming_display,
+            MOBILE_UPCOMING_QUERY_LIMIT,
+        )
             .into_iter()
             .map(|context| MobileOccurrence::from_context(&self.workspace, context))
             .collect();
@@ -136,6 +141,20 @@ impl MobileCoreInner {
                 assignment_notification_offset_secs: offset_to_i32(
                     self.settings.notification_defaults.assignment_offset_secs,
                 ),
+                event_lookahead_days: i32::from(
+                    self.settings.upcoming_display.event_lookahead_days,
+                ),
+                reminder_lookahead_days: i32::from(
+                    self.settings.upcoming_display.reminder_lookahead_days,
+                ),
+                assignment_lookahead_days: i32::from(
+                    self.settings.upcoming_display.assignment_lookahead_days,
+                ),
+                maximum_upcoming_items: i32::from(
+                    self.settings.upcoming_display.maximum_items,
+                ),
+                show_overdue: self.settings.upcoming_display.show_overdue,
+                show_completed: self.settings.upcoming_display.show_completed,
                 google_account_count: self.settings.google_accounts.len() as i32,
                 google_accounts: self.google_accounts(),
             },
@@ -722,7 +741,17 @@ impl MobileCoreInner {
             .ok_or_else(|| anyhow!("scheme {scheme_id} is missing"))?;
         scheme.items = next_items;
         self.workspace.normalize_item_markers();
+        let t0 = std::time::Instant::now();
         self.record_crdt_changes(WorkspaceCrdtChangeSet::default().touch_scheme(scheme_id))?;
-        self.save_workspace()
+        let t1 = std::time::Instant::now();
+        let saved = self.save_workspace();
+        if knotq_storage_json::edit_timing_enabled() {
+            eprintln!(
+                "replace_scheme_items: crdt+pending {}ms, save_workspace {}ms",
+                (t1 - t0).as_millis(),
+                t1.elapsed().as_millis()
+            );
+        }
+        saved
     }
 }

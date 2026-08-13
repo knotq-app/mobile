@@ -181,6 +181,12 @@ dictionary MobileSettings {
   string time_format;
   i32 event_notification_offset_secs;
   i32 assignment_notification_offset_secs;
+  i32 event_lookahead_days;
+  i32 reminder_lookahead_days;
+  i32 assignment_lookahead_days;
+  i32 maximum_upcoming_items;
+  boolean show_overdue;
+  boolean show_completed;
   i32 google_account_count;
   sequence<MobileGoogleAccount> google_accounts;
 };
@@ -283,7 +289,7 @@ interface MobileCore {
   void move_node(string kind, string id, string folder_id, i32 position);
 
   [Throws=MobileError]
-  void ensure_daily_queue(string? date);
+  boolean ensure_daily_queue(string? date);
 
   [Throws=MobileError]
   MobileGoogleAuthRequest google_auth_request(string client_id, string redirect_uri);
@@ -395,6 +401,9 @@ interface MobileCore {
 
   [Throws=MobileError]
   void set_notification_defaults(i32 event_offset_secs, i32 assignment_offset_secs);
+
+  [Throws=MobileError]
+  void set_upcoming_display_settings(i32 event_lookahead_days, i32 reminder_lookahead_days, i32 assignment_lookahead_days, i32 maximum_items, boolean show_overdue, boolean show_completed);
 
   [Throws=MobileError]
   void reset_workspace();

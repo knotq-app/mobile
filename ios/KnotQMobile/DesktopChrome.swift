@@ -108,6 +108,7 @@ struct SchemeTreeIconSlot<Content: View>: View {
 
 struct DesktopUpcomingRail: View {
     let calendar: MobileCalendar?
+    let settings: MobileSettings?
     let theme: KnotQTheme
     let timeFormat: String
     let onToggleOccurrence: (MobileOccurrence) -> Void
@@ -126,30 +127,26 @@ struct DesktopUpcomingRail: View {
         .background(theme.bgApp)
     }
 
-    private var todayOccurrences: [MobileOccurrence] {
-        guard let today = calendar?.days.first(where: { $0.date == AppModel.dateOnly(Date()) }) else {
-            return []
-        }
-        return today.occurrences
-    }
-
-    /// Mirrors the desktop upcoming panel (`render_upcoming`): due-dated tasks
-    /// (assignments) and alert points (reminders) span overdue + upcoming, while
-    /// the "Upcoming" bucket is today's (and still-overdue) events only.
     private var assignments: [MobileOccurrence] {
-        bucket(kind: "assignment", base: overduePlusUpcoming)
+        bucket(kind: "assignment", base: displayedOccurrences)
     }
 
     private var reminders: [MobileOccurrence] {
-        bucket(kind: "reminder", base: overduePlusUpcoming)
+        bucket(kind: "reminder", base: displayedOccurrences)
     }
 
     private var upcomingEvents: [MobileOccurrence] {
-        bucket(kind: "event", base: (calendar?.overdue ?? []) + todayOccurrences)
+        bucket(kind: "event", base: displayedOccurrences)
     }
 
-    private var overduePlusUpcoming: [MobileOccurrence] {
-        (calendar?.overdue ?? []) + (calendar?.upcoming ?? [])
+    private var displayedOccurrences: [MobileOccurrence] {
+        MobileUpcomingDisplay.visibleOccurrences(
+            overdue: calendar?.overdue ?? [],
+            upcoming: calendar?.upcoming ?? [],
+            maximumItems: settings?.maximumUpcomingItems ?? UpcomingDisplayDefaults.maximumItems,
+            showOverdue: settings?.showOverdue ?? UpcomingDisplayDefaults.showOverdue,
+            showCompleted: settings?.showCompleted ?? UpcomingDisplayDefaults.showCompleted
+        )
     }
 
     private func bucket(kind: String, base: [MobileOccurrence]) -> [MobileOccurrence] {

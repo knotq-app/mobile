@@ -153,6 +153,7 @@ struct EventEditorSheet: View {
     @State private var completed: Bool
     @State private var showDeleteConfirm = false
     @State private var scopePrompt: EventScopePrompt?
+    @FocusState private var titleFocused: Bool
 
     private let isEditing: Bool
     private let editingSchemeID: String?
@@ -209,6 +210,7 @@ struct EventEditorSheet: View {
                 Section {
                     TextField(L10n.t("mobile.calendar.title_placeholder"), text: $title)
                         .disabled(readOnly)
+                        .focused($titleFocused)
                     // Scheme lives with the title — they're usually set together.
                     if !isEditing {
                         CalendarSchemePicker(selection: $schemeID, theme: theme)
@@ -317,7 +319,26 @@ struct EventEditorSheet: View {
             } message: {
                 Text(scopePrompt?.message ?? "")
             }
+            .task {
+                // Auto-focus the title only when composing a brand-new event, so
+                // the keyboard is ready to type — never when editing or viewing.
+                // Deferred past the sheet's present transition, which is what
+                // makes the first-responder assignment stick. (`defaultFocus`
+                // would place it in the same transaction, but it only moves the
+                // caret — the software keyboard stays down.) The sheet no longer
+                // shifts when the keyboard arrives: composing presents at a
+                // detent the keyboard already fits inside.
+                guard autoFocusesTitle else { return }
+                try? await Task.sleep(for: .milliseconds(250))
+                titleFocused = true
+            }
         }
+    }
+
+    /// Composing a brand-new event starts in the title field; editing or viewing
+    /// an existing one must not raise the keyboard.
+    private var autoFocusesTitle: Bool {
+        !isEditing && !readOnly
     }
 
     private var editorKindBinding: Binding<CalendarKind> {

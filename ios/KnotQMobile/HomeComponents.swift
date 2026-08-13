@@ -1,6 +1,31 @@
 import SwiftUI
 import UIKit
 
+enum MobileUpcomingDisplay {
+    /// Keep overdue rows first, matching the existing dashboard contract, then
+    /// apply user visibility and density choices to the combined list. The core
+    /// has already applied each kind's independent date horizon.
+    static func visibleOccurrences(
+        overdue: [MobileOccurrence],
+        upcoming: [MobileOccurrence],
+        maximumItems: Int32,
+        showOverdue: Bool,
+        showCompleted: Bool
+    ) -> [MobileOccurrence] {
+        let candidates = (showOverdue ? overdue : []) + upcoming
+        var seen = Set<String>()
+        var visible: [MobileOccurrence] = []
+        let limit = max(1, Int(maximumItems))
+        for occurrence in candidates {
+            guard showCompleted || !occurrence.done,
+                  seen.insert(occurrence.id).inserted else { continue }
+            visible.append(occurrence)
+            if visible.count == limit { break }
+        }
+        return visible
+    }
+}
+
 private struct NavigationStackInteractivePopEnabler: UIViewControllerRepresentable {
     let enabled: Bool
 
@@ -157,7 +182,20 @@ struct HomeDashboardPane: View {
             }
         }
         // Fill the bottom safe-area lip so content scrolls to the screen edge.
-        .ignoresSafeArea(.container, edges: .bottom)
+        //
+        // `.keyboard` belongs in here with `.container`. SwiftUI tracks the
+        // keyboard itself, from the notifications, rather than from UIKit's safe
+        // area — measured: the window's and every hosting controller's
+        // `safeAreaInsets.bottom` stayed 34 for the whole launch while this pane's
+        // content visibly moved. Extending past the container bottom while SwiftUI
+        // also believes a keyboard is arriving drops bottom-anchored content by the
+        // home indicator's 34pt and animates it back: the quick-write buttons did
+        // that ~0.9s into every launch (5 of 5 recordings), because `KeyboardWarmup`
+        // presents a keyboard for real, invisibly, to build it.
+        //
+        // Nothing here needs keyboard avoidance: this pane has no text input, and
+        // the search field's results replace it entirely while searching.
+        .ignoresSafeArea([.container, .keyboard], edges: .bottom)
     }
 
     private struct SchemePreviewLayout {
@@ -202,9 +240,14 @@ struct HomeDashboardPane: View {
 
     /// Overdue items first (so they aren't missed), then upcoming ones.
     private var upcomingOccurrences: [MobileOccurrence] {
-        let overdue = snapshot?.calendar.overdue ?? []
-        let upcoming = snapshot?.calendar.upcoming ?? []
-        return Array((overdue + upcoming).prefix(14))
+        let settings = snapshot?.settings
+        return MobileUpcomingDisplay.visibleOccurrences(
+            overdue: snapshot?.calendar.overdue ?? [],
+            upcoming: snapshot?.calendar.upcoming ?? [],
+            maximumItems: settings?.maximumUpcomingItems ?? UpcomingDisplayDefaults.maximumItems,
+            showOverdue: settings?.showOverdue ?? UpcomingDisplayDefaults.showOverdue,
+            showCompleted: settings?.showCompleted ?? UpcomingDisplayDefaults.showCompleted
+        )
     }
 
     private var timeFormat: String {
@@ -268,18 +311,42 @@ struct HomeNavigationPane: View {
     let onGoogleCalendar: (String?) -> Void
     let onAddItem: (String) -> Void
     let onPrepareDaily: () -> Void
+    let onPrepareEditorKeyboard: (KnotQTheme, @escaping @MainActor () -> Void) -> Void
     let onSelectDailyDate: @MainActor (Date) -> Void
     @Binding var titleFocusSchemeID: String?
     @Binding var navigationDepth: Int
     @State private var path: [HomeRoute] = []
     @State private var searchQuery = ""
+    @FocusState private var searchFocused: Bool
 
     var body: some View {
         NavigationStack(path: $path) {
             VStack(spacing: 12) {
-                HomeInlineSearchField(query: $searchQuery, theme: theme)
-                    .padding(.horizontal, 14)
-                    .padding(.top, 10)
+                HStack(spacing: 10) {
+                    HomeInlineSearchField(query: $searchQuery, theme: theme, focused: $searchFocused)
+
+                    if isSearching {
+                        Button(action: closeHomeSearch) {
+                            Image(systemName: "xmark")
+                                .font(.system(size: 14, weight: .semibold))
+                                .foregroundStyle(theme.textPrimary)
+                                .frame(width: 34, height: 34)
+                                .background(theme.buttonBg, in: Circle())
+                                .overlay {
+                                    Circle().strokeBorder(
+                                        theme.borderOverlay.opacity(theme.isDark ? 0.35 : 0.55),
+                                        lineWidth: 1
+                                    )
+                                }
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel(L10n.t("mobile.home.clear_search"))
+                        .transition(.opacity)
+                    }
+                }
+                .animation(.easeOut(duration: 0.14), value: isSearching)
+                .padding(.horizontal, 14)
+                .padding(.top, 10)
 
                 Group {
                     if isSearching {
@@ -358,7 +425,7 @@ struct HomeNavigationPane: View {
                         onLoadAnchorRestored: {
                             model.clearDailyHistoryLoadAnchor()
                         },
-                        onBack: {},
+                        onBack: { popHomeRoute() },
                         onAdd: {
                             if let daily = model.snapshot?.daily.first(where: { $0.date == AppModel.dateOnly(model.selectedDate) })?.scheme {
                                 onAddItem(daily.id)
@@ -382,8 +449,12 @@ struct HomeNavigationPane: View {
         searchQuery.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
+    /// Focus alone opens search, before anything is typed: tapping the field
+    /// should land you on the search surface (with its own empty state and an
+    /// explicit way out), not leave you looking at the dashboard behind a
+    /// keyboard with no indication that anything happened.
     private var isSearching: Bool {
-        !trimmedSearchQuery.isEmpty
+        searchFocused || !trimmedSearchQuery.isEmpty
     }
 
     private func updateSearchResults(for query: String) {
@@ -410,18 +481,19 @@ struct HomeNavigationPane: View {
 
     private func openSchemeInStack(_ id: String) {
         closeHomeSearch()
-        path.append(.scheme(id))
+        onPrepareEditorKeyboard(theme) { path.append(.scheme(id)) }
     }
 
     private func openDailyInStack() {
         closeHomeSearch()
         onPrepareDaily()
-        path.append(.daily)
+        onPrepareEditorKeyboard(theme) { path.append(.daily) }
     }
 
     private func closeHomeSearch() {
         searchQuery = ""
         model.searchHits = []
+        searchFocused = false
     }
 
     private func popHomeRoute() {
@@ -444,7 +516,10 @@ struct HomeNavigationPane: View {
 private struct HomeInlineSearchField: View {
     @Binding var query: String
     let theme: KnotQTheme
-    @FocusState private var focused: Bool
+    /// Owned by the pane, not by the field: opening a scheme/daily from a focused
+    /// search has to be able to let it go, or the field is still focused when the
+    /// push comes back and the keyboard reappears over the home list.
+    @FocusState.Binding var focused: Bool
 
     var body: some View {
         HStack(spacing: 9) {
@@ -462,9 +537,12 @@ private struct HomeInlineSearchField: View {
                 .focused($focused)
 
             if !query.isEmpty {
+                // Clears the text but stays in search, so this and the exit
+                // button beside the field mean two different things. Dropping
+                // focus here would also close search, which is not what an
+                // in-field clear should do.
                 Button {
                     query = ""
-                    focused = false
                 } label: {
                     Image(systemName: "xmark.circle.fill")
                         .font(.system(size: 14, weight: .semibold))
@@ -493,7 +571,16 @@ struct HomeSearchResultsPane: View {
     var body: some View {
         ScrollView {
             LazyVStack(spacing: 2) {
-                if hits.isEmpty {
+                if query.isEmpty {
+                    // Focused but nothing typed yet — "Nothing matches """ would
+                    // be both wrong and alarming, so prompt instead of reporting.
+                    EmptyState(
+                        title: L10n.t("mobile.search.screen_title"),
+                        detail: L10n.t("mobile.search.empty_subtitle"),
+                        theme: theme
+                    )
+                    .padding(.top, 56)
+                } else if hits.isEmpty {
                     EmptyState(
                         title: L10n.t("mobile.home.search_no_results_title"),
                         detail: L10n.t("mobile.home.search_no_results_detail", ["query": query]),

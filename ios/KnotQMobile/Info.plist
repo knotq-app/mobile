@@ -15,15 +15,22 @@
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>
-	<string>1.0</string>
+	<string>$(MARKETING_VERSION)</string>
 	<key>BGTaskSchedulerPermittedIdentifiers</key>
 	<array>
 		<string>com.enigmadux.knotq.background-sync</string>
 	</array>
 	<key>FirebaseAppDelegateProxyEnabled</key>
 	<false/>
+	<!--
+		KnotQ uses TLS only for communication with its services (and Google).
+		That is exempt encryption under Apple's export-compliance rules, so
+		App Store Connect can determine this automatically on upload.
+	-->
+	<key>ITSAppUsesNonExemptEncryption</key>
+	<false/>
 	<key>CFBundleVersion</key>
-	<string>1</string>
+	<string>$(CURRENT_PROJECT_VERSION)</string>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
 	<key>KnotQGoogleClientID</key>
@@ -42,6 +49,14 @@
 				<string>com.googleusercontent.apps.419826075228-gn6gj1l20nltil67odvf00u3i7n8a2ld</string>
 			</array>
 		</dict>
+		<dict>
+			<key>CFBundleURLName</key>
+			<string>com.enigmadux.knotq.auth</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>knotq</string>
+			</array>
+		</dict>
 	</array>
 	<key>NSAppTransportSecurity</key>
 	<dict>
@@ -55,8 +70,26 @@
 	</array>
 	<key>UIApplicationSupportsIndirectInputEvents</key>
 	<true/>
+	<!-- Cold launch used to be a plain BLACK screen for its whole pre-render
+	     window (process start, dyld, Firebase, opening the Rust core), which on
+	     a light theme then flashed straight to a near-white app.
+
+	     The cause was having BOTH this key and UILaunchStoryboardName: with the
+	     two present iOS presents NEITHER, so LaunchScreen.storyboard never drew
+	     a single pixel. UILaunchStoryboardName is therefore gone and the
+	     storyboard is unused — do not re-add it.
+
+	     The colour is an asset with light/dark variants, which is the only
+	     appearance signal available before any of our code runs. Deliberately no
+	     UIImageName: that key scales the image to the screen with no way to size
+	     it. The app's own loading state (ContentView.launchLoadingView) puts the
+	     logo up over this same colour as soon as SwiftUI can draw, so the
+	     handoff is invisible. -->
 	<key>UILaunchScreen</key>
-	<dict/>
+	<dict>
+		<key>UIColorName</key>
+		<string>LaunchBackground</string>
+	</dict>
 	<key>UISupportedInterfaceOrientations</key>
 	<array>
 		<string>UIInterfaceOrientationPortrait</string>

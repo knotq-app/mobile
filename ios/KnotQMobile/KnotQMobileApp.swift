@@ -23,6 +23,10 @@ struct KnotQMobileApp: App {
                 .preferredColorScheme(model.preferredColorScheme)
                 .onAppear {
                     MobileReviewPrompt.maybeRequestReview()
+                    // Build the system keyboard while the app is idle, so the
+                    // first tap into a scheme or the daily gets the same
+                    // keyboard presentation as every tap after it.
+                    KeyboardWarmup.warmSoon()
                 }
                 .onChange(of: scenePhase) { phase in
                     switch phase {
@@ -30,6 +34,15 @@ struct KnotQMobileApp: App {
                         // Advance the daily/home "today" if the day rolled over while
                         // the app was backgrounded, so it isn't stuck on yesterday.
                         model.handleDayRolloverIfNeeded()
+                        // Re-read the core on every return to the foreground. The
+                        // snapshot on screen was built when the app was last active and
+                        // the core buckets occurrences against *that* moment, so coming
+                        // back hours later leaves items that are now overdue sitting
+                        // under Upcoming until some unrelated edit triggers a refresh.
+                        // This republishes the widget and badge too. Safe while typing:
+                        // the editor's `loadDocument` refuses to reload a dirty
+                        // controller, so unflushed keystrokes are never overwritten.
+                        model.refresh()
                         // Re-check the sync entitlement + subscription lifecycle whenever
                         // the app returns to the foreground, so a subscription bought (or
                         // changed) while it was backgrounded shows up without waiting for

@@ -1,0 +1,83 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  UNUSED. iOS presents the launch screen described by UILaunchScreen in
+  Info.plist; this storyboard is not referenced (adding UILaunchStoryboardName
+  back alongside UILaunchScreen makes iOS present NEITHER, which is exactly the
+  black cold-launch this replaced). Kept only so the layout below documents what
+  the launch state should look like — edit ContentView.launchLoadingView and the
+  LaunchBackground colour asset instead.
+
+  The launch screen is what covers the whole pre-render window: process start,
+  dyld, Firebase, and opening the Rust core. It therefore has to look like the
+  app's own loading state (see ContentView.launchLoadingView), or the handoff
+  reads as a flash: this used to be a fixed dark plum, so a light-theme user
+  went plum -> near-white -> content on every cold launch, with the logo
+  jumping size in between. Colours come from asset catalog entries with
+  light/dark variants (the only appearance signal available before any of our
+  code runs), and the metrics below mirror the SwiftUI stack exactly:
+  72pt logo, 14pt gap, spinner, 14pt gap, 16pt semibold title, group centred.
+-->
+<document type="com.apple.InterfaceBuilder3.CocoaTouch.Storyboard.XIB" version="3.0" toolsVersion="23094" targetRuntime="iOS.CocoaTouch" propertyAccessControl="none" useAutolayout="YES" launchScreen="YES" useTraitCollections="YES" useSafeAreas="YES" colorMatched="YES" initialViewController="launchViewController">
+    <device id="retina6_12" orientation="portrait" appearance="light"/>
+    <dependencies>
+        <deployment identifier="iOS"/>
+        <plugIn identifier="com.apple.InterfaceBuilder.IBCocoaTouchPlugin" version="23084"/>
+        <capability name="Safe area layout guides" minToolsVersion="9.0"/>
+        <capability name="System colors in document resources" minToolsVersion="11.0"/>
+    </dependencies>
+    <scenes>
+        <!--Launch Screen-->
+        <scene sceneID="launchScene">
+            <objects>
+                <viewController id="launchViewController" sceneMemberID="viewController">
+                    <view key="view" contentMode="scaleToFill" id="launchView">
+                        <rect key="frame" x="0.0" y="0.0" width="390" height="844"/>
+                        <autoresizingMask key="autoresizingMask" widthSizable="YES" heightSizable="YES"/>
+                        <subviews>
+                            <imageView clipsSubviews="YES" userInteractionEnabled="NO" contentMode="scaleAspectFit" image="BrandLogo" translatesAutoresizingMaskIntoConstraints="NO" id="launchLogo">
+                                <rect key="frame" x="159" y="356.5" width="72" height="72"/>
+                                <constraints>
+                                    <constraint firstAttribute="width" constant="72" id="logoWidth"/>
+                                    <constraint firstAttribute="height" constant="72" id="logoHeight"/>
+                                </constraints>
+                            </imageView>
+                            <activityIndicatorView opaque="NO" contentMode="scaleToFill" horizontalHuggingPriority="750" verticalHuggingPriority="750" userInteractionEnabled="NO" fixedFrame="YES" animating="YES" style="medium" translatesAutoresizingMaskIntoConstraints="NO" id="launchSpinner">
+                                <rect key="frame" x="185" y="442.5" width="20" height="20"/>
+                                <color key="color" name="LaunchTitle"/>
+                            </activityIndicatorView>
+                            <label opaque="NO" userInteractionEnabled="NO" contentMode="left" text="KnotQ" textAlignment="center" lineBreakMode="tailTruncation" translatesAutoresizingMaskIntoConstraints="NO" id="launchTitle">
+                                <rect key="frame" x="126" y="476.5" width="138" height="19"/>
+                                <fontDescription key="fontDescription" type="system" weight="semibold" pointSize="16"/>
+                                <color key="textColor" name="LaunchTitle"/>
+                                <nil key="highlightedColor"/>
+                            </label>
+                        </subviews>
+                        <viewLayoutGuide key="safeArea" id="launchSafeArea"/>
+                        <color key="backgroundColor" name="LaunchBackground"/>
+                        <constraints>
+                            <constraint firstItem="launchLogo" firstAttribute="centerX" secondItem="launchView" secondAttribute="centerX" id="logoCenterX"/>
+                            <!-- The stack is 139pt tall (72 + 14 + 20 + 14 + 19); shifting the
+                                 logo's centre up by half the remainder centres the whole group. -->
+                            <constraint firstItem="launchLogo" firstAttribute="centerY" secondItem="launchView" secondAttribute="centerY" constant="-33.5" id="logoCenterY"/>
+                            <constraint firstItem="launchSpinner" firstAttribute="centerX" secondItem="launchView" secondAttribute="centerX" id="spinnerCenterX"/>
+                            <constraint firstItem="launchSpinner" firstAttribute="top" secondItem="launchLogo" secondAttribute="bottom" constant="14" id="spinnerTop"/>
+                            <constraint firstItem="launchTitle" firstAttribute="centerX" secondItem="launchView" secondAttribute="centerX" id="titleCenterX"/>
+                            <constraint firstItem="launchTitle" firstAttribute="top" secondItem="launchSpinner" secondAttribute="bottom" constant="14" id="titleTop"/>
+                        </constraints>
+                    </view>
+                </viewController>
+                <placeholder placeholderIdentifier="IBFirstResponder" id="launchFirstResponder" userLabel="First Responder" sceneMemberID="firstResponder"/>
+            </objects>
+            <point key="canvasLocation" x="52" y="86"/>
+        </scene>
+    </scenes>
+    <resources>
+        <image name="BrandLogo" width="1024" height="1024"/>
+        <namedColor name="LaunchBackground">
+            <color red="0.98039215686274506" green="0.98431372549019602" blue="0.97647058823529409" alpha="1" colorSpace="custom" customColorSpace="sRGB"/>
+        </namedColor>
+        <namedColor name="LaunchTitle">
+            <color red="0.22352941176470589" green="0.24705882352941178" blue="0.22352941176470589" alpha="0.84999999999999998" colorSpace="custom" customColorSpace="sRGB"/>
+        </namedColor>
+    </resources>
+</document>

@@ -59,6 +59,7 @@ private final class EditorInlineTitleView: UIView, UITextFieldDelegate {
         self.onCommit = onCommit
         isHidden = !visible
         textField.textColor = UIColor(theme.textPrimary)
+        textField.keyboardAppearance = theme.isDark ? .dark : .light
         normalTintColor = UIColor(theme.accent)
         errorTintColor = UIColor(theme.danger)
         errorLabel.textColor = errorTintColor
@@ -73,10 +74,11 @@ private final class EditorInlineTitleView: UIView, UITextFieldDelegate {
         updateError()
     }
 
-    func focusAndSelectTitle() {
-        guard textField.isUserInteractionEnabled else { return }
-        textField.becomeFirstResponder()
+    @discardableResult
+    func focusAndSelectTitle() -> Bool {
+        guard textField.isUserInteractionEnabled, textField.becomeFirstResponder() else { return false }
         textField.selectAll(nil)
+        return true
     }
 
     override func layoutSubviews() {
@@ -117,7 +119,14 @@ private final class EditorInlineTitleView: UIView, UITextFieldDelegate {
 }
 
 final class EditorTextView: UITextView {
-    var theme: KnotQTheme = .dark { didSet { setNeedsDisplay() } }
+    var theme: KnotQTheme = .dark {
+        didSet {
+            // Say the keyboard's look explicitly rather than relying on the
+            // interface style this view happens to inherit.
+            keyboardAppearance = theme.isDark ? .dark : .light
+            setNeedsDisplay()
+        }
+    }
     var accentColor: UIColor = .systemBlue { didSet { setNeedsDisplay() } }
     var timeFormat = "twelve_hour"
     weak var coordinator: EditorCoordinator?
@@ -157,7 +166,15 @@ final class EditorTextView: UITextView {
         super.init(frame: .zero, textContainer: textContainer)
         layoutManager.editorTextView = self
         addSubview(inlineTitleView)
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(keyboardFrameWillChange(_:)),
+            name: UIResponder.keyboardWillChangeFrameNotification,
+            object: nil
+        )
     }
+
+    deinit { NotificationCenter.default.removeObserver(self) }
 
     @available(*, unavailable)
     required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
@@ -205,6 +222,7 @@ final class EditorTextView: UITextView {
         if resigned {
             // Collapse every marker once editing ends for a clean preview.
             refreshMarkerVisibility(force: true)
+            lastKeyboardTopInWindow = nil
         }
         return resigned
     }
@@ -417,8 +435,16 @@ final class EditorTextView: UITextView {
         setNeedsLayout()
     }
 
-    func focusTitle() {
-        inlineTitleView.focusAndSelectTitle()
+    @discardableResult
+    func focusTitle() -> Bool {
+        // The title borrows the document's accessory through the responder chain
+        // (it is a subview of this text view), and the toolbar is built lazily in
+        // `becomeFirstResponder`. Focusing the title without ever focusing the
+        // document would otherwise open a new note with no formatting bar.
+        if isEditable, inputAccessoryView == nil, let coordinator {
+            inputAccessoryView = coordinator.makeToolbar(for: self)
+        }
+        return inlineTitleView.focusAndSelectTitle()
     }
 
     func layoutInlineTitleView() {
@@ -539,6 +565,74 @@ final class EditorTextView: UITextView {
         }
         return nil
     }
+
+    /// Lift the caret clear of an arriving keyboard *while the keyboard is
+    /// animating*, riding its duration and curve.
+    ///
+    /// Left to itself, UIKit does this several hundred milliseconds after the
+    /// keyboard has finished moving, with its own timing. On a fresh open the
+    /// document was scrolled to put the caret at the bottom of a full-height
+    /// pane — precisely where the keyboard is about to land — so that late
+    /// correction is a jump of most of a screen, arriving after the keyboard
+    /// has already settled. It reads as the app glitching rather than as a
+    /// keyboard opening.
+    ///
+    /// The maths is deliberately done in *window* coordinates: how SwiftUI
+    /// implements its keyboard avoidance (shrinking the frame vs. growing the
+    /// safe-area inset) then doesn't matter — we simply move the document up by
+    /// exactly the amount that the caret is below the top of the keyboard.
+    @objc private func keyboardFrameWillChange(_ note: Notification) {
+        guard isScrollEnabled, isFirstResponder, window != nil,
+              let frame = (note.userInfo?[UIResponder.keyboardFrameEndUserInfoKey] as? NSValue)?.cgRectValue,
+              let selection = selectedTextRange
+        else {
+            return
+        }
+        // The predictive-text/accessory bar refires this notification on nearly
+        // every keystroke even when the keyboard has not actually moved. Acting
+        // on those would start a scroll animation per character — the document
+        // twitching while you type. Only a real change in the keyboard's
+        // position is a reason to move the document.
+        defer { lastKeyboardTopInWindow = frame.minY }
+        guard abs(frame.minY - (lastKeyboardTopInWindow ?? .greatestFiniteMagnitude)) > 0.5 else {
+            return
+        }
+        let caret = caretRect(for: selection.end)
+        guard caret.maxY.isFinite, caret.height.isFinite else { return }
+        // `frame` is in screen coordinates; both it and the caret are converted
+        // through the window so a split view or a sheet can't skew the result.
+        let caretInWindow = convert(caret, to: nil)
+        let overlap = caretInWindow.maxY + Self.caretKeyboardMargin - frame.minY
+        let caretRange = NSRange(location: offset(from: beginningOfDocument, to: selection.end), length: 0)
+        // Clamp against the inset the keyboard is ABOUT to impose, not the one
+        // in force right now: the scrollable range only grows once the keyboard
+        // avoidance has been applied.
+        let viewBottomInWindow = convert(bounds, to: nil).maxY
+        let comingInset = max(adjustedContentInset.bottom, max(0, viewBottomInWindow - frame.minY))
+        let minY = -adjustedContentInset.top
+        let maxY = max(minY, contentSize.height + comingInset - bounds.height)
+        let target = CGPoint(x: contentOffset.x, y: min(max(contentOffset.y + max(overlap, 0), minY), maxY))
+        let (duration, options) = KeyboardMetrics.animation(from: note)
+        UIView.animate(withDuration: duration, delay: 0, options: options) {
+            if abs(target.y - self.contentOffset.y) > 0.5 {
+                self.setContentOffset(target, animated: false)
+            }
+            // …then let UIKit settle on its own idea of "caret visible" inside
+            // the SAME animation. It will do this regardless — just later, on
+            // its own schedule, once the keyboard has finished moving — and
+            // that leftover step is precisely the jump this exists to remove.
+            // Here it is a no-op whenever the move above already sufficed.
+            self.scrollRangeToVisible(caretRange)
+        }
+    }
+
+    /// Breathing room kept between the caret's line and the top of the keyboard.
+    private static let caretKeyboardMargin: CGFloat = 10
+
+    /// Where the keyboard was the last time it told us, so the notifications it
+    /// refires without moving can be ignored. Reset on blur, since the next
+    /// focus has to reckon with the keyboard arriving from off screen again.
+    private var lastKeyboardTopInWindow: CGFloat?
 
     /// Clamp a saved scroll offset to the current content, so restoring it
     /// after a storage rebuild can't overshoot a now-shorter document.

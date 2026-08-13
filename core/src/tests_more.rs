@@ -866,6 +866,71 @@ fn mobile_upcoming_only_shows_next_recurring_occurrence() {
 }
 
 #[test]
+fn mobile_recurring_reminders_keep_overdue_but_only_next_upcoming() {
+    let dir = std::env::temp_dir().join(format!("knotq-mobile-test-{}", uuid::Uuid::new_v4()));
+    let core = MobileCore::new(dir.display().to_string()).expect("open mobile core");
+    let start = Utc::now() - Duration::days(7);
+    let today = Utc::now().date_naive().to_string();
+
+    core.create_scheme(None, "Recurring".to_string(), Some(2), None)
+        .expect("create scheme");
+    let scheme_id = core
+        .snapshot(Some(today.clone()), 0)
+        .expect("snapshot")
+        .schemes
+        .into_iter()
+        .find(|scheme| scheme.display_name == "Recurring")
+        .expect("scheme")
+        .id;
+    core.add_calendar_item(
+        Some(scheme_id.clone()),
+        Some(today.clone()),
+        "Laundry".to_string(),
+        "reminder".to_string(),
+        Some(format_datetime(start)),
+        None,
+    )
+    .expect("add reminder");
+    let item_id = core
+        .snapshot(Some(today.clone()), 0)
+        .expect("snapshot")
+        .schemes
+        .into_iter()
+        .find(|scheme| scheme.id == scheme_id)
+        .expect("scheme")
+        .items[0]
+        .id
+        .clone();
+    core.set_item_recurrence(
+        scheme_id,
+        item_id,
+        Some("FREQ=WEEKLY;INTERVAL=1".to_string()),
+    )
+    .expect("repeat");
+
+    let snapshot = core.snapshot(Some(today), 0).expect("snapshot");
+    let overdue_matches = snapshot
+        .calendar
+        .overdue
+        .iter()
+        .filter(|occurrence| occurrence.title == "Laundry")
+        .count();
+    let upcoming_matches = snapshot
+        .calendar
+        .upcoming
+        .iter()
+        .filter(|occurrence| occurrence.title == "Laundry")
+        .count();
+    assert!(
+        overdue_matches >= 1,
+        "overdue occurrences should remain visible"
+    );
+    assert_eq!(upcoming_matches, 1);
+
+    let _ = std::fs::remove_dir_all(dir);
+}
+
+#[test]
 fn mobile_upcoming_excludes_items_beyond_shared_horizon() {
     let dir = std::env::temp_dir().join(format!("knotq-mobile-test-{}", uuid::Uuid::new_v4()));
     let core = MobileCore::new(dir.display().to_string()).expect("open mobile core");
@@ -889,6 +954,95 @@ fn mobile_upcoming_excludes_items_beyond_shared_horizon() {
         .upcoming
         .iter()
         .any(|occurrence| occurrence.title == "Far future review"));
+
+    let _ = std::fs::remove_dir_all(dir);
+}
+
+#[test]
+fn upcoming_display_settings_persist_and_apply_each_kind_horizon() {
+    let dir = std::env::temp_dir().join(format!("knotq-mobile-test-{}", uuid::Uuid::new_v4()));
+    let core = MobileCore::new(dir.display().to_string()).expect("open mobile core");
+    core.set_upcoming_display_settings(1, 3, 1, 30, false, false)
+        .expect("save display settings");
+
+    let anchor = Utc::now() + Duration::days(2);
+    let end = anchor + Duration::minutes(30);
+    let today = Utc::now().date_naive().to_string();
+    core.add_calendar_item(
+        None,
+        Some(today.clone()),
+        "Two-day event".to_string(),
+        "event".to_string(),
+        Some(format_datetime(anchor)),
+        Some(format_datetime(end)),
+    )
+    .expect("add event");
+    core.add_calendar_item(
+        None,
+        Some(today.clone()),
+        "Two-day reminder".to_string(),
+        "reminder".to_string(),
+        Some(format_datetime(anchor)),
+        None,
+    )
+    .expect("add reminder");
+    core.add_calendar_item(
+        None,
+        Some(today.clone()),
+        "Two-day assignment".to_string(),
+        "assignment".to_string(),
+        None,
+        Some(format_datetime(anchor)),
+    )
+    .expect("add assignment");
+
+    let snapshot = core.snapshot(Some(today), 0).expect("snapshot");
+    assert_eq!(snapshot.settings.event_lookahead_days, 1);
+    assert_eq!(snapshot.settings.reminder_lookahead_days, 3);
+    assert_eq!(snapshot.settings.assignment_lookahead_days, 1);
+    assert_eq!(snapshot.settings.maximum_upcoming_items, 30);
+    assert!(!snapshot.settings.show_overdue);
+    assert!(!snapshot.settings.show_completed);
+    assert!(!snapshot
+        .calendar
+        .upcoming
+        .iter()
+        .any(|occurrence| occurrence.title == "Two-day event"));
+    assert!(snapshot
+        .calendar
+        .upcoming
+        .iter()
+        .any(|occurrence| occurrence.title == "Two-day reminder"));
+    assert!(!snapshot
+        .calendar
+        .upcoming
+        .iter()
+        .any(|occurrence| occurrence.title == "Two-day assignment"));
+
+    drop(core);
+    let reopened = MobileCore::new(dir.display().to_string()).expect("reopen mobile core");
+    let reopened_snapshot = reopened.snapshot(None, 0).expect("reopened snapshot");
+    assert_eq!(reopened_snapshot.settings.reminder_lookahead_days, 3);
+    assert_eq!(reopened_snapshot.settings.maximum_upcoming_items, 30);
+    assert!(!reopened_snapshot.settings.show_overdue);
+
+    let _ = std::fs::remove_dir_all(dir);
+}
+
+#[test]
+fn upcoming_display_settings_reject_out_of_range_values() {
+    let dir = std::env::temp_dir().join(format!("knotq-mobile-test-{}", uuid::Uuid::new_v4()));
+    let core = MobileCore::new(dir.display().to_string()).expect("open mobile core");
+
+    assert!(core
+        .set_upcoming_display_settings(0, 14, 14, 14, true, true)
+        .is_err());
+    assert!(core
+        .set_upcoming_display_settings(14, 366, 14, 14, true, true)
+        .is_err());
+    assert!(core
+        .set_upcoming_display_settings(14, 14, 14, 101, true, true)
+        .is_err());
 
     let _ = std::fs::remove_dir_all(dir);
 }
@@ -1154,4 +1308,87 @@ fn recurring_event_delete_this_event_adds_exception_not_delete_item() {
         }));
 
     let _ = std::fs::remove_dir_all(dir);
+}
+
+/// Reopening an unchanged workspace must not rewrite it.
+///
+/// The shell opens the core on the main actor before the first frame, so a
+/// startup save is launch latency the user waits through — and it rewrites every
+/// scheme file, the index, the daily backup and a history snapshot to persist
+/// bytes that are already on disk. The save is kept only for the case it exists
+/// for: loading changed something (normalization, sync-identity minting) that an
+/// OS notification action could depend on before the first edit.
+#[test]
+fn reopening_an_unchanged_workspace_does_not_rewrite_it() {
+    let dir = std::env::temp_dir().join(format!("knotq-mobile-test-{}", uuid::Uuid::new_v4()));
+    let core = MobileCore::new(dir.display().to_string()).expect("open mobile core");
+    core.create_scheme(None, "Notes".to_string(), None, None)
+        .expect("create scheme");
+    let scheme_id = core
+        .snapshot(None, 0)
+        .expect("snapshot")
+        .schemes
+        .into_iter()
+        .find(|scheme| scheme.name == "Notes")
+        .expect("scheme")
+        .id;
+    core.add_item(scheme_id, "hello".to_string(), None, None, None)
+        .expect("add item");
+    drop(core);
+
+    let workspace_dir = dir.join("workspace");
+    // The scheme files and the index are already written content-compared, so
+    // the observable proof that no save ran is the work a save does
+    // unconditionally: the rotating daily backup and a history snapshot.
+    let before = write_times(&workspace_dir.join("backups"));
+    assert!(!before.is_empty(), "expected a daily backup on disk");
+    let history_before = write_times(&workspace_dir.join(".knotq-history"));
+    assert!(
+        !history_before.is_empty(),
+        "expected a history store on disk"
+    );
+
+    // Coarse filesystem timestamps would hide a rewrite landing in the same tick.
+    std::thread::sleep(std::time::Duration::from_millis(20));
+    let reopened = MobileCore::new(dir.display().to_string()).expect("reopen mobile core");
+    // Every launch runs this too; it must not turn into a whole-workspace save
+    // once the day's queue exists.
+    reopened.ensure_daily_queue(None).expect("ensure daily");
+    reopened
+        .ensure_daily_queue(None)
+        .expect("ensure daily again");
+
+    assert_eq!(
+        write_times(&workspace_dir.join("backups")),
+        before,
+        "reopening rewrote the daily backup"
+    );
+    assert_eq!(
+        write_times(&workspace_dir.join(".knotq-history")),
+        history_before,
+        "reopening wrote a history snapshot"
+    );
+
+    let _ = std::fs::remove_dir_all(dir);
+}
+
+/// Paths and modification times under `root`, sorted for comparison.
+fn write_times(root: &std::path::Path) -> Vec<(std::path::PathBuf, std::time::SystemTime)> {
+    let mut stack = vec![root.to_path_buf()];
+    let mut times = Vec::new();
+    while let Some(path) = stack.pop() {
+        let Ok(entries) = std::fs::read_dir(&path) else {
+            continue;
+        };
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.is_dir() {
+                stack.push(path);
+            } else if let Ok(modified) = entry.metadata().and_then(|meta| meta.modified()) {
+                times.push((path, modified));
+            }
+        }
+    }
+    times.sort();
+    times
 }

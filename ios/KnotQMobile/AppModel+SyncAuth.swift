@@ -5,8 +5,9 @@ import StoreKit
 import SwiftUI
 import UIKit
 
-// Entire sign-in / StoreKit / account / subscription surface. Compiled out when
-// the `accounts` flag is off (shipped builds); every caller is gated to match.
+// Account and sign-in support is compiled out when `accounts` is off. StoreKit
+// controls are separately gated by `IN_APP_PURCHASES_ENABLED` in the UI so an
+// interim accounts-only build can safely ship before IAP approval.
 #if ACCOUNTS_ENABLED
 extension AppModel {
     /// Start a browser-based sign-in (or account creation): open the hosted sign-in
@@ -498,6 +499,10 @@ extension AppModel {
 
     // MARK: - Subscriptions (StoreKit)
 
+    // Retained for the eventual StoreKit rollout. This interim build deliberately
+    // does not compile the purchase path; enable the Xcode compilation condition
+    // `IN_APP_PURCHASES_ENABLED` once App Store approval is in place.
+    #if IN_APP_PURCHASES_ENABLED
     func startTransactionListener() {
         transactionListener = Task { [weak self] in
             // StoreKit.Transaction, disambiguated from SwiftUI.Transaction.
@@ -590,6 +595,7 @@ extension AppModel {
         await transaction.finish()
         await refreshEntitlement()
     }
+    #endif
 
     /// Force a session refresh so a server-side entitlement change (granted by a
     /// billing webhook) is reflected locally. Guarded by syncInProgress so it can't
@@ -612,6 +618,7 @@ extension AppModel {
         return result == .ready
     }
 
+    #if IN_APP_PURCHASES_ENABLED
     /// Verify a just-completed StoreKit purchase with the backend so the sync
     /// entitlement is granted *immediately* (and the session updated), instead of
     /// waiting on Apple's asynchronous App Store Server Notification. Shares the
@@ -661,5 +668,6 @@ extension AppModel {
             scheduleSync()
         }
     }
+    #endif
 }
 #endif

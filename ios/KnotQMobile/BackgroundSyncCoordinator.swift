@@ -8,9 +8,15 @@ final class KnotQAppDelegate: NSObject, UIApplicationDelegate, MessagingDelegate
         _ application: UIApplication,
         didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil
     ) -> Bool {
+        CoreTiming.launch("didFinishLaunching entered", since: CoreTiming.sinceProcessStart())
         FirebaseApp.configure()
+        CoreTiming.launch("firebase configured", since: CoreTiming.sinceProcessStart())
         BackgroundSyncCoordinator.shared.register()
+        Task { @MainActor in
+            MobileNotificationScheduler.shared.prepareForLaunch()
+        }
         configureFirebaseMessaging(application)
+        CoreTiming.launch("didFinishLaunching done", since: CoreTiming.sinceProcessStart())
         return true
     }
 

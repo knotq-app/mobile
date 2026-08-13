@@ -122,4 +122,58 @@ final class RemoteMergeTests: XCTestCase {
 
         XCTAssertTrue(merged[0].done)
     }
+
+    // MARK: why the baseline must never predate an in-flight write
+
+    /// The merge is only as good as its baseline, and it cannot tell "the user
+    /// changed this line" from "this line was changed by a write I hadn't seen
+    /// when I loaded". Loading an editor from the pre-write snapshot — which is
+    /// what `snapshot` still holds until an async core write lands — poisons the
+    /// baseline, and the merge then writes the user's own in-flight edit away.
+    /// This is the corruption `SchemeWriteTracker` exists to prevent; the test
+    /// pins the behaviour so the deferral isn't quietly removed as redundant.
+    func testStaleBaselineDiscardsTheEditThatWasInFlight() {
+        // The user typed "hello world" and it is on its way to the core.
+        // A pane that loaded before it landed sees only "hello".
+        let staleBaseline = [item("a", "hello")]
+        // They keep typing, on top of the text they can see.
+        let local = [edit("a", "hello!!")]
+        // The write lands, carrying the edit that was in flight.
+        let remote = [item("a", "hello world")]
+
+        let merged = mergeRemoteSchemeItems(remote: remote, baseline: staleBaseline, local: local)
+
+        XCTAssertEqual(merged.map(\.text), ["hello!!"])
+        XCTAssertFalse(
+            merged[0].text.contains("world"),
+            "local-wins-per-line silently drops the in-flight edit when the baseline predates it"
+        )
+    }
+
+    /// Same keystrokes, but the editor waited for the write before loading — so
+    /// its baseline includes the in-flight edit and nothing is lost.
+    func testBaselineTakenAfterTheWriteKeepsBothEdits() {
+        let freshBaseline = [item("a", "hello world")]
+        let local = [edit("a", "hello world!!")]
+        let remote = [item("a", "hello world")]
+
+        let merged = mergeRemoteSchemeItems(remote: remote, baseline: freshBaseline, local: local)
+
+        XCTAssertEqual(merged.map(\.text), ["hello world!!"])
+    }
+
+    /// The same hazard for a non-text field: a checkbox toggled from the daily
+    /// feed is invisible to a reader until its write lands, so an editor that
+    /// loaded first carries `done: false` in its baseline and un-does the toggle.
+    /// This is why every item-level op — not just `replaceSchemeItems` — is
+    /// tracked as in flight.
+    func testStaleBaselineRevertsAnInFlightToggle() {
+        let staleBaseline = [item("a", "task", marker: "checkbox", done: false)]
+        let local = [edit("a", "task typed", marker: "checkbox", done: false)]
+        let remote = [item("a", "task", marker: "checkbox", done: true)]
+
+        let merged = mergeRemoteSchemeItems(remote: remote, baseline: staleBaseline, local: local)
+
+        XCTAssertFalse(merged[0].done, "the completed state the user just tapped is written back to false")
+    }
 }

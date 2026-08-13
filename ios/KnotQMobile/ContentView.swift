@@ -89,9 +89,8 @@ struct ContentView: View {
     @State private var timelineResetToken = 0
     @State private var appliedScreenshotRoute = false
     @AppStorage("knotq.mobile.onboardingCompleted.v1") private var onboardingCompleted = false
-    // Start with the short tutorial; the sign-in / stay-local prompt follows it
-    // (see `OnboardingOverlay`). Already-signed-in users skip the prompt entirely.
-    @State private var onboardingPhase: OnboardingPhase = .guide
+    // Start with the short tutorial. Account sign-in is deliberately kept out of
+    // onboarding and remains available from Settings.
     @State private var onboardingStep = 0
     // Last-open screen, restored on the next launch (see restoreLastScreenIfNeeded).
     @AppStorage("knotq.mobile.lastPane.v1") private var storedPaneRaw = ""
@@ -102,14 +101,69 @@ struct ContentView: View {
         KnotQTheme.resolve(mode: model.snapshot?.settings.themeMode, systemScheme: systemScheme)
     }
 
-    private func applyWindowBackground(_ color: Color) {
-        let uiColor = UIColor(color)
+    /// Push the app's own theme down to the UIKit windows.
+    ///
+    /// `preferredColorScheme` only reaches the SwiftUI hierarchy. The keyboard
+    /// lives in its own window and picks its light/dark look from the interface
+    /// style it inherits, which is why a KnotQ theme that disagrees with the
+    /// system appearance can leave a light keyboard under a dark app. Setting
+    /// the window's style says it explicitly instead of relying on that
+    /// inheritance — and it is the only lever for the SwiftUI `TextField`s in
+    /// the sheets, which have no `keyboardAppearance` of their own.
+    private func applyWindowAppearance(_ theme: KnotQTheme) {
+        let background = UIColor(theme.bgApp)
+        let style: UIUserInterfaceStyle = theme.isDark ? .dark : .light
         for scene in UIApplication.shared.connectedScenes {
             guard let windowScene = scene as? UIWindowScene else { continue }
             for window in windowScene.windows {
-                window.backgroundColor = uiColor
+                // Every window wants the style — that is the whole point for the
+                // keyboard's own window, which is created lazily and otherwise
+                // renders in the *system's* appearance until it corrects itself.
+                // Assign only on a real change: re-asserting the same style makes
+                // UIKit re-run the trait change, which is visible on the keyboard
+                // as a shade cross-fade on every single presentation.
+                if window.overrideUserInterfaceStyle != style {
+                    window.overrideUserInterfaceStyle = style
+                }
+                // But only ours may be painted. The keyboard/text-effects windows
+                // are full-screen siblings sitting ABOVE the app's window, so
+                // giving them an opaque background hides the entire app behind a
+                // flat colour, leaving just the keyboard on screen.
+                guard !isSystemInputWindow(window) else { continue }
+                if window.backgroundColor != background {
+                    window.backgroundColor = background
+                }
             }
         }
+    }
+
+    /// True for the windows UIKit owns for text input (`UIRemoteKeyboardWindow`,
+    /// `UITextEffectsWindow`) — see `applyWindowAppearance`.
+    private func isSystemInputWindow(_ window: UIWindow) -> Bool {
+        if let textEffects = NSClassFromString("UITextEffectsWindow"), window.isKind(of: textEffects) {
+            return true
+        }
+        // Defensive: those class names have been stable for many releases, but a
+        // rename must not put us back to painting over the whole app.
+        let name = NSStringFromClass(type(of: window))
+        return name.contains("Keyboard") || name.contains("TextEffects")
+    }
+
+    /// Feed the real keyboard geometry back to `KeyboardMetrics`, so the next
+    /// pane that opens with the keyboard reserves exactly the right height.
+    private func recordKeyboardOverlap(from note: Notification) {
+        guard let frame = (note.userInfo?[UIResponder.keyboardFrameEndUserInfoKey] as? NSValue)?.cgRectValue,
+              let screen = UIApplication.shared.connectedScenes
+                  .compactMap({ $0 as? UIWindowScene })
+                  .first?.screen.bounds
+        else {
+            return
+        }
+        // A hardware keyboard leaves only the accessory bar on screen; that is a
+        // real overlap, but not one worth remembering as "the keyboard height".
+        let overlap = screen.maxY - frame.minY
+        guard overlap > 120 else { return }
+        KeyboardMetrics.record(overlap: overlap, screenWidth: screen.width)
     }
 
     private var selectedScheme: MobileScheme? {
@@ -168,7 +222,14 @@ struct ContentView: View {
         GeometryReader { proxy in
             let isWide = proxy.size.width >= 760
             Group {
-                if isPadLayout {
+                // A Release build can take a few seconds to finish the first
+                // asynchronous core refresh. Rendering the normal empty panes in
+                // that interval looks like a broken, pure-black launch screen.
+                // Keep a visible branded loading state up until a real snapshot is
+                // available (or the existing error alert explains a core failure).
+                if model.snapshot == nil {
+                    launchLoadingView
+                } else if isPadLayout {
                     iPadRoot()
                 } else {
                     iPhoneRoot(isWide: isWide)
@@ -189,9 +250,10 @@ struct ContentView: View {
             }
             // The window itself is black by default, so it shows through the
             // bottom safe-area lip and behind the transparent keyboard toolbar.
-            // Paint it with the theme background so those gaps match the app.
-            .onAppear { applyWindowBackground(theme.bgApp) }
-            .onChange(of: theme.isDark) { _, _ in applyWindowBackground(theme.bgApp) }
+            // Paint it with the theme background so those gaps match the app,
+            // and hand it the theme's interface style — see below.
+            .onAppear { applyWindowAppearance(theme) }
+            .onChange(of: theme.isDark) { _, _ in applyWindowAppearance(theme) }
             .alert(L10n.t("mobile.app_name"), isPresented: Binding(
                 get: { model.errorMessage != nil },
                 set: { showing in
@@ -215,7 +277,6 @@ struct ContentView: View {
                             theme: theme,
                             size: proxy.size,
                             resolve: { target in anchors[target].map { proxy[$0] } },
-                            phase: $onboardingPhase,
                             step: $onboardingStep,
                             onFocus: focusOnboardingPane,
                             onComplete: finishOnboarding
@@ -228,10 +289,29 @@ struct ContentView: View {
             }
         }
         .background(theme.bgApp.ignoresSafeArea())
-        .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillShowNotification)) { _ in
+        .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillShowNotification)) { note in
+            // The launch warm-up provokes a burst of show/hide notifications for
+            // a keyboard it never presents — see
+            // `KeyboardWarmup.isSuppressingKeyboardEvents`. Believing any of them
+            // corrupts the flags below, which is what hid the dock at launch.
+            guard !KeyboardWarmup.isSuppressingKeyboardEvents else { return }
+            KeyboardMetrics.noteKeyboardVisible(true)
+            if let frame = (note.userInfo?[UIResponder.keyboardFrameEndUserInfoKey] as? NSValue)?.cgRectValue {
+                KeyboardMetrics.noteKeyboardFrame(frame)
+            }
+            recordKeyboardOverlap(from: note)
+            // The keyboard lives in its own window, created lazily the first time
+            // one is raised — long after `onAppear` ran this over the windows that
+            // existed then. Until it is told the app's interface style it renders
+            // in the system's, then corrects itself a few hundred ms later: the
+            // keyboard visibly flashes the wrong shade on the first focus of every
+            // launch. Re-applying here catches it before it draws.
+            applyWindowAppearance(theme)
             withAnimation(.easeOut(duration: 0.24)) { keyboardVisible = true }
         }
         .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillHideNotification)) { _ in
+            guard !KeyboardWarmup.isSuppressingKeyboardEvents else { return }
+            KeyboardMetrics.noteKeyboardVisible(false)
             withAnimation(.easeOut(duration: 0.24)) { keyboardVisible = false }
         }
         // The browser sign-in sheet hosts its own keyboard in a separate window; its
@@ -248,7 +328,22 @@ struct ContentView: View {
                 AddItemSheet(todayDaily: true)
             }
         }
-        .adaptiveEditorPresentation(item: $eventEditor, isPad: isPadLayout, detents: [.fraction(0.50)]) { target in
+        // A new event opens focused in the title, and a half-height sheet cannot
+        // hold a keyboard — iOS would slide the whole sheet up a second time to
+        // make room, right after it finished presenting. Give the composing case
+        // a detent the keyboard already fits inside so the sheet arrives once and
+        // stays put; editing or viewing raises no keyboard and keeps the half
+        // sheet (draggable to full height).
+        .adaptiveEditorPresentation(
+            item: $eventEditor,
+            isPad: isPadLayout,
+            detents: { target in
+                switch target {
+                case .create: [.large]
+                case .edit: [.fraction(0.50), .large]
+                }
+            }
+        ) { target in
             EventEditorSheet(theme: theme, target: target)
         }
         .sheet(isPresented: $showingMonthView) {
@@ -308,6 +403,22 @@ struct ContentView: View {
             guard didRestoreLastScreen else { return }
             storedSchemeID = newValue ?? ""
         }
+    }
+
+    private var launchLoadingView: some View {
+        VStack(spacing: 14) {
+            Image("BrandLogo")
+                .resizable()
+                .scaledToFit()
+                .frame(width: 72, height: 72)
+                .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+            ProgressView()
+                .controlSize(.regular)
+            Text(L10n.t("mobile.app_name"))
+                .font(.system(size: 16, weight: .semibold))
+                .foregroundStyle(theme.textSoft)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
     // MARK: - iPhone (compact) root
@@ -414,6 +525,8 @@ struct ContentView: View {
         switch route {
         case .archive:
             SettingsArchiveList(theme: theme)
+        case .timing:
+            TimingSettingsScreen(theme: theme)
         }
     }
 
@@ -480,6 +593,7 @@ struct ContentView: View {
             HStack(spacing: 0) {
                 DesktopUpcomingRail(
                     calendar: model.snapshot?.calendar,
+                    settings: model.snapshot?.settings,
                     theme: theme,
                     timeFormat: currentTimeFormat,
                     onToggleOccurrence: handleOccurrenceTap,
@@ -600,6 +714,9 @@ struct ContentView: View {
                     onGoogleCalendar: { startGoogleCalendarImport(parentID: $0) },
                     onAddItem: queueAddItem,
                     onPrepareDaily: prepareDaily,
+                    onPrepareEditorKeyboard: { theme, proceed in
+                        EditorKeyboardHandoff.prepare(theme: theme, then: proceed)
+                    },
                     onSelectDailyDate: selectDailyDate,
                     titleFocusSchemeID: $titleFocusSchemeID,
                     navigationDepth: $homeNavigationDepth
@@ -663,7 +780,9 @@ struct ContentView: View {
                 },
                 onBack: returnHome,
                 onAdd: { addItemTarget = .todayDaily },
-                autoFocusSelectedDay: !screenshotDailyRouteRequested
+                // The Daily tour spotlights the editor, but must not activate it:
+                // doing so raises the keyboard behind the onboarding overlay.
+                autoFocusSelectedDay: !showOnboarding && !screenshotDailyRouteRequested
             )
             .onboardingTarget(.daily)
         case .search:
@@ -927,13 +1046,25 @@ private extension View {
     func adaptiveEditorPresentation<Item: Identifiable, FormContent: View>(
         item: Binding<Item?>,
         isPad: Bool,
-        detents: Set<PresentationDetent>,
+        detents: @escaping (Item) -> Set<PresentationDetent>,
         @ViewBuilder content: @escaping (Item) -> FormContent
     ) -> some View {
         if isPad {
             sheet(item: item, content: content)
         } else {
-            sheet(item: item) { content($0).presentationDetents(detents) }
+            sheet(item: item) { item in
+                content(item).presentationDetents(detents(item))
+            }
         }
     }
+
+    func adaptiveEditorPresentation<Item: Identifiable, FormContent: View>(
+        item: Binding<Item?>,
+        isPad: Bool,
+        detents: Set<PresentationDetent>,
+        @ViewBuilder content: @escaping (Item) -> FormContent
+    ) -> some View {
+        adaptiveEditorPresentation(item: item, isPad: isPad, detents: { _ in detents }, content: content)
+    }
 }
+

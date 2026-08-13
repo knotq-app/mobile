@@ -11,7 +11,16 @@ final class AppModel: ObservableObject {
     // tasks, push handling) operate on the same model + Rust core.
     static let shared = AppModel()
 
-    @Published var snapshot: MobileSnapshot?
+    @Published var snapshot: MobileSnapshot? {
+        didSet {
+            // The launch screen stays up until this goes non-nil, so this — not
+            // any single code path — is when the user first sees the app.
+            guard oldValue == nil, snapshot != nil, !loggedFirstSnapshot else { return }
+            loggedFirstSnapshot = true
+            CoreTiming.launch("first snapshot installed", since: CoreTiming.sinceProcessStart())
+        }
+    }
+    private var loggedFirstSnapshot = false
     @Published var searchHits: [MobileSearchHit] = []
     @Published var errorMessage: String?
     @Published var selectedDate = Date()
@@ -48,6 +57,9 @@ final class AppModel: ObservableObject {
     @Published var purchaseInProgress = false
     @Published var dailyHistoryLoadAnchorDate: String?
     @Published var dailyHistoryLoadInProgress = false
+    /// Scheme writes submitted to the bridge queue but not yet reflected in
+    /// `snapshot`. See `SchemeWriteTracker` for why readers must care.
+    @Published private(set) var schemeWrites = SchemeWriteTracker()
 
     // App Store Connect product id(s) for the sync subscription.
     static let syncProductIDs: Set<String> = ["com.enigmadux.knotq.sync.monthly"]
@@ -88,7 +100,9 @@ final class AppModel: ObservableObject {
     var anchoredDay = Calendar.current.startOfDay(for: Date())
 
     init() {
+        CoreTiming.launch("AppModel.init entered", since: CoreTiming.sinceProcessStart())
         bridge = try? RustBridge()
+        CoreTiming.launch("core opened", since: CoreTiming.sinceProcessStart())
         iso.formatOptions = [.withInternetDateTime]
         syncSession = Self.loadSyncSession(key: syncSessionKey)
         if bridge == nil {
@@ -108,20 +122,19 @@ final class AppModel: ObservableObject {
         #if DEBUG
         let seededScreenshotFixture = seedScreenshotFixtureIfRequested()
         #endif
-        // refresh() now hops through the bridge queue; read the first snapshot
-        // directly so the initial frame isn't blank. Nothing else contends for
-        // the core this early, so this stays fast.
-        if let bridge {
-            snapshot = try? bridge.snapshot(
-                today: Self.dateOnly(selectedDate),
-                weekOffset: weekOffset,
-                dailyHistoryDays: dailyHistoryDays
-            )
-        }
+        // Never read the first snapshot synchronously on the main actor. A cold
+        // Release launch can spend several seconds opening and indexing the
+        // workspace, which kept UIKit on the empty system launch screen and made
+        // the app look permanently black. `refresh()` uses the serial bridge
+        // queue; ContentView renders its visible loading state until it publishes
+        // the resulting snapshot.
         refresh()
+        CoreTiming.launch("AppModel.init done", since: CoreTiming.sinceProcessStart())
         #if ACCOUNTS_ENABLED
         startSyncPolling()
+        #if IN_APP_PURCHASES_ENABLED
         startTransactionListener()
+        #endif
         #endif
         #if DEBUG
         if !seededScreenshotFixture {
@@ -138,9 +151,17 @@ final class AppModel: ObservableObject {
         }
     }
 
-    var backgroundRefreshEligible: Bool {
-        syncSession?.supportsSync == true || (snapshot?.settings.googleAccountCount ?? 0) > 0
-    }
+    /// Whether to keep the periodic background refresh scheduled. Always true:
+    /// the task's real work (`runBackgroundMaintenance`) is *local* maintenance —
+    /// republish the widget snapshot, recompute the overdue badge, tear down
+    /// banners for occurrences that have since passed — and none of that needs an
+    /// account. Gating it on `supportsSync || googleAccountCount > 0` meant a
+    /// purely local user never scheduled the task at all, so their widget and
+    /// badge only changed when they opened the app; that is the "widget/badge is
+    /// stale until I restart" report. Cloud and Google sync inside the task
+    /// already no-op without a session, so scheduling for everyone costs a
+    /// snapshot read every few hours.
+    var backgroundRefreshEligible: Bool { true }
 
     var canLoadOlderDailyHistory: Bool {
         dailyHistoryDays < Self.maxDailyHistoryDays
@@ -154,12 +175,20 @@ final class AppModel: ObservableObject {
         let loadAnchorDate = pendingDailyHistoryLoadAnchorDate
         let isDailyHistoryLoad = loadAnchorDate != nil
         pendingDailyHistoryLoadAnchorDate = nil
+        let logLaunchRead = !loggedFirstSnapshot
         bridge.enqueue({ b in
-            (
+            let result = (
                 try b.snapshot(today: today, weekOffset: week, dailyHistoryDays: history),
                 try b.pendingNotifications(),
                 try b.deliveredNotificationsToClear()
             )
+            // Separates core work from the wait for the main actor: this runs on
+            // the bridge queue, the "first snapshot installed" mark on the main
+            // one. A gap between them is SwiftUI's first render, not the core.
+            if logLaunchRead {
+                CoreTiming.launch("launch read ready", since: CoreTiming.sinceProcessStart())
+            }
+            return result
         }) { [weak self] result in
             guard let self else { return }
             if isDailyHistoryLoad {
@@ -203,9 +232,13 @@ final class AppModel: ObservableObject {
             selectedDate = Date()
             weekOffset = 0
         }
-        // Creates the new day's daily queue and rebuilds the snapshot, which also
-        // reschedules notifications and clears any now-stale banners.
+        // Creates the new day's daily queue if it isn't there yet. The rebuild is
+        // unconditional: "today" moved, so every date-relative marker, the daily
+        // feed, the notification schedule and any now-stale banners have to be
+        // recomputed even when the queue already existed (a background sync may
+        // have created it).
         ensureTodayDailyQueue()
+        refresh()
     }
 
     func loadOlderDailyEntries(from oldestDate: String) {
@@ -234,13 +267,20 @@ final class AppModel: ObservableObject {
         pendingNotifications: [MobileNotificationRequest],
         staleNotificationIds: [String] = []
     ) {
+        let firstSnapshot = self.snapshot == nil
         self.snapshot = snapshot
         KnotQWidgetSnapshotStore.publish(snapshot: snapshot)
+        if firstSnapshot {
+            CoreTiming.launch("widget published", since: CoreTiming.sinceProcessStart())
+        }
         MobileNotificationScheduler.shared.reschedule(pendingNotifications)
         MobileNotificationScheduler.shared.clearDelivered(staleNotificationIds)
         MobileNotificationScheduler.shared.updateBadgeCount(Self.overdueBadgeCount(for: snapshot))
         configureGoogleSyncPolling(accountCount: snapshot.settings.googleAccountCount)
         BackgroundSyncCoordinator.shared.scheduleIfEligible(backgroundRefreshEligible)
+        if firstSnapshot {
+            CoreTiming.launch("first apply done", since: CoreTiming.sinceProcessStart())
+        }
     }
 
     /// Await-able variant of `refresh()` for background wakes: installs the
@@ -284,6 +324,45 @@ final class AppModel: ObservableObject {
         MobileNotificationScheduler.shared.clearDelivered(result.1)
     }
 
+    /// `mutate` for a write scoped to one scheme. Holds the scheme in
+    /// `schemeWrites` for the whole flight so views that rebuild scheme
+    /// content from `snapshot` can tell that what they can see is already stale.
+    ///
+    /// Every item-level operation belongs here, not just `replaceSchemeItems`:
+    /// a checkbox toggled from the daily feed is equally invisible to a reader
+    /// until it lands, and if the user starts typing in that window the editor's
+    /// baseline predates the toggle — so the mid-edit merge treats the line as
+    /// locally modified and writes the pre-toggle `done` back over it.
+    func mutateScheme(
+        _ schemeID: String,
+        _ action: @escaping @Sendable (RustBridge) throws -> Void,
+        completion: (@MainActor () -> Void)? = nil
+    ) {
+        // `mutate` returns without running the completion when there is no
+        // bridge, which would strand the count and leave editors for this scheme
+        // deferring their load forever.
+        guard bridge != nil else { return }
+        schemeWrites.begin(schemeID)
+        mutate(action) { [weak self] in
+            self?.schemeWrites.end(schemeID)
+            completion?()
+        }
+    }
+
+    /// `mutateScheme` for a write that touches more than one document.
+    func mutateSchemes(
+        _ schemeIDs: [String],
+        _ action: @escaping @Sendable (RustBridge) throws -> Void,
+        completion: (@MainActor () -> Void)? = nil
+    ) {
+        guard bridge != nil else { return }
+        let tracked = schemeWrites.begin(schemeIDs)
+        mutate(action) { [weak self] in
+            self?.schemeWrites.end(tracked)
+            completion?()
+        }
+    }
+
     /// Number of overdue items shown on the app icon badge. Completed-but-retained
     /// occurrences (kept faded on the upcoming panel) are excluded so the badge
     /// only counts things that still need attention.
@@ -291,10 +370,20 @@ final class AppModel: ObservableObject {
         snapshot.calendar.overdue.filter { !$0.done }.count
     }
 
-    /// Recompute the overdue badge from a fresh snapshot. Used by background
-    /// maintenance so the badge keeps up with time passing even when no remote
-    /// change arrives to drive a normal `refresh()`.
-    func refreshOverdueBadge() async {
+    /// Republish the widget snapshot and recompute the overdue badge from a fresh
+    /// core read. Used by background maintenance so both keep up with time passing
+    /// even when no remote change arrives to drive a normal `refresh()`.
+    ///
+    /// The widget publish matters as much as the badge: the stored snapshot is a
+    /// point-in-time list, and the widget extension can only *filter* it (drop
+    /// events that have ended) — it can never pull in an occurrence that has since
+    /// come into range. Without republishing here, a user who doesn't open the app
+    /// watches their widget drain to empty.
+    ///
+    /// `self.snapshot` is deliberately not assigned: this read uses the default
+    /// `dailyHistoryDays`, so installing it would discard any older daily history
+    /// the user has paged in.
+    func refreshWidgetAndBadge() async {
         guard let bridge else { return }
         let today = Self.dateOnly(selectedDate)
         let week = weekOffset
@@ -307,6 +396,7 @@ final class AppModel: ObservableObject {
         else {
             return
         }
+        KnotQWidgetSnapshotStore.publish(snapshot: result.0)
         // Tear down banners for events that ended (or occurrences completed)
         // while backgrounded, so they don't linger until the next foreground.
         MobileNotificationScheduler.shared.clearDelivered(result.1)
@@ -354,4 +444,3 @@ final class AppModel: ObservableObject {
         MobileDate.parseDateOnly(raw)
     }
 }
-

@@ -175,11 +175,18 @@ impl MobileCore {
             .map_err(Into::into)
     }
 
-    pub fn ensure_daily_queue(&self, date: Option<String>) -> Result<(), MobileError> {
+    /// Returns whether the day's queue had to be created. Every launch and every
+    /// return to the foreground calls this, and on all but the first call of a
+    /// day the queue is already there — so both the save here and the caller's
+    /// snapshot rebuild are pure launch latency unless something changed.
+    pub fn ensure_daily_queue(&self, date: Option<String>) -> Result<bool, MobileError> {
         let date = parse_date_or_today(date.as_deref())?;
         let mut inner = self.lock()?;
-        inner.ensure_daily_queue(date)?;
-        inner.save_workspace().map_err(Into::into)
+        if !inner.ensure_daily_queue(date)?.1 {
+            return Ok(false);
+        }
+        inner.save_workspace()?;
+        Ok(true)
     }
 
     pub fn google_auth_request(
@@ -275,7 +282,7 @@ impl MobileCore {
     ) -> Result<(), MobileError> {
         let today = parse_date_or_today(Some(&today))?;
         let mut inner = self.lock()?;
-        let scheme_id = inner.ensure_daily_queue(today)?;
+        let (scheme_id, _created) = inner.ensure_daily_queue(today)?;
         let mut item = Item::new(text);
         item.marker = parse_marker(marker.as_deref())?;
         item.indent = as_u8(indent.unwrap_or(0), "indent")?;
@@ -306,7 +313,7 @@ impl MobileCore {
         let mut inner = self.lock()?;
         let scheme_id = match scheme_id {
             Some(id) => parse_id(&id)?,
-            None => inner.ensure_daily_queue(default_today())?,
+            None => inner.ensure_daily_queue(default_today())?.0,
         };
         let mut item = Item::new(text);
         item.marker = ItemMarker::Checkbox;
@@ -653,6 +660,10 @@ impl MobileCore {
             .map_err(Into::into)
     }
 
+    // This is the original UniFFI surface used by the iOS bridge. Keep it
+    // source-compatible; Android uses `commit_event_edit_payload` below because
+    // its JNA bridge cannot marshal the trailing booleans reliably.
+    #[allow(clippy::too_many_arguments)]
     pub fn commit_event_edit(
         &self,
         scheme_id: String,
@@ -895,6 +906,46 @@ impl MobileCore {
         inner.save_settings().map_err(Into::into)
     }
 
+    pub fn set_upcoming_display_settings(
+        &self,
+        event_lookahead_days: i32,
+        reminder_lookahead_days: i32,
+        assignment_lookahead_days: i32,
+        maximum_items: i32,
+        show_overdue: bool,
+        show_completed: bool,
+    ) -> Result<(), MobileError> {
+        for (name, days) in [
+            ("event", event_lookahead_days),
+            ("reminder", reminder_lookahead_days),
+            ("assignment", assignment_lookahead_days),
+        ] {
+            if !(MOBILE_UPCOMING_MIN_LOOKAHEAD_DAYS..=MOBILE_UPCOMING_MAX_LOOKAHEAD_DAYS)
+                .contains(&days)
+            {
+                return Err(anyhow!("{name} lookahead must be between 1 and 365 days").into());
+            }
+        }
+        if !(MOBILE_UPCOMING_MIN_ITEMS..=MOBILE_UPCOMING_MAX_ITEMS).contains(&maximum_items) {
+            return Err(anyhow!("maximum upcoming items must be between 1 and 100").into());
+        }
+
+        let settings = UpcomingDisplaySettings {
+            event_lookahead_days: event_lookahead_days as u16,
+            reminder_lookahead_days: reminder_lookahead_days as u16,
+            assignment_lookahead_days: assignment_lookahead_days as u16,
+            maximum_items: maximum_items as u16,
+            show_overdue,
+            show_completed,
+        };
+        let mut inner = self.lock()?;
+        if inner.settings.upcoming_display == settings {
+            return Ok(());
+        }
+        inner.settings.upcoming_display = settings;
+        inner.save_settings().map_err(Into::into)
+    }
+
     pub fn reset_workspace(&self) -> Result<(), MobileError> {
         let mut inner = self.lock()?;
         inner.workspace = make_default_workspace();
@@ -973,11 +1024,7 @@ impl MobileCore {
     }
 
     #[cfg(not(feature = "accounts"))]
-    pub fn sync_once(
-        &self,
-        _api_base: String,
-        _bearer_token: String,
-    ) -> Result<bool, MobileError> {
+    pub fn sync_once(&self, _api_base: String, _bearer_token: String) -> Result<bool, MobileError> {
         Ok(false)
     }
 
@@ -1053,7 +1100,8 @@ impl MobileCore {
     /// and a peer's change (often a notification) is missed until the next wake.
     #[cfg(feature = "accounts")]
     pub fn note_remote_changed(&self) -> Result<(), MobileError> {
-        self.ws_changed.store(true, std::sync::atomic::Ordering::SeqCst);
+        self.ws_changed
+            .store(true, std::sync::atomic::Ordering::SeqCst);
         Ok(())
     }
 

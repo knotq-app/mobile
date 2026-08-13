@@ -75,11 +75,27 @@ struct DailyFeedPane: View {
                 // The container manages keyboard insets itself; let SwiftUI not
                 // also shrink it for the keyboard (double avoidance jumps it).
                 .ignoresSafeArea(.keyboard)
+                // ...and run to the top of the screen rather than starting below
+                // the navigation bar, so text scrolls up past the back button
+                // like the scheme editor's does. `updateTopInset` puts the
+                // clearance back as a content inset.
+                .ignoresSafeArea(.container, edges: .top)
             }
         }
         .background(theme.bgApp.ignoresSafeArea())
         .navigationTitle("")
         .navigationBarTitleDisplayMode(.inline)
+        // Same chrome as the scheme editor. With the default (opaque) bar the
+        // feed started *below* it, so the daily had a dead strip across the top
+        // that the editor doesn't, and the first visible line was clipped
+        // against its edge. Transparent + translucent lets the feed extend up
+        // under the bar, so the two screens read the same.
+        .toolbarBackground(.hidden, for: .navigationBar)
+        .background {
+            if usesNativeNavigation {
+                TransparentNavigationBar()
+            }
+        }
     }
 
     private var selectedDateKey: String {
@@ -240,6 +256,30 @@ struct DailyDayEditorSection: View {
 
 }
 
+/// Whether an image attachment still has a file on disk.
+///
+/// This is asked for every media item of every visible day, from computed
+/// properties (`visibleEntries`, `emptyDates`, `displayItems`) that re-run on
+/// each body evaluation — and `AppModel.snapshot` republishes on every mutation
+/// anywhere in the app, including the live flush of the line being typed. An
+/// uncached `fileExists` there is a filesystem syscall per attachment per
+/// keystroke, on the main thread. Media files are written once and only removed
+/// with the item, so the answer is stable enough to remember; a path that has
+/// gone missing is re-checked, since that is the case a stale `true` would show
+/// as a broken image.
+@MainActor
+private enum DailyMediaExistence {
+    private static var present: Set<String> = []
+
+    static func fileExists(_ path: String) -> Bool {
+        if present.contains(path) { return true }
+        guard FileManager.default.fileExists(atPath: path) else { return false }
+        present.insert(path)
+        return true
+    }
+}
+
+@MainActor
 private func dailyMediaIsDisplayable(_ media: MobileItemMedia) -> Bool {
     guard media.kind == "image",
           let path = media.path?.trimmingCharacters(in: .whitespacesAndNewlines),
@@ -247,7 +287,7 @@ private func dailyMediaIsDisplayable(_ media: MobileItemMedia) -> Bool {
     else {
         return false
     }
-    return FileManager.default.fileExists(atPath: path)
+    return DailyMediaExistence.fileExists(path)
 }
 
 private func hasNonEmptyValue(_ value: String?) -> Bool {
@@ -654,6 +694,129 @@ struct DailyFeedScroll: UIViewControllerRepresentable {
     }
 }
 
+/// UIKit asks every ancestor scroll view to reveal a text input when it becomes
+/// first responder. During the source-screen keyboard handoff the Daily caret is
+/// already visible, but that generic request still animates the feed by ~40pt.
+/// The controller blocks it only for the initial transfer window; user drags and
+/// every later caret reveal use normal UIScrollView behavior.
+enum DailyCaretVisibility {
+    /// `SchemeTextView` is initially constructed with selection at zero; its
+    /// on-appear load moves autofocus to just before the trailing newline. A
+    /// non-empty selected day therefore has to be positioned for this eventual
+    /// caret, not the temporary selection reported during hidden layout.
+    static func openingCaretOffset(textLength: Int) -> Int {
+        max(0, textLength - 1)
+    }
+
+    static func offsetDelta(for rect: CGRect, visibleTop: CGFloat, visibleBottom: CGFloat) -> CGFloat {
+        if rect.maxY > visibleBottom { return rect.maxY - visibleBottom }
+        if rect.minY < visibleTop { return -(visibleTop - rect.minY) }
+        return 0
+    }
+
+    /// Position the selected day as one opening range: its heading through the
+    /// end caret. Following only the caret can leave the date below the keyboard
+    /// when a slower device finishes the editor's self-sizing after the first
+    /// bottom pin. If the whole range fits, keep both edges visible; if it does
+    /// not, prefer the date heading so Daily never opens looking like today is
+    /// missing entirely.
+    static func openingOffsetDelta(
+        sectionTop: CGFloat,
+        caretRect: CGRect,
+        visibleTop: CGFloat,
+        visibleBottom: CGFloat
+    ) -> CGFloat {
+        let rangeTop = min(sectionTop, caretRect.minY)
+        let rangeBottom = max(sectionTop, caretRect.maxY)
+        let visibleHeight = max(0, visibleBottom - visibleTop)
+        let rangeHeight = max(0, rangeBottom - rangeTop)
+
+        if rangeHeight > visibleHeight {
+            return rangeTop - visibleTop
+        }
+        if rangeBottom > visibleBottom { return rangeBottom - visibleBottom }
+        if rangeTop < visibleTop { return rangeTop - visibleTop }
+        return 0
+    }
+
+    /// During a keyboard handoff, the selected text view becoming first
+    /// responder is the readiness signal that its final caret/layout exists.
+    /// Revealing on content height alone races that event on physical devices.
+    static func waitsForSelectedResponder(
+        autoFocus: Bool,
+        keyboardVisible: Bool,
+        selectedEditorIsFirstResponder: Bool
+    ) -> Bool {
+        autoFocus && keyboardVisible && !selectedEditorIsFirstResponder
+    }
+
+    /// A short feed has no scroll range even after the caret's obstruction is
+    /// added as an inset: the inset first has to consume the unused viewport.
+    /// Return the complete growth needed to make the desired offset reachable.
+    static func bottomInsetGrowth(
+        from offsetY: CGFloat,
+        by delta: CGFloat,
+        contentHeight: CGFloat,
+        viewportHeight: CGFloat,
+        currentBottomInset: CGFloat
+    ) -> CGFloat {
+        let desiredOffset = offsetY + delta
+        let unclampedMaximum = contentHeight - viewportHeight + currentBottomInset
+        return max(0, desiredOffset - unclampedMaximum)
+    }
+}
+
+/// How one day's hosting controller has to be set up to be a well-behaved row
+/// of the feed.
+///
+/// The safe-area opt-out is the load-bearing part. A day is a row inside a
+/// scroll view whose insets `DailyFeedScrollController` owns outright
+/// (`contentInsetAdjustmentBehavior` is `.never`, and `updateTopInset` puts the
+/// top clearance back by hand), so no day may inset itself for the same chrome
+/// a second time.
+///
+/// Left at the default `.all`, each host inherits the pane's 101pt top safe
+/// area *clipped to however much of that row currently overlaps it*, and folds
+/// the result into its own intrinsic height — the same day measured 308, 342,
+/// 360 or 394pt depending only on where it happened to be scrolled when UIKit
+/// last recomputed safe areas. UIKit does that recompute after the feed has
+/// been revealed, so the day's content dropped by whatever the difference was:
+/// a 34pt jump ~1.7s after the tap, on 7 of 10 cold opens of Daily, with the
+/// other 3 landing correct purely on timing.
+enum DailyDayHost {
+    static func configure(_ host: UIHostingController<some View>) {
+        host.view.backgroundColor = .clear
+        host.sizingOptions = .intrinsicContentSize
+        host.safeAreaRegions = []
+    }
+}
+
+final class DailyFeedScrollView: UIScrollView {
+    var blocksInitialCaretReveal = false
+
+    override var contentOffset: CGPoint {
+        get { super.contentOffset }
+        set {
+            guard !rejectsProgrammaticOffset else { return }
+            super.contentOffset = newValue
+        }
+    }
+
+    override func setContentOffset(_ contentOffset: CGPoint, animated: Bool) {
+        guard !rejectsProgrammaticOffset else { return }
+        super.setContentOffset(contentOffset, animated: animated)
+    }
+
+    override func scrollRectToVisible(_ rect: CGRect, animated: Bool) {
+        guard !blocksInitialCaretReveal else { return }
+        super.scrollRectToVisible(rect, animated: animated)
+    }
+
+    private var rejectsProgrammaticOffset: Bool {
+        blocksInitialCaretReveal && !isDragging && !isDecelerating
+    }
+}
+
 final class DailyFeedScrollController: UIViewController, UIScrollViewDelegate {
     private enum ScrollEdge { case top, bottom }
     private static let baseTopInset: CGFloat = 2
@@ -677,7 +840,7 @@ final class DailyFeedScrollController: UIViewController, UIScrollViewDelegate {
     var onLoadOlder: (String) -> Void = { _ in }
     var onLoadAnchorRestored: () -> Void = {}
 
-    private let scrollView = UIScrollView()
+    private let scrollView = DailyFeedScrollView()
     private let stack = UIStackView()
     private let loadingRow = UIView()
     private let spinner = UIActivityIndicatorView(style: .medium)
@@ -700,7 +863,30 @@ final class DailyFeedScrollController: UIViewController, UIScrollViewDelegate {
     private var pendingLoadOlder = false
     private var lastSelectedDateKey = ""
     private var keyboardInset: CGFloat = 0
+    /// Extra scroll range needed only when this controller mounted after the
+    /// handoff keyboard and therefore missed UIKit's automatic keyboard inset.
+    /// Sized to the selected caret's actual obstruction, not the full screen
+    /// overlap, and replaced by the first real frame notification (or removed
+    /// with the keyboard).
+    private var openingCaretClearance: CGFloat = 0
+    /// True while `keyboardInset` holds an *estimate* for a keyboard that has
+    /// been asked for but has not reported its frame yet. Cleared by the first
+    /// real notification — or by `anticipationTimeout`, so a focus that never
+    /// raises a keyboard (hardware keyboard attached, focus refused) can't
+    /// strand a phantom inset at the bottom of the feed.
+    private var anticipatingKeyboard = false
+    private var anticipationTimeout: DispatchWorkItem?
     private var pendingCaretScrollWorkItem: DispatchWorkItem?
+    private var unblockInitialCaretWorkItem: DispatchWorkItem?
+    /// Content height seen on the previous layout pass while the initial pin is
+    /// still settling — see `viewDidLayoutSubviews`.
+    private var lastPinContentHeight: CGFloat = -1
+    private var stablePinPasses = 0
+    /// Layout passes spent waiting for the content height to stop changing. A
+    /// day whose editor mis-measures forever must not leave the feed hidden.
+    private var pinSettleAttempts = 0
+    private static let maxPinSettleAttempts = 12
+    private static let requiredStablePinPasses = 2
 
     // MARK: Lifecycle
 
@@ -720,7 +906,7 @@ final class DailyFeedScrollController: UIViewController, UIScrollViewDelegate {
         scrollView.keyboardDismissMode = .none
         // We own every inset, so don't let the system fold the safe area in.
         scrollView.contentInsetAdjustmentBehavior = .never
-        scrollView.contentInset = UIEdgeInsets(top: Self.baseTopInset, left: 0, bottom: Self.baseBottomInset, right: 0)
+        scrollView.contentInset = UIEdgeInsets(top: Self.baseTopInset + resolvedTopSafeInset, left: 0, bottom: Self.baseBottomInset, right: 0)
         view.addSubview(scrollView)
 
         stack.translatesAutoresizingMaskIntoConstraints = false
@@ -772,19 +958,108 @@ final class DailyFeedScrollController: UIViewController, UIScrollViewDelegate {
 
     deinit { NotificationCenter.default.removeObserver(self) }
 
+    override func viewDidDisappear(_ animated: Bool) {
+        super.viewDidDisappear(animated)
+        // Both work items capture `self` weakly, but there is no reason to let a
+        // pending inset animation fire against a feed that is off screen.
+        anticipationTimeout?.cancel()
+        anticipationTimeout = nil
+        pendingCaretScrollWorkItem?.cancel()
+        pendingCaretScrollWorkItem = nil
+        unblockInitialCaretWorkItem?.cancel()
+        unblockInitialCaretWorkItem = nil
+        scrollView.blocksInitialCaretReveal = false
+    }
+
     override func viewDidLayoutSubviews() {
         super.viewDidLayoutSubviews()
-        if needsInitialPin, scrollView.bounds.height > 0, scrollView.contentSize.height > 0 {
-            needsInitialPin = false
-            pinToBottom()
-            // Re-pin after the next layout pass; self-sizing editors settle their
-            // height a tick late, which would otherwise leave us short of bottom.
-            DispatchQueue.main.async { [weak self] in
-                guard let self else { return }
-                self.pinToBottom()
-                self.didInitialBottomPin = true
-            }
+        updateTopInset()
+        guard needsInitialPin, scrollView.bounds.height > 0, scrollView.contentSize.height > 0 else {
+            return
         }
+        // Every day is a self-sizing editor, and several of them only report
+        // their real height a layout pass or two after they mount. Pinning once
+        // (or twice, on a fixed schedule) landed on a height that was still
+        // growing, so the feed visibly re-scrolled a few hundred milliseconds
+        // after it appeared, and again around a second in — the "cumulative
+        // layout shift". Instead: keep the feed hidden and keep re-pinning until
+        // the content height repeats, then reveal it already in its final
+        // position. `maxPinSettleAttempts` bounds the wait so a day that never
+        // stops resizing still shows up.
+        let height = scrollView.contentSize.height
+        positionSelectedCaretAboveKeyboard()
+        pinToBottom()
+        pinSettleAttempts += 1
+        let settled = abs(height - lastPinContentHeight) <= 0.5
+        stablePinPasses = settled ? stablePinPasses + 1 : 0
+        lastPinContentHeight = height
+        let selectedEditor = hosts[selectedDateKey].flatMap { firstTextView(in: $0.view) }
+        let waitingForResponder = DailyCaretVisibility.waitsForSelectedResponder(
+            autoFocus: autoFocusSelectedDay,
+            keyboardVisible: KeyboardMetrics.isVisible,
+            selectedEditorIsFirstResponder: selectedEditor?.isFirstResponder == true
+        )
+        let ready = stablePinPasses >= Self.requiredStablePinPasses && !waitingForResponder
+        guard ready || pinSettleAttempts >= Self.maxPinSettleAttempts else {
+            // Use actual display-frame spacing rather than burning through all
+            // attempts in adjacent main-queue turns. On the iPhone 14 the
+            // responder transfer and TextKit's final self-size can trail the
+            // first repeated height by a frame or two; the feed remains hidden
+            // while those frames settle, so no corrective scroll is visible.
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.0 / 60.0) { [weak self] in
+                self?.view.setNeedsLayout()
+            }
+            return
+        }
+        positionSelectedCaretAboveKeyboard()
+        needsInitialPin = false
+        didInitialBottomPin = true
+        revealFeed()
+    }
+
+    /// Hides the feed while the initial bottom pin settles, so the scroll
+    /// corrections above are never seen. Paired with `revealFeed`.
+    private func hideFeedUntilPinned() {
+        scrollView.alpha = 0
+        lastPinContentHeight = -1
+        stablePinPasses = 0
+        pinSettleAttempts = 0
+        // Belt and braces: the settle loop only runs while the scroll view has a
+        // height and some content. If neither ever materializes it would never
+        // run at all, and the feed would stay invisible — so reveal on a deadline
+        // regardless.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
+            guard let self, self.needsInitialPin else { return }
+            self.pinToBottom()
+            self.positionSelectedCaretAboveKeyboard()
+            self.needsInitialPin = false
+            self.didInitialBottomPin = true
+            self.revealFeed()
+        }
+    }
+
+    private func revealFeed() {
+        guard scrollView.alpha != 1 else { return }
+        // Arm here rather than only on the normal settle path: the bounded
+        // fallback above can also be the first reveal, and focus must not regain
+        // its automatic ancestor scroll merely because self-sizing took longer.
+        blockInitialCaretRevealIfNeeded()
+        UIView.animate(withDuration: 0.12) { self.scrollView.alpha = 1 }
+    }
+
+    private func blockInitialCaretRevealIfNeeded() {
+        guard autoFocusSelectedDay, KeyboardMetrics.isVisible else { return }
+        scrollView.blocksInitialCaretReveal = true
+        unblockInitialCaretWorkItem?.cancel()
+        let work = DispatchWorkItem { [weak self] in
+            self?.scrollView.blocksInitialCaretReveal = false
+            self?.unblockInitialCaretWorkItem = nil
+        }
+        unblockInitialCaretWorkItem = work
+        // The recorded transfer request arrived about 0.6s after first reveal;
+        // one second covers that window without carrying the guard into normal
+        // editing, and an actual drag releases it immediately below.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1, execute: work)
     }
 
     // MARK: Apply
@@ -828,6 +1103,25 @@ final class DailyFeedScrollController: UIViewController, UIScrollViewDelegate {
 
         if initial {
             needsInitialPin = !entries.isEmpty
+            if needsInitialPin {
+                // The selected day takes the caret as this feed appears, so the
+                // keyboard is already on its way up. Reserve its height BEFORE
+                // the bottom pin: pinning against the full-height viewport parks
+                // the caret exactly where the keyboard is about to land, and the
+                // correction that follows (once UIKit reacts to the keyboard) is
+                // the visible "feed jumps a beat after it opened".
+                if autoFocusSelectedDay, !KeyboardMetrics.isVisible {
+                    // What *this pane* loses, which is not the screen overlap —
+                    // see `anticipatedPaneOverlap`. Reserving the screen figure
+                    // left the open giving 34pt back the moment the real
+                    // keyboard landed (one 27pt step plus a 7pt glide).
+                    keyboardInset = KeyboardMetrics.anticipatedPaneOverlap(in: view)
+                    anticipatingKeyboard = true
+                    updateBottomInset()
+                    scheduleAnticipationTimeout()
+                }
+                hideFeedUntilPinned()
+            }
             lastSelectedDateKey = selectedDateKey
         } else if selectedDateKey != lastSelectedDateKey {
             lastSelectedDateKey = selectedDateKey
@@ -894,8 +1188,7 @@ final class DailyFeedScrollController: UIViewController, UIScrollViewDelegate {
                 }
             } else {
                 host = UIHostingController(rootView: rootView(for: entry))
-                host.view.backgroundColor = .clear
-                host.sizingOptions = .intrinsicContentSize
+                DailyDayHost.configure(host)
                 addChild(host)
                 hosts[entry.date] = host
                 host.didMove(toParent: self)
@@ -934,8 +1227,8 @@ final class DailyFeedScrollController: UIViewController, UIScrollViewDelegate {
     // MARK: Scrolling helpers
 
     private func clampOffsetY(_ y: CGFloat) -> CGFloat {
-        let minY = -scrollView.adjustedContentInset.top
-        let maxY = max(minY, scrollView.contentSize.height - scrollView.bounds.height + scrollView.adjustedContentInset.bottom)
+        let minY = -scrollView.contentInset.top
+        let maxY = max(minY, scrollView.contentSize.height - scrollView.bounds.height + scrollView.contentInset.bottom)
         return min(max(y, minY), maxY)
     }
 
@@ -950,9 +1243,9 @@ final class DailyFeedScrollController: UIViewController, UIScrollViewDelegate {
         let target: CGFloat
         switch edge {
         case .top:
-            target = v.frame.minY - scrollView.adjustedContentInset.top
+            target = v.frame.minY - scrollView.contentInset.top
         case .bottom:
-            target = v.frame.maxY - scrollView.bounds.height + scrollView.adjustedContentInset.bottom
+            target = v.frame.maxY - scrollView.bounds.height + scrollView.contentInset.bottom
         }
         scrollView.contentOffset.y = clampOffsetY(target)
     }
@@ -972,10 +1265,16 @@ final class DailyFeedScrollController: UIViewController, UIScrollViewDelegate {
               scrollView.isDragging || scrollView.isDecelerating,
               canLoadOlder, !isLoadingOlder, !pendingLoadOlder,
               let oldest = order.first else { return }
-        let topThreshold = -scrollView.adjustedContentInset.top + Self.loadOlderTopThreshold
+        let topThreshold = -scrollView.contentInset.top + Self.loadOlderTopThreshold
         guard scrollView.contentOffset.y <= topThreshold else { return }
         pendingLoadOlder = true
         onLoadOlder(oldest)
+    }
+
+    func scrollViewWillBeginDragging(_ scrollView: UIScrollView) {
+        self.scrollView.blocksInitialCaretReveal = false
+        unblockInitialCaretWorkItem?.cancel()
+        unblockInitialCaretWorkItem = nil
     }
 
     // MARK: Keyboard
@@ -984,40 +1283,202 @@ final class DailyFeedScrollController: UIViewController, UIScrollViewDelegate {
         guard let value = note.userInfo?[UIResponder.keyboardFrameEndUserInfoKey] as? NSValue else { return }
         let kbInView = view.convert(value.cgRectValue, from: nil)
         let newInset = max(0, scrollView.frame.maxY - kbInView.minY)
+        let wasAnticipated = anticipatingKeyboard
+        let replacesOpeningClearance = openingCaretClearance > 0
+        // Remember what this pane actually lost, so the next open reserves it
+        // exactly rather than deriving it from the screen overlap.
+        KeyboardMetrics.recordPaneOverlap(
+            newInset,
+            screenWidth: (view.window?.screen.bounds ?? UIScreen.main.bounds).width
+        )
+        clearKeyboardAnticipation()
+        // `openingCaretClearance` supplied the scroll range while this
+        // destination had no keyboard notification of its own. Once UIKit does
+        // report the real overlap, keeping both would count the same keyboard
+        // twice and the next predictive-bar notification would fling the caret
+        // upward. Swap to the measured inset while preserving the current
+        // content offset; the caret is already clear.
+        if replacesOpeningClearance {
+            openingCaretClearance = 0
+        }
         // The predictive-text/accessory bar refires this notification on nearly
         // every keystroke even when the keyboard's actual height hasn't changed.
         // Reacting unconditionally restarted an animated caret-follow scroll
         // mid-flight on every letter — a stack of competing animations that
         // shows up as the feed instantly jumping and settling back a beat
         // later. Only react when the height genuinely moved.
-        guard abs(newInset - keyboardInset) > 0.5 else { return }
+        guard abs(newInset - keyboardInset) > 0.5 || replacesOpeningClearance else { return }
+        let delta = newInset - keyboardInset
         keyboardInset = newInset
-        updateBottomInset()
+
+        // Ride the keyboard's own animation curve and duration. Applying the
+        // inset instantly and then chasing the caret on the next runloop turn
+        // (with `scrollRectToVisible(animated:)`, which starts a second,
+        // differently-timed animation) is what made the feed jump *after* the
+        // keyboard had already landed instead of moving with it.
+        let (duration, options) = KeyboardMetrics.animation(from: note)
+        // While the feed is still settling into its initial bottom pin it is
+        // hidden and being re-pinned every layout pass, so let that finish
+        // rather than animating on top of it.
+        guard didInitialBottomPin else {
+            updateBottomInset()
+            return
+        }
         pendingCaretScrollWorkItem?.cancel()
-        let workItem = DispatchWorkItem { [weak self] in self?.scrollFocusedCaretToVisible() }
-        pendingCaretScrollWorkItem = workItem
-        DispatchQueue.main.async(execute: workItem)
+        pendingCaretScrollWorkItem = nil
+        // The feed was already laid out for a keyboard of the anticipated
+        // height, so only the (usually small) difference has to move.
+        let followsCaret = !replacesOpeningClearance && (wasAnticipated
+            ? abs(delta) > 0.5
+            : true)
+        UIView.animate(withDuration: duration, delay: 0, options: options) {
+            self.updateBottomInset()
+            guard followsCaret else { return }
+            if !self.scrollFocusedCaretIntoView(), delta > 0 {
+                // No caret to follow (the keyboard belongs to something else,
+                // e.g. a sheet's field): keep the content visually still by
+                // absorbing the new inset into the offset.
+                self.scrollView.contentOffset.y = self.clampOffsetY(self.scrollView.contentOffset.y + delta)
+            }
+        }
     }
 
     @objc private func keyboardWillHide(_ note: Notification) {
+        clearKeyboardAnticipation()
+        guard keyboardInset != 0 || openingCaretClearance != 0 else { return }
         keyboardInset = 0
-        updateBottomInset()
+        openingCaretClearance = 0
+        let (duration, options) = KeyboardMetrics.animation(from: note)
+        UIView.animate(withDuration: duration, delay: 0, options: options) {
+            self.updateBottomInset()
+        }
+    }
+
+    /// Drop an anticipated keyboard inset that no real keyboard ever confirmed.
+    private func clearKeyboardAnticipation() {
+        anticipationTimeout?.cancel()
+        anticipationTimeout = nil
+        anticipatingKeyboard = false
+    }
+
+    private func scheduleAnticipationTimeout() {
+        anticipationTimeout?.cancel()
+        let work = DispatchWorkItem { [weak self] in
+            guard let self, self.anticipatingKeyboard else { return }
+            self.anticipatingKeyboard = false
+            self.keyboardInset = 0
+            UIView.animate(withDuration: 0.2) { self.updateBottomInset() }
+        }
+        anticipationTimeout = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.9, execute: work)
+    }
+
+    /// Keeps the first day clear of the status bar / back button while letting
+    /// the feed itself run to the top of the screen.
+    ///
+    /// The feed ignores the top safe area (so content scrolls up *under* the
+    /// chrome the way the scheme editor's does, instead of being clipped against
+    /// a dead strip), which means the inset has to be put back by hand — with
+    /// `contentInsetAdjustmentBehavior = .never` nothing else will.
+    private func updateTopInset() {
+        let top = Self.baseTopInset + resolvedTopSafeInset
+        guard abs(scrollView.contentInset.top - top) > 0.5 else { return }
+        // Hold the content still: growing the inset by N moves everything down
+        // by N unless the offset absorbs it.
+        let delta = top - scrollView.contentInset.top
+        scrollView.contentInset.top = top
+        scrollView.verticalScrollIndicatorInsets.top = top
+        scrollView.contentOffset.y -= delta
+    }
+
+    private var resolvedTopSafeInset: CGFloat {
+        view.window?.safeAreaInsets.top ?? 0
     }
 
     private func updateBottomInset() {
         var inset = scrollView.contentInset
-        inset.bottom = Self.baseBottomInset + keyboardInset
+        inset.bottom = Self.baseBottomInset + keyboardInset + openingCaretClearance
         scrollView.contentInset = inset
         scrollView.verticalScrollIndicatorInsets.bottom = keyboardInset
     }
 
-    private func scrollFocusedCaretToVisible() {
+    /// Bring the focused caret inside the visible (un-inset) part of the feed by
+    /// setting `contentOffset` directly, so the move can be run inside the
+    /// keyboard's own animation block. Returns false when there is no caret to
+    /// follow. Deliberately not `scrollRectToVisible(animated:)`: that starts an
+    /// animation of its own, which is exactly the competing-timelines problem.
+    @discardableResult
+    private func scrollFocusedCaretIntoView() -> Bool {
         guard let textView = firstResponderTextView(in: view),
-              let selection = textView.selectedTextRange else { return }
+              let selection = textView.selectedTextRange else { return false }
         let caret = textView.caretRect(for: selection.end)
+        guard caret.origin.y.isFinite, caret.size.height.isFinite else { return false }
+        let rect = textView.convert(caret, to: scrollView).insetBy(dx: 0, dy: -24)
+        let visibleTop = scrollView.contentOffset.y + scrollView.contentInset.top
+        let visibleBottom = scrollView.contentOffset.y + scrollView.bounds.height - scrollView.contentInset.bottom
+        let delta = DailyCaretVisibility.offsetDelta(
+            for: rect,
+            visibleTop: visibleTop,
+            visibleBottom: visibleBottom
+        )
+        scrollView.contentOffset.y = clampOffsetY(scrollView.contentOffset.y + delta)
+        return true
+    }
+
+    /// The handoff keyboard is already onscreen when this controller mounts, so
+    /// Daily misses the original frame-change notification. Its selected editor
+    /// can therefore be bottom-pinned behind the accessory; blocking UIKit's
+    /// later responder reveal made that bad first position permanent. Use the
+    /// frame captured on the source screen to do the same caret reveal while the
+    /// feed is still transparent.
+    private func positionSelectedCaretAboveKeyboard() {
+        guard autoFocusSelectedDay,
+              let keyboardFrame = KeyboardMetrics.keyboardFrameEnd,
+              let host = hosts[selectedDateKey]?.view,
+              let textView = firstTextView(in: host),
+              let caretPosition = textView.position(
+                  from: textView.beginningOfDocument,
+                  offset: DailyCaretVisibility.openingCaretOffset(textLength: textView.textStorage.length)
+              ) else { return }
+        let caret = textView.caretRect(for: caretPosition)
         guard caret.origin.y.isFinite, caret.size.height.isFinite else { return }
         let rect = textView.convert(caret, to: scrollView).insetBy(dx: 0, dy: -24)
-        scrollView.scrollRectToVisible(rect, animated: true)
+        let visibleTop = scrollView.contentOffset.y + scrollView.contentInset.top
+        // Keyboard notifications use screen/window coordinates. This is the top
+        // of the custom accessory, not merely the first row of keyboard keys.
+        let accessoryTop = scrollView.convert(keyboardFrame, from: nil).minY
+        let visibleBottom = min(
+            scrollView.contentOffset.y + scrollView.bounds.height - scrollView.contentInset.bottom,
+            accessoryTop
+        )
+        let delta = DailyCaretVisibility.openingOffsetDelta(
+            sectionTop: host.frame.minY,
+            caretRect: rect,
+            visibleTop: visibleTop,
+            visibleBottom: visibleBottom
+        )
+        if delta > 0 {
+            let growth = DailyCaretVisibility.bottomInsetGrowth(
+                from: scrollView.contentOffset.y,
+                by: delta,
+                contentHeight: scrollView.contentSize.height,
+                viewportHeight: scrollView.bounds.height,
+                currentBottomInset: scrollView.contentInset.bottom
+            )
+            if growth > 0 {
+                openingCaretClearance += growth
+                updateBottomInset()
+            }
+        }
+        scrollView.contentOffset.y = clampOffsetY(scrollView.contentOffset.y + delta)
+    }
+
+    private func firstTextView(in view: UIView) -> UITextView? {
+        if let textView = view as? EditorTextView { return textView }
+        for subview in view.subviews {
+            if let found = firstTextView(in: subview) { return found }
+        }
+        return nil
     }
 
     private func firstResponderTextView(in view: UIView) -> UITextView? {

@@ -1,8 +1,17 @@
 import SwiftUI
 import UIKit
 
+/// Host view for the formatting toolbar above the keyboard.
 final class TransparentInputAccessoryView: UIInputView {
+    /// The bar's own height. Kept as a stored value rather than read back off
+    /// `frame`: deriving the intrinsic size from the frame is circular, so the
+    /// first frame UIKit happens to hand this view becomes its permanent
+    /// intrinsic height. During keyboard presentation that frame is briefly the
+    /// height of the whole keyboard.
+    private let preferredHeight: CGFloat
+
     init(frame: CGRect) {
+        preferredHeight = frame.height > 0 ? frame.height : 44
         super.init(frame: frame, inputViewStyle: .default)
         allowsSelfSizing = true
         backgroundColor = .clear
@@ -11,7 +20,7 @@ final class TransparentInputAccessoryView: UIInputView {
     }
 
     override var intrinsicContentSize: CGSize {
-        CGSize(width: UIView.noIntrinsicMetric, height: frame.height > 0 ? frame.height : 44)
+        CGSize(width: UIView.noIntrinsicMetric, height: preferredHeight)
     }
 
     @available(*, unavailable)
@@ -36,6 +45,43 @@ final class TransparentInputAccessoryView: UIInputView {
             next?.isOpaque = false
             next = next?.superview
         }
+    }
+}
+
+/// The floating rounded bar that an input accessory draws its controls on.
+///
+/// A plain view with a solid fill — deliberately **not** a `UIVisualEffectView`.
+/// A live material anywhere inside an input accessory makes the system keyboard
+/// present wrong on the first focus of a process: instead of sliding up, it
+/// zooms in from the lower-right over a flat grey backdrop — rgb(149,152,155)
+/// against the settled keyboard's rgb(216,218,221) — and holds that for ~350 ms
+/// before snapping to the real keyboard. Bisected on iOS 26 by swapping just the
+/// effect: `UIGlassEffect` and `UIBlurEffect(.systemUltraThinMaterial)` both
+/// reproduced it; `UIVisualEffectView(effect: nil)` did not (min sampled
+/// backdrop 218 — no dip at all). Presumably the keyboard's own backdrop and the
+/// accessory's have to resolve against each other, and the first pass has
+/// nothing to resolve against yet.
+///
+/// Nothing is lost by giving it up: the bars already backed their glass with an
+/// opaque `bgApp` view (so scrolling text underneath couldn't tint them), which
+/// left the material with a flat constant colour to sample. Screenshot diff of
+/// the settled bar, glass vs. flat: mean 2.8/255, max 11 — invisible. This is
+/// that same flat colour, painted directly.
+final class AccessoryBarPanel: UIView {
+    init(theme: KnotQTheme) {
+        super.init(frame: .zero)
+        translatesAutoresizingMaskIntoConstraints = false
+        backgroundColor = UIColor(theme.bgApp)
+        layer.cornerRadius = 10
+        layer.cornerCurve = .continuous
+        clipsToBounds = true
+        layer.borderWidth = 1
+        layer.borderColor = UIColor(theme.borderOverlay).cgColor
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
     }
 }
 
@@ -79,6 +125,7 @@ final class EditorCoordinator: NSObject, UITextViewDelegate, @preconcurrency NST
         if controller?.isDirty != true {
             controller?.isDirty = true
         }
+        controller?.editEpoch &+= 1
         // Drives the editor's debounced live flush to the core (push-on-type).
         controller?.editPulse.send()
     }

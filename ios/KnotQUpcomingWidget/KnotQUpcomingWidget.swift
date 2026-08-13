@@ -229,7 +229,21 @@ private struct KnotQUpcomingWidgetView: View {
     }
 
     private var visibleItems: [KnotQWidgetOccurrence] {
-        entry.snapshot.items.filter { !$0.done }
+        let now = Date()
+        return entry.snapshot.items.filter { item in
+            if item.done { return false }
+            // Hide events whose time block has already elapsed. The snapshot writer
+            // applies the same rule, but a stale snapshot (app not opened for a
+            // while) can still carry events that have since ended, so re-filter
+            // against the current time. Overdue assignments/reminders are kept.
+            if item.kind == "event",
+               let endRaw = item.end ?? item.start,
+               let end = Self.iso.date(from: endRaw),
+               end <= now {
+                return false
+            }
+            return true
+        }
     }
 
     private func columnFilledSlots(

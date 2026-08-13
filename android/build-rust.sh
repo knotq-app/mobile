@@ -77,11 +77,11 @@ for INDEX in "${!ABIS[@]}"; do
   ABI="${ABIS[$INDEX]}"
   TARGET="${TARGETS[$INDEX]}"
   if [[ "$MODE" == "release" ]]; then
-    # Release ships without the accounts feature: the sync UDL fns stub out.
-    cargo build --manifest-path "$MOBILE_ROOT/Cargo.toml" -p knotq-mobile-core --target "$TARGET" --release
+    # Release ships the same account/sync implementation as development builds.
+    cargo build --manifest-path "$MOBILE_ROOT/Cargo.toml" -p knotq-mobile-core --target "$TARGET" --release --features accounts
     PROFILE_DIR="release"
   else
-    # Debug/dev builds enable accounts so full sign-in/sync behavior is available.
+    # Debug/dev builds also include full sign-in/sync behavior.
     cargo build --manifest-path "$MOBILE_ROOT/Cargo.toml" -p knotq-mobile-core --target "$TARGET" --features accounts
     PROFILE_DIR="debug"
   fi

@@ -128,9 +128,10 @@ extension AppModel {
     func runBackgroundMaintenance() async -> Bool {
         let remoteChanged = await runBackgroundSync()
         let googleSynced = await runBackgroundGoogleCalendarSyncIfDue()
-        // Refresh the badge before the task finishes (and the app may suspend)
-        // so the overdue count stays current even when nothing synced.
-        await refreshOverdueBadge()
+        // Republish the widget and badge before the task finishes (and the app may
+        // suspend) so both stay current even when nothing synced — which is the
+        // only thing this task does for a purely local, no-account user.
+        await refreshWidgetAndBadge()
         return remoteChanged || googleSynced
     }
 
@@ -182,7 +183,17 @@ extension AppModel {
                         return
                     }
                 }
-                if Self.isLikelyNetworkError(error) {
+                if Self.isAuthRejection(error) {
+                    // A rejected short-lived bearer can still be a race with a
+                    // token rotation, an in-flight request, or a delayed socket
+                    // reconnect. We already attempted the one safe forced refresh
+                    // above; never present this transient/auth-transport failure as
+                    // a user-facing "Unauthorized" alert. The only sync-auth alert
+                    // is produced below by the refresh endpoint's explicit terminal
+                    // refresh-token response.
+                    syncOffline = true
+                    errorMessage = nil
+                } else if Self.isLikelyNetworkError(error) {
                     syncOffline = true
                     errorMessage = nil
                 } else {
@@ -304,7 +315,7 @@ extension AppModel {
                 syncOffline = true
                 return .deferred
             }
-            if Self.isTerminalRefreshError(data) {
+            if Self.isTerminalRefreshError(http, data) {
                 // The auth API explicitly rejected this refresh credential.
                 signOutSync()
                 errorMessage = "Your sync session expired. Please sign in again."
@@ -408,7 +419,12 @@ extension AppModel {
         return reason.contains("unauthorized")
     }
 
-    static func isTerminalRefreshError(_ data: Data) -> Bool {
+    /// A visible sign-in-again prompt is reserved for an explicit 401 from the
+    /// refresh endpoint that says the long-lived refresh credential is unusable.
+    /// Do not infer this from a failed bearer-token request or from a similarly
+    /// shaped body on a transient server response.
+    static func isTerminalRefreshError(_ response: HTTPURLResponse, _ data: Data) -> Bool {
+        guard response.statusCode == 401 else { return false }
         guard
             let body = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
             let code = body["code"] as? String
@@ -446,12 +462,22 @@ extension AppModel {
         let week = weekOffset
         let history = dailyHistoryDays
         bridge.enqueue({ b in
+            let started = CFAbsoluteTimeGetCurrent()
             try action(b)
-            return (
-                try b.snapshot(today: today, weekOffset: week, dailyHistoryDays: history),
+            let applied = CFAbsoluteTimeGetCurrent()
+            let snapshot = try b.snapshot(today: today, weekOffset: week, dailyHistoryDays: history)
+            let snapshotted = CFAbsoluteTimeGetCurrent()
+            let result = (
+                snapshot,
                 try b.pendingNotifications(),
                 try b.deliveredNotificationsToClear()
             )
+            CoreTiming.record(
+                edit: applied - started,
+                snapshot: snapshotted - applied,
+                notifications: CFAbsoluteTimeGetCurrent() - snapshotted
+            )
+            return result
         }) { [weak self] result in
             guard let self else {
                 completion?()
@@ -494,6 +520,34 @@ extension AppModel {
                 self.errorMessage = error.localizedDescription
             }
         }
+    }
+
+    /// Await-able counterpart to `handleNotificationAction`, for the notification
+    /// delegate's completion handler.
+    ///
+    /// The delegate runs with the app in the *background* whenever an action is
+    /// tapped from the lock screen or Notification Center, and iOS may suspend
+    /// the process as soon as the completion handler returns. The widget
+    /// snapshot and the icon badge are only published from `apply(snapshot:)`,
+    /// i.e. from the completion of the async core write — so a fire-and-forget
+    /// enqueue leaves both showing the pre-action state until something else
+    /// relaunches the app. That is the "marked it done but the widget/badge
+    /// still shows it" report. Awaiting the whole chain (and holding a
+    /// background task assertion around it, see `applyAction`) is what makes the
+    /// widget and badge update at the moment of the tap.
+    @discardableResult
+    func handleNotificationActionNow(_ request: MobileNotificationActionRequest) async -> Bool {
+        guard let bridge else { return false }
+        guard let changed = try? await bridge.perform({ try $0.applyNotificationAction(request) })
+        else { return false }
+        if changed {
+            // Rebuilds the snapshot, republishes the widget store, recomputes the
+            // badge and re-arms the OS schedule — all before we return.
+            await refreshAndRearmNotifications()
+        } else {
+            await rearmNotificationsNow()
+        }
+        return changed
     }
 
     func rescheduleNotifications() {

@@ -748,6 +748,8 @@ internal object IntegrityCheckingUniffiLib {
     ): Short
     external fun uniffi_knotq_mobile_core_checksum_method_mobilecore_set_time_format(
     ): Short
+    external fun uniffi_knotq_mobile_core_checksum_method_mobilecore_set_upcoming_display_settings(
+    ): Short
     external fun uniffi_knotq_mobile_core_checksum_method_mobilecore_snapshot(
     ): Short
     external fun uniffi_knotq_mobile_core_checksum_method_mobilecore_snapshot_with_daily_history(
@@ -835,7 +837,7 @@ external fun uniffi_knotq_mobile_core_fn_method_mobilecore_delivered_notificatio
 external fun uniffi_knotq_mobile_core_fn_method_mobilecore_empty_archive(`ptr`: Long,uniffi_out_err: UniffiRustCallStatus, 
 ): Unit
 external fun uniffi_knotq_mobile_core_fn_method_mobilecore_ensure_daily_queue(`ptr`: Long,`date`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
-): Unit
+): Byte
 external fun uniffi_knotq_mobile_core_fn_method_mobilecore_google_auth_request(`ptr`: Long,`clientId`: RustBuffer.ByValue,`redirectUri`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
 ): RustBuffer.ByValue
 external fun uniffi_knotq_mobile_core_fn_method_mobilecore_insert_table(`ptr`: Long,`schemeId`: RustBuffer.ByValue,`afterItemId`: RustBuffer.ByValue,`itemId`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
@@ -905,6 +907,8 @@ external fun uniffi_knotq_mobile_core_fn_method_mobilecore_set_table_column_name
 external fun uniffi_knotq_mobile_core_fn_method_mobilecore_set_theme_mode(`ptr`: Long,`themeMode`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
 ): Unit
 external fun uniffi_knotq_mobile_core_fn_method_mobilecore_set_time_format(`ptr`: Long,`timeFormat`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+): Unit
+external fun uniffi_knotq_mobile_core_fn_method_mobilecore_set_upcoming_display_settings(`ptr`: Long,`eventLookaheadDays`: Int,`reminderLookaheadDays`: Int,`assignmentLookaheadDays`: Int,`maximumItems`: Int,`showOverdue`: Byte,`showCompleted`: Byte,uniffi_out_err: UniffiRustCallStatus, 
 ): Unit
 external fun uniffi_knotq_mobile_core_fn_method_mobilecore_snapshot(`ptr`: Long,`today`: RustBuffer.ByValue,`weekOffset`: Int,uniffi_out_err: UniffiRustCallStatus, 
 ): RustBuffer.ByValue
@@ -1108,7 +1112,7 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
     if (lib.uniffi_knotq_mobile_core_checksum_method_mobilecore_empty_archive() != 9301.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
-    if (lib.uniffi_knotq_mobile_core_checksum_method_mobilecore_ensure_daily_queue() != 43040.toShort()) {
+    if (lib.uniffi_knotq_mobile_core_checksum_method_mobilecore_ensure_daily_queue() != 18110.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_knotq_mobile_core_checksum_method_mobilecore_google_auth_request() != 56614.toShort()) {
@@ -1214,6 +1218,9 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_knotq_mobile_core_checksum_method_mobilecore_set_time_format() != 59857.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_knotq_mobile_core_checksum_method_mobilecore_set_upcoming_display_settings() != 58921.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_knotq_mobile_core_checksum_method_mobilecore_snapshot() != 52252.toShort()) {
@@ -1672,7 +1679,7 @@ public interface MobileCoreInterface {
     
     fun `emptyArchive`()
     
-    fun `ensureDailyQueue`(`date`: kotlin.String?)
+    fun `ensureDailyQueue`(`date`: kotlin.String?): kotlin.Boolean
     
     fun `googleAuthRequest`(`clientId`: kotlin.String, `redirectUri`: kotlin.String): MobileGoogleAuthRequest
     
@@ -1743,6 +1750,8 @@ public interface MobileCoreInterface {
     fun `setThemeMode`(`themeMode`: kotlin.String)
     
     fun `setTimeFormat`(`timeFormat`: kotlin.String)
+    
+    fun `setUpcomingDisplaySettings`(`eventLookaheadDays`: kotlin.Int, `reminderLookaheadDays`: kotlin.Int, `assignmentLookaheadDays`: kotlin.Int, `maximumItems`: kotlin.Int, `showOverdue`: kotlin.Boolean, `showCompleted`: kotlin.Boolean)
     
     fun `snapshot`(`today`: kotlin.String?, `weekOffset`: kotlin.Int): MobileSnapshot
     
@@ -2113,8 +2122,8 @@ open class MobileCore: Disposable, AutoCloseable, MobileCoreInterface
     
 
     
-    @Throws(MobileException::class)override fun `ensureDailyQueue`(`date`: kotlin.String?)
-        = 
+    @Throws(MobileException::class)override fun `ensureDailyQueue`(`date`: kotlin.String?): kotlin.Boolean {
+            return FfiConverterBoolean.lift(
     callWithHandle {
     uniffiRustCallWithError(MobileException) { _status ->
     UniffiLib.uniffi_knotq_mobile_core_fn_method_mobilecore_ensure_daily_queue(
@@ -2122,7 +2131,8 @@ open class MobileCore: Disposable, AutoCloseable, MobileCoreInterface
         FfiConverterOptionalString.lower(`date`),_status)
 }
     }
-    
+    )
+    }
     
 
     
@@ -2580,6 +2590,19 @@ open class MobileCore: Disposable, AutoCloseable, MobileCoreInterface
     UniffiLib.uniffi_knotq_mobile_core_fn_method_mobilecore_set_time_format(
         it,
         FfiConverterString.lower(`timeFormat`),_status)
+}
+    }
+    
+    
+
+    
+    @Throws(MobileException::class)override fun `setUpcomingDisplaySettings`(`eventLookaheadDays`: kotlin.Int, `reminderLookaheadDays`: kotlin.Int, `assignmentLookaheadDays`: kotlin.Int, `maximumItems`: kotlin.Int, `showOverdue`: kotlin.Boolean, `showCompleted`: kotlin.Boolean)
+        = 
+    callWithHandle {
+    uniffiRustCallWithError(MobileException) { _status ->
+    UniffiLib.uniffi_knotq_mobile_core_fn_method_mobilecore_set_upcoming_display_settings(
+        it,
+        FfiConverterInt.lower(`eventLookaheadDays`),FfiConverterInt.lower(`reminderLookaheadDays`),FfiConverterInt.lower(`assignmentLookaheadDays`),FfiConverterInt.lower(`maximumItems`),FfiConverterBoolean.lower(`showOverdue`),FfiConverterBoolean.lower(`showCompleted`),_status)
 }
     }
     
@@ -3766,6 +3789,18 @@ data class MobileSettings (
     , 
     var `assignmentNotificationOffsetSecs`: kotlin.Int
     , 
+    var `eventLookaheadDays`: kotlin.Int
+    , 
+    var `reminderLookaheadDays`: kotlin.Int
+    , 
+    var `assignmentLookaheadDays`: kotlin.Int
+    , 
+    var `maximumUpcomingItems`: kotlin.Int
+    , 
+    var `showOverdue`: kotlin.Boolean
+    , 
+    var `showCompleted`: kotlin.Boolean
+    , 
     var `googleAccountCount`: kotlin.Int
     , 
     var `googleAccounts`: List<MobileGoogleAccount>
@@ -3790,6 +3825,12 @@ public object FfiConverterTypeMobileSettings: FfiConverterRustBuffer<MobileSetti
             FfiConverterInt.read(buf),
             FfiConverterInt.read(buf),
             FfiConverterInt.read(buf),
+            FfiConverterInt.read(buf),
+            FfiConverterInt.read(buf),
+            FfiConverterInt.read(buf),
+            FfiConverterBoolean.read(buf),
+            FfiConverterBoolean.read(buf),
+            FfiConverterInt.read(buf),
             FfiConverterSequenceTypeMobileGoogleAccount.read(buf),
         )
     }
@@ -3799,6 +3840,12 @@ public object FfiConverterTypeMobileSettings: FfiConverterRustBuffer<MobileSetti
             FfiConverterString.allocationSize(value.`timeFormat`) +
             FfiConverterInt.allocationSize(value.`eventNotificationOffsetSecs`) +
             FfiConverterInt.allocationSize(value.`assignmentNotificationOffsetSecs`) +
+            FfiConverterInt.allocationSize(value.`eventLookaheadDays`) +
+            FfiConverterInt.allocationSize(value.`reminderLookaheadDays`) +
+            FfiConverterInt.allocationSize(value.`assignmentLookaheadDays`) +
+            FfiConverterInt.allocationSize(value.`maximumUpcomingItems`) +
+            FfiConverterBoolean.allocationSize(value.`showOverdue`) +
+            FfiConverterBoolean.allocationSize(value.`showCompleted`) +
             FfiConverterInt.allocationSize(value.`googleAccountCount`) +
             FfiConverterSequenceTypeMobileGoogleAccount.allocationSize(value.`googleAccounts`)
     )
@@ -3808,6 +3855,12 @@ public object FfiConverterTypeMobileSettings: FfiConverterRustBuffer<MobileSetti
             FfiConverterString.write(value.`timeFormat`, buf)
             FfiConverterInt.write(value.`eventNotificationOffsetSecs`, buf)
             FfiConverterInt.write(value.`assignmentNotificationOffsetSecs`, buf)
+            FfiConverterInt.write(value.`eventLookaheadDays`, buf)
+            FfiConverterInt.write(value.`reminderLookaheadDays`, buf)
+            FfiConverterInt.write(value.`assignmentLookaheadDays`, buf)
+            FfiConverterInt.write(value.`maximumUpcomingItems`, buf)
+            FfiConverterBoolean.write(value.`showOverdue`, buf)
+            FfiConverterBoolean.write(value.`showCompleted`, buf)
             FfiConverterInt.write(value.`googleAccountCount`, buf)
             FfiConverterSequenceTypeMobileGoogleAccount.write(value.`googleAccounts`, buf)
     }

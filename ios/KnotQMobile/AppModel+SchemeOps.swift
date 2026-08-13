@@ -103,9 +103,22 @@ extension AppModel {
         mutate { try $0.ensureDailyQueue(date: key) }
     }
 
+    /// Make sure today's daily queue exists. Called on every launch and every
+    /// return to the foreground, so it must cost nothing on the common path
+    /// where the queue is already there: the core reports whether it had to
+    /// create one, and only then is a snapshot rebuild (and the republish of
+    /// every view that reads it) worth doing.
     func ensureTodayDailyQueue() {
+        guard let bridge else { return }
         let key = Self.dateOnly(Date())
-        mutate { try $0.ensureDailyQueue(date: key) }
+        bridge.enqueue({ try $0.ensureDailyQueue(date: key) }) { [weak self] result in
+            guard let self, case .success(true) = result else { return }
+            self.refresh()
+            // Creating the queue is a local edit like any other.
+            if self.syncSession != nil {
+                self.scheduleEditSync()
+            }
+        }
     }
 
     func selectDate(_ date: Date) {
@@ -118,13 +131,17 @@ extension AppModel {
     }
 
     func addItem(schemeID: String, text: String, marker: Marker = .checkbox, indent: Int32 = 0) {
-        mutate { try $0.addItem(schemeID: schemeID, text: text, marker: marker, indent: indent) }
+        mutateScheme(schemeID) { try $0.addItem(schemeID: schemeID, text: text, marker: marker, indent: indent) }
     }
 
     func addTodayDailyItem(text: String, marker: Marker = .checkbox, indent: Int32 = 0) {
         selectedDate = Date()
         let today = Self.dateOnly(Date())
-        mutate {
+        // Today's queue is the document being appended to, so track it when it
+        // already exists. On the very first add of a day there is no id yet (the
+        // core creates the queue as part of this write) and nothing is displaying
+        // it either, so there is nothing to keep from going stale.
+        mutateSchemes(todayDailySchemeID().map { [$0] } ?? []) {
             try $0.addTodayDailyItem(
                 today: today,
                 text: text,
@@ -135,15 +152,15 @@ extension AppModel {
     }
 
     func updateItemText(schemeID: String, itemID: String, text: String) {
-        mutate { try $0.updateItemText(schemeID: schemeID, itemID: itemID, text: text) }
+        mutateScheme(schemeID) { try $0.updateItemText(schemeID: schemeID, itemID: itemID, text: text) }
     }
 
     func insertTable(schemeID: String, afterItemID: String?, itemID: String) {
-        mutate { try $0.insertTable(schemeID: schemeID, afterItemID: afterItemID, itemID: itemID) }
+        mutateScheme(schemeID) { try $0.insertTable(schemeID: schemeID, afterItemID: afterItemID, itemID: itemID) }
     }
 
     func setTableCellText(schemeID: String, itemID: String, row: Int32, column: Int32, text: String) {
-        mutate {
+        mutateScheme(schemeID) {
             try $0.setTableCellText(
                 schemeID: schemeID,
                 itemID: itemID,
@@ -155,7 +172,7 @@ extension AppModel {
     }
 
     func setTableColumnName(schemeID: String, itemID: String, column: Int32, name: String) {
-        mutate {
+        mutateScheme(schemeID) {
             try $0.setTableColumnName(
                 schemeID: schemeID,
                 itemID: itemID,
@@ -166,7 +183,7 @@ extension AppModel {
     }
 
     func setTableCellLineText(schemeID: String, itemID: String, row: Int32, column: Int32, lineIndex: Int32, text: String) {
-        mutate {
+        mutateScheme(schemeID) {
             try $0.setTableCellLineText(
                 schemeID: schemeID,
                 itemID: itemID,
@@ -179,7 +196,7 @@ extension AppModel {
     }
 
     func addTableCellLine(schemeID: String, itemID: String, row: Int32, column: Int32, lineIndex: Int32, text: String) {
-        mutate {
+        mutateScheme(schemeID) {
             try $0.addTableCellLine(
                 schemeID: schemeID,
                 itemID: itemID,
@@ -192,7 +209,7 @@ extension AppModel {
     }
 
     func removeTableCellLine(schemeID: String, itemID: String, row: Int32, column: Int32, lineIndex: Int32) {
-        mutate {
+        mutateScheme(schemeID) {
             try $0.removeTableCellLine(
                 schemeID: schemeID,
                 itemID: itemID,
@@ -204,31 +221,31 @@ extension AppModel {
     }
 
     func insertTableRow(schemeID: String, itemID: String, row: Int32) {
-        mutate { try $0.insertTableRow(schemeID: schemeID, itemID: itemID, row: row) }
+        mutateScheme(schemeID) { try $0.insertTableRow(schemeID: schemeID, itemID: itemID, row: row) }
     }
 
     func deleteTableRow(schemeID: String, itemID: String, row: Int32) {
-        mutate { try $0.deleteTableRow(schemeID: schemeID, itemID: itemID, row: row) }
+        mutateScheme(schemeID) { try $0.deleteTableRow(schemeID: schemeID, itemID: itemID, row: row) }
     }
 
     func insertTableColumn(schemeID: String, itemID: String, column: Int32) {
-        mutate { try $0.insertTableColumn(schemeID: schemeID, itemID: itemID, column: column) }
+        mutateScheme(schemeID) { try $0.insertTableColumn(schemeID: schemeID, itemID: itemID, column: column) }
     }
 
     func deleteTableColumn(schemeID: String, itemID: String, column: Int32) {
-        mutate { try $0.deleteTableColumn(schemeID: schemeID, itemID: itemID, column: column) }
+        mutateScheme(schemeID) { try $0.deleteTableColumn(schemeID: schemeID, itemID: itemID, column: column) }
     }
 
     func setItemMarker(schemeID: String, itemID: String, marker: Marker) {
-        mutate { try $0.setItemMarker(schemeID: schemeID, itemID: itemID, marker: marker) }
+        mutateScheme(schemeID) { try $0.setItemMarker(schemeID: schemeID, itemID: itemID, marker: marker) }
     }
 
     func setItemIndent(schemeID: String, itemID: String, indent: Int32) {
-        mutate { try $0.setItemIndent(schemeID: schemeID, itemID: itemID, indent: indent) }
+        mutateScheme(schemeID) { try $0.setItemIndent(schemeID: schemeID, itemID: itemID, indent: indent) }
     }
 
     func reorderItem(schemeID: String, from: Int, to: Int) {
-        mutate { try $0.reorderItem(schemeID: schemeID, from: from, to: to) }
+        mutateScheme(schemeID) { try $0.reorderItem(schemeID: schemeID, from: from, to: to) }
     }
 
     /// `completion` fires once the mutation's snapshot is installed — the point
@@ -239,12 +256,19 @@ extension AppModel {
         items: [MobileItemEdit],
         completion: (@MainActor () -> Void)? = nil
     ) {
-        mutate({ try $0.replaceSchemeItems(schemeID: schemeID, items: items) }, completion: completion)
+        mutateScheme(schemeID, { try $0.replaceSchemeItems(schemeID: schemeID, items: items) }, completion: completion)
+    }
+
+    /// Whether a submitted write for this scheme has yet to reach `snapshot`. A
+    /// view that renders scheme content from the snapshot should wait rather than
+    /// show the pre-write document — see `schemeWrites`.
+    func hasWriteInFlight(schemeID: String) -> Bool {
+        schemeWrites.isInFlight(schemeID)
     }
 
     func setItemDate(schemeID: String, itemID: String, kind: String, date: Date?) {
         let dateString = date.map { iso.string(from: $0) }
-        mutate {
+        mutateScheme(schemeID) {
             try $0.setItemDate(
                 schemeID: schemeID,
                 itemID: itemID,
@@ -255,7 +279,7 @@ extension AppModel {
     }
 
     func setItemRecurrence(schemeID: String, itemID: String, rrule: String?) {
-        mutate { try $0.setItemRecurrence(schemeID: schemeID, itemID: itemID, rrule: rrule) }
+        mutateScheme(schemeID) { try $0.setItemRecurrence(schemeID: schemeID, itemID: itemID, rrule: rrule) }
     }
 
     func commitEventEdit(
@@ -271,7 +295,7 @@ extension AppModel {
     ) {
         let startString = start.map { iso.string(from: $0) }
         let endString = end.map { iso.string(from: $0) }
-        mutate {
+        mutateScheme(occurrence.schemeId) {
             try $0.commitEventEdit(
                 occurrence: occurrence,
                 title: title,
@@ -294,7 +318,7 @@ extension AppModel {
         occurrenceJSON: String? = nil,
         offsetSecs: Int32?
     ) {
-        mutate {
+        mutateScheme(schemeID) {
             try $0.setOccurrenceNotificationOffset(
                 schemeID: schemeID,
                 itemID: itemID,
@@ -305,13 +329,13 @@ extension AppModel {
     }
 
     func toggleItem(schemeID: String, itemID: String) {
-        mutate { try $0.toggleItem(schemeID: schemeID, itemID: itemID) }
+        mutateScheme(schemeID) { try $0.toggleItem(schemeID: schemeID, itemID: itemID) }
     }
 
     func toggleOccurrence(_ occurrence: MobileOccurrence) {
         // Retention (keeping a just-completed item on the upcoming panel) is
         // handled in the core, so the snapshot already includes it.
-        mutate {
+        mutateScheme(occurrence.schemeId) {
             try $0.toggleOccurrence(
                 schemeID: occurrence.schemeId,
                 itemID: occurrence.itemId,
@@ -321,7 +345,7 @@ extension AppModel {
     }
 
     func deleteItem(schemeID: String, itemID: String) {
-        mutate { try $0.deleteItem(schemeID: schemeID, itemID: itemID) }
+        mutateScheme(schemeID) { try $0.deleteItem(schemeID: schemeID, itemID: itemID) }
     }
 
     /// Transfer an item to another scheme, preserving its identity and
@@ -329,7 +353,10 @@ extension AppModel {
     /// switch). A no-op when source and target match.
     func moveItemToScheme(sourceSchemeID: String, targetSchemeID: String, itemID: String) {
         guard sourceSchemeID != targetSchemeID else { return }
-        mutate {
+        // Both documents change, so both must read as in-flight — an editor open
+        // on either side would otherwise rebuild from a list that still has the
+        // item on the wrong scheme.
+        mutateSchemes([sourceSchemeID, targetSchemeID]) {
             try $0.moveItemToScheme(
                 sourceSchemeID: sourceSchemeID,
                 targetSchemeID: targetSchemeID,
@@ -339,14 +366,15 @@ extension AppModel {
     }
 
     func deleteEventOccurrence(_ occurrence: MobileOccurrence, scope: EventOccurrenceScope) {
-        mutate { try $0.deleteEventOccurrence(occurrence, scope: scope) }
+        mutateScheme(occurrence.schemeId) { try $0.deleteEventOccurrence(occurrence, scope: scope) }
     }
 
     func addCalendarItem(kind: CalendarKind, text: String, date: Date, start: Date?, end: Date?, schemeID: String? = nil) {
         let dateKey = Self.dateOnly(date)
         let startString = start.map { iso.string(from: $0) }
         let endString = end.map { iso.string(from: $0) }
-        mutate {
+        // A nil scheme resolves to today's daily queue inside the core.
+        mutateSchemes([schemeID ?? todayDailySchemeID()].compactMap { $0 }) {
             try $0.addCalendarItem(
                 kind: kind,
                 text: text,

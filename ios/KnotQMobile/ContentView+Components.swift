@@ -38,11 +38,6 @@ extension View {
     }
 }
 
-enum OnboardingPhase {
-    case account
-    case guide
-}
-
 // MARK: - Tour steps
 
 private struct OnboardingStep {
@@ -99,171 +94,60 @@ struct OnboardingOverlay: View {
     /// Resolves a target into its on-screen rect (in the overlay's coordinate
     /// space), or `nil` when the control isn't currently on screen.
     let resolve: (OnboardingTarget) -> CGRect?
-    @Binding var phase: OnboardingPhase
     @Binding var step: Int
     let onFocus: (MobilePane?) -> Void
     let onComplete: () -> Void
 
+    /// Step whose spotlight target never resolved — see `placementIsKnown`.
+    @State private var targetGaveUpOnStep: Int?
+
+    /// How long to wait for a step's spotlight target before placing the card
+    /// centered anyway. Long enough to cover a pane that has to load its content
+    /// first, short enough not to read as the tour being stuck.
+    private static let targetWait: Duration = .milliseconds(1200)
+
     var body: some View {
-        ZStack {
-            switch phase {
-            case .account:
-                #if ACCOUNTS_ENABLED
-                accountPhase
-                #else
-                guidePhase
-                #endif
-            case .guide:
-                guidePhase
-            }
-        }
+        guidePhase
         .foregroundStyle(theme.textPrimary)
         .tint(theme.accent)
-    }
-
-    /// Sign-in happens in the browser; the account prompt is the last onboarding
-    /// step, so a landed session completes onboarding.
-    #if ACCOUNTS_ENABLED
-    private func authenticate(mode: SyncAuthMode) {
-        Task {
-            await model.beginBrowserSignIn(mode: mode)
-            if model.syncSession != nil {
-                onComplete()
-            }
-        }
-    }
-    #endif
-
-    // MARK: Account phase
-
-    #if ACCOUNTS_ENABLED
-    private var accountPhase: some View {
-        ZStack {
-            Color.black.opacity(0.62)
-                .ignoresSafeArea()
-                .contentShape(Rectangle())
-                .onTapGesture {} // swallow taps to the app behind the scrim
-
-            accountCard
-                .frame(maxWidth: 460)
-                .padding(.horizontal, 24)
-        }
-    }
-
-    private var accountCard: some View {
-        VStack(spacing: 18) {
-            Image("BrandLogo")
-                .resizable()
-                .scaledToFit()
-                .frame(width: 76, height: 76)
-                .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-                .shadow(color: .black.opacity(0.18), radius: 8, y: 4)
-
-            VStack(spacing: 6) {
-                Text(L10n.t("onboarding.sync_prompt.title"))
-                    .font(.system(size: 30, weight: .bold))
-                Text(L10n.t("onboarding.sync_prompt.body"))
-                    .font(.system(size: 15, weight: .medium))
-                    .foregroundStyle(theme.textSoft)
-                    .multilineTextAlignment(.center)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-
-            VStack(spacing: 10) {
-                onboardingAction(
-                    title: L10n.t("mobile.auth.sign_up"),
-                    icon: "person.crop.circle.badge.plus"
-                ) {
-                    authenticate(mode: .createAccount)
-                }
-
-                onboardingAction(
-                    title: L10n.t("mobile.auth.sign_in"),
-                    icon: "person.crop.circle"
-                ) {
-                    authenticate(mode: .signIn)
-                }
-
-                Button {
-                    onComplete()
-                } label: {
-                    Label(L10n.t("mobile.onboarding.continue_free"), systemImage: "internaldrive")
-                        .font(.system(size: 15, weight: .semibold))
-                        .frame(maxWidth: .infinity)
-                        .frame(height: 46)
-                }
-                .buttonStyle(.bordered)
-                .disabled(model.syncAuthInProgress)
-            }
-
-            Text(L10n.t("mobile.onboarding.subscribe_later_note"))
-                .font(.footnote)
-                .foregroundStyle(theme.textSoft)
-                .multilineTextAlignment(.center)
-        }
-        .padding(20)
-        .background(theme.bgModal, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-        .overlay {
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .stroke(theme.borderOverlay.opacity(0.7), lineWidth: 1)
-        }
-        .shadow(color: .black.opacity(0.28), radius: 22, y: 10)
-    }
-    #endif
-
-    private func onboardingAction(
-        title: String,
-        detail: String? = nil,
-        icon: String,
-        action: @escaping () -> Void
-    ) -> some View {
-        Button(action: action) {
-            HStack(spacing: 12) {
-                Image(systemName: icon)
-                    .font(.system(size: 19, weight: .semibold))
-                    .foregroundStyle(theme.accent)
-                    .frame(width: 32, height: 32)
-
-                VStack(alignment: .leading, spacing: 3) {
-                    Text(title)
-                        .font(.system(size: 15, weight: .semibold))
-                        .foregroundStyle(theme.textPrimary)
-                    if let detail {
-                        Text(detail)
-                            .font(.system(size: 12, weight: .medium))
-                            .foregroundStyle(theme.textSoft)
-                    }
-                }
-
-                Spacer()
-
-                Image(systemName: "chevron.right")
-                    .font(.system(size: 12, weight: .bold))
-                    .foregroundStyle(theme.textDim)
-            }
-            .padding(12)
-            .background(theme.bgApp, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
-            .overlay {
-                RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .stroke(theme.borderOverlay.opacity(0.7), lineWidth: 1)
-            }
-        }
-        .buttonStyle(.plain)
     }
 
     // MARK: Guide phase (spotlight)
 
     private var guidePhase: some View {
-        let current = onboardingSteps[min(step, onboardingSteps.count - 1)]
+        let current = onboardingSteps[currentStep]
         let targetRect = current.target.flatMap(resolve)
         return ZStack {
             spotlightScrim(targetRect: targetRect)
             if let rect = targetRect {
                 highlightRing(rect)
             }
-            tooltip(current, targetRect: targetRect)
+            // Placement depends on where the spotlighted control ended up, and
+            // that rect only exists once the pane this step navigates to has
+            // laid out — for the scheme step, only after its content loads.
+            // Drawing the card before then put it in the centered "no target"
+            // position and then moved it when the anchor arrived, so wait for
+            // the anchor and show the card once, where it belongs.
+            if placementIsKnown(current, targetRect: targetRect) {
+                tooltip(current, targetRect: targetRect)
+                    .transition(.opacity)
+            }
         }
+        .animation(.easeOut(duration: 0.15), value: targetRect)
         .ignoresSafeArea()
+        .task(id: currentStep) {
+            targetGaveUpOnStep = nil
+            try? await Task.sleep(for: Self.targetWait)
+            targetGaveUpOnStep = currentStep
+        }
+    }
+
+    private var currentStep: Int {
+        min(step, onboardingSteps.count - 1)
+    }
+
+    private func placementIsKnown(_ current: OnboardingStep, targetRect: CGRect?) -> Bool {
+        current.target == nil || targetRect != nil || targetGaveUpOnStep == currentStep
     }
 
     private func spotlightScrim(targetRect: CGRect?) -> some View {
@@ -384,20 +268,10 @@ struct OnboardingOverlay: View {
 
     // MARK: Navigation
 
-    /// After the tutorial: surface the sign-in / stay-local prompt,
-    /// unless the user is already signed in, in which case onboarding is complete.
+    /// The onboarding tour is product education only. Account sign-in remains
+    /// available from Settings, rather than appearing as an onboarding CTA.
     private func finishTutorial() {
-        #if ACCOUNTS_ENABLED
-        if model.syncSession != nil {
-            onComplete()
-        } else {
-            withAnimation(.snappy(duration: 0.24)) {
-                phase = .account
-            }
-        }
-        #else
         onComplete()
-        #endif
     }
 
     private func advance() {

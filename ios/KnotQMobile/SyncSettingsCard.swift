@@ -59,8 +59,8 @@ struct SyncSettingsCard: View {
         }
         if model.syncSession != nil {
             return SyncPanelState(
-                badge: L10n.t("settings.sync.badge_not_subscribed"),
-                detail: L10n.t("settings.sync.detail_not_subscribed"),
+                badge: L10n.t("sync.status.sync_inactive"),
+                detail: L10n.t("settings.sync.detail_available"),
                 badgeBackground: theme.isDark ? Color(hex: 0xf59e0b).opacity(0.16) : Color(hex: 0xd97706).opacity(0.10),
                 badgeForeground: theme.isDark ? Color(hex: 0xf8d38d) : Color(hex: 0x9a4b00)
             )
@@ -100,11 +100,13 @@ struct SyncSettingsCard: View {
 
         #if ACCOUNTS_ENABLED
         card
+        #if IN_APP_PURCHASES_ENABLED
         .task { await loadProductsIfNeeded() }
         .onChange(of: model.syncSession?.supportsSync) { supportsSync in
             guard supportsSync == false else { return }
             Task { await model.loadSyncProducts() }
         }
+        #endif
         .sheet(isPresented: $showingDeleteAccount) {
             DeleteSyncAccountSheet(theme: theme)
                 .environmentObject(model)
@@ -156,14 +158,17 @@ struct SyncSettingsCard: View {
             } else if model.emailVerified == false {
                 verifyEmailActions
             } else {
+                #if IN_APP_PURCHASES_ENABLED
                 upgradeActions
+                #else
+                manageOnlyActions
+                #endif
             }
         } else {
-            // Straight to the browser in create-account mode — the hosted page
-            // handles "already have an account? sign in", so there's no need for
-            // an in-app chooser sheet first.
+            // This interim build supports an existing account and sync without
+            // presenting any purchase flow in the app.
             Button(L10n.t("sync.sign_in")) {
-                Task { await model.beginBrowserSignIn(mode: .createAccount) }
+                Task { await model.beginBrowserSignIn(mode: .signIn) }
             }
             .buttonStyle(SyncCardButtonStyle(theme: theme, prominence: .primary))
             .frame(maxWidth: .infinity)
@@ -181,6 +186,7 @@ struct SyncSettingsCard: View {
     #if ACCOUNTS_ENABLED
     private var enabledActions: some View {
         HStack(spacing: 8) {
+            #if IN_APP_PURCHASES_ENABLED
             if model.subscriptionCancelled {
                 Button {
                     Task { await model.reEnableSyncSubscription() }
@@ -194,11 +200,15 @@ struct SyncSettingsCard: View {
             } else {
                 checkStatusButton
             }
+            #else
+            checkStatusButton
+            #endif
             Spacer(minLength: 8)
             manageAccountMenu
         }
     }
 
+    #if IN_APP_PURCHASES_ENABLED
     private var upgradeActions: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 8) {
@@ -279,6 +289,17 @@ struct SyncSettingsCard: View {
         }
         return L10n.plural(key, period.value)
     }
+    #endif
+
+    /// Interim account surface while App Store purchases are awaiting approval.
+    /// Existing entitled accounts continue to sync; this intentionally contains no
+    /// offer, pricing, restore, or external purchase link.
+    private var manageOnlyActions: some View {
+        HStack(spacing: 8) {
+            Spacer(minLength: 0)
+            manageAccountMenu
+        }
+    }
 
     /// Shown when the account email isn't verified: subscribing is blocked, so we
     /// explain why and offer to resend the verification link (with a soft cooldown).
@@ -317,6 +338,7 @@ struct SyncSettingsCard: View {
     /// menu so destructive options are reachable without dominating the card.
     private var manageAccountMenu: some View {
         Menu {
+            #if IN_APP_PURCHASES_ENABLED
             // Restore only matters when this device shows no active subscription
             // (new device / reinstall). AppStore.sync() forces an Apple Account
             // auth prompt, so keep it out of the way until it's actually needed.
@@ -341,6 +363,7 @@ struct SyncSettingsCard: View {
                     }
                 }
             }
+            #endif
             Button(L10n.t("mobile.sync.delete_account"), role: .destructive) {
                 showingDeleteAccount = true
             }
@@ -388,6 +411,7 @@ struct SyncSettingsCard: View {
     }
 
     #if ACCOUNTS_ENABLED
+    #if IN_APP_PURCHASES_ENABLED
     private func loadProductsIfNeeded() async {
         guard let session = model.syncSession else { return }
         // Refresh the subscription lifecycle so a cancelled-but-active subscription
@@ -398,6 +422,7 @@ struct SyncSettingsCard: View {
             await model.loadSyncProducts()
         }
     }
+    #endif
     #endif
 }
 

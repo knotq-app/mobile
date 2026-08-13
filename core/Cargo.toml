@@ -7,12 +7,20 @@ edition = "2021"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 [[bin]]
+name = "edit-cost"
+path = "src/bin/edit_cost.rs"
+
+[[bin]]
+name = "load-cost"
+path = "src/bin/load_cost.rs"
+
+[[bin]]
 name = "uniffi-bindgen"
 path = "src/bin/uniffi-bindgen.rs"
 required-features = ["bindgen-cli"]
 
 [features]
-default = []
+default = ["accounts"]
 bindgen-cli = ["uniffi/cli"]
 # Compile-time gate for all accounts/sign-in/sync/billing/subscription behavior.
 # OFF (default) = shipped/release builds: the sync UDL functions stub to safe

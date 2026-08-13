@@ -17,25 +17,10 @@ extension EditorCoordinator {
         dismissPan.cancelsTouchesInView = false
         container.addGestureRecognizer(dismissPan)
 
-        // Liquid glass background (iOS 26+). Falls back to an ultra-thin
-        // material so older OSes still render something readable above the
-        // keyboard. The glass replaces per-button chip backgrounds; the bar
-        // itself is the only floating surface.
-        let backdrop: UIVisualEffectView
-        if #available(iOS 26.0, *) {
-            backdrop = UIVisualEffectView(effect: UIGlassEffect())
-        } else {
-            backdrop = UIVisualEffectView(effect: UIBlurEffect(style: .systemUltraThinMaterial))
-        }
-        backdrop.translatesAutoresizingMaskIntoConstraints = false
-        backdrop.backgroundColor = .clear
-        backdrop.isOpaque = false
-        backdrop.contentView.backgroundColor = .clear
-        backdrop.layer.cornerRadius = 10
-        backdrop.layer.cornerCurve = .continuous
-        backdrop.clipsToBounds = true
-        backdrop.layer.borderWidth = 1
-        backdrop.layer.borderColor = UIColor(theme.borderOverlay).cgColor
+        // The bar is the only floating surface (it replaces per-button chip
+        // backgrounds). Flat rather than a material — see `AccessoryBarPanel`
+        // for why a material here breaks the keyboard's first presentation.
+        let backdrop = AccessoryBarPanel(theme: theme)
         container.addSubview(backdrop)
 
         let scroll = UIScrollView()
@@ -44,9 +29,9 @@ extension EditorCoordinator {
         scroll.backgroundColor = .clear
         // With a hardware keyboard the bar docks at the screen bottom, and the
         // automatic inset would add the home-indicator safe area, shifting the
-        // icons up inside the glass. Pin them to the bar's own bounds instead.
+        // icons up inside the bar. Pin them to the bar's own bounds instead.
         scroll.contentInsetAdjustmentBehavior = .never
-        backdrop.contentView.addSubview(scroll)
+        backdrop.addSubview(scroll)
 
         let stack = UIStackView()
         stack.axis = .horizontal
@@ -56,20 +41,19 @@ extension EditorCoordinator {
         stack.layoutMargins = UIEdgeInsets(top: 5, left: 10, bottom: 5, right: 10)
         stack.isLayoutMarginsRelativeArrangement = true
         // Without this, a docked hardware-keyboard bar adds the bottom safe
-        // area to the stack's margins, pushing the icons up inside the glass.
+        // area to the stack's margins, pushing the icons up inside the bar.
         stack.insetsLayoutMarginsFromSafeArea = false
         scroll.insetsLayoutMarginsFromSafeArea = false
         scroll.addSubview(stack)
 
-        // Desktop format-palette order, with dismiss-keyboard as the leftmost
-        // glyph and section dividers between functional groups.
+        // Dismiss-keyboard is pinned outside the scroll view (see below), so the
+        // scrolling part is the desktop format palette with section dividers
+        // between functional groups.
         let blank = markerButton(.blank, systemName: "text.alignleft")
         let checkbox = markerButton(.checkbox, systemName: "checkmark.square")
         let bullet = markerButton(.bullet, systemName: "list.bullet")
         let numbered = markerButton(.numbered, systemName: "list.number")
         [
-            toolbarButton("keyboard.chevron.compact.down") { [weak textView] in textView?.resignFirstResponder() },
-            separator(),
             blank, checkbox, bullet, numbered,
             separator(),
             toolbarButton("decrease.indent") { [weak self] in self?.view?.shiftCurrentIndent(-1, theme: self?.theme ?? .dark) },
@@ -91,13 +75,36 @@ extension EditorCoordinator {
             },
         ].forEach(stack.addArrangedSubview)
 
+        // Dismiss-keyboard lives OUTSIDE the scroll view, pinned to the trailing
+        // edge: it's the one control a user needs to get unstuck, and inside the
+        // scroller it both sat where nobody looks for it (iOS puts "done" on the
+        // right — Notes, Signal) and could be scrolled off-screen entirely, which
+        // is how the bar ends up feeling like a trap with no way to dismiss it.
+        let dismiss = toolbarButton("keyboard.chevron.compact.down") { [weak textView] in
+            textView?.resignFirstResponder()
+        }
+        let dismissDivider = separator()
+        dismiss.translatesAutoresizingMaskIntoConstraints = false
+        dismissDivider.translatesAutoresizingMaskIntoConstraints = false
+        backdrop.addSubview(dismissDivider)
+        backdrop.addSubview(dismiss)
+
         var constraints: [NSLayoutConstraint] = [
-            backdrop.topAnchor.constraint(equalTo: container.topAnchor, constant: 4),
+            // Anchored to the bar's BOTTOM with a fixed height, not stretched
+            // between the container's top and bottom, so the panel keeps its
+            // shape whatever frame UIKit hands the accessory mid-presentation.
             backdrop.bottomAnchor.constraint(equalTo: container.bottomAnchor, constant: -bottomGap),
-            scroll.leadingAnchor.constraint(equalTo: backdrop.contentView.leadingAnchor),
-            scroll.trailingAnchor.constraint(equalTo: backdrop.contentView.trailingAnchor),
-            scroll.topAnchor.constraint(equalTo: backdrop.contentView.topAnchor),
-            scroll.bottomAnchor.constraint(equalTo: backdrop.contentView.bottomAnchor),
+            backdrop.heightAnchor.constraint(equalToConstant: accessoryHeight - 4 - bottomGap),
+            backdrop.topAnchor.constraint(greaterThanOrEqualTo: container.topAnchor),
+            scroll.leadingAnchor.constraint(equalTo: backdrop.leadingAnchor),
+            scroll.trailingAnchor.constraint(equalTo: dismissDivider.leadingAnchor),
+            scroll.topAnchor.constraint(equalTo: backdrop.topAnchor),
+            scroll.bottomAnchor.constraint(equalTo: backdrop.bottomAnchor),
+
+            dismiss.trailingAnchor.constraint(equalTo: backdrop.trailingAnchor, constant: -6),
+            dismiss.centerYAnchor.constraint(equalTo: backdrop.centerYAnchor),
+            dismissDivider.trailingAnchor.constraint(equalTo: dismiss.leadingAnchor, constant: -2),
+            dismissDivider.centerYAnchor.constraint(equalTo: backdrop.centerYAnchor),
             stack.leadingAnchor.constraint(equalTo: scroll.contentLayoutGuide.leadingAnchor),
             stack.trailingAnchor.constraint(equalTo: scroll.contentLayoutGuide.trailingAnchor),
             stack.topAnchor.constraint(equalTo: scroll.contentLayoutGuide.topAnchor),

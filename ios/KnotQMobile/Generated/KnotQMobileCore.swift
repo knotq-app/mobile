@@ -554,7 +554,7 @@ public protocol MobileCoreProtocol: AnyObject, Sendable {
     
     func emptyArchive() throws 
     
-    func ensureDailyQueue(date: String?) throws 
+    func ensureDailyQueue(date: String?) throws  -> Bool
     
     func googleAuthRequest(clientId: String, redirectUri: String) throws  -> MobileGoogleAuthRequest
     
@@ -625,6 +625,8 @@ public protocol MobileCoreProtocol: AnyObject, Sendable {
     func setThemeMode(themeMode: String) throws 
     
     func setTimeFormat(timeFormat: String) throws 
+    
+    func setUpcomingDisplaySettings(eventLookaheadDays: Int32, reminderLookaheadDays: Int32, assignmentLookaheadDays: Int32, maximumItems: Int32, showOverdue: Bool, showCompleted: Bool) throws 
     
     func snapshot(today: String?, weekOffset: Int32) throws  -> MobileSnapshot
     
@@ -911,12 +913,13 @@ open func emptyArchive()throws   {try rustCallWithError(FfiConverterTypeMobileEr
 }
 }
     
-open func ensureDailyQueue(date: String?)throws   {try rustCallWithError(FfiConverterTypeMobileError_lift) {
+open func ensureDailyQueue(date: String?)throws  -> Bool  {
+    return try  FfiConverterBool.lift(try rustCallWithError(FfiConverterTypeMobileError_lift) {
     uniffi_knotq_mobile_core_fn_method_mobilecore_ensure_daily_queue(
             self.uniffiCloneHandle(),
         FfiConverterOptionString.lower(date),$0
     )
-}
+})
 }
     
 open func googleAuthRequest(clientId: String, redirectUri: String)throws  -> MobileGoogleAuthRequest  {
@@ -1246,6 +1249,19 @@ open func setTimeFormat(timeFormat: String)throws   {try rustCallWithError(FfiCo
     uniffi_knotq_mobile_core_fn_method_mobilecore_set_time_format(
             self.uniffiCloneHandle(),
         FfiConverterString.lower(timeFormat),$0
+    )
+}
+}
+    
+open func setUpcomingDisplaySettings(eventLookaheadDays: Int32, reminderLookaheadDays: Int32, assignmentLookaheadDays: Int32, maximumItems: Int32, showOverdue: Bool, showCompleted: Bool)throws   {try rustCallWithError(FfiConverterTypeMobileError_lift) {
+    uniffi_knotq_mobile_core_fn_method_mobilecore_set_upcoming_display_settings(
+            self.uniffiCloneHandle(),
+        FfiConverterInt32.lower(eventLookaheadDays),
+        FfiConverterInt32.lower(reminderLookaheadDays),
+        FfiConverterInt32.lower(assignmentLookaheadDays),
+        FfiConverterInt32.lower(maximumItems),
+        FfiConverterBool.lower(showOverdue),
+        FfiConverterBool.lower(showCompleted),$0
     )
 }
 }
@@ -2541,16 +2557,28 @@ public struct MobileSettings: Equatable, Hashable {
     public var timeFormat: String
     public var eventNotificationOffsetSecs: Int32
     public var assignmentNotificationOffsetSecs: Int32
+    public var eventLookaheadDays: Int32
+    public var reminderLookaheadDays: Int32
+    public var assignmentLookaheadDays: Int32
+    public var maximumUpcomingItems: Int32
+    public var showOverdue: Bool
+    public var showCompleted: Bool
     public var googleAccountCount: Int32
     public var googleAccounts: [MobileGoogleAccount]
 
     // Default memberwise initializers are never public by default, so we
     // declare one manually.
-    public init(themeMode: String, timeFormat: String, eventNotificationOffsetSecs: Int32, assignmentNotificationOffsetSecs: Int32, googleAccountCount: Int32, googleAccounts: [MobileGoogleAccount]) {
+    public init(themeMode: String, timeFormat: String, eventNotificationOffsetSecs: Int32, assignmentNotificationOffsetSecs: Int32, eventLookaheadDays: Int32, reminderLookaheadDays: Int32, assignmentLookaheadDays: Int32, maximumUpcomingItems: Int32, showOverdue: Bool, showCompleted: Bool, googleAccountCount: Int32, googleAccounts: [MobileGoogleAccount]) {
         self.themeMode = themeMode
         self.timeFormat = timeFormat
         self.eventNotificationOffsetSecs = eventNotificationOffsetSecs
         self.assignmentNotificationOffsetSecs = assignmentNotificationOffsetSecs
+        self.eventLookaheadDays = eventLookaheadDays
+        self.reminderLookaheadDays = reminderLookaheadDays
+        self.assignmentLookaheadDays = assignmentLookaheadDays
+        self.maximumUpcomingItems = maximumUpcomingItems
+        self.showOverdue = showOverdue
+        self.showCompleted = showCompleted
         self.googleAccountCount = googleAccountCount
         self.googleAccounts = googleAccounts
     }
@@ -2575,6 +2603,12 @@ public struct FfiConverterTypeMobileSettings: FfiConverterRustBuffer {
                 timeFormat: FfiConverterString.read(from: &buf), 
                 eventNotificationOffsetSecs: FfiConverterInt32.read(from: &buf), 
                 assignmentNotificationOffsetSecs: FfiConverterInt32.read(from: &buf), 
+                eventLookaheadDays: FfiConverterInt32.read(from: &buf), 
+                reminderLookaheadDays: FfiConverterInt32.read(from: &buf), 
+                assignmentLookaheadDays: FfiConverterInt32.read(from: &buf), 
+                maximumUpcomingItems: FfiConverterInt32.read(from: &buf), 
+                showOverdue: FfiConverterBool.read(from: &buf), 
+                showCompleted: FfiConverterBool.read(from: &buf), 
                 googleAccountCount: FfiConverterInt32.read(from: &buf), 
                 googleAccounts: FfiConverterSequenceTypeMobileGoogleAccount.read(from: &buf)
         )
@@ -2585,6 +2619,12 @@ public struct FfiConverterTypeMobileSettings: FfiConverterRustBuffer {
         FfiConverterString.write(value.timeFormat, into: &buf)
         FfiConverterInt32.write(value.eventNotificationOffsetSecs, into: &buf)
         FfiConverterInt32.write(value.assignmentNotificationOffsetSecs, into: &buf)
+        FfiConverterInt32.write(value.eventLookaheadDays, into: &buf)
+        FfiConverterInt32.write(value.reminderLookaheadDays, into: &buf)
+        FfiConverterInt32.write(value.assignmentLookaheadDays, into: &buf)
+        FfiConverterInt32.write(value.maximumUpcomingItems, into: &buf)
+        FfiConverterBool.write(value.showOverdue, into: &buf)
+        FfiConverterBool.write(value.showCompleted, into: &buf)
         FfiConverterInt32.write(value.googleAccountCount, into: &buf)
         FfiConverterSequenceTypeMobileGoogleAccount.write(value.googleAccounts, into: &buf)
     }
@@ -3632,7 +3672,7 @@ private let initializationResult: InitializationResult = {
     if (uniffi_knotq_mobile_core_checksum_method_mobilecore_empty_archive() != 9301) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_knotq_mobile_core_checksum_method_mobilecore_ensure_daily_queue() != 43040) {
+    if (uniffi_knotq_mobile_core_checksum_method_mobilecore_ensure_daily_queue() != 18110) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_knotq_mobile_core_checksum_method_mobilecore_google_auth_request() != 56614) {
@@ -3738,6 +3778,9 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_knotq_mobile_core_checksum_method_mobilecore_set_time_format() != 59857) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_knotq_mobile_core_checksum_method_mobilecore_set_upcoming_display_settings() != 58921) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_knotq_mobile_core_checksum_method_mobilecore_snapshot() != 52252) {

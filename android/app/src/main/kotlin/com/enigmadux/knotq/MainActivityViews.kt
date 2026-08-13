@@ -238,6 +238,31 @@ internal fun MainActivity.settingsLinkRow(label: String, value: String? = null, 
         setOnClickListener { onClick() }
     }
 
+internal fun MainActivity.settingsToggleRow(label: String, checked: Boolean, onChange: (Boolean) -> Unit): View =
+    LinearLayout(this).apply {
+        orientation = LinearLayout.HORIZONTAL
+        gravity = Gravity.CENTER_VERTICAL
+        setPadding(dp(8), 0, dp(4), 0)
+        addView(text(label, theme.textPrimary, 14f, false), LinearLayout.LayoutParams(0, dp(44), 1f))
+        val toggle = Switch(this@settingsToggleRow).apply {
+            isChecked = checked
+            contentDescription = label
+            setOnCheckedChangeListener { _, next -> onChange(next) }
+        }
+        addView(toggle, LinearLayout.LayoutParams(-2, dp(44)))
+        setOnClickListener { toggle.isChecked = !toggle.isChecked }
+    }
+
+internal fun MainActivity.settingsActionRow(label: String, enabled: Boolean = true, onClick: () -> Unit): View =
+    text(label, if (enabled) theme.accent else theme.textMuted, 14f, true).apply {
+        gravity = Gravity.CENTER_VERTICAL
+        minHeight = dp(44)
+        setPadding(dp(8), 0, dp(8), 0)
+        alpha = if (enabled) 1f else 0.55f
+        isEnabled = enabled
+        setOnClickListener { onClick() }
+    }
+
 internal fun MainActivity.dialogLabel(value: String): TextView =
     text(value, theme.textMuted, 11f, true).apply {
         setPadding(dp(2), 0, dp(2), dp(4))

@@ -207,10 +207,12 @@ import kotlin.math.roundToInt
         body.addView(archiveNavigatorSection(compact = false), spaced())
 
         if (resources.configuration.screenWidthDp < 760) {
-            val combined = JSONArray()
-            calendar().optJSONArray("overdue")?.forEachObject { if (combined.length() < 14) combined.put(it) }
-            calendar().optJSONArray("upcoming")?.forEachObject { if (combined.length() < 14) combined.put(it) }
-            addOccurrenceSection(body, L10n.t(this, "upcoming.section.upcoming"), L10n.t(this, "mobile.home.nothing_scheduled"), combined)
+            addOccurrenceSection(
+                body,
+                L10n.t(this, "upcoming.section.upcoming"),
+                L10n.t(this, "mobile.home.nothing_scheduled"),
+                visibleUpcomingOccurrences()
+            )
         }
         root.addView(scroll(body), LinearLayout.LayoutParams(-1, 0, 1f))
         return root
@@ -227,12 +229,41 @@ import kotlin.math.roundToInt
         })
         body.addView(phoneSchemesSection(), spaced())
         // Overdue first so it isn't missed, then upcoming, capped like iOS.
-        val combined = JSONArray()
-        calendar().optJSONArray("overdue")?.forEachObject { if (combined.length() < 14) combined.put(it) }
-        calendar().optJSONArray("upcoming")?.forEachObject { if (combined.length() < 14) combined.put(it) }
-        addOccurrenceSection(body, L10n.t(this, "upcoming.section.upcoming"), L10n.t(this, "mobile.home.nothing_scheduled"), combined)
+        addOccurrenceSection(
+            body,
+            L10n.t(this, "upcoming.section.upcoming"),
+            L10n.t(this, "mobile.home.nothing_scheduled"),
+            visibleUpcomingOccurrences()
+        )
         root.addView(scroll(body), LinearLayout.LayoutParams(-1, 0, 1f))
         return root
+    }
+
+    internal fun MainActivity.visibleUpcomingOccurrences(): JSONArray {
+        val settings = snapshot.optJSONObject("settings")
+        val maximum = settings?.optInt("maximum_upcoming_items", 14)?.coerceIn(1, 100) ?: 14
+        val showOverdue = settings?.optBoolean("show_overdue", true) ?: true
+        val showCompleted = settings?.optBoolean("show_completed", true) ?: true
+        val result = JSONArray()
+        val seen = HashSet<String>()
+
+        fun append(source: JSONArray?) {
+            if (source == null) return
+            source.forEachObject { occurrence ->
+                if (result.length() >= maximum) return@forEachObject
+                if (!showCompleted && occurrence.optBoolean("done")) return@forEachObject
+                val key = listOf(
+                    occurrence.optString("scheme_id"),
+                    occurrence.optString("item_id"),
+                    occurrence.optString("occurrence_json")
+                ).joinToString("|")
+                if (seen.add(key)) result.put(occurrence)
+            }
+        }
+
+        if (showOverdue) append(calendar().optJSONArray("overdue"))
+        append(calendar().optJSONArray("upcoming"))
+        return result
     }
 
     internal fun MainActivity.homeSearchEntry(): View =

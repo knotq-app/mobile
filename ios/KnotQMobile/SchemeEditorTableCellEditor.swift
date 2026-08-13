@@ -143,6 +143,7 @@ final class EditorTableCellEditor: UIView, UITextViewDelegate {
         field.smartDashesType = .no
         field.smartQuotesType = .no
         field.returnKeyType = .default
+        field.keyboardAppearance = theme.isDark ? .dark : .light
         field.delegate = self
         field.inputAccessoryView = makeAccessory()
         addSubview(field)
@@ -154,21 +155,9 @@ final class EditorTableCellEditor: UIView, UITextViewDelegate {
         let height: CGFloat = UIDevice.current.userInterfaceIdiom == .phone ? 56 : 50
         let container = EditorTableInputAccessoryView(height: height)
 
-        let backdrop: UIVisualEffectView
-        if #available(iOS 26.0, *) {
-            backdrop = UIVisualEffectView(effect: UIGlassEffect())
-        } else {
-            backdrop = UIVisualEffectView(effect: UIBlurEffect(style: .systemUltraThinMaterial))
-        }
-        backdrop.translatesAutoresizingMaskIntoConstraints = false
-        backdrop.backgroundColor = .clear
-        backdrop.isOpaque = false
-        backdrop.contentView.backgroundColor = .clear
-        backdrop.layer.cornerRadius = 10
-        backdrop.layer.cornerCurve = .continuous
-        backdrop.clipsToBounds = true
-        backdrop.layer.borderWidth = 1
-        backdrop.layer.borderColor = UIColor(theme.borderOverlay).cgColor
+        // Flat, not a material: a live effect inside an input accessory breaks
+        // the keyboard's first presentation — see `AccessoryBarPanel`.
+        let backdrop = AccessoryBarPanel(theme: theme)
         container.addSubview(backdrop)
 
         let stack = UIStackView()
@@ -179,7 +168,7 @@ final class EditorTableCellEditor: UIView, UITextViewDelegate {
         stack.layoutMargins = UIEdgeInsets(top: 5, left: 8, bottom: 5, right: 8)
         stack.isLayoutMarginsRelativeArrangement = true
         stack.insetsLayoutMarginsFromSafeArea = false
-        backdrop.contentView.addSubview(stack)
+        backdrop.addSubview(stack)
 
         let dismissButton = accessoryIconButton("keyboard.chevron.compact.down", label: L10n.t("editor.table.done_editing_cell")) { [weak self] in
             self?.flush()
@@ -216,10 +205,10 @@ final class EditorTableCellEditor: UIView, UITextViewDelegate {
             backdrop.trailingAnchor.constraint(lessThanOrEqualTo: container.trailingAnchor, constant: -8),
             backdrop.topAnchor.constraint(equalTo: container.topAnchor, constant: 4),
             backdrop.bottomAnchor.constraint(equalTo: container.bottomAnchor, constant: UIDevice.current.userInterfaceIdiom == .phone ? -10 : -6),
-            stack.leadingAnchor.constraint(equalTo: backdrop.contentView.leadingAnchor),
-            stack.trailingAnchor.constraint(equalTo: backdrop.contentView.trailingAnchor),
-            stack.topAnchor.constraint(equalTo: backdrop.contentView.topAnchor),
-            stack.bottomAnchor.constraint(equalTo: backdrop.contentView.bottomAnchor)
+            stack.leadingAnchor.constraint(equalTo: backdrop.leadingAnchor),
+            stack.trailingAnchor.constraint(equalTo: backdrop.trailingAnchor),
+            stack.topAnchor.constraint(equalTo: backdrop.topAnchor),
+            stack.bottomAnchor.constraint(equalTo: backdrop.bottomAnchor)
         ])
         updateAccessoryState()
         return container
