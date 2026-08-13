@@ -59,7 +59,7 @@ android {
         release {
             minifyEnabled true
             shrinkResources true
-            proguardFiles getDefaultProguardFile("proguard-android-optimize.txt")
+            proguardFiles getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro"
             // Shipped Android builds include the account, sync, and subscription
             // surface, backed by the release Rust core below.
             buildConfigField "boolean", "ACCOUNTS_ENABLED", "true"

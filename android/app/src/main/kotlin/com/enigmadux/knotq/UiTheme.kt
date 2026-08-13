@@ -72,5 +72,12 @@ internal data class UiTheme(
             accent = rgb(0xc7375d),
             danger = rgb(0xb84433),
         )
+
+        val moonlit = dark.copy(bgApp = rgb(0x191724), bgSidebar = rgb(0x1f1d2e), bgToolbar = rgb(0x26233a), bgModal = rgb(0x26233a), accent = rgb(0xc4a7e7), textPrimary = rgb(0xe0def4), textSoft = rgb(0x908caa), textDim = rgb(0x9893a5), textMuted = rgb(0x6e6a86), textToday = rgb(0xc4a7e7))
+        val espresso = dark.copy(bgApp = rgb(0x1e1e2e), bgSidebar = rgb(0x181825), bgToolbar = rgb(0x313244), bgModal = rgb(0x313244), accent = rgb(0xf5c2e7), textPrimary = rgb(0xcdd6f4), textSoft = rgb(0xa6adc8), textDim = rgb(0xbac2de), textMuted = rgb(0x7f849c), textToday = rgb(0xf5c2e7))
+        val blueHour = dark.copy(bgApp = rgb(0x1a1b26), bgSidebar = rgb(0x16161e), bgToolbar = rgb(0x24283b), bgModal = rgb(0x24283b), accent = rgb(0x7aa2f7), textPrimary = rgb(0xc0caf5), textSoft = rgb(0xa9b1d6), textDim = rgb(0x9aa5ce), textMuted = rgb(0x565f89), textToday = rgb(0x7aa2f7))
+        val parchment = light.copy(bgApp = rgb(0xf4eddf), bgSidebar = rgb(0xebe1cf), bgToolbar = rgb(0xe4d6bf), bgModal = rgb(0xfff9ed), accent = rgb(0xa66a00), textPrimary = rgb(0x3c3024), textSoft = rgb(0x6b5b48), textDim = rgb(0x665542), textMuted = rgb(0x887763), textToday = rgb(0xa66a00))
+        val dawn = light.copy(bgApp = rgb(0xfaf4ed), bgSidebar = rgb(0xf2e9df), bgToolbar = rgb(0xece0d3), bgModal = rgb(0xfffaf3), accent = rgb(0x907aa9), textPrimary = rgb(0x575279), textSoft = rgb(0x797593), textDim = rgb(0x6e6a86), textMuted = rgb(0x9893a5), textToday = rgb(0x907aa9))
+        val cream = light.copy(bgApp = rgb(0xeff1f5), bgSidebar = rgb(0xe6e9ef), bgToolbar = rgb(0xdce0e8), bgModal = rgb(0xffffff), accent = rgb(0x1e66f5), textPrimary = rgb(0x4c4f69), textSoft = rgb(0x6c6f85), textDim = rgb(0x5c5f77), textMuted = rgb(0x8c8fa1), textToday = rgb(0x1e66f5))
     }
 }
