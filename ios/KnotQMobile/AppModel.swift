@@ -147,6 +147,8 @@ final class AppModel: ObservableObject {
         switch snapshot?.settings.themeMode {
         case "light": .light
         case "dark": .dark
+        case "rose_pine_moon", "catppuccin_mocha", "tokyo_night": .dark
+        case "parchment", "rose_pine_dawn", "catppuccin_latte": .light
         default: nil
         }
     }

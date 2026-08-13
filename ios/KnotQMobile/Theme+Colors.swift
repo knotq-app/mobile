@@ -28,10 +28,34 @@ struct KnotQTheme {
         switch mode {
         case "light": .light
         case "dark": .dark
+        case "rose_pine_moon": .moonlit
+        case "catppuccin_mocha": .espresso
+        case "tokyo_night": .blueHour
+        case "parchment": .parchment
+        case "rose_pine_dawn": .dawn
+        case "catppuccin_latte": .cream
         case "system", nil: systemScheme == .dark ? .dark : .light
         default: .dark
         }
     }
+
+    private static func variant(_ base: KnotQTheme, bgApp: UInt32, bgSidebar: UInt32, bgToolbar: UInt32, bgModal: UInt32, accent: UInt32, textPrimary: UInt32, textSoft: UInt32, textDim: UInt32, textMuted: UInt32) -> KnotQTheme {
+        KnotQTheme(
+            isDark: base.isDark,
+            bgApp: Color(hex: bgApp), bgSidebar: Color(hex: bgSidebar), bgToolbar: Color(hex: bgToolbar), bgModal: Color(hex: bgModal),
+            rowAlt: base.rowAlt, rowHover: base.rowHover, rowSelected: Color(hex: accent).opacity(base.isDark ? 0.22 : 0.12),
+            buttonBg: base.buttonBg, divider: base.divider, dividerSoft: base.dividerSoft, dividerTiny: base.dividerTiny,
+            borderOverlay: base.borderOverlay, textPrimary: Color(hex: textPrimary), textDim: Color(hex: textDim), textMuted: Color(hex: textMuted),
+            textSoft: Color(hex: textSoft), textToday: Color(hex: accent), accent: Color(hex: accent), danger: base.danger
+        )
+    }
+
+    static let moonlit = variant(.dark, bgApp: 0x191724, bgSidebar: 0x1f1d2e, bgToolbar: 0x26233a, bgModal: 0x26233a, accent: 0xc4a7e7, textPrimary: 0xe0def4, textSoft: 0x908caa, textDim: 0x9893a5, textMuted: 0x6e6a86)
+    static let espresso = variant(.dark, bgApp: 0x1e1e2e, bgSidebar: 0x181825, bgToolbar: 0x313244, bgModal: 0x313244, accent: 0xf5c2e7, textPrimary: 0xcdd6f4, textSoft: 0xa6adc8, textDim: 0xbac2de, textMuted: 0x7f849c)
+    static let blueHour = variant(.dark, bgApp: 0x1a1b26, bgSidebar: 0x16161e, bgToolbar: 0x24283b, bgModal: 0x24283b, accent: 0x7aa2f7, textPrimary: 0xc0caf5, textSoft: 0xa9b1d6, textDim: 0x9aa5ce, textMuted: 0x565f89)
+    static let parchment = variant(.light, bgApp: 0xf4eddf, bgSidebar: 0xebe1cf, bgToolbar: 0xe4d6bf, bgModal: 0xfff9ed, accent: 0xa66a00, textPrimary: 0x3c3024, textSoft: 0x6b5b48, textDim: 0x665542, textMuted: 0x887763)
+    static let dawn = variant(.light, bgApp: 0xfaf4ed, bgSidebar: 0xf2e9df, bgToolbar: 0xece0d3, bgModal: 0xfffaf3, accent: 0x907aa9, textPrimary: 0x575279, textSoft: 0x797593, textDim: 0x6e6a86, textMuted: 0x9893a5)
+    static let cream = variant(.light, bgApp: 0xeff1f5, bgSidebar: 0xe6e9ef, bgToolbar: 0xdce0e8, bgModal: 0xffffff, accent: 0x1e66f5, textPrimary: 0x4c4f69, textSoft: 0x6c6f85, textDim: 0x5c5f77, textMuted: 0x8c8fa1)
 
     // OLED-black canvas (bgApp/bgSidebar) with subtly elevated surfaces for the
     // floating "glass" chrome — the dock, quick-write buttons, calendar lip, and

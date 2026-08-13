@@ -448,6 +448,12 @@ pub(crate) fn theme_mode_str(theme_mode: ThemeMode) -> &'static str {
         ThemeMode::System => "system",
         ThemeMode::Dark => "dark",
         ThemeMode::Light => "light",
+        ThemeMode::RosePineMoon => "rose_pine_moon",
+        ThemeMode::CatppuccinMocha => "catppuccin_mocha",
+        ThemeMode::TokyoNight => "tokyo_night",
+        ThemeMode::Parchment => "parchment",
+        ThemeMode::RosePineDawn => "rose_pine_dawn",
+        ThemeMode::CatppuccinLatte => "catppuccin_latte",
     }
 }
 

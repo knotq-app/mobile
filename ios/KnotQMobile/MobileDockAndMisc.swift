@@ -113,6 +113,12 @@ struct SettingsForm: View {
                     SettingsThemeOption(title: L10n.t("settings.appearance.theme_dark"), systemImage: "moon.fill").tag("dark")
                     SettingsThemeOption(title: L10n.t("settings.appearance.theme_light"), systemImage: "sun.max.fill").tag("light")
                     SettingsThemeOption(title: L10n.t("settings.appearance.theme_system"), systemImage: "circle.lefthalf.filled").tag("system")
+                    SettingsThemeOption(title: "Moonlit", systemImage: "moon.stars.fill").tag("rose_pine_moon")
+                    SettingsThemeOption(title: "Espresso", systemImage: "cup.and.saucer.fill").tag("catppuccin_mocha")
+                    SettingsThemeOption(title: "Blue Hour", systemImage: "cloud.moon.fill").tag("tokyo_night")
+                    SettingsThemeOption(title: "Parchment", systemImage: "doc.text.fill").tag("parchment")
+                    SettingsThemeOption(title: "Dawn", systemImage: "sunrise.fill").tag("rose_pine_dawn")
+                    SettingsThemeOption(title: "Cream", systemImage: "sun.max.fill").tag("catppuccin_latte")
                 }
                 .pickerStyle(.menu)
             } header: {

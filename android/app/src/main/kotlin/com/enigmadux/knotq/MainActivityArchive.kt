@@ -743,6 +743,12 @@ import kotlin.math.roundToInt
         val darkSystem = (resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK) == Configuration.UI_MODE_NIGHT_YES
         theme = when (mode) {
             "light" -> UiTheme.light
+            "rose_pine_moon" -> UiTheme.moonlit
+            "catppuccin_mocha" -> UiTheme.espresso
+            "tokyo_night" -> UiTheme.blueHour
+            "parchment" -> UiTheme.parchment
+            "rose_pine_dawn" -> UiTheme.dawn
+            "catppuccin_latte" -> UiTheme.cream
             "system" -> if (darkSystem) UiTheme.dark else UiTheme.light
             else -> UiTheme.dark
         }
