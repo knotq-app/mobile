@@ -23,8 +23,8 @@ android {
         applicationId "com.enigmadux.knotq"
         minSdk 26
         targetSdk 36
-        versionCode 11
-        versionName "1.0.6"
+        versionCode 12
+        versionName "1.0.7"
 
         // Explicit sync backend override. Empty by default, in which case the
         // build-type-derived default applies (debug → sandbox, release → prod;
