@@ -639,12 +639,6 @@ import kotlin.math.roundToInt
             choiceRow(L10n.t(this, "settings.appearance.theme_system"), selected = themeMode == "system") { mutate(obj("type" to "set_theme_mode", "theme_mode" to "system")) },
             choiceRow(L10n.t(this, "settings.appearance.theme_dark"), selected = themeMode == "dark") { mutate(obj("type" to "set_theme_mode", "theme_mode" to "dark")) },
             choiceRow(L10n.t(this, "settings.appearance.theme_light"), selected = themeMode == "light") { mutate(obj("type" to "set_theme_mode", "theme_mode" to "light")) },
-            choiceRow("Moonlit", selected = themeMode == "rose_pine_moon") { mutate(obj("type" to "set_theme_mode", "theme_mode" to "rose_pine_moon")) },
-            choiceRow("Espresso", selected = themeMode == "catppuccin_mocha") { mutate(obj("type" to "set_theme_mode", "theme_mode" to "catppuccin_mocha")) },
-            choiceRow("Blue Hour", selected = themeMode == "tokyo_night") { mutate(obj("type" to "set_theme_mode", "theme_mode" to "tokyo_night")) },
-            choiceRow("Parchment", selected = themeMode == "parchment") { mutate(obj("type" to "set_theme_mode", "theme_mode" to "parchment")) },
-            choiceRow("Dawn", selected = themeMode == "rose_pine_dawn") { mutate(obj("type" to "set_theme_mode", "theme_mode" to "rose_pine_dawn")) },
-            choiceRow("Cream", selected = themeMode == "catppuccin_latte") { mutate(obj("type" to "set_theme_mode", "theme_mode" to "catppuccin_latte")) }
         ))
 
         root.addView(settingsSection(L10n.t(this, "settings.timing.section")))
