@@ -635,11 +635,35 @@ import kotlin.math.roundToInt
         val googleAccountCount = settings?.optInt("google_account_count", 0) ?: 0
 
         root.addView(settingsSection(L10n.t(this, "settings.appearance.section")))
-        root.addView(settingsGroup(
-            choiceRow(L10n.t(this, "settings.appearance.theme_system"), selected = themeMode == "system") { mutate(obj("type" to "set_theme_mode", "theme_mode" to "system")) },
-            choiceRow(L10n.t(this, "settings.appearance.theme_dark"), selected = themeMode == "dark") { mutate(obj("type" to "set_theme_mode", "theme_mode" to "dark")) },
-            choiceRow(L10n.t(this, "settings.appearance.theme_light"), selected = themeMode == "light") { mutate(obj("type" to "set_theme_mode", "theme_mode" to "light")) },
-        ))
+        val themeOptions = arrayOf("system", "dark", "light", "rose_pine_moon", "catppuccin_mocha", "tokyo_night", "parchment", "rose_pine_dawn", "catppuccin_latte")
+        val themeLabels = arrayOf(
+            L10n.t(this, "settings.appearance.theme_system"),
+            L10n.t(this, "settings.appearance.theme_dark"),
+            L10n.t(this, "settings.appearance.theme_light"),
+            "Moonlit", "Espresso", "Blue Hour", "Parchment", "Dawn", "Cream"
+        )
+        val themeSpinner = spinner(themeLabels).apply {
+            val selected = themeOptions.indexOf(themeMode).coerceAtLeast(0)
+            setSelection(selected, false)
+            var first = true
+            onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
+                override fun onNothingSelected(parent: AdapterView<*>?) = Unit
+                override fun onItemSelected(parent: AdapterView<*>?, view: View?, position: Int, id: Long) {
+                    if (first) { first = false; return }
+                    mutate(obj("type" to "set_theme_mode", "theme_mode" to themeOptions[position]))
+                }
+            }
+        }
+        styleDialogSpinner(themeSpinner)
+        val activity = this
+        val themeRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(dp(8), 0, dp(4), 0)
+            addView(activity.text(L10n.t(activity, "settings.appearance.theme_label"), theme.textPrimary, 14f, false), LinearLayout.LayoutParams(0, activity.dp(52), 1f))
+            addView(themeSpinner, LinearLayout.LayoutParams(dp(190), dp(44)))
+        }
+        root.addView(settingsGroup(themeRow))
 
         root.addView(settingsSection(L10n.t(this, "settings.timing.section")))
         root.addView(settingsGroup(
