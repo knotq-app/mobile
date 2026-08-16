@@ -130,8 +130,18 @@ extension AppModel {
         refresh()
     }
 
-    func addItem(schemeID: String, text: String, marker: Marker = .checkbox, indent: Int32 = 0) {
-        mutateScheme(schemeID) { try $0.addItem(schemeID: schemeID, text: text, marker: marker, indent: indent) }
+    func addItem(
+        schemeID: String,
+        text: String,
+        marker: Marker = .checkbox,
+        indent: Int32 = 0,
+        completion: (@MainActor () -> Void)? = nil
+    ) {
+        mutateScheme(
+            schemeID,
+            { try $0.addItem(schemeID: schemeID, text: text, marker: marker, indent: indent) },
+            completion: completion
+        )
     }
 
     func addTodayDailyItem(text: String, marker: Marker = .checkbox, indent: Int32 = 0) {

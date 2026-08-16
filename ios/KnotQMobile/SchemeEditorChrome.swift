@@ -931,6 +931,17 @@ struct IntegratedSchemeEditorPane: View {
 
     private func openDateForLine() {
         guard !scheme.isReadOnly else { return }
+        // Scheduling is a line operation. An empty document has no current line
+        // to target, so create the first blank task and schedule it immediately.
+        // This applies to both ordinary schemes and daily queues, which share
+        // this editor chrome.
+        if model.scheme(id: scheme.id)?.items.isEmpty == true {
+            model.addItem(schemeID: scheme.id, text: "") {
+                guard let itemID = model.scheme(id: scheme.id)?.items.last?.id else { return }
+                dateTarget = EditorDateTarget(itemID: itemID)
+            }
+            return
+        }
         // Push pending edits to the model so the date sheet edits a persisted
         // item, but DON'T reload the editor here. A full `commitDocument()`
         // re-applies the attributed string, which in the Daily feed (where each
