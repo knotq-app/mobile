@@ -135,6 +135,7 @@ impl MobileCoreInner {
             crdt,
             next_sequence,
             sync_state_cache: None,
+            dirty_schemes: std::collections::HashSet::new(),
             sync_notice: None,
             push_token: None,
             push_environment: None,
@@ -181,7 +182,11 @@ impl MobileCoreInner {
     pub(crate) fn apply(&mut self, command: Command) -> Result<()> {
         let t0 = std::time::Instant::now();
         let crdt_changes = mobile_crdt_change_set_for_command(&command);
-        self.workspace.apply(command)?;
+        let receipt = self.workspace.apply(command)?;
+        // Only the schemes this command touched need their files rewritten. The
+        // receipt's `touched` set is the same one the desktop's incremental save
+        // relies on.
+        self.dirty_schemes.extend(receipt.touched.schemes.iter().copied());
         self.workspace.normalize_one_level_folders();
         self.workspace.normalize_item_markers();
         let t1 = std::time::Instant::now();
@@ -221,11 +226,28 @@ impl MobileCoreInner {
         Ok(changed)
     }
 
-    pub(crate) fn save_workspace(&self) -> Result<()> {
-        save_workspace(&self.workspace_path, &self.workspace)?;
+    pub(crate) fn save_workspace(&mut self) -> Result<()> {
+        // Rewrite only the scheme files that changed. A full save writes all of
+        // them — measured at ~55 ms of a ~57 ms edit on a 170-scheme workspace,
+        // which is the entire cost of a keystroke pause. An empty dirty set
+        // still means "write everything", so the paths that can touch any
+        // scheme (sync pulls, migrations) keep their previous behaviour.
+        if self.dirty_schemes.is_empty() {
+            save_workspace(&self.workspace_path, &self.workspace)?;
+        } else {
+            save_workspace_incremental(
+                &self.workspace_path,
+                &self.workspace,
+                &self.dirty_schemes,
+            )?;
+        }
         // Persist the CRDT documents' state in lockstep with the workspace so a
         // restart restores them consistently (and with their stable identity).
-        save_crdt_state(&self.workspace_path, &self.crdt.document_states())
+        save_crdt_state(&self.workspace_path, &self.crdt.document_states())?;
+        // Only clear once both writes landed: a failure must leave the schemes
+        // marked so the next save retries them rather than leaving them stale.
+        self.dirty_schemes.clear();
+        Ok(())
     }
 
     pub(crate) fn load_daily_queue_scheme_if_needed(
@@ -515,8 +537,37 @@ impl MobileCoreInner {
             .sync_state_cache
             .take()
             .unwrap_or_else(|| load_local_sync_state(&self.workspace_path).unwrap_or_default());
+        let identity_changed = sync_state.workspace_id != Some(self.workspace.id)
+            || sync_state.replica_id != Some(self.settings.replica_id);
         sync_state.workspace_id = Some(self.workspace.id);
         sync_state.replica_id = Some(self.settings.replica_id);
+
+        // A device with no server configured has nowhere to push, and signing in
+        // re-seeds every document as a full snapshot straight from the live CRDT
+        // state (`queue_account_switch_reseed` / `queue_workspace_bootstrap_updates`).
+        // So a queue built while signed out carries nothing sign-in would not
+        // rebuild — it only grows, by a full snapshot per touched document, and
+        // gets re-serialized on every keystroke. Measured on a never-signed-in
+        // simulator: 201 entries / 2.6 MB of `sync-state.json`, +14 KB per edit,
+        // and 72 ms per edit spent almost entirely rewriting it.
+        //
+        // The CRDT documents themselves still record every edit (they persist
+        // separately in `sync-crdt-state.json`), so enabling sync later still
+        // converges — that invariant is what makes dropping this safe.
+        if sync_state.server_url.is_none() {
+            let had_queue = !sync_state.pending.is_empty();
+            sync_state.pending.clear();
+            // Only touch the disk when the file's contents would actually differ.
+            if had_queue || identity_changed {
+                let saved = save_local_sync_state(&self.workspace_path, &sync_state);
+                if saved.is_ok() {
+                    self.sync_state_cache = Some(sync_state);
+                }
+                return saved;
+            }
+            self.sync_state_cache = Some(sync_state);
+            return Ok(());
+        }
 
         let operation_id = OperationId::new();
         let local_sequence = self.next_sequence;

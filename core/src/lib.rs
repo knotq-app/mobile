@@ -29,7 +29,7 @@ use knotq_storage_json::{
     edit_timing_enabled, load_app_settings, load_crdt_state, load_daily_queue_scheme,
     load_daily_queue_schemes_for_calendar_range, load_local_sync_state,
     load_workspace_with_options, save_app_settings, save_crdt_state, save_local_sync_state,
-    save_workspace, WorkspaceLoadOptions,
+    save_workspace, save_workspace_incremental, WorkspaceLoadOptions,
 };
 use knotq_sync::{
     batch_pull_and_apply, batch_push_pending, compact_pending_documents,
@@ -179,6 +179,12 @@ struct MobileCoreInner {
     /// borrowed) on use, so any other writer — or a failure part-way — simply
     /// leaves it empty and the next edit reloads from disk.
     sync_state_cache: Option<knotq_sync::LocalSyncState>,
+    /// Schemes edited since the last successful save. A full save rewrites every
+    /// scheme file — 170 of them on a real workspace, ~55 ms — on every
+    /// keystroke pause; an edit touches one. Empty means "save everything",
+    /// which is what the paths that can change any scheme (a sync pull, a
+    /// migration) want.
+    dirty_schemes: std::collections::HashSet<knotq_model::SchemeId>,
     sync_notice: Option<String>,
     // Push registration handed in from the platform (e.g. an FCM token from
     // Firebase). Registered with the backend during sync_once; `registered_push_token`
