@@ -931,17 +931,6 @@ struct IntegratedSchemeEditorPane: View {
 
     private func openDateForLine() {
         guard !scheme.isReadOnly else { return }
-        // Scheduling is a line operation. An empty document has no current line
-        // to target, so create the first blank task and schedule it immediately.
-        // This applies to both ordinary schemes and daily queues, which share
-        // this editor chrome.
-        if model.scheme(id: scheme.id)?.items.isEmpty == true {
-            model.addItem(schemeID: scheme.id, text: "") {
-                guard let itemID = model.scheme(id: scheme.id)?.items.last?.id else { return }
-                dateTarget = EditorDateTarget(itemID: itemID)
-            }
-            return
-        }
         // Push pending edits to the model so the date sheet edits a persisted
         // item, but DON'T reload the editor here. A full `commitDocument()`
         // re-applies the attributed string, which in the Daily feed (where each
@@ -949,17 +938,34 @@ struct IntegratedSchemeEditorPane: View {
         // shoves the whole stack — the "button glitches, disappears, reappears
         // lower" symptom. The text view already shows the right content, so a
         // reload buys nothing on this path.
-        // Resolve the target only once that flush has landed. Reading
-        // `model.scheme(id:)` straight after the call sees the PRE-write snapshot,
-        // so on a line the user just typed (never flushed, hence not in the core's
-        // list yet) the `contains` check failed and the date sheet silently
-        // refused to open. The completion also runs after `adoptItemIDs`, so
-        // `currentLineItemID()` is the core's id rather than a local placeholder.
+        //
+        // The flush has to come FIRST, before any "is this document empty?"
+        // test. `model.scheme(id:)` returns the PRE-write snapshot, so a scheme
+        // whose only line is one the user just typed still reads as empty —
+        // and the empty-document branch below would then append a SECOND, blank
+        // item and schedule that one, landing the schedule on the line *after*
+        // the one the user was on (type "J", tap schedule, the date attaches to
+        // the next line). Flushing first makes the typed line a real item, so
+        // the ordinary path targets it.
         syncEditsToModel {
-            guard let itemID = controller.currentLineItemID(),
-                  let currentScheme = model.scheme(id: scheme.id),
-                  currentScheme.items.contains(where: { $0.id == itemID }) else { return }
-            dateTarget = EditorDateTarget(itemID: itemID)
+            // Resolve the target only once the flush has landed. The completion
+            // runs after `adoptItemIDs`, so `currentLineItemID()` is the core's
+            // id rather than a local placeholder.
+            if let itemID = controller.currentLineItemID(),
+               let currentScheme = model.scheme(id: scheme.id),
+               currentScheme.items.contains(where: { $0.id == itemID }) {
+                dateTarget = EditorDateTarget(itemID: itemID)
+                return
+            }
+            // Scheduling is a line operation and there is genuinely no line to
+            // target — an untouched empty document. Create the first blank task
+            // and schedule it. This applies to both ordinary schemes and daily
+            // queues, which share this editor chrome.
+            guard model.scheme(id: scheme.id)?.items.isEmpty == true else { return }
+            model.addItem(schemeID: scheme.id, text: "") {
+                guard let itemID = model.scheme(id: scheme.id)?.items.last?.id else { return }
+                dateTarget = EditorDateTarget(itemID: itemID)
+            }
         }
     }
 
