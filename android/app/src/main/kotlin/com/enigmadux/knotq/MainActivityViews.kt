@@ -580,8 +580,33 @@ internal fun MainActivity.edit(value: String): EditText = EditText(this).apply {
 }
 
 internal fun MainActivity.spinner(values: Array<String>): Spinner {
-    val adapter = ArrayAdapter(this, android.R.layout.simple_spinner_dropdown_item, values)
-    return Spinner(this).apply { this.adapter = adapter }
+    val activity = this
+    // The platform spinner layouts take their text color from the *system*
+    // theme, not KnotQ's, so on a light app theme the selected value was drawn
+    // near-white on the light button background and could not be read. Paint the
+    // closed row and the dropdown rows from the app theme instead.
+    val adapter = object : ArrayAdapter<String>(
+        this,
+        android.R.layout.simple_spinner_dropdown_item,
+        values
+    ) {
+        override fun getView(position: Int, convertView: View?, parent: ViewGroup): View =
+            (super.getView(position, convertView, parent) as TextView).apply {
+                setTextColor(activity.theme.textPrimary)
+            }
+
+        override fun getDropDownView(position: Int, convertView: View?, parent: ViewGroup): View =
+            (super.getDropDownView(position, convertView, parent) as TextView).apply {
+                setTextColor(activity.theme.textPrimary)
+                setBackgroundColor(activity.theme.bgModal)
+            }
+    }
+    return Spinner(this).apply {
+        this.adapter = adapter
+        // The popup is a separate window with its own background, which would
+        // otherwise stay the system surface under app-theme-colored rows.
+        setPopupBackgroundDrawable(activity.rounded(activity.theme.bgModal, activity.dp(8), activity.theme.borderOverlay))
+    }
 }
 
 internal fun MainActivity.colorSquare(color: Int, size: Int): View = View(this).apply {
