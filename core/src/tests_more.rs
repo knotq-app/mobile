@@ -1392,3 +1392,70 @@ fn write_times(root: &std::path::Path) -> Vec<(std::path::PathBuf, std::time::Sy
     times.sort();
     times
 }
+
+// Google's consent screen lets a user finish the flow having ticked none of the
+// calendar checkboxes. The grant that comes back then cannot list a calendar, so
+// it has to be caught rather than stored and retried forever.
+#[test]
+fn a_grant_without_calendar_access_is_reported_not_stored() {
+    assert_eq!(
+        google_calendar::missing_google_calendar_scopes(
+            "openid https://www.googleapis.com/auth/userinfo.email"
+        ),
+        vec![
+            "https://www.googleapis.com/auth/calendar.calendarlist.readonly",
+            "https://www.googleapis.com/auth/calendar.events.readonly",
+        ]
+    );
+    // One box ticked is still not enough to import a calendar.
+    assert_eq!(
+        google_calendar::missing_google_calendar_scopes(
+            "openid https://www.googleapis.com/auth/calendar.events.readonly"
+        ),
+        vec!["https://www.googleapis.com/auth/calendar.calendarlist.readonly"]
+    );
+    // What the app asks for today, and the broader grant an older link may hold.
+    assert!(google_calendar::missing_google_calendar_scopes(
+        "openid email https://www.googleapis.com/auth/calendar.calendarlist.readonly https://www.googleapis.com/auth/calendar.events.readonly"
+    )
+    .is_empty());
+    assert!(
+        google_calendar::missing_google_calendar_scopes(
+            "https://www.googleapis.com/auth/calendar.readonly"
+        )
+        .is_empty()
+    );
+}
+
+// A token from a platform identity service (Android's Google Identity) carries
+// no refresh token and no reported lifetime. Both facts have to be recorded, or
+// the core either posts an empty refresh_token to Google's token endpoint or
+// treats the token the shell just handed it as already spent.
+#[test]
+fn platform_identity_accounts_never_refresh_through_the_oauth_endpoint() {
+    let account = knotq_model::GoogleOAuthAccount {
+        account_id: "sub-1".to_string(),
+        email: Some("user@example.com".to_string()),
+        client_id: "android-client".to_string(),
+        access_token: "platform-token".to_string(),
+        refresh_token: String::new(),
+        expires_at: Some(google_calendar::platform_token_expiry(None)),
+        scope: "https://www.googleapis.com/auth/calendar.events.readonly".to_string(),
+        token_source: knotq_model::GoogleTokenSource::PlatformIdentity,
+        needs_reauth: false,
+    };
+
+    // No refresh token to spend, so the core must not try.
+    assert!(!account.can_self_refresh());
+    // ...but the token the shell just supplied must still count as usable, or
+    // the very first import would be refused.
+    assert!(account.expires_at.expect("expiry") > Utc::now() + Duration::seconds(60));
+
+    // A desktop/iOS account is unchanged: it renews itself.
+    let oauth_account = knotq_model::GoogleOAuthAccount {
+        refresh_token: "refresh".to_string(),
+        token_source: knotq_model::GoogleTokenSource::OAuthRefreshToken,
+        ..account
+    };
+    assert!(oauth_account.can_self_refresh());
+}

@@ -448,12 +448,6 @@ pub(crate) fn theme_mode_str(theme_mode: ThemeMode) -> &'static str {
         ThemeMode::System => "system",
         ThemeMode::Dark => "dark",
         ThemeMode::Light => "light",
-        ThemeMode::RosePineMoon => "rose_pine_moon",
-        ThemeMode::CatppuccinMocha => "catppuccin_mocha",
-        ThemeMode::TokyoNight => "tokyo_night",
-        ThemeMode::Parchment => "parchment",
-        ThemeMode::RosePineDawn => "rose_pine_dawn",
-        ThemeMode::CatppuccinLatte => "catppuccin_latte",
     }
 }
 
@@ -513,6 +507,10 @@ pub(crate) fn position_from_i32(position: i32) -> Result<usize> {
 
 pub(crate) fn as_u8(value: i32, label: &str) -> Result<u8> {
     u8::try_from(value).map_err(|_| anyhow!("{label} must be between 0 and 255: {value}"))
+}
+
+pub(crate) fn as_u16(value: i32, label: &str) -> Result<u16> {
+    u16::try_from(value).map_err(|_| anyhow!("{label} must be between 0 and 65535: {value}"))
 }
 
 pub(crate) fn google_account_matches_calendar_source(

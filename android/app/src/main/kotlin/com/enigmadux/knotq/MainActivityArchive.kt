@@ -716,14 +716,19 @@ import kotlin.math.roundToInt
     }
 
     internal fun MainActivity.loadSnapshot() {
-        snapshot = bridge.request(obj(
-            "type" to "snapshot",
-            "today" to selectedDate.toString(),
-            "week_offset" to weekOffset,
-            "daily_history_days" to dailyHistoryDays
-        ))
+        snapshot = snapshotFromCore()
         configureGoogleSyncPolling()
     }
+
+    /// The core half of [loadSnapshot], split out so a worker thread that is
+    /// already holding a background task can fetch the snapshot itself instead of
+    /// making the main thread wait on the core's lock.
+    internal fun MainActivity.snapshotFromCore(): JSONObject = bridge.request(obj(
+        "type" to "snapshot",
+        "today" to selectedDate.toString(),
+        "week_offset" to weekOffset,
+        "daily_history_days" to dailyHistoryDays
+    ))
 
     /// Mirrors iOS `loadOlderDailyEntries`: extend the daily history window by a
     /// month when the feed is scrolled to its oldest entry.

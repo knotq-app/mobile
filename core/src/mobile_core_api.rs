@@ -232,8 +232,64 @@ impl MobileCore {
             .map_err(Into::into)
     }
 
+    /// Links a Google account from a token the shell obtained through a
+    /// platform identity service, then imports its calendars.
+    ///
+    /// This is Android's replacement for `complete_google_calendar_import`:
+    /// Google blocks the loopback redirect on Android, so the shell runs Google
+    /// Identity `AuthorizationClient` and hands the resulting access token here
+    /// instead of an authorization code. Desktop and iOS keep using the
+    /// browser/OAuth entry points above.
+    pub fn import_google_calendars_with_identity(
+        &self,
+        account: MobileGoogleIdentityAccount,
+        parent_id: Option<String>,
+    ) -> Result<MobileGoogleSyncResult, MobileError> {
+        let account = MobileGoogleIdentityAccount {
+            client_id: non_empty(account.client_id, "Google client id")?,
+            access_token: non_empty(account.access_token, "Google access token")?,
+            ..account
+        };
+        let mut inner = self.lock()?;
+        let parent = parent_id
+            .as_deref()
+            .map(parse_id)
+            .transpose()?
+            .unwrap_or(inner.workspace.root);
+        inner
+            .import_google_calendars_with_identity(account, parent)
+            .map_err(Into::into)
+    }
+
     pub fn sync_google_calendars(&self) -> Result<MobileGoogleSyncResult, MobileError> {
         self.lock()?.sync_google_calendars().map_err(Into::into)
+    }
+
+    /// Syncs every linked account, using shell-supplied access tokens for the
+    /// accounts the core cannot refresh on its own.
+    ///
+    /// Android calls this on every periodic/manual sync after asking Google
+    /// Identity for a fresh token per connected account. Accounts with no entry
+    /// in `accounts` sync with their stored credentials exactly as before.
+    pub fn sync_google_calendars_with_identity(
+        &self,
+        accounts: Vec<MobileGoogleIdentityAccount>,
+    ) -> Result<MobileGoogleSyncResult, MobileError> {
+        self.lock()?
+            .sync_google_calendars_with_identities(accounts)
+            .map_err(Into::into)
+    }
+
+    /// Records that an account needs the user to grant authorization again.
+    pub fn set_google_account_needs_reauth(
+        &self,
+        account_id: String,
+        needs_reauth: bool,
+    ) -> Result<(), MobileError> {
+        let account_id = non_empty(account_id, "Google account id")?;
+        self.lock()?
+            .set_google_account_needs_reauth(&account_id, needs_reauth)
+            .map_err(Into::into)
     }
 
     pub fn unlink_google_account(&self, account_id: String) -> Result<(), MobileError> {
@@ -930,19 +986,22 @@ impl MobileCore {
             return Err(anyhow!("maximum upcoming items must be between 1 and 100").into());
         }
 
-        let settings = UpcomingDisplaySettings {
-            event_lookahead_days: event_lookahead_days as u16,
-            reminder_lookahead_days: reminder_lookahead_days as u16,
-            assignment_lookahead_days: assignment_lookahead_days as u16,
-            maximum_items: maximum_items as u16,
+        let mut inner = self.lock()?;
+        let display = UpcomingDisplaySettings {
+            event_lookahead_days: as_u16(event_lookahead_days, "event lookahead days")?,
+            reminder_lookahead_days: as_u16(reminder_lookahead_days, "reminder lookahead days")?,
+            assignment_lookahead_days: as_u16(
+                assignment_lookahead_days,
+                "assignment lookahead days",
+            )?,
+            maximum_items: as_u16(maximum_items, "maximum upcoming items")?,
             show_overdue,
             show_completed,
         };
-        let mut inner = self.lock()?;
-        if inner.settings.upcoming_display == settings {
+        if inner.settings.upcoming_display == display {
             return Ok(());
         }
-        inner.settings.upcoming_display = settings;
+        inner.settings.upcoming_display = display;
         inner.save_settings().map_err(Into::into)
     }
 

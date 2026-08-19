@@ -6,7 +6,7 @@ import com.enigmadux.knotq.ffi.MobileCalendarDay
 import com.enigmadux.knotq.ffi.MobileCore
 import com.enigmadux.knotq.ffi.MobileDailyEntry
 import com.enigmadux.knotq.ffi.MobileGoogleAccount
-import com.enigmadux.knotq.ffi.MobileGoogleAuthRequest
+import com.enigmadux.knotq.ffi.MobileGoogleIdentityAccount
 import com.enigmadux.knotq.ffi.MobileGoogleSyncResult
 import com.enigmadux.knotq.ffi.MobileCellLine
 import com.enigmadux.knotq.ffi.MobileInline
@@ -46,19 +46,22 @@ internal class RustBridge(context: Context) : AutoCloseable {
                 body.optInt("week_offset", 0),
                 body.optInt("daily_history_days", 3)
             ).toJson()
-            "google_auth_request" -> return core.googleAuthRequest(
-                body.getString("client_id"),
-                body.getString("redirect_uri")
-            ).toJson()
-            "complete_google_calendar_import" -> return core.completeGoogleCalendarImport(
-                body.getString("client_id"),
-                body.getString("redirect_uri"),
-                body.getString("state"),
-                body.getString("code_verifier"),
-                body.getString("callback_url"),
+            // Google Identity issues the access token on Android, so the core is
+            // handed the token directly. The core's browser/loopback OAuth entry
+            // points remain for the desktop and iOS shells, which still use them,
+            // but Android has no caller for them: Google blocks that flow here.
+            "import_google_calendars_with_identity" -> return core.importGoogleCalendarsWithIdentity(
+                body.getJSONObject("account").toMobileGoogleIdentityAccount(),
                 body.stringOrNull("parent_id")
             ).toJson()
             "sync_google_calendars" -> return core.syncGoogleCalendars().toJson()
+            "sync_google_calendars_with_identity" -> return core.syncGoogleCalendarsWithIdentity(
+                body.optJSONArray("accounts")?.toMobileGoogleIdentityAccounts() ?: emptyList()
+            ).toJson()
+            "set_google_account_needs_reauth" -> core.setGoogleAccountNeedsReauth(
+                body.getString("account_id"),
+                body.getBoolean("needs_reauth")
+            )
             "unlink_google_account" -> core.unlinkGoogleAccount(body.getString("account_id"))
             "create_folder" -> core.createFolder(body.stringOrNull("parent_id"), body.getString("name"), body.intOrNull("position"))
             "rename_folder" -> core.renameFolder(body.getString("folder_id"), body.getString("name"))
@@ -423,14 +426,31 @@ internal class RustBridge(context: Context) : AutoCloseable {
         .put("id", id)
         .put("title", title)
         .put("detail", detail)
+        .put("email", email)
+        .put("needs_reauth", needsReauth)
 
-    private fun MobileGoogleAuthRequest.toJson(): JSONObject = JSONObject()
-        .put("auth_url", authUrl)
-        .put("state", state)
-        .put("code_verifier", codeVerifier)
-        .put("redirect_uri", redirectUri)
-        .put("scope", scope)
-        .put("client_id", clientId)
+    private fun JSONObject.toMobileGoogleIdentityAccount(): MobileGoogleIdentityAccount =
+        MobileGoogleIdentityAccount(
+            accountId = stringOrNull("account_id"),
+            clientId = optString("client_id"),
+            accessToken = optString("access_token"),
+            email = stringOrNull("email"),
+            scope = stringOrNull("scope"),
+            expiresInSecs = if (has("expires_in_secs") && !isNull("expires_in_secs")) {
+                optLong("expires_in_secs")
+            } else {
+                null
+            }
+        )
+
+    private fun JSONArray.toMobileGoogleIdentityAccounts(): List<MobileGoogleIdentityAccount> {
+        val out = ArrayList<MobileGoogleIdentityAccount>(length())
+        for (index in 0 until length()) {
+            val item = optJSONObject(index) ?: continue
+            out.add(item.toMobileGoogleIdentityAccount())
+        }
+        return out
+    }
 
     private fun MobileGoogleSyncResult.toJson(): JSONObject = JSONObject()
         .put("imported_count", importedCount)

@@ -451,6 +451,22 @@ fileprivate struct FfiConverterInt32: FfiConverterPrimitive {
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
+fileprivate struct FfiConverterInt64: FfiConverterPrimitive {
+    typealias FfiType = Int64
+    typealias SwiftType = Int64
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> Int64 {
+        return try lift(readInt(&buf))
+    }
+
+    public static func write(_ value: Int64, into buf: inout [UInt8]) {
+        writeInt(&buf, lower(value))
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
 fileprivate struct FfiConverterBool : FfiConverter {
     typealias FfiType = Int8
     typealias SwiftType = Bool
@@ -558,6 +574,8 @@ public protocol MobileCoreProtocol: AnyObject, Sendable {
     
     func googleAuthRequest(clientId: String, redirectUri: String) throws  -> MobileGoogleAuthRequest
     
+    func importGoogleCalendarsWithIdentity(account: MobileGoogleIdentityAccount, parentId: String?) throws  -> MobileGoogleSyncResult
+    
     func insertTable(schemeId: String, afterItemId: String?, itemId: String) throws 
     
     func insertTableColumn(schemeId: String, itemId: String, column: Int32) throws 
@@ -600,6 +618,8 @@ public protocol MobileCoreProtocol: AnyObject, Sendable {
     
     func seedEditorImageFixture() throws 
     
+    func setGoogleAccountNeedsReauth(accountId: String, needsReauth: Bool) throws 
+    
     func setItemDate(schemeId: String, itemId: String, kind: String, date: String?) throws 
     
     func setItemIndent(schemeId: String, itemId: String, indent: Int32) throws 
@@ -637,6 +657,8 @@ public protocol MobileCoreProtocol: AnyObject, Sendable {
     func stopWsSync() throws 
     
     func syncGoogleCalendars() throws  -> MobileGoogleSyncResult
+    
+    func syncGoogleCalendarsWithIdentity(accounts: [MobileGoogleIdentityAccount]) throws  -> MobileGoogleSyncResult
     
     func syncOnce(apiBase: String, bearerToken: String) throws  -> Bool
     
@@ -932,6 +954,16 @@ open func googleAuthRequest(clientId: String, redirectUri: String)throws  -> Mob
 })
 }
     
+open func importGoogleCalendarsWithIdentity(account: MobileGoogleIdentityAccount, parentId: String?)throws  -> MobileGoogleSyncResult  {
+    return try  FfiConverterTypeMobileGoogleSyncResult_lift(try rustCallWithError(FfiConverterTypeMobileError_lift) {
+    uniffi_knotq_mobile_core_fn_method_mobilecore_import_google_calendars_with_identity(
+            self.uniffiCloneHandle(),
+        FfiConverterTypeMobileGoogleIdentityAccount_lower(account),
+        FfiConverterOptionString.lower(parentId),$0
+    )
+})
+}
+    
 open func insertTable(schemeId: String, afterItemId: String?, itemId: String)throws   {try rustCallWithError(FfiConverterTypeMobileError_lift) {
     uniffi_knotq_mobile_core_fn_method_mobilecore_insert_table(
             self.uniffiCloneHandle(),
@@ -1122,6 +1154,15 @@ open func seedEditorImageFixture()throws   {try rustCallWithError(FfiConverterTy
 }
 }
     
+open func setGoogleAccountNeedsReauth(accountId: String, needsReauth: Bool)throws   {try rustCallWithError(FfiConverterTypeMobileError_lift) {
+    uniffi_knotq_mobile_core_fn_method_mobilecore_set_google_account_needs_reauth(
+            self.uniffiCloneHandle(),
+        FfiConverterString.lower(accountId),
+        FfiConverterBool.lower(needsReauth),$0
+    )
+}
+}
+    
 open func setItemDate(schemeId: String, itemId: String, kind: String, date: String?)throws   {try rustCallWithError(FfiConverterTypeMobileError_lift) {
     uniffi_knotq_mobile_core_fn_method_mobilecore_set_item_date(
             self.uniffiCloneHandle(),
@@ -1307,6 +1348,15 @@ open func syncGoogleCalendars()throws  -> MobileGoogleSyncResult  {
     return try  FfiConverterTypeMobileGoogleSyncResult_lift(try rustCallWithError(FfiConverterTypeMobileError_lift) {
     uniffi_knotq_mobile_core_fn_method_mobilecore_sync_google_calendars(
             self.uniffiCloneHandle(),$0
+    )
+})
+}
+    
+open func syncGoogleCalendarsWithIdentity(accounts: [MobileGoogleIdentityAccount])throws  -> MobileGoogleSyncResult  {
+    return try  FfiConverterTypeMobileGoogleSyncResult_lift(try rustCallWithError(FfiConverterTypeMobileError_lift) {
+    uniffi_knotq_mobile_core_fn_method_mobilecore_sync_google_calendars_with_identity(
+            self.uniffiCloneHandle(),
+        FfiConverterSequenceTypeMobileGoogleIdentityAccount.lower(accounts),$0
     )
 })
 }
@@ -1674,13 +1724,17 @@ public struct MobileGoogleAccount: Equatable, Hashable {
     public var id: String
     public var title: String
     public var detail: String
+    public var email: String
+    public var needsReauth: Bool
 
     // Default memberwise initializers are never public by default, so we
     // declare one manually.
-    public init(id: String, title: String, detail: String) {
+    public init(id: String, title: String, detail: String, email: String, needsReauth: Bool) {
         self.id = id
         self.title = title
         self.detail = detail
+        self.email = email
+        self.needsReauth = needsReauth
     }
 
     
@@ -1701,7 +1755,9 @@ public struct FfiConverterTypeMobileGoogleAccount: FfiConverterRustBuffer {
             try MobileGoogleAccount(
                 id: FfiConverterString.read(from: &buf), 
                 title: FfiConverterString.read(from: &buf), 
-                detail: FfiConverterString.read(from: &buf)
+                detail: FfiConverterString.read(from: &buf), 
+                email: FfiConverterString.read(from: &buf), 
+                needsReauth: FfiConverterBool.read(from: &buf)
         )
     }
 
@@ -1709,6 +1765,8 @@ public struct FfiConverterTypeMobileGoogleAccount: FfiConverterRustBuffer {
         FfiConverterString.write(value.id, into: &buf)
         FfiConverterString.write(value.title, into: &buf)
         FfiConverterString.write(value.detail, into: &buf)
+        FfiConverterString.write(value.email, into: &buf)
+        FfiConverterBool.write(value.needsReauth, into: &buf)
     }
 }
 
@@ -1795,6 +1853,76 @@ public func FfiConverterTypeMobileGoogleAuthRequest_lift(_ buf: RustBuffer) thro
 #endif
 public func FfiConverterTypeMobileGoogleAuthRequest_lower(_ value: MobileGoogleAuthRequest) -> RustBuffer {
     return FfiConverterTypeMobileGoogleAuthRequest.lower(value)
+}
+
+
+public struct MobileGoogleIdentityAccount: Equatable, Hashable {
+    public var accountId: String?
+    public var clientId: String
+    public var accessToken: String
+    public var email: String?
+    public var scope: String?
+    public var expiresInSecs: Int64?
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(accountId: String?, clientId: String, accessToken: String, email: String?, scope: String?, expiresInSecs: Int64?) {
+        self.accountId = accountId
+        self.clientId = clientId
+        self.accessToken = accessToken
+        self.email = email
+        self.scope = scope
+        self.expiresInSecs = expiresInSecs
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension MobileGoogleIdentityAccount: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeMobileGoogleIdentityAccount: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> MobileGoogleIdentityAccount {
+        return
+            try MobileGoogleIdentityAccount(
+                accountId: FfiConverterOptionString.read(from: &buf), 
+                clientId: FfiConverterString.read(from: &buf), 
+                accessToken: FfiConverterString.read(from: &buf), 
+                email: FfiConverterOptionString.read(from: &buf), 
+                scope: FfiConverterOptionString.read(from: &buf), 
+                expiresInSecs: FfiConverterOptionInt64.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: MobileGoogleIdentityAccount, into buf: inout [UInt8]) {
+        FfiConverterOptionString.write(value.accountId, into: &buf)
+        FfiConverterString.write(value.clientId, into: &buf)
+        FfiConverterString.write(value.accessToken, into: &buf)
+        FfiConverterOptionString.write(value.email, into: &buf)
+        FfiConverterOptionString.write(value.scope, into: &buf)
+        FfiConverterOptionInt64.write(value.expiresInSecs, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeMobileGoogleIdentityAccount_lift(_ buf: RustBuffer) throws -> MobileGoogleIdentityAccount {
+    return try FfiConverterTypeMobileGoogleIdentityAccount.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeMobileGoogleIdentityAccount_lower(_ value: MobileGoogleIdentityAccount) -> RustBuffer {
+    return FfiConverterTypeMobileGoogleIdentityAccount.lower(value)
 }
 
 
@@ -3123,6 +3251,30 @@ fileprivate struct FfiConverterOptionInt32: FfiConverterRustBuffer {
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
+fileprivate struct FfiConverterOptionInt64: FfiConverterRustBuffer {
+    typealias SwiftType = Int64?
+
+    public static func write(_ value: SwiftType, into buf: inout [UInt8]) {
+        guard let value = value else {
+            writeInt(&buf, Int8(0))
+            return
+        }
+        writeInt(&buf, Int8(1))
+        FfiConverterInt64.write(value, into: &buf)
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SwiftType {
+        switch try readInt(&buf) as Int8 {
+        case 0: return nil
+        case 1: return try FfiConverterInt64.read(from: &buf)
+        default: throw UniffiInternalError.unexpectedOptionalTag
+        }
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
 fileprivate struct FfiConverterOptionString: FfiConverterRustBuffer {
     typealias SwiftType = String?
 
@@ -3264,6 +3416,31 @@ fileprivate struct FfiConverterSequenceTypeMobileGoogleAccount: FfiConverterRust
         seq.reserveCapacity(Int(len))
         for _ in 0 ..< len {
             seq.append(try FfiConverterTypeMobileGoogleAccount.read(from: &buf))
+        }
+        return seq
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterSequenceTypeMobileGoogleIdentityAccount: FfiConverterRustBuffer {
+    typealias SwiftType = [MobileGoogleIdentityAccount]
+
+    public static func write(_ value: [MobileGoogleIdentityAccount], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypeMobileGoogleIdentityAccount.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [MobileGoogleIdentityAccount] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [MobileGoogleIdentityAccount]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterTypeMobileGoogleIdentityAccount.read(from: &buf))
         }
         return seq
     }
@@ -3678,6 +3855,9 @@ private let initializationResult: InitializationResult = {
     if (uniffi_knotq_mobile_core_checksum_method_mobilecore_google_auth_request() != 56614) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_knotq_mobile_core_checksum_method_mobilecore_import_google_calendars_with_identity() != 32937) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_knotq_mobile_core_checksum_method_mobilecore_insert_table() != 50709) {
         return InitializationResult.apiChecksumMismatch
     }
@@ -3741,6 +3921,9 @@ private let initializationResult: InitializationResult = {
     if (uniffi_knotq_mobile_core_checksum_method_mobilecore_seed_editor_image_fixture() != 52693) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_knotq_mobile_core_checksum_method_mobilecore_set_google_account_needs_reauth() != 64233) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_knotq_mobile_core_checksum_method_mobilecore_set_item_date() != 4016) {
         return InitializationResult.apiChecksumMismatch
     }
@@ -3796,6 +3979,9 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_knotq_mobile_core_checksum_method_mobilecore_sync_google_calendars() != 29004) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_knotq_mobile_core_checksum_method_mobilecore_sync_google_calendars_with_identity() != 22767) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_knotq_mobile_core_checksum_method_mobilecore_sync_once() != 14938) {

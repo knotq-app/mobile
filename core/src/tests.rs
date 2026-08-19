@@ -812,6 +812,53 @@ fn replace_scheme_items_preserves_existing_metadata() {
     let _ = std::fs::remove_dir_all(dir);
 }
 
+// Archiving an imported calendar (by hand, or as a duplicate) must not make the
+// next import create a second scheme for it: that is what pushed the account's
+// calendar count up by one on every reconnect.
+#[test]
+fn google_calendar_import_restores_an_archived_calendar_instead_of_duplicating_it() {
+    let dir = std::env::temp_dir().join(format!("knotq-mobile-test-{}", uuid::Uuid::new_v4()));
+    let mut inner = MobileCoreInner::open(dir.clone()).expect("open mobile core");
+    inner.workspace = Workspace::new();
+    let root = inner.workspace.root;
+
+    let archived = imported_google_scheme("Google Calendar", "account", "calendar");
+    let archived_id = archived.id;
+    inner.workspace.schemes.insert(archived_id, archived);
+    // Archiving detaches the scheme from its folder and records where it came
+    // from, which is the state the next import actually meets.
+    inner.workspace.mark_scheme_deleted_from(archived_id, root, 0);
+    assert!(inner.workspace.is_scheme_deleted(archived_id));
+
+    let result = inner
+        .apply_imported_google_calendars(
+            vec![google_calendar::ImportedGoogleCalendar {
+                account_id: "account".to_string(),
+                account_email: Some("user@example.com".to_string()),
+                calendar_id: "calendar".to_string(),
+                name: "Calendar".to_string(),
+                color_index: 3,
+                sync_token: Some("token".to_string()),
+                full_sync: true,
+                items: Vec::new(),
+                deleted: Vec::new(),
+                recurrence_exdates: Vec::new(),
+            }],
+            true,
+            root,
+        )
+        .expect("apply imported calendars");
+
+    assert!(result.content_changed);
+    // The archived scheme came back; no second scheme was minted for the same
+    // calendar.
+    assert!(!inner.workspace.is_scheme_deleted(archived_id));
+    assert_eq!(inner.workspace.schemes.len(), 1);
+    assert_eq!(result.created_count, 1);
+
+    let _ = std::fs::remove_dir_all(dir);
+}
+
 fn imported_google_scheme(name: &str, account_id: &str, calendar_id: &str) -> Scheme {
     let mut scheme = Scheme::new(name, 0);
     scheme.source = SchemeSource::ImportedCalendar(ImportedCalendarSource {

@@ -22,6 +22,25 @@ pub(crate) fn run_google_calendar_import_from_callback(
     )
 }
 
+/// Initial link + import for an account whose access token came from a platform
+/// identity service (Android Google Identity).
+///
+/// Mirrors [`run_google_calendar_import_from_callback`] but skips the OAuth code
+/// exchange entirely: the shell already holds a usable access token, so all this
+/// does is resolve the account identity behind it and import the calendars that
+/// are not linked yet.
+pub(crate) fn run_google_calendar_import_with_identity(
+    identity: &MobileGoogleIdentityAccount,
+    existing_sources: Vec<ExistingGoogleCalendarSource>,
+) -> Result<GoogleCalendarImportResult> {
+    let account = oauth::google_identity_account(identity)?;
+    run_google_calendar_sync(
+        vec![account],
+        existing_sources,
+        GoogleCalendarImportMode::MissingOnly,
+    )
+}
+
 pub(crate) fn run_google_calendar_background_sync(
     existing_accounts: Vec<GoogleOAuthAccount>,
     existing_sources: Vec<ExistingGoogleCalendarSource>,
@@ -128,10 +147,19 @@ fn run_google_calendar_sync(
 
     for mut account in accounts {
         if let Err(err) = refresh_google_access_token_if_needed(&mut account) {
-            failures.push(format!(
-                "{}: {err:#}",
-                account.email.as_deref().unwrap_or(&account.account_id)
-            ));
+            // A platform-identity account can only be renewed by the shell, so
+            // any failure there is the user's to resolve. An OAuth account holds
+            // a refresh token that survives a network blip, so it is flagged
+            // only when Google says the grant itself is gone — and only that
+            // case is a lost *grant*, so only it earns the reconnect wording.
+            let grant_gone = google_refresh_grant_rejected(&err);
+            let rejected =
+                account.token_source == GoogleTokenSource::PlatformIdentity || grant_gone;
+            failures.push(google_account_failure(&account, &err, grant_gone));
+            // Keep the account in the list either way, so a flag set here is
+            // persisted rather than dropped.
+            mark_google_reauth(&mut account, rejected);
+            updated_accounts.push(account);
             continue;
         }
 
@@ -139,11 +167,18 @@ fn run_google_calendar_sync(
             Ok((mut imported, mut account_failures)) => {
                 calendars.append(&mut imported);
                 failures.append(&mut account_failures);
+                // Reaching the Calendar API proves the grant is live, so any
+                // earlier reconnect prompt for this account can stand down.
+                mark_google_reauth(&mut account, false);
             }
-            Err(err) => failures.push(format!(
-                "{}: {err:#}",
-                account.email.as_deref().unwrap_or(&account.account_id)
-            )),
+            Err(err) => {
+                // `import_google_account_calendars` fails as a unit only when
+                // the calendar *list* call fails, which means the granted
+                // authorization no longer covers us.
+                let rejected = google_authorization_rejected(&err);
+                mark_google_reauth(&mut account, rejected);
+                failures.push(google_account_failure(&account, &err, rejected));
+            }
         }
         updated_accounts.push(account);
     }
@@ -213,4 +248,55 @@ fn import_google_account_calendars(
     }
 
     Ok((imported, failures))
+}
+
+/// Records (or clears) the reconnect state.
+///
+/// This is not a platform-identity concern only: a refresh token cannot buy back
+/// a calendar permission the user declined on the consent screen or revoked
+/// afterwards, so an OAuth account can need consent again just as much as an
+/// Android one.
+fn mark_google_reauth(account: &mut GoogleOAuthAccount, needs_reauth: bool) {
+    account.needs_reauth = needs_reauth;
+}
+
+/// Whether a Calendar API failure means the user has to re-consent rather than
+/// that the request merely failed. A bare 403 is not enough — Google also spends
+/// it on rate limits, which retrying does fix.
+fn google_authorization_rejected(err: &anyhow::Error) -> bool {
+    let Some(api) = err.downcast_ref::<GoogleApiError>() else {
+        return false;
+    };
+    match api.status {
+        Some(401) => true,
+        Some(403) => {
+            api.message.contains("ACCESS_TOKEN_SCOPE_INSUFFICIENT")
+                || api.message.contains("insufficientPermissions")
+        }
+        _ => false,
+    }
+}
+
+/// Whether a token refresh failed because the grant is gone rather than because
+/// the request did not get through. Google answers a revoked or expired refresh
+/// token with `invalid_grant`.
+fn google_refresh_grant_rejected(err: &anyhow::Error) -> bool {
+    format!("{err:#}").contains("invalid_grant")
+}
+
+/// What the user is told about a failed account. Google's raw JSON error body
+/// says nothing anyone can act on, so a lost grant is reported as the reconnect
+/// it actually is; everything else keeps the underlying error.
+fn google_account_failure(
+    account: &GoogleOAuthAccount,
+    err: &anyhow::Error,
+    authorization_rejected: bool,
+) -> String {
+    if authorization_rejected {
+        return google_permission_denied_message(account);
+    }
+    format!(
+        "{}: {err:#}",
+        account.email.as_deref().unwrap_or(&account.account_id)
+    )
 }

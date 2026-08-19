@@ -174,6 +174,20 @@ dictionary MobileGoogleAccount {
   string id;
   string title;
   string detail;
+  string email;
+  boolean needs_reauth;
+};
+
+// An access token issued by a platform identity service (Android's Google
+// Identity AuthorizationClient) instead of by the core's own OAuth exchange.
+// account_id is null when linking a new account.
+dictionary MobileGoogleIdentityAccount {
+  string? account_id;
+  string client_id;
+  string access_token;
+  string? email;
+  string? scope;
+  i64? expires_in_secs;
 };
 
 dictionary MobileSettings {
@@ -297,8 +311,19 @@ interface MobileCore {
   [Throws=MobileError]
   MobileGoogleSyncResult complete_google_calendar_import(string client_id, string redirect_uri, string state, string code_verifier, string callback_url, string? parent_id);
 
+  // Android entry point: Google blocks the loopback redirect there, so the
+  // shell runs Google Identity and hands over an access token directly.
+  [Throws=MobileError]
+  MobileGoogleSyncResult import_google_calendars_with_identity(MobileGoogleIdentityAccount account, string? parent_id);
+
   [Throws=MobileError]
   MobileGoogleSyncResult sync_google_calendars();
+
+  [Throws=MobileError]
+  MobileGoogleSyncResult sync_google_calendars_with_identity(sequence<MobileGoogleIdentityAccount> accounts);
+
+  [Throws=MobileError]
+  void set_google_account_needs_reauth(string account_id, boolean needs_reauth);
 
   [Throws=MobileError]
   void unlink_google_account(string account_id);

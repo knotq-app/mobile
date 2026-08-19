@@ -1,4 +1,5 @@
 use super::*;
+use std::collections::HashSet;
 
 pub(crate) struct CommitEventEdit {
     pub(crate) scheme_id: SchemeId,
@@ -816,6 +817,7 @@ impl MobileCoreInner {
                 &self.crdt,
                 &self.workspace,
                 self.settings.replica_id,
+                &HashSet::new(),
             );
             self.next_sequence = sync_state
                 .pending
@@ -999,7 +1001,39 @@ impl MobileCoreInner {
         self.finish_google_calendar_sync(result, true, parent)
     }
 
+    /// Initial link + import driven by a platform-issued access token.
+    ///
+    /// The Android counterpart of [`Self::complete_google_calendar_import`]:
+    /// there is no authorization code to exchange because Google Identity
+    /// already did the granting, so this goes straight to resolving the account
+    /// and importing its calendars.
+    pub(crate) fn import_google_calendars_with_identity(
+        &mut self,
+        identity: MobileGoogleIdentityAccount,
+        parent: FolderId,
+    ) -> Result<MobileGoogleSyncResult> {
+        let sources = google_calendar::google_calendar_sources(&self.workspace);
+        let result =
+            google_calendar::run_google_calendar_import_with_identity(&identity, sources)?;
+        self.finish_google_calendar_sync(result, true, parent)
+    }
+
     pub(crate) fn sync_google_calendars(&mut self) -> Result<MobileGoogleSyncResult> {
+        self.sync_google_calendars_with_identities(Vec::new())
+    }
+
+    /// Periodic/manual sync of every linked account.
+    ///
+    /// `identities` carries freshly minted access tokens for the accounts whose
+    /// tokens the core cannot renew itself (Android's platform-identity
+    /// accounts). Each one is matched to its stored account and swapped in
+    /// before the sync runs; accounts with no matching entry fall back to
+    /// whatever they already hold, which is exactly right for the desktop-style
+    /// refresh-token accounts iOS still uses.
+    pub(crate) fn sync_google_calendars_with_identities(
+        &mut self,
+        identities: Vec<MobileGoogleIdentityAccount>,
+    ) -> Result<MobileGoogleSyncResult> {
         if self.settings.google_accounts.is_empty() {
             return Ok(MobileGoogleSyncResult {
                 imported_count: 0,
@@ -1008,10 +1042,38 @@ impl MobileCoreInner {
                 message: knotq_l10n::t("google.sync.no_account").to_string(),
             });
         }
-        let accounts = self.settings.google_accounts.clone();
+        let mut accounts = self.settings.google_accounts.clone();
+        for identity in &identities {
+            apply_google_identity_token(&mut accounts, identity);
+        }
         let sources = google_calendar::google_calendar_sources(&self.workspace);
         let result = google_calendar::run_google_calendar_background_sync(accounts, sources)?;
         self.finish_google_calendar_sync(result, false, self.workspace.root)
+    }
+
+    /// Flags (or clears) an account's reconnect state from the shell.
+    ///
+    /// Android calls this when Google Identity refuses to renew authorization
+    /// without user interaction, so the UI can offer an explicit reconnect
+    /// instead of every background sync failing quietly.
+    pub(crate) fn set_google_account_needs_reauth(
+        &mut self,
+        account_id: &str,
+        needs_reauth: bool,
+    ) -> Result<()> {
+        let Some(account) = self
+            .settings
+            .google_accounts
+            .iter_mut()
+            .find(|account| account.account_id == account_id)
+        else {
+            return Ok(());
+        };
+        if account.needs_reauth == needs_reauth {
+            return Ok(());
+        }
+        account.needs_reauth = needs_reauth;
+        self.save_settings()
     }
 
     pub(crate) fn unlink_google_account(&mut self, account_id: &str) -> Result<()> {
@@ -1107,6 +1169,8 @@ impl MobileCoreInner {
                     id: account.account_id.clone(),
                     title,
                     detail,
+                    email: account.email.clone().unwrap_or_default(),
+                    needs_reauth: account.needs_reauth,
                 }
             })
             .collect()
@@ -1158,7 +1222,27 @@ impl MobileCoreInner {
             ) {
                 content_changed = true;
             }
-            let scheme_id = match existing_scheme_id {
+            // An import that was archived (by hand, or as a duplicate) still owns
+            // this calendar: bring it back rather than minting a second scheme
+            // for it, which is what made the calendar count climb on reconnect.
+            let archived_scheme_id = if create_missing && existing_scheme_id.is_none() {
+                google_calendar::archived_google_calendar_scheme_id(
+                    &self.workspace,
+                    &calendar.account_id,
+                    &calendar.calendar_id,
+                )
+            } else {
+                None
+            };
+            if let Some(scheme_id) = archived_scheme_id {
+                self.restore_deleted_scheme(scheme_id)?;
+                changes.workspace = true;
+                changes.schemes.insert(scheme_id);
+                content_changed = true;
+                created_count += 1;
+            }
+
+            let scheme_id = match existing_scheme_id.or(archived_scheme_id) {
                 Some(scheme_id) => scheme_id,
                 None if create_missing => {
                     let mut scheme = Scheme::new(calendar.name.clone(), calendar.color_index);
@@ -1184,7 +1268,7 @@ impl MobileCoreInner {
             let Some(scheme) = self.workspace.schemes.get_mut(&scheme_id) else {
                 continue;
             };
-            let should_update_name = existing_scheme_id.is_none();
+            let should_update_name = existing_scheme_id.is_none() && archived_scheme_id.is_none();
             let metadata_changed = google_calendar::apply_google_calendar_metadata(
                 scheme,
                 &calendar,
@@ -1248,5 +1332,56 @@ impl MobileCoreInner {
             changed = true;
         }
         changed
+    }
+}
+
+/// Swaps a freshly minted platform access token into the matching stored
+/// account. Matching is by account id first, then by email, so an account
+/// linked before the identity flow existed still picks up its new token.
+fn apply_google_identity_token(
+    accounts: &mut [knotq_model::GoogleOAuthAccount],
+    identity: &MobileGoogleIdentityAccount,
+) {
+    let access_token = identity.access_token.trim();
+    if access_token.is_empty() {
+        return;
+    }
+    let email = identity
+        .email
+        .as_deref()
+        .map(str::trim)
+        .filter(|email| !email.is_empty());
+    let account_id = identity
+        .account_id
+        .as_deref()
+        .map(str::trim)
+        .filter(|id| !id.is_empty());
+    let Some(account) = accounts.iter_mut().find(|account| {
+        account_id.is_some_and(|id| account.account_id == id)
+            || email.is_some_and(|email| {
+                account
+                    .email
+                    .as_deref()
+                    .is_some_and(|stored| stored.eq_ignore_ascii_case(email))
+            })
+    }) else {
+        return;
+    };
+
+    account.access_token = access_token.to_string();
+    account.token_source = knotq_model::GoogleTokenSource::PlatformIdentity;
+    account.expires_at = Some(google_calendar::platform_token_expiry(
+        identity.expires_in_secs,
+    ));
+    if let Some(scope) = identity
+        .scope
+        .as_deref()
+        .map(str::trim)
+        .filter(|scope| !scope.is_empty())
+    {
+        account.scope = scope.to_string();
+    }
+    if let Some(email) = email {
+        account.email = Some(email.to_string());
     }
 }

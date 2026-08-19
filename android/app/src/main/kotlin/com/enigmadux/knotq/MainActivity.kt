@@ -143,6 +143,7 @@ class MainActivity : Activity() {
     // Timing controls live on a dedicated page so the root settings list stays
     // scannable on a phone instead of becoming a wall of selectors.
     internal var settingsShowingTiming = false
+    internal var settingsShowingGoogle = false
     // Daily feed paging + scroll anchoring, mirroring the iOS bottom-pinned
     // feed: history grows by a month each time the user scrolls to the top.
     internal var dailyHistoryDays = 3
@@ -213,8 +214,15 @@ class MainActivity : Activity() {
     internal var googleSyncInProgress = false
     internal var googleSyncPollingActive = false
     internal var googleCalendarStatus: String? = null
-    internal var pendingGoogleAuthRequest: JSONObject? = null
     internal var pendingGoogleParentId: String? = null
+    // Resumes the Google Identity authorization that is currently on screen as a
+    // consent PendingIntent (see MainActivitySyncGoogle). Only one authorization
+    // runs at a time — the settings rows are inert while googleAuthInProgress —
+    // so a single slot is enough. It is deliberately not persisted: if the
+    // activity is recreated behind the consent screen the flow is simply
+    // abandoned and the user can tap connect again.
+    internal var pendingGoogleAuthorizationCallback:
+        ((Result<com.google.android.gms.auth.api.identity.AuthorizationResult>) -> Unit)? = null
     internal val syncPollHandler = Handler(Looper.getMainLooper())
     internal val syncPollRunnable = object : Runnable {
         override fun run() {
@@ -260,6 +268,9 @@ class MainActivity : Activity() {
     internal val notifRescheduleHandler = Handler(Looper.getMainLooper())
     internal var notifRescheduleCooldown = false
     internal var notifReschedulePending = false
+    // Set while a reschedule is running off the main thread, so two of them can
+    // never register alarms over each other.
+    internal var notifRescheduleRunning = false
 
     companion object {
         // The background sync worker runs in this process: it reuses the live
@@ -528,9 +539,10 @@ class MainActivity : Activity() {
 
     @Suppress("DEPRECATION", "OVERRIDE_DEPRECATION")
     override fun onBackPressed() {
-        if (selectedTab == TAB_SETTINGS && (settingsShowingArchive || settingsShowingTiming)) {
+        if (selectedTab == TAB_SETTINGS && (settingsShowingArchive || settingsShowingTiming || settingsShowingGoogle)) {
             settingsShowingArchive = false
             settingsShowingTiming = false
+            settingsShowingGoogle = false
             render()
             return
         }
@@ -672,6 +684,7 @@ class MainActivity : Activity() {
                 selectedSchemeId = null
                 settingsShowingArchive = false
                 settingsShowingTiming = false
+                settingsShowingGoogle = false
                 if (index == TAB_CALENDAR && selectedDate != LocalDate.now()) {
                     selectedDate = LocalDate.now()
                     weekOffset = 0
@@ -778,6 +791,14 @@ class MainActivity : Activity() {
     @Deprecated("Deprecated in Java")
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode == REQUEST_GOOGLE_AUTHORIZE) {
+            onGoogleAuthorizationResult(resultCode, data)
+            return
+        }
+        if (requestCode == REQUEST_GOOGLE_CHOOSE_ACCOUNT) {
+            onGoogleAccountChosen(resultCode, data)
+            return
+        }
         if (requestCode != REQUEST_ATTACH_IMAGE) return
         val uri = data?.data
         if (resultCode != RESULT_OK || uri == null) {
@@ -2291,22 +2312,44 @@ class MainActivity : Activity() {
         }, NOTIF_RESCHEDULE_DEBOUNCE_MS)
     }
 
+    /**
+     * Rebuilds the OS alarms for every pending notification.
+     *
+     * Off the main thread, deliberately. Asking the core for the pending
+     * notifications takes its lock, and a sync or a Google import holds that lock
+     * for seconds at a time — long enough that doing this on the UI thread ANR'd
+     * the app (the trace showed `main` parked in `pending_notifications` →
+     * `Mutex::lock_contended`) while the screen sat on whatever it last drew.
+     */
     private fun rescheduleNotificationsNow() {
         if (!::bridge.isInitialized) return
-        try {
-            MobileNotificationScheduler.reschedule(
-                this,
-                bridge.requestArray(obj("type" to "pending_notifications"))
-            )
-            // Also clear banners for events that ended or occurrences completed,
-            // which reschedule() leaves in the tray once they've already fired.
-            MobileNotificationScheduler.clearStale(
-                this,
-                bridge.requestArray(obj("type" to "delivered_notifications_to_clear"))
-            )
-        } catch (error: RuntimeException) {
-            showError("Notifications unavailable", error.message)
+        if (notifRescheduleRunning) {
+            notifReschedulePending = true
+            return
         }
+        notifRescheduleRunning = true
+        Thread {
+            var failure: RuntimeException? = null
+            try {
+                MobileNotificationScheduler.reschedule(
+                    this,
+                    bridge.requestArray(obj("type" to "pending_notifications"))
+                )
+                // Also clear banners for events that ended or occurrences completed,
+                // which reschedule() leaves in the tray once they've already fired.
+                MobileNotificationScheduler.clearStale(
+                    this,
+                    bridge.requestArray(obj("type" to "delivered_notifications_to_clear"))
+                )
+            } catch (error: RuntimeException) {
+                failure = error
+            }
+            val error = failure
+            runOnUiThread {
+                notifRescheduleRunning = false
+                if (error != null) showError("Notifications unavailable", error.message)
+            }
+        }.start()
     }
 
     /// Fetch the current FCM registration token and hand it to the live core so

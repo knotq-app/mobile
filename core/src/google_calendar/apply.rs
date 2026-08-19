@@ -200,6 +200,37 @@ pub(super) fn collect_google_calendar_scheme_ids(
     }
 }
 
+/// A previously imported calendar that is now sitting in the archive.
+///
+/// Archiving the scheme by hand — or having it archived as a duplicate by
+/// [`delete_duplicate_google_calendar_schemes`] — leaves it in the workspace but
+/// flagged deleted, which the live lookup skips. Without this the next import
+/// mints a *second* scheme for the same calendar, so the account's calendar count
+/// climbs on every reconnect and the archive fills with orphans.
+pub(crate) fn archived_google_calendar_scheme_id(
+    workspace: &Workspace,
+    account_id: &str,
+    calendar_id: &str,
+) -> Option<SchemeId> {
+    let mut matches = workspace
+        .schemes
+        .values()
+        .filter(|scheme| workspace.is_scheme_deleted(scheme.id))
+        .filter(|scheme| match &scheme.source {
+            SchemeSource::ImportedCalendar(source) => {
+                source.provider == CalendarProvider::Google
+                    && source.account_id == account_id
+                    && source.calendar_id == calendar_id
+            }
+            _ => false,
+        })
+        .map(|scheme| scheme.id)
+        .collect::<Vec<_>>();
+    // Stable across devices: the map iteration order is not.
+    matches.sort_by_key(|id| id.to_string());
+    matches.into_iter().next()
+}
+
 pub(super) fn google_calendar_scheme_matches(
     workspace: &Workspace,
     scheme_id: SchemeId,

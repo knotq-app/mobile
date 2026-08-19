@@ -627,6 +627,7 @@ import kotlin.math.roundToInt
     internal fun MainActivity.renderSettings(): LinearLayout {
         if (settingsShowingArchive) return renderArchivePage()
         if (settingsShowingTiming) return renderTimingSettingsPage()
+        if (settingsShowingGoogle) return renderGoogleCalendarPage()
         val root = page()
         root.addView(sectionHeader(L10n.t(this, "settings.header.title")))
         root.addView(syncSettingsCard(), spaced())
@@ -675,13 +676,31 @@ import kotlin.math.roundToInt
 
         root.addView(settingsSection(L10n.t(this, "settings.google_calendar.section")))
         if (googleAccountCount > 0) {
+            // One row into the Google Calendar page. It used to run a sync from
+            // here while showing a chevron, which read as a dead button.
             root.addView(settingsGroup(
                 settingsLinkRow(
-                    if (googleSyncInProgress) L10n.t(this, "mobile.settings.google_syncing") else L10n.t(this, "mobile.settings.sync_google_calendars"),
+                    L10n.t(this, "settings.google_calendar.section"),
                     L10n.t(this, "mobile.settings.google_accounts_connected", mapOf("count" to googleAccountCount.toString()))
-                ) { syncGoogleCalendars() },
-                settingsLinkRow(if (googleAuthInProgress) L10n.t(this, "mobile.settings.google_connecting") else L10n.t(this, "mobile.settings.connect_another_google_account")) { startGoogleCalendarImport() }
+                ) {
+                    settingsShowingGoogle = true
+                    render()
+                }
             ))
+            // An account Google will not renew without fresh consent is worth
+            // surfacing on the settings page itself, not only behind the row.
+            googleAccountsNeedingReconnect().forEach { account ->
+                val label = account.optString("email").takeIf { it.isNotBlank() }
+                    ?: account.optString("title")
+                root.addView(settingsGroup(
+                    settingsLinkRow("Reconnect $label", "Authorization expired") {
+                        reconnectGoogleAccount(
+                            account.optString("id"),
+                            account.optString("email").takeIf { it.isNotBlank() }
+                        )
+                    }
+                ))
+            }
             googleCalendarStatus?.takeIf { it.isNotBlank() }?.let { status ->
                 root.addView(text(status, theme.textMuted, 12f, false).apply {
                     setPadding(dp(8), dp(5), dp(8), dp(2))

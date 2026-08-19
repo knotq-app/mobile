@@ -23,8 +23,8 @@ android {
         applicationId "com.enigmadux.knotq"
         minSdk 26
         targetSdk 36
-        versionCode 12
-        versionName "1.0.7"
+        versionCode 14
+        versionName "1.0.8"
 
         // Explicit sync backend override. Empty by default, in which case the
         // build-type-derived default applies (debug → sandbox, release → prod;
@@ -95,6 +95,10 @@ dependencies {
     implementation "com.android.billingclient:billing:8.3.0"
     // Google Play in-app review prompt.
     implementation "com.google.android.play:review:2.0.2"
+    // Google Identity Services authorization (Identity.getAuthorizationClient).
+    // Google blocks the loopback OAuth redirect on Android, so Calendar scopes
+    // are granted through this instead of a browser flow.
+    implementation "com.google.android.gms:play-services-auth:21.3.0"
     // Periodic background sync while the app is backgrounded.
     implementation "androidx.work:work-runtime:2.9.1"
     // Firebase Cloud Messaging: silent data pushes wake the app to pull sync changes.

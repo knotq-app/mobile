@@ -680,6 +680,8 @@ internal object IntegrityCheckingUniffiLib {
     ): Short
     external fun uniffi_knotq_mobile_core_checksum_method_mobilecore_google_auth_request(
     ): Short
+    external fun uniffi_knotq_mobile_core_checksum_method_mobilecore_import_google_calendars_with_identity(
+    ): Short
     external fun uniffi_knotq_mobile_core_checksum_method_mobilecore_insert_table(
     ): Short
     external fun uniffi_knotq_mobile_core_checksum_method_mobilecore_insert_table_column(
@@ -722,6 +724,8 @@ internal object IntegrityCheckingUniffiLib {
     ): Short
     external fun uniffi_knotq_mobile_core_checksum_method_mobilecore_seed_editor_image_fixture(
     ): Short
+    external fun uniffi_knotq_mobile_core_checksum_method_mobilecore_set_google_account_needs_reauth(
+    ): Short
     external fun uniffi_knotq_mobile_core_checksum_method_mobilecore_set_item_date(
     ): Short
     external fun uniffi_knotq_mobile_core_checksum_method_mobilecore_set_item_indent(
@@ -759,6 +763,8 @@ internal object IntegrityCheckingUniffiLib {
     external fun uniffi_knotq_mobile_core_checksum_method_mobilecore_stop_ws_sync(
     ): Short
     external fun uniffi_knotq_mobile_core_checksum_method_mobilecore_sync_google_calendars(
+    ): Short
+    external fun uniffi_knotq_mobile_core_checksum_method_mobilecore_sync_google_calendars_with_identity(
     ): Short
     external fun uniffi_knotq_mobile_core_checksum_method_mobilecore_sync_once(
     ): Short
@@ -840,6 +846,8 @@ external fun uniffi_knotq_mobile_core_fn_method_mobilecore_ensure_daily_queue(`p
 ): Byte
 external fun uniffi_knotq_mobile_core_fn_method_mobilecore_google_auth_request(`ptr`: Long,`clientId`: RustBuffer.ByValue,`redirectUri`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
 ): RustBuffer.ByValue
+external fun uniffi_knotq_mobile_core_fn_method_mobilecore_import_google_calendars_with_identity(`ptr`: Long,`account`: RustBuffer.ByValue,`parentId`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+): RustBuffer.ByValue
 external fun uniffi_knotq_mobile_core_fn_method_mobilecore_insert_table(`ptr`: Long,`schemeId`: RustBuffer.ByValue,`afterItemId`: RustBuffer.ByValue,`itemId`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
 ): Unit
 external fun uniffi_knotq_mobile_core_fn_method_mobilecore_insert_table_column(`ptr`: Long,`schemeId`: RustBuffer.ByValue,`itemId`: RustBuffer.ByValue,`column`: Int,uniffi_out_err: UniffiRustCallStatus, 
@@ -882,6 +890,8 @@ external fun uniffi_knotq_mobile_core_fn_method_mobilecore_search(`ptr`: Long,`q
 ): RustBuffer.ByValue
 external fun uniffi_knotq_mobile_core_fn_method_mobilecore_seed_editor_image_fixture(`ptr`: Long,uniffi_out_err: UniffiRustCallStatus, 
 ): Unit
+external fun uniffi_knotq_mobile_core_fn_method_mobilecore_set_google_account_needs_reauth(`ptr`: Long,`accountId`: RustBuffer.ByValue,`needsReauth`: Byte,uniffi_out_err: UniffiRustCallStatus, 
+): Unit
 external fun uniffi_knotq_mobile_core_fn_method_mobilecore_set_item_date(`ptr`: Long,`schemeId`: RustBuffer.ByValue,`itemId`: RustBuffer.ByValue,`kind`: RustBuffer.ByValue,`date`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
 ): Unit
 external fun uniffi_knotq_mobile_core_fn_method_mobilecore_set_item_indent(`ptr`: Long,`schemeId`: RustBuffer.ByValue,`itemId`: RustBuffer.ByValue,`indent`: Int,uniffi_out_err: UniffiRustCallStatus, 
@@ -919,6 +929,8 @@ external fun uniffi_knotq_mobile_core_fn_method_mobilecore_start_ws_sync(`ptr`: 
 external fun uniffi_knotq_mobile_core_fn_method_mobilecore_stop_ws_sync(`ptr`: Long,uniffi_out_err: UniffiRustCallStatus, 
 ): Unit
 external fun uniffi_knotq_mobile_core_fn_method_mobilecore_sync_google_calendars(`ptr`: Long,uniffi_out_err: UniffiRustCallStatus, 
+): RustBuffer.ByValue
+external fun uniffi_knotq_mobile_core_fn_method_mobilecore_sync_google_calendars_with_identity(`ptr`: Long,`accounts`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
 ): RustBuffer.ByValue
 external fun uniffi_knotq_mobile_core_fn_method_mobilecore_sync_once(`ptr`: Long,`apiBase`: RustBuffer.ByValue,`bearerToken`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
 ): Byte
@@ -1118,6 +1130,9 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
     if (lib.uniffi_knotq_mobile_core_checksum_method_mobilecore_google_auth_request() != 56614.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
+    if (lib.uniffi_knotq_mobile_core_checksum_method_mobilecore_import_google_calendars_with_identity() != 32937.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
     if (lib.uniffi_knotq_mobile_core_checksum_method_mobilecore_insert_table() != 50709.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
@@ -1181,6 +1196,9 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
     if (lib.uniffi_knotq_mobile_core_checksum_method_mobilecore_seed_editor_image_fixture() != 52693.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
+    if (lib.uniffi_knotq_mobile_core_checksum_method_mobilecore_set_google_account_needs_reauth() != 64233.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
     if (lib.uniffi_knotq_mobile_core_checksum_method_mobilecore_set_item_date() != 4016.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
@@ -1236,6 +1254,9 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_knotq_mobile_core_checksum_method_mobilecore_sync_google_calendars() != 29004.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_knotq_mobile_core_checksum_method_mobilecore_sync_google_calendars_with_identity() != 22767.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_knotq_mobile_core_checksum_method_mobilecore_sync_once() != 14938.toShort()) {
@@ -1468,6 +1489,29 @@ public object FfiConverterInt: FfiConverter<Int, Int> {
 /**
  * @suppress
  */
+public object FfiConverterLong: FfiConverter<Long, Long> {
+    override fun lift(value: Long): Long {
+        return value
+    }
+
+    override fun read(buf: ByteBuffer): Long {
+        return buf.getLong()
+    }
+
+    override fun lower(value: Long): Long {
+        return value
+    }
+
+    override fun allocationSize(value: Long) = 8UL
+
+    override fun write(value: Long, buf: ByteBuffer) {
+        buf.putLong(value)
+    }
+}
+
+/**
+ * @suppress
+ */
 public object FfiConverterBoolean: FfiConverter<Boolean, Byte> {
     override fun lift(value: Byte): Boolean {
         return value.toInt() != 0
@@ -1683,6 +1727,8 @@ public interface MobileCoreInterface {
     
     fun `googleAuthRequest`(`clientId`: kotlin.String, `redirectUri`: kotlin.String): MobileGoogleAuthRequest
     
+    fun `importGoogleCalendarsWithIdentity`(`account`: MobileGoogleIdentityAccount, `parentId`: kotlin.String?): MobileGoogleSyncResult
+    
     fun `insertTable`(`schemeId`: kotlin.String, `afterItemId`: kotlin.String?, `itemId`: kotlin.String)
     
     fun `insertTableColumn`(`schemeId`: kotlin.String, `itemId`: kotlin.String, `column`: kotlin.Int)
@@ -1725,6 +1771,8 @@ public interface MobileCoreInterface {
     
     fun `seedEditorImageFixture`()
     
+    fun `setGoogleAccountNeedsReauth`(`accountId`: kotlin.String, `needsReauth`: kotlin.Boolean)
+    
     fun `setItemDate`(`schemeId`: kotlin.String, `itemId`: kotlin.String, `kind`: kotlin.String, `date`: kotlin.String?)
     
     fun `setItemIndent`(`schemeId`: kotlin.String, `itemId`: kotlin.String, `indent`: kotlin.Int)
@@ -1762,6 +1810,8 @@ public interface MobileCoreInterface {
     fun `stopWsSync`()
     
     fun `syncGoogleCalendars`(): MobileGoogleSyncResult
+    
+    fun `syncGoogleCalendarsWithIdentity`(`accounts`: List<MobileGoogleIdentityAccount>): MobileGoogleSyncResult
     
     fun `syncOnce`(`apiBase`: kotlin.String, `bearerToken`: kotlin.String): kotlin.Boolean
     
@@ -2150,6 +2200,20 @@ open class MobileCore: Disposable, AutoCloseable, MobileCoreInterface
     
 
     
+    @Throws(MobileException::class)override fun `importGoogleCalendarsWithIdentity`(`account`: MobileGoogleIdentityAccount, `parentId`: kotlin.String?): MobileGoogleSyncResult {
+            return FfiConverterTypeMobileGoogleSyncResult.lift(
+    callWithHandle {
+    uniffiRustCallWithError(MobileException) { _status ->
+    UniffiLib.uniffi_knotq_mobile_core_fn_method_mobilecore_import_google_calendars_with_identity(
+        it,
+        FfiConverterTypeMobileGoogleIdentityAccount.lower(`account`),FfiConverterOptionalString.lower(`parentId`),_status)
+}
+    }
+    )
+    }
+    
+
+    
     @Throws(MobileException::class)override fun `insertTable`(`schemeId`: kotlin.String, `afterItemId`: kotlin.String?, `itemId`: kotlin.String)
         = 
     callWithHandle {
@@ -2427,6 +2491,19 @@ open class MobileCore: Disposable, AutoCloseable, MobileCoreInterface
     
 
     
+    @Throws(MobileException::class)override fun `setGoogleAccountNeedsReauth`(`accountId`: kotlin.String, `needsReauth`: kotlin.Boolean)
+        = 
+    callWithHandle {
+    uniffiRustCallWithError(MobileException) { _status ->
+    UniffiLib.uniffi_knotq_mobile_core_fn_method_mobilecore_set_google_account_needs_reauth(
+        it,
+        FfiConverterString.lower(`accountId`),FfiConverterBoolean.lower(`needsReauth`),_status)
+}
+    }
+    
+    
+
+    
     @Throws(MobileException::class)override fun `setItemDate`(`schemeId`: kotlin.String, `itemId`: kotlin.String, `kind`: kotlin.String, `date`: kotlin.String?)
         = 
     callWithHandle {
@@ -2670,6 +2747,20 @@ open class MobileCore: Disposable, AutoCloseable, MobileCoreInterface
     UniffiLib.uniffi_knotq_mobile_core_fn_method_mobilecore_sync_google_calendars(
         it,
         _status)
+}
+    }
+    )
+    }
+    
+
+    
+    @Throws(MobileException::class)override fun `syncGoogleCalendarsWithIdentity`(`accounts`: List<MobileGoogleIdentityAccount>): MobileGoogleSyncResult {
+            return FfiConverterTypeMobileGoogleSyncResult.lift(
+    callWithHandle {
+    uniffiRustCallWithError(MobileException) { _status ->
+    UniffiLib.uniffi_knotq_mobile_core_fn_method_mobilecore_sync_google_calendars_with_identity(
+        it,
+        FfiConverterSequenceTypeMobileGoogleIdentityAccount.lower(`accounts`),_status)
 }
     }
     )
@@ -3008,6 +3099,10 @@ data class MobileGoogleAccount (
     var `title`: kotlin.String
     , 
     var `detail`: kotlin.String
+    , 
+    var `email`: kotlin.String
+    , 
+    var `needsReauth`: kotlin.Boolean
     
 ){
     
@@ -3027,19 +3122,25 @@ public object FfiConverterTypeMobileGoogleAccount: FfiConverterRustBuffer<Mobile
             FfiConverterString.read(buf),
             FfiConverterString.read(buf),
             FfiConverterString.read(buf),
+            FfiConverterString.read(buf),
+            FfiConverterBoolean.read(buf),
         )
     }
 
     override fun allocationSize(value: MobileGoogleAccount) = (
             FfiConverterString.allocationSize(value.`id`) +
             FfiConverterString.allocationSize(value.`title`) +
-            FfiConverterString.allocationSize(value.`detail`)
+            FfiConverterString.allocationSize(value.`detail`) +
+            FfiConverterString.allocationSize(value.`email`) +
+            FfiConverterBoolean.allocationSize(value.`needsReauth`)
     )
 
     override fun write(value: MobileGoogleAccount, buf: ByteBuffer) {
             FfiConverterString.write(value.`id`, buf)
             FfiConverterString.write(value.`title`, buf)
             FfiConverterString.write(value.`detail`, buf)
+            FfiConverterString.write(value.`email`, buf)
+            FfiConverterBoolean.write(value.`needsReauth`, buf)
     }
 }
 
@@ -3098,6 +3199,64 @@ public object FfiConverterTypeMobileGoogleAuthRequest: FfiConverterRustBuffer<Mo
             FfiConverterString.write(value.`redirectUri`, buf)
             FfiConverterString.write(value.`scope`, buf)
             FfiConverterString.write(value.`clientId`, buf)
+    }
+}
+
+
+
+data class MobileGoogleIdentityAccount (
+    var `accountId`: kotlin.String?
+    , 
+    var `clientId`: kotlin.String
+    , 
+    var `accessToken`: kotlin.String
+    , 
+    var `email`: kotlin.String?
+    , 
+    var `scope`: kotlin.String?
+    , 
+    var `expiresInSecs`: kotlin.Long?
+    
+){
+    
+
+    
+
+    
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeMobileGoogleIdentityAccount: FfiConverterRustBuffer<MobileGoogleIdentityAccount> {
+    override fun read(buf: ByteBuffer): MobileGoogleIdentityAccount {
+        return MobileGoogleIdentityAccount(
+            FfiConverterOptionalString.read(buf),
+            FfiConverterString.read(buf),
+            FfiConverterString.read(buf),
+            FfiConverterOptionalString.read(buf),
+            FfiConverterOptionalString.read(buf),
+            FfiConverterOptionalLong.read(buf),
+        )
+    }
+
+    override fun allocationSize(value: MobileGoogleIdentityAccount) = (
+            FfiConverterOptionalString.allocationSize(value.`accountId`) +
+            FfiConverterString.allocationSize(value.`clientId`) +
+            FfiConverterString.allocationSize(value.`accessToken`) +
+            FfiConverterOptionalString.allocationSize(value.`email`) +
+            FfiConverterOptionalString.allocationSize(value.`scope`) +
+            FfiConverterOptionalLong.allocationSize(value.`expiresInSecs`)
+    )
+
+    override fun write(value: MobileGoogleIdentityAccount, buf: ByteBuffer) {
+            FfiConverterOptionalString.write(value.`accountId`, buf)
+            FfiConverterString.write(value.`clientId`, buf)
+            FfiConverterString.write(value.`accessToken`, buf)
+            FfiConverterOptionalString.write(value.`email`, buf)
+            FfiConverterOptionalString.write(value.`scope`, buf)
+            FfiConverterOptionalLong.write(value.`expiresInSecs`, buf)
     }
 }
 
@@ -4293,6 +4452,38 @@ public object FfiConverterOptionalInt: FfiConverterRustBuffer<kotlin.Int?> {
 /**
  * @suppress
  */
+public object FfiConverterOptionalLong: FfiConverterRustBuffer<kotlin.Long?> {
+    override fun read(buf: ByteBuffer): kotlin.Long? {
+        if (buf.get().toInt() == 0) {
+            return null
+        }
+        return FfiConverterLong.read(buf)
+    }
+
+    override fun allocationSize(value: kotlin.Long?): ULong {
+        if (value == null) {
+            return 1UL
+        } else {
+            return 1UL + FfiConverterLong.allocationSize(value)
+        }
+    }
+
+    override fun write(value: kotlin.Long?, buf: ByteBuffer) {
+        if (value == null) {
+            buf.put(0)
+        } else {
+            buf.put(1)
+            FfiConverterLong.write(value, buf)
+        }
+    }
+}
+
+
+
+
+/**
+ * @suppress
+ */
 public object FfiConverterOptionalString: FfiConverterRustBuffer<kotlin.String?> {
     override fun read(buf: ByteBuffer): kotlin.String? {
         if (buf.get().toInt() == 0) {
@@ -4455,6 +4646,34 @@ public object FfiConverterSequenceTypeMobileGoogleAccount: FfiConverterRustBuffe
         buf.putInt(value.size)
         value.iterator().forEach {
             FfiConverterTypeMobileGoogleAccount.write(it, buf)
+        }
+    }
+}
+
+
+
+
+/**
+ * @suppress
+ */
+public object FfiConverterSequenceTypeMobileGoogleIdentityAccount: FfiConverterRustBuffer<List<MobileGoogleIdentityAccount>> {
+    override fun read(buf: ByteBuffer): List<MobileGoogleIdentityAccount> {
+        val len = buf.getInt()
+        return List<MobileGoogleIdentityAccount>(len) {
+            FfiConverterTypeMobileGoogleIdentityAccount.read(buf)
+        }
+    }
+
+    override fun allocationSize(value: List<MobileGoogleIdentityAccount>): ULong {
+        val sizeForLength = 4UL
+        val sizeForItems = value.map { FfiConverterTypeMobileGoogleIdentityAccount.allocationSize(it) }.sum()
+        return sizeForLength + sizeForItems
+    }
+
+    override fun write(value: List<MobileGoogleIdentityAccount>, buf: ByteBuffer) {
+        buf.putInt(value.size)
+        value.iterator().forEach {
+            FfiConverterTypeMobileGoogleIdentityAccount.write(it, buf)
         }
     }
 }

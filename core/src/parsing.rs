@@ -73,12 +73,6 @@ pub(crate) fn parse_theme_mode(raw: &str) -> Result<ThemeMode> {
         "system" => ThemeMode::System,
         "dark" => ThemeMode::Dark,
         "light" => ThemeMode::Light,
-        "rose_pine_moon" => ThemeMode::RosePineMoon,
-        "catppuccin_mocha" => ThemeMode::CatppuccinMocha,
-        "tokyo_night" => ThemeMode::TokyoNight,
-        "parchment" => ThemeMode::Parchment,
-        "rose_pine_dawn" => ThemeMode::RosePineDawn,
-        "catppuccin_latte" => ThemeMode::CatppuccinLatte,
         other => return Err(anyhow!("unknown theme mode {other}")),
     })
 }

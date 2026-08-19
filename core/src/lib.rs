@@ -14,7 +14,8 @@ use knotq_model::{
     daily_queue_scheme_id, daily_queue_sync_metadata, AppSettings, CalendarProvider, FolderId,
     GoogleOAuthAccount, ImageAssetFormat, ImageInline, Inline, Item, ItemContent, ItemId,
     ItemMarker, NodeRef, NotificationDefaults, OccurrenceId, OperationId, Recurrence, Scheme,
-    SchemeId, SchemeSource, Table, UpcomingDisplaySettings, Workspace, DAILY_QUEUE_COLOR_INDEX,
+    SchemeId, SchemeSource, Table, UpcomingDisplaySettings, Workspace,
+    DAILY_QUEUE_COLOR_INDEX,
 };
 use knotq_notifications::{
     completed_notification_keys, compute_due_notifications_with_lead_times,
@@ -59,7 +60,8 @@ use media_sync::{
 
 mod conversions;
 use conversions::{
-    archived_scheme_node, as_u8, format_daily_label, google_account_matches_calendar_source,
+    archived_scheme_node, as_u16, as_u8, format_daily_label,
+    google_account_matches_calendar_source,
     mobile_inlines_to_inlines, mobile_notification_id, mobile_notification_lead_times,
     mobile_upcoming, next_color_index, non_empty, offset_to_i32, opt_position, position_from_i32,
     theme_mode_str, time_format_str,
@@ -414,6 +416,33 @@ pub struct MobileGoogleAccount {
     pub id: String,
     pub title: String,
     pub detail: String,
+    /// Address the shell needs to re-request authorization for this specific
+    /// account (Android pins `AuthorizationRequest` to it). Empty when the
+    /// account was linked before an email was recorded.
+    pub email: String,
+    /// The stored authorization no longer works and the user has to grant it
+    /// again; the shell should surface a reconnect affordance.
+    pub needs_reauth: bool,
+}
+
+/// An access token minted by a platform identity service (Android's Google
+/// Identity `AuthorizationClient`) rather than by the core's own OAuth
+/// exchange.
+///
+/// Google blocks the loopback OAuth flow on Android, and the supported
+/// replacement never yields a refresh token — the shell must obtain a fresh
+/// access token before each sync and hand it over through this record. `email`
+/// is a hint only; the authoritative identity is resolved from the token.
+#[derive(Clone, Debug)]
+pub struct MobileGoogleIdentityAccount {
+    /// The stored account this token belongs to. `None` when linking a new
+    /// account, where the identity is not known until the token is resolved.
+    pub account_id: Option<String>,
+    pub client_id: String,
+    pub access_token: String,
+    pub email: Option<String>,
+    pub scope: Option<String>,
+    pub expires_in_secs: Option<i64>,
 }
 
 #[derive(Clone, Debug)]

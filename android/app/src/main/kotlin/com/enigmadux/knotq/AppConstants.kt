@@ -53,14 +53,27 @@ internal const val APPLE_SUBSCRIPTIONS_URL = "https://apps.apple.com/account/sub
 // Always production www.knotq.com — the hosted legal pages aren't sandboxed.
 internal const val TERMS_OF_USE_URL = "https://www.knotq.com/terms.html"
 internal const val PRIVACY_POLICY_URL = "https://www.knotq.com/privacy.html"
-// Desktop ("installed") OAuth client. Android drives a loopback-redirect PKCE flow
-// (see startGoogleCalendarImport) rather than the iOS reverse-client-id custom scheme,
-// so the redirect URI is minted at runtime as http://127.0.0.1:<port>; there is no
-// static redirect constant and no client secret to embed.
+// The Android OAuth client (knotq-android). Google identifies the app by package
+// name + signing certificate, so nothing here is a secret and there is no client
+// secret to embed. It is recorded on each linked account so an Android-linked
+// account is distinguishable from a desktop/iOS one.
+//
+// Authorization goes through Google Identity Services
+// (Identity.getAuthorizationClient) — see startGoogleCalendarImport. Google
+// blocks the loopback redirect on Android ("Error 400: invalid_request — The
+// loopback flow has been blocked"), and custom-scheme/browser OAuth is not a
+// supported alternative there, so no redirect URI is involved at all.
 internal const val GOOGLE_CLIENT_ID = "419826075228-mt7s13h76ftugo170gqs3l0q0plmldpq.apps.googleusercontent.com"
-// How long the local loopback listener waits for the browser to redirect back before
-// giving up on a Google sign-in attempt.
-internal const val GOOGLE_OAUTH_LOOPBACK_TIMEOUT_MS = 300_000
+// Calendar scopes the app reads with. `openid`/`email` come along so the core
+// can resolve the stable account subject behind the issued token.
+internal val GOOGLE_CALENDAR_SCOPES = listOf(
+    "https://www.googleapis.com/auth/calendar.calendarlist.readonly",
+    "https://www.googleapis.com/auth/calendar.events.readonly"
+)
+internal val GOOGLE_IDENTITY_SCOPES = listOf("openid", "email")
+// Bound on the blocking wait for a silent (non-interactive) authorization during
+// a background refresh, so a wedged Play Services call cannot hang the sync thread.
+internal const val GOOGLE_AUTHORIZE_TIMEOUT_MS = 30_000L
 internal const val GOOGLE_SYNC_INTERVAL_MS = 120_000L
 // Debounce for the push that follows a local edit (mirrors iOS
 // editSyncDebounceNanos): a short leading window so a burst of edits coalesces
@@ -103,6 +116,9 @@ internal const val CALENDAR_INTERACTION_DRAG = 1
 internal const val CALENDAR_INTERACTION_CREATE = 2
 
 internal const val REQUEST_ATTACH_IMAGE = 7311
+// Google Identity authorization consent, resolved through a PendingIntent.
+internal const val REQUEST_GOOGLE_AUTHORIZE = 7312
+internal const val REQUEST_GOOGLE_CHOOSE_ACCOUNT = 7313
 internal const val REVIEW_FIRST_LAUNCH_AT_PREF = "knotq.reviewFirstLaunchAt.v1"
 internal const val REVIEW_PROMPTED_PREF = "knotq.reviewPrompted.v1"
 internal const val REVIEW_MIN_USAGE_MS = 14L * 24L * 60L * 60L * 1000L

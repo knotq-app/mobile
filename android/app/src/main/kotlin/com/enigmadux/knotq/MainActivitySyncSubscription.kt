@@ -92,9 +92,6 @@ import java.util.Locale
 import java.util.UUID
 import java.util.WeakHashMap
 import java.net.HttpURLConnection
-import java.net.InetAddress
-import java.net.ServerSocket
-import java.net.Socket
 import java.net.URL
 import java.security.MessageDigest
 import java.security.SecureRandom

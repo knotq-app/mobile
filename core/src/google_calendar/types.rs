@@ -64,6 +64,14 @@ pub(super) struct GoogleIdClaims {
     pub(super) email: Option<String>,
 }
 
+/// OpenID `userinfo` response. Used to recover a stable account identity from a
+/// bare access token, which is all a platform identity service hands back.
+#[derive(Deserialize)]
+pub(super) struct GoogleUserInfo {
+    pub(super) sub: Option<String>,
+    pub(super) email: Option<String>,
+}
+
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub(super) struct GoogleCalendarListResponse {
