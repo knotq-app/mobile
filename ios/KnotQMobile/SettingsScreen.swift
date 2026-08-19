@@ -72,6 +72,7 @@ struct GoogleCalendarSettingsSection: View {
                 }
                 .disabled(model.googleSyncInProgress || model.googleAuthInProgress)
             }
+            connectAccountButton(hasAccounts: !accounts.isEmpty)
         }
         .listRowBackground(theme.bgModal)
         .confirmationDialog(
@@ -98,6 +99,29 @@ struct GoogleCalendarSettingsSection: View {
             let title = accountPendingUnlink?.title ?? L10n.t("settings.google_calendar.unlink_fallback_name")
             Text(L10n.t("settings.google_calendar.unlink_confirm_message", ["name": title]))
         }
+    }
+
+    /// Links a Google account from Settings, the way the Android settings page
+    /// already does. The only other way in is the add menu on a folder, which
+    /// gives a user who wants to connect an account nowhere obvious to look.
+    private func connectAccountButton(hasAccounts: Bool) -> some View {
+        Button {
+            Task { await model.connectGoogleCalendar() }
+        } label: {
+            if model.googleAuthInProgress {
+                Label(L10n.t("mobile.settings.google_connecting"), systemImage: "arrow.triangle.2.circlepath")
+            } else {
+                Label(
+                    L10n.t(
+                        hasAccounts
+                            ? "mobile.settings.connect_another_google_account"
+                            : "mobile.settings.connect_google_calendar"
+                    ),
+                    systemImage: "plus.circle"
+                )
+            }
+        }
+        .disabled(model.googleAuthInProgress || model.googleSyncInProgress)
     }
 }
 
