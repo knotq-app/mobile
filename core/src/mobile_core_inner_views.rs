@@ -329,7 +329,7 @@ impl MobileCoreInner {
             .search_query(
                 self.settings.time_format,
                 SearchOptions {
-                    daily_queue_title: "Daily",
+                    daily_queue_title: knotq_l10n::t("menu.daily"),
                     daily_queue_marker_color: DAILY_QUEUE_MARKER_COLOR,
                 },
             )

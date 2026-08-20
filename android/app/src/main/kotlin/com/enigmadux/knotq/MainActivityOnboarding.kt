@@ -300,9 +300,9 @@ import kotlin.math.roundToInt
         }
         card.addView(dots, LinearLayout.LayoutParams(-2, -2).apply { bottomMargin = dp(12) })
 
-        card.addView(text(def.title, theme.textPrimary, 18f, true))
+        card.addView(text(L10n.t(this, def.title), theme.textPrimary, 18f, true))
         card.addView(
-            text(def.body, theme.textSoft, 13f, false).apply {
+            text(L10n.t(this, def.body), theme.textSoft, 13f, false).apply {
                 gravity = Gravity.START
                 setLineSpacing(dp(3).toFloat(), 1f)
             },

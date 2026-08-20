@@ -651,12 +651,12 @@ import kotlin.math.roundToInt
 
         root.addView(settingsSection(L10n.t(this, "settings.notifications.section")))
         root.addView(settingsGroup(
-            settingsLinkRow(L10n.t(this, "settings.notifications.events_label"), notificationLeadTimeLabel(eventOffset, eventDefault = true)) {
+            settingsLinkRow(L10n.t(this, "settings.notifications.events_label"), notificationLeadTimeLabel(this, eventOffset, eventDefault = true)) {
                 showNotificationDefaultDialog(L10n.t(this, "mobile.settings.event_reminders_title"), eventOffset, eventDefaultNotificationOptions) { next ->
                     mutate(obj("type" to "set_notification_defaults", "event_offset_secs" to next, "assignment_offset_secs" to assignmentOffset))
                 }
             },
-            settingsLinkRow(L10n.t(this, "settings.notifications.assignments_label"), notificationLeadTimeLabel(assignmentOffset, eventDefault = false)) {
+            settingsLinkRow(L10n.t(this, "settings.notifications.assignments_label"), notificationLeadTimeLabel(this, assignmentOffset, eventDefault = false)) {
                 showNotificationDefaultDialog(L10n.t(this, "mobile.settings.assignment_reminders_title"), assignmentOffset, assignmentDefaultNotificationOptions) { next ->
                     mutate(obj("type" to "set_notification_defaults", "event_offset_secs" to eventOffset, "assignment_offset_secs" to next))
                 }
@@ -716,7 +716,7 @@ import kotlin.math.roundToInt
                     addView(LinearLayout(this@syncSettingsCard).apply {
                         orientation = LinearLayout.VERTICAL
                         addView(text(L10n.t(this@syncSettingsCard, "settings.sync.title"), theme.textPrimary, 15f, true), LinearLayout.LayoutParams(-1, dp(18)))
-                        addView(text("Cross-device sync and accounts are coming soon.", theme.textSoft, 11f, false).apply {
+                        addView(text(L10n.t(this@syncSettingsCard, "settings.sync.detail_available"), theme.textSoft, 11f, false).apply {
                             maxLines = 3
                         }, LinearLayout.LayoutParams(-1, -2))
                     }, LinearLayout.LayoutParams(0, -2, 1f))
@@ -840,7 +840,7 @@ import kotlin.math.roundToInt
         onSelect: (Int) -> Unit
     ) {
         val labels = options.map { option ->
-            if (option.offsetSecs == current) "${option.label} $GLYPH_TICK" else option.label
+            if (option.offsetSecs == current) "${option.label(this)} $GLYPH_TICK" else option.label(this)
         }.toTypedArray()
         AlertDialog.Builder(this)
             .setTitle(title)

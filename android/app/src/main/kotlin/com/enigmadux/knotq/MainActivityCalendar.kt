@@ -102,9 +102,9 @@ import kotlin.math.roundToInt
 
     internal fun MainActivity.renderUpcomingRail(): View {
         val root = page(compact = true)
-        addOccurrenceSection(root, "Overdue", "None", calendar().optJSONArray("overdue"))
-        addOccurrenceSection(root, "Today", "None today", todayOccurrences())
-        addOccurrenceSection(root, "Upcoming", "None", calendar().optJSONArray("upcoming"))
+        addOccurrenceSection(root, L10n.t(this, "mobile.calendar.overdue_section"), L10n.t(this, "upcoming.empty.none"), calendar().optJSONArray("overdue"))
+        addOccurrenceSection(root, L10n.t(this, "event.date.today"), L10n.t(this, "upcoming.empty.none_today"), todayOccurrences())
+        addOccurrenceSection(root, L10n.t(this, "upcoming.section.upcoming"), L10n.t(this, "upcoming.empty.none"), calendar().optJSONArray("upcoming"))
         return scroll(root)
     }
 
@@ -264,4 +264,3 @@ import kotlin.math.roundToInt
                 setOnClickListener { showMonthPickerDialog() }
             }, FrameLayout.LayoutParams(-2, dp(34), Gravity.CENTER))
         }
-

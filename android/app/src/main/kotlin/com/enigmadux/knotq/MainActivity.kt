@@ -584,12 +584,12 @@ class MainActivity : Activity() {
             maxLines = 1
         }, LinearLayout.LayoutParams(0, -1, 1f))
 
-        titleBar.addView(iconActionChip(GLYPH_SEARCH, "Search") {
+        titleBar.addView(iconActionChip(GLYPH_SEARCH, L10n.t(this, "mobile.nav.tab_search")) {
             selectedTab = TAB_SEARCH
             selectedSchemeId = null
             render()
         }, marginRight(dp(6), -2, dp(28)))
-        titleBar.addView(iconActionChip(GLYPH_CLOUD, syncSession?.email ?: "Sign in") {
+        titleBar.addView(iconActionChip(GLYPH_CLOUD, syncSession?.email ?: L10n.t(this, "mobile.auth.sign_in")) {
             showSyncAccountDialog()
         }, marginRight(dp(6), dp(104), dp(28)))
         titleBar.addView(chip(GLYPH_ADD) { showNewMenu() }, LinearLayout.LayoutParams(dp(32), dp(28)))
@@ -600,9 +600,9 @@ class MainActivity : Activity() {
         dock.background = rounded(theme.bgToolbar, dp(30), theme.borderOverlay, max(1, (0.5f * resources.displayMetrics.density).roundToInt()))
         dock.elevation = dp(if (theme.isDark) 8 else 2).toFloat()
         listOf(
-            Triple(TAB_HOME, R.drawable.ic_knotq_home_24, "Home"),
-            Triple(TAB_CALENDAR, R.drawable.ic_knotq_calendar_24, "Calendar"),
-            Triple(TAB_SETTINGS, R.drawable.ic_knotq_gear_24, "Settings")
+            Triple(TAB_HOME, R.drawable.ic_knotq_home_24, L10n.t(this, "mobile.nav.tab_home")),
+            Triple(TAB_CALENDAR, R.drawable.ic_knotq_calendar_24, L10n.t(this, "mobile.nav.tab_calendar")),
+            Triple(TAB_SETTINGS, R.drawable.ic_knotq_gear_24, L10n.t(this, "mobile.nav.tab_settings"))
         ).forEach { (index, iconRes, label) ->
             val selected = when (index) {
                 TAB_HOME -> selectedTab == TAB_HOME || selectedTab in listOf(TAB_SCHEMES, TAB_DAILY, TAB_SEARCH)
@@ -1899,7 +1899,7 @@ class MainActivity : Activity() {
             }
             append(root?.optJSONArray("children"), rootId, 0)
             if (rowMetas.isEmpty()) {
-                list.addView(text("No schemes yet", theme.textMuted, 14f, false).apply {
+                list.addView(text(L10n.t(this@MainActivity, "mobile.home.no_schemes_yet"), theme.textMuted, 14f, false).apply {
                     setPadding(dp(10), dp(8), dp(10), dp(8))
                 }, LinearLayout.LayoutParams(-1, dp(36)))
             }

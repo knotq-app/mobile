@@ -305,8 +305,8 @@ import kotlin.math.roundToInt
         refreshWeekdayChips()
         val defaultOffset = defaultNotificationOffset(initialKind)
         val currentOffset = occurrence?.takeUnless { it.isNull("notification_offset_secs") }?.optInt("notification_offset_secs") ?: defaultOffset
-        val notificationOptions = occurrenceNotificationOptionsIncluding(currentOffset)
-        val notification = spinner(notificationOptions.map { it.label }.toTypedArray()).apply {
+        val notificationOptions = occurrenceNotificationOptionsIncluding(this, currentOffset)
+        val notification = spinner(notificationOptions.map { it.label(this) }.toTypedArray()).apply {
             setSelection(notificationOptions.indexOfFirst { it.offsetSecs == currentOffset }.coerceAtLeast(0))
             isEnabled = !readOnly
         }

@@ -110,7 +110,7 @@ import kotlin.math.roundToInt
 internal fun MainActivity.showSyncAccountDialog() {
     // Accounts/sign-in are compiled out of release builds.
     if (!BuildConfig.ACCOUNTS_ENABLED) {
-        toast("Cross-device sync and accounts are coming soon.")
+        toast(L10n.t(this, "mobile.sync.state_off"))
         return
     }
     if (syncSession != null) {

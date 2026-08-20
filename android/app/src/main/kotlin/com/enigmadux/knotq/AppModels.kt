@@ -30,32 +30,32 @@ internal data class OnboardingStepDef(
 
 internal val ONBOARDING_STEPS = listOf(
     OnboardingStepDef(
-        "Welcome to KnotQ",
-        "KnotQ is a single app for calendar events, reminders, assignments, and general notes. It aims to be simple yet functional.",
+        "onboarding.step.welcome.title",
+        "onboarding.step.welcome.body",
         TAB_HOME,
         ringsContent = false
     ),
     OnboardingStepDef(
-        "Calendar",
-        "Your calendar holds events, assignments, and reminders. Long-press to add a task.",
+        "onboarding.step.calendar.title",
+        "onboarding.step.calendar.body",
         TAB_CALENDAR,
         ringsContent = true
     ),
     OnboardingStepDef(
-        "Schemes",
-        "Schemes are editable outlines for projects, notes, and plans. Add start and end times to any line to turn it into a calendar item.",
+        "onboarding.step.schemes.title",
+        "onboarding.step.schemes.body",
         TAB_SCHEMES,
         ringsContent = true
     ),
     OnboardingStepDef(
-        "Daily",
-        "Daily is a special, default scheme. Write an optimistic task list each day and check off the ones you complete.",
+        "onboarding.step.daily.title",
+        "onboarding.step.daily.body",
         TAB_DAILY,
         ringsContent = true
     ),
     OnboardingStepDef(
-        "Upcoming",
-        "Upcoming gathers nearby events, assignments, and reminders. You can mark tasks complete right from here.",
+        "onboarding.step.upcoming.title",
+        "onboarding.step.upcoming.body",
         TAB_HOME,
         ringsContent = true
     )
