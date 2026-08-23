@@ -44,6 +44,7 @@ fn mobile_collect_crdt_changes(command: &Command, out: &mut WorkspaceCrdtChangeS
         | Command::ReplaceItem { scheme, .. }
         | Command::SetItemIndent { scheme, .. }
         | Command::SetItemMarker { scheme, .. }
+        | Command::SetItemMarkerFamily { scheme, .. }
         | Command::SetItemDate { scheme, .. }
         | Command::SetItemRecurrence { scheme, .. }
         | Command::SetItemPriority { scheme, .. }
