@@ -28,7 +28,7 @@ struct KnotQMobileApp: App {
                     // keyboard presentation as every tap after it.
                     KeyboardWarmup.warmSoon()
                 }
-                .onChange(of: scenePhase) { phase in
+                .onChange(of: scenePhase) { _, phase in
                     switch phase {
                     case .active:
                         // Advance the daily/home "today" if the day rolled over while

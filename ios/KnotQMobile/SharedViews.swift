@@ -240,6 +240,7 @@ enum EditorKeyboardHandoff {
 /// keyboard configuration. If traits change with the responder transfer, iOS
 /// rebuilds the prediction row after the push instead of carrying it through
 /// the animation.
+@MainActor
 enum EditorDocumentInputTraits {
     static func apply(to textView: UITextView) {
         textView.autocapitalizationType = .sentences

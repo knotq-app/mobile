@@ -783,6 +783,7 @@ enum DailyCaretVisibility {
 /// been revealed, so the day's content dropped by whatever the difference was:
 /// a 34pt jump ~1.7s after the tap, on 7 of 10 cold opens of Daily, with the
 /// other 3 landing correct purely on timing.
+@MainActor
 enum DailyDayHost {
     static func configure(_ host: UIHostingController<some View>) {
         host.view.backgroundColor = .clear
