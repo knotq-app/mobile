@@ -89,6 +89,8 @@ final class DayTimelineUIKitView: UIView, UIGestureRecognizerDelegate, UIScrollV
     var creatingEvent = false
     var needsFullRender = true
     var resetToken = 0
+    var nowIndicatorTimer: Timer?
+    var lastNowIndicatorDay: Date?
 
     static let titleHeight: CGFloat = 42
     static let weekHeight: CGFloat = 66
@@ -110,6 +112,7 @@ final class DayTimelineUIKitView: UIView, UIGestureRecognizerDelegate, UIScrollV
     static let bottomStickyChromeInset: CGFloat = 104
     static let dayDecorationLayerName = "knotq.dayTimeline.decoration"
     static let gutterDecorationLayerName = "knotq.dayTimeline.gutterDecoration"
+    static let nowIndicatorLayerName = "knotq.dayTimeline.nowIndicator"
 
     override init(frame: CGRect) {
         super.init(frame: frame)
@@ -295,7 +298,10 @@ final class DayTimelineUIKitView: UIView, UIGestureRecognizerDelegate, UIScrollV
 
     override func didMoveToWindow() {
         super.didMoveToWindow()
-        guard window != nil else { return }
+        guard window != nil else {
+            stopNowIndicatorTimer()
+            return
+        }
         // SwiftUI can drive the first `configure`/`layoutSubviews` before this
         // view is in a window, which leaves the CALayer-drawn grid/events
         // uncommitted until the next interaction — the "Daily opens fully black
@@ -309,6 +315,69 @@ final class DayTimelineUIKitView: UIView, UIGestureRecognizerDelegate, UIScrollV
             guard let self, self.window != nil else { return }
             self.renderAllIfReady(force: true)
         }
+        startNowIndicatorTimer()
+    }
+
+    isolated deinit {
+        nowIndicatorTimer?.invalidate()
+        NotificationCenter.default.removeObserver(self)
+    }
+
+    /// Keeps the now-line (and the day it belongs to) live while the
+    /// timeline is on screen. iOS never redraws the "red line" on its own —
+    /// without this it only moves when something else forces a re-render
+    /// (scrolling, switching days, a data edit).
+    private func startNowIndicatorTimer() {
+        stopNowIndicatorTimer()
+        lastNowIndicatorDay = Calendar.current.startOfDay(for: Date())
+        // A fraction of a minute rather than exactly 60s so the line is
+        // never more than ~20s stale even right after the timer starts.
+        let timer = Timer(timeInterval: 20, repeats: true) { [weak self] _ in
+            self?.tickNowIndicator()
+        }
+        timer.tolerance = 5
+        RunLoop.main.add(timer, forMode: .common)
+        nowIndicatorTimer = timer
+        NotificationCenter.default.addObserver(
+            self, selector: #selector(handleClockOrForegroundChange),
+            name: UIApplication.willEnterForegroundNotification, object: nil
+        )
+        NotificationCenter.default.addObserver(
+            self, selector: #selector(handleClockOrForegroundChange),
+            name: UIApplication.significantTimeChangeNotification, object: nil
+        )
+    }
+
+    private func stopNowIndicatorTimer() {
+        nowIndicatorTimer?.invalidate()
+        nowIndicatorTimer = nil
+        NotificationCenter.default.removeObserver(self, name: UIApplication.willEnterForegroundNotification, object: nil)
+        NotificationCenter.default.removeObserver(self, name: UIApplication.significantTimeChangeNotification, object: nil)
+    }
+
+    @objc private func handleClockOrForegroundChange() {
+        // The app may have been backgrounded for hours (timer paused the
+        // whole time) or the clock may have jumped — always re-check.
+        tickNowIndicator(force: true)
+    }
+
+    private func tickNowIndicator(force: Bool = false) {
+        guard window != nil, theme != nil, calendarSnapshot != nil else { return }
+        let today = Calendar.current.startOfDay(for: Date())
+        if force || today != lastNowIndicatorDay {
+            lastNowIndicatorDay = today
+            // Midnight rollover (or a clock jump) changes which column is
+            // "today" — the weekday strip, header title, and full-day past
+            // shading all key off that, so give it the same full pass a
+            // manual date change gets rather than just moving the line.
+            needsFullRender = true
+            setNeedsLayout()
+            return
+        }
+        guard hasToday() else { return }
+        // Don't yank a view out from under an in-progress drag or draft.
+        guard activeDragView == nil, activeCreateDraft == nil else { return }
+        refreshNowIndicators()
     }
 
     func layoutTitleButton() {

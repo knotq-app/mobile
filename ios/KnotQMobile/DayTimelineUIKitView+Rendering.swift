@@ -177,6 +177,7 @@ extension DayTimelineUIKitView {
         removeDecorationLayers(from: timeGutter.layer, named: Self.gutterDecorationLayerName)
         dayCanvas.subviews.filter { $0 !== draftView }.forEach { $0.removeFromSuperview() }
         removeDecorationLayers(from: dayCanvas.layer, named: Self.dayDecorationLayerName)
+        removeDecorationLayers(from: dayCanvas.layer, named: Self.nowIndicatorLayerName)
         if draftView.superview !== dayCanvas {
             dayCanvas.addSubview(draftView)
         }
@@ -249,7 +250,7 @@ extension DayTimelineUIKitView {
                 continue
             }
             let layer = CALayer()
-            layer.name = Self.dayDecorationLayerName
+            layer.name = Self.nowIndicatorLayerName
             layer.backgroundColor = shade
             layer.frame = CGRect(x: geometry.canvasX(forDayIndex: index), y: 0, width: geometry.columnWidth, height: height)
             dayCanvas.layer.insertSublayer(layer, at: 0)
@@ -286,11 +287,30 @@ extension DayTimelineUIKitView {
         path.move(to: CGPoint(x: x, y: y))
         path.addLine(to: CGPoint(x: x + geometry.columnWidth, y: y))
         let line = CAShapeLayer()
-        line.name = Self.dayDecorationLayerName
+        line.name = Self.nowIndicatorLayerName
         line.path = path.cgPath
         line.strokeColor = UIColor(theme.danger).cgColor
         line.lineWidth = 1.5
-        dayCanvas.layer.addSublayer(line)
+        // Keep it under the event blocks (as in the original draw order,
+        // which ran before `drawEvents`) even when this is a standalone
+        // refresh called after events already exist on screen.
+        if let firstEventLayer = dayCanvas.subviews.first(where: { $0 !== draftView })?.layer {
+            dayCanvas.layer.insertSublayer(line, below: firstEventLayer)
+        } else {
+            dayCanvas.layer.addSublayer(line)
+        }
+    }
+
+    /// Re-draws just the elapsed-day shade and the now-line, without
+    /// touching the grid, event views, or scroll position. Used by the
+    /// once-a-minute tick so it can't disrupt an in-progress scroll/drag or
+    /// recreate event views unnecessarily.
+    func refreshNowIndicators() {
+        guard let theme, bounds.width > 10, bounds.height > 10, dayCanvas.bounds.width > 0 else { return }
+        removeDecorationLayers(from: dayCanvas.layer, named: Self.nowIndicatorLayerName)
+        let geometry = currentGeometry()
+        drawPastShade(theme: theme, geometry: geometry)
+        drawNowLine(theme: theme, geometry: geometry)
     }
 
     func drawEvents(theme: KnotQTheme, geometry: DayTimelineGeometry) {
