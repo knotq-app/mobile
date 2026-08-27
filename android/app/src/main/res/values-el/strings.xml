@@ -222,10 +222,12 @@
     <string name="event_scope_dialog_this_event">Αυτό το γεγονός</string>
     <string name="event_scope_dialog_title">Επαναλαμβανόμενο γεγονός</string>
     <string name="event_value_none">Κανένα</string>
+    <string name="export_choose_destination">Επιλέξτε πού θα εξαχθεί</string>
     <string name="google_calendar_account_mismatch">συνδεδεμένο ως {signed_in}, αλλά αυτό το ημερολόγιο ανήκει στο {expected}</string>
     <string name="google_calendar_account_not_connected">Αυτός ο λογαριασμός Google δεν είναι πλέον συνδεδεμένος τοπικά.</string>
     <string name="google_calendar_background_sync_failed_title">Ο συγχρονισμός Google Calendar στο παρασκήνιο απέτυχε</string>
     <string name="google_calendar_error_import_worker_stopped">Η εργάσια εισαγωγής Google Calendar σταμάτησε</string>
+    <string name="google_calendar_error_permission_denied">Το KnotQ δεν επιτρέπεται να διαβάσει τα ημερολόγια Google του {account}. Συνδέστε ξανά τον λογαριασμό και ενεργοποιήστε και τις δύο άδειες ημερολογίου στην οθόνη της Google.</string>
     <string name="google_calendar_error_reconnect_worker_stopped">Η εργάσια επανασύνδεσης Google Calendar σταμάτησε</string>
     <string name="google_calendar_error_refresh_worker_stopped">Η εργάσια ανανέωσης Google Calendar σταμάτησε</string>
     <string name="google_calendar_error_selector_worker_stopped">Η εργάσια επιλογής Google Calendar σταμάτησε</string>
@@ -234,12 +236,14 @@
     <string name="google_calendar_reconnect_title">Επανασύνδεση Google Calendar</string>
     <string name="google_calendar_refresh_failed_title">Η ανανέωση Google Calendar απέτυχε</string>
     <string name="google_oauth_callback_failure_body">Η σύνδεση Google Calendar απέτυχε. Μπορείτε να κλείσετε αυτήν την καρτέλα και να επιστρέψετε στο KnotQ.</string>
+    <string name="google_oauth_callback_scope_denied_body">Το KnotQ χρειάζεται ακόμη άδεια για να διαβάσει τα ημερολόγιά σας. Στην οθόνη αδειών της Google τα πλαίσια ημερολογίου παραμένουν απενεργοποιημένα μέχρι να τα ενεργοποιήσετε — κλείστε αυτή την καρτέλα, συνδεθείτε ξανά στο KnotQ και ενεργοποιήστε και τις δύο άδειες ημερολογίου.</string>
     <string name="google_oauth_callback_success_body">Το Google Calendar είναι συνδεδεμένο. Μπορείτε να κλείσετε αυτήν την καρτέλα και να επιστρέψετε στο KnotQ.</string>
+    <string name="google_oauth_error_calendar_scope_denied">Το KnotQ χρειάζεται άδεια για να διαβάσει τα ημερολόγιά σας. Στην οθόνη αδειών της Google ενεργοποιήστε και τα δύο πλαίσια ημερολογίου και συνδεθείτε ξανά.</string>
     <string name="google_oauth_error_cancelled">Η επανάκλιση του Google OAuth browser ακυρώθηκε</string>
     <string name="google_oauth_error_missing_code">Η επανάκλιση Google OAuth δεν περιελάμβανε κωδικό</string>
     <string name="google_oauth_error_no_refresh_token">Το Google δεν επέστρεψε διακριτικό ανανέωσης</string>
     <string name="google_oauth_error_provider_error">Σφάλμα Google OAuth: {error}</string>
-    <string name="google_oauth_error_timeout">Ο Google OAuth λήξη χρονικού ορίου κατά την αναμονή για επανάκλιση του browser</string>
+    <string name="google_oauth_error_timeout">Το KnotQ δεν έλαβε ποτέ απάντηση από το πρόγραμμα περιήγησής σας. Αν η Google εμφάνισε εκεί σελίδα σφάλματος ή έκλεισε η καρτέλα, δοκιμάστε να συνδεθείτε ξανά.</string>
     <string name="google_oauth_error_unexpected_state">Το Google OAuth επέστρεψε απροσδόκητη κατάσταση</string>
     <string name="google_oauth_error_worker_stopped">Η εργάσια Google OAuth σταμάτησε</string>
     <plurals name="google_sync_imported_count">
@@ -255,6 +259,7 @@
     <string name="menu_calendar">Ημερολόγιο</string>
     <string name="menu_daily">Καθημερινά</string>
     <string name="menu_edit">Επεξεργασία</string>
+    <string name="menu_export_workspace_markdown">Εξαγωγή χώρου εργασίας σε Markdown…</string>
     <string name="menu_file">Αρχείο</string>
     <string name="menu_new_folder">Νέος φάκελος</string>
     <string name="menu_new_item">Νέο αντικείμενο</string>
@@ -569,7 +574,7 @@
     <string name="onboarding_step_upcoming_title">Επερχόμενα</string>
     <string name="onboarding_step_welcome_body">Το KnotQ είναι μια μόνη εφαρμογή για συμβάντα ημερολογίου, υπενθυμίσεις, εργασίες και γενικές σημειώσεις. Στόχος του είναι να είναι απλό αλλά λειτουργικό.</string>
     <string name="onboarding_step_welcome_title">Καλώς ήρθατε στο KnotQ</string>
-    <string name="onboarding_sync_prompt_body">Ο συγχρονισμός κοστίζει 3,99 $ ανά μήνα και σας επιτρέπει να μοιράζεστε τον χώρο εργασίας σας σε συσκευές. Η τοπική χρήση είναι εντελώς δωρεάν.</string>
+    <string name="onboarding_sync_prompt_body">Ο συγχρονισμός κοστίζει 2,99 $ ανά μήνα και σας επιτρέπει να μοιράζεστε τον χώρο εργασίας σας σε συσκευές. Η τοπική χρήση είναι εντελώς δωρεάν.</string>
     <string name="onboarding_sync_prompt_continue_local">Συνέχεια τοπικά για τώρα</string>
     <string name="onboarding_sync_prompt_opening_browser">Άνοιγμα του προγράμματος περιήγησής σας για σύνδεση...</string>
     <string name="onboarding_sync_prompt_panel_title">KnotQ Sync</string>
@@ -611,6 +616,7 @@
     <string name="scheme_empty_pick_a_list">Επιλέξτε μια λίστα στα αριστερά</string>
     <string name="scheme_toolbar_bold">έντονα (⌘B)</string>
     <string name="scheme_toolbar_bullet_line">γραμμή κουκκίδας (⌘3)</string>
+    <string name="scheme_toolbar_cancel_connecting_google_calendar">ακύρωση σύνδεσης του Google Ημερολογίου</string>
     <string name="scheme_toolbar_checkbox_line">γραμμή κουτιού ελέγχου (⌘2)</string>
     <string name="scheme_toolbar_connecting">Σύνδεση</string>
     <string name="scheme_toolbar_connecting_google_calendar">σύνδεση Ημερολογίου Google</string>
@@ -747,6 +753,54 @@
     <string name="sidebar_rename_error">Δεν ήταν δυνατή η μετονοματοποίηση: {error}</string>
     <string name="sidebar_rename_placeholder">Όνομα</string>
     <string name="sidebar_trash_label">Αρχείο</string>
+    <string name="starter_coursework_argument">==Επιχείρημα:== σύγκριση της οικονομικής πίεσης και της __εμπιστοσύνης του κοινού__</string>
+    <string name="starter_coursework_citation_question">Απορία για παραπομπή</string>
+    <string name="starter_coursework_final_draft">Τελική εκδοχή</string>
+    <string name="starter_coursework_flashcards">Δημιουργία καρτών για τους __βασικούς όρους__</string>
+    <string name="starter_coursework_heading_exam_prep">### Προετοιμασία εξετάσεων</string>
+    <string name="starter_coursework_heading_thesis">### Διπλωματική</string>
+    <string name="starter_coursework_lecture_notes">Ανασκόπηση σημειώσεων διαλέξεων **εβδομάδων 3-4**</string>
+    <string name="starter_coursework_name">Σπουδές</string>
+    <string name="starter_coursework_office_hours">Ερωτήσεις για τις ώρες γραφείου</string>
+    <string name="starter_coursework_old_outline">Το παλιό διάγραμμα ενσωματώθηκε στην τελική εκδοχή</string>
+    <string name="starter_coursework_primary_quotes">Προσθήκη δύο πρωτογενών παραθεμάτων από το κεφάλαιο 4</string>
+    <string name="starter_coursework_source_notes">Ολοκλήρωση των σημειώσεων πηγών</string>
+    <string name="starter_coursework_study_block">Μπλοκ μελέτης</string>
+    <string name="starter_daily_carry_over">Το KnotQ μπορεί να μεταφέρει τα ημιτελή στοιχεία στην επόμενη μέρα· η ολοκληρωμένη δουλειά μένει πίσω</string>
+    <string name="starter_daily_coffee">Φτιάξε καφέ</string>
+    <string name="starter_daily_follow_up">Στείλε ένα **προσεγμένο** μήνυμα υπενθύμισης</string>
+    <string name="starter_daily_heading_recommendations">### Καθημερινές συστάσεις (ο τρόπος μου)</string>
+    <string name="starter_daily_next_draft">Γράψε το επόμενο προσχέδιο</string>
+    <string name="starter_daily_next_one_there">Όταν τελειώνεις μια εργασία, η επόμενη είναι ήδη εκεί</string>
+    <string name="starter_daily_no_decision">Το θέμα είναι ότι **δεν χρειάζεται ποτέ να αποφασίσεις τι θα κάνεις μετά**</string>
+    <string name="starter_daily_optimistic_list">Γράψε στην αρχή κάθε μέρας μια αισιόδοξη λίστα με __συγκεκριμένες, μικρές__ εργασίες και τσέκαρέ τες καθώς προχωράς</string>
+    <string name="starter_daily_past_available">Οι παλιότερες ημερήσιες σελίδες παραμένουν διαθέσιμες εδώ</string>
+    <string name="starter_daily_past_completed">Η ολοκληρωμένη δουλειά μένει πίσω ως αρχείο</string>
+    <string name="starter_daily_personal_note">Πριν από το KnotQ βρισκόμουν στην παράδοξη κατάσταση να έχω τόσα πολλά να κάνω που δεν έκανα τίποτα, επειδή όλα έμοιαζαν τεράστια. Το να τα σπάω καθημερινά σε συγκεκριμένες εργασίες με βοήθησε πολύ.</string>
+    <string name="starter_daily_review_calendar">Δες το σημερινό ημερολόγιο</string>
+    <string name="starter_projects_draft_outline">Σύνταξη του διαγράμματος</string>
+    <string name="starter_projects_first_screen">Η πρώτη οθόνη να είναι **καθαρή**, __γρήγορη__ και ζωντανή</string>
+    <string name="starter_projects_heading_launch">### Σχέδιο κυκλοφορίας</string>
+    <string name="starter_projects_heading_polish">### Φινίρισμα σχεδιασμού</string>
+    <string name="starter_projects_moment">Βρες τη στιγμή που μετράει</string>
+    <string name="starter_projects_name">Έργα</string>
+    <string name="starter_projects_nested_notes">Οι ένθετες σημειώσεις κρατούν το πλαίσιο κοντά</string>
+    <string name="starter_projects_open_questions">Ανοιχτά ερωτήματα</string>
+    <string name="starter_projects_risk">Κίνδυνος: ==υπερβολική διαδικασία==· κράτα τη διαδρομή ελαφριά</string>
+    <string name="starter_projects_sharper_labels">Μετάτρεψε το πρόχειρο κείμενο σε **πιο καθαρές ετικέτες**</string>
+    <string name="starter_projects_tiny_workspace">Παράδωσε έναν μικρό, όμορφο αρχικό χώρο εργασίας</string>
+    <string name="starter_projects_work_session">Συνεδρία εργασίας</string>
+    <string name="starter_scheduling_assignments">Οι **εργασίες** έχουν προθεσμία</string>
+    <string name="starter_scheduling_backlog">Εκκρεμότητες: επιλογή επόμενου πειράματος</string>
+    <string name="starter_scheduling_events">Τα **συμβάντα** έχουν αρχή και τέλος</string>
+    <string name="starter_scheduling_first_draft">Πρώτο προσχέδιο</string>
+    <string name="starter_scheduling_focus_block">Μπλοκ συγκέντρωσης</string>
+    <string name="starter_scheduling_heading_habits">### Επαναλαμβανόμενες συνήθειες</string>
+    <string name="starter_scheduling_heading_shapes">### Μορφές ημερολογίου</string>
+    <string name="starter_scheduling_morning_review">Πρωινή ανασκόπηση</string>
+    <string name="starter_scheduling_name">Προγραμματισμός</string>
+    <string name="starter_scheduling_reminders">Οι **υπενθυμίσεις** συμβαίνουν σε μία στιγμή</string>
+    <string name="starter_scheduling_team_message">Μήνυμα στην ομάδα</string>
     <string name="sync_action_resync">Επανασυγχρονισμός</string>
     <string name="sync_action_resyncing">Επανασυγχρονισμός…</string>
     <string name="sync_action_sync_now">Συγχρονισμός τώρα</string>
@@ -961,9 +1015,9 @@
     <string name="web_account_placeholder_current_password">Τρέχων κωδικός πρόσβασης</string>
     <string name="web_account_plan_annual">Ετήσιο</string>
     <string name="web_account_plan_monthly">Μηνιαίο</string>
-    <string name="web_account_plan_save_badge" formatted="false">Εξοικονόμηση 25%</string>
-    <string name="web_account_price_annual">$35.99/έτος</string>
-    <string name="web_account_price_monthly">$3.99/μήνα</string>
+    <string name="web_account_plan_save_badge" formatted="false">Εξοικονόμηση 33%</string>
+    <string name="web_account_price_annual">$23.99/έτος</string>
+    <string name="web_account_price_monthly">$2.99/μήνα</string>
     <string name="web_account_provider_apple">Apple App Store</string>
     <string name="web_account_provider_google">Google Play</string>
     <string name="web_account_provider_unknown">Πάροχος άγνωστος</string>
@@ -1075,12 +1129,12 @@
     <string name="web_checkout_placeholder_choose_period">Επιλέξτε μια περίοδο τιμολόγησης για φόρτωση ασφαλούς αγοράς.</string>
     <string name="web_checkout_plan_annual">Ετήσιο</string>
     <string name="web_checkout_plan_monthly">Μηνιαίο</string>
-    <string name="web_checkout_plan_save_badge" formatted="false">Εξοικονόμηση 25%</string>
+    <string name="web_checkout_plan_save_badge" formatted="false">Εξοικονόμηση 33%</string>
     <string name="web_checkout_point_cancel_anytime">Ακύρωση ανά πάσα στιγμή — τα δεδομένα σας παραμένουν πάντα τοπικά</string>
     <string name="web_checkout_point_schemes_stay_in_step">Τα σχέδια, το ημερολόγιο και τα μέσα παραμένουν σε βήμα</string>
     <string name="web_checkout_point_sync_workspace">Συγχρονισμός του χώρου εργασίας και των ειδοποιήσεων σας σε επιτραπέζιο και κινητό</string>
-    <string name="web_checkout_price_annual">$35.99/έτος</string>
-    <string name="web_checkout_price_monthly">$3.99/μήνα</string>
+    <string name="web_checkout_price_annual">$23.99/έτος</string>
+    <string name="web_checkout_price_monthly">$2.99/μήνα</string>
     <string name="web_checkout_sync_title">KnotQ Sync</string>
     <string name="web_checkout_verify_gate_body">Επιβεβαιώστε τον σύνδεσμο επιβεβαίωσης που στείλαμε στο email του λογαριασμού σας. Η αγορά παραμένει κλειδωμένη έως ότου η διεύθυνση σας επιβεβαιωθεί.</string>
     <string name="web_checkout_verify_gate_title">Επιβεβαιώστε το email σας πριν κάνετε συνδρομή</string>
@@ -1348,7 +1402,7 @@
     <string name="web_home_sync_create_account">Δημιουργία λογαριασμού</string>
     <string name="web_home_sync_currency_note">Οι τιμές εμφανίζονται σε USD</string>
     <string name="web_home_sync_eyebrow">Προαιρετικός συγχρονισμός</string>
-    <string name="web_home_sync_plan_note" formatted="false">ή 35,99 $/έτος — εξοικονομήστε 25%</string>
+    <string name="web_home_sync_plan_note" formatted="false">ή 23,99 $/έτος — εξοικονομήστε 33%</string>
     <string name="web_home_sync_plan_period">/μήνα</string>
     <string name="web_home_sync_plan_subtitle">Συγχρονισμός μεταξύ συσκευών</string>
     <string name="web_home_sync_point1">Your workspace will follow you across devices</string>

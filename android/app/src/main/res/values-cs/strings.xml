@@ -231,10 +231,12 @@
     <string name="event_scope_dialog_this_event">Tato událost</string>
     <string name="event_scope_dialog_title">Opakující se událost</string>
     <string name="event_value_none">Žádný</string>
+    <string name="export_choose_destination">Vyberte, kam exportovat</string>
     <string name="google_calendar_account_mismatch">přihlášeni jako {signed_in}, ale tento kalendář patří {expected}</string>
     <string name="google_calendar_account_not_connected">Tento účet Google již není lokálně připojen.</string>
     <string name="google_calendar_background_sync_failed_title">Synchronizace kalendáře Google na pozadí selhala</string>
     <string name="google_calendar_error_import_worker_stopped">Pracovník importu Kalendáře Google se zastavil</string>
+    <string name="google_calendar_error_permission_denied">KnotQ nemá oprávnění číst kalendáře Google účtu {account}. Připojte účet znovu a na obrazovce Google zapněte obě oprávnění kalendáře.</string>
     <string name="google_calendar_error_reconnect_worker_stopped">Pracovník opětovného připojení Kalendáře Google se zastavil</string>
     <string name="google_calendar_error_refresh_worker_stopped">Pracovník aktualizace Kalendáře Google se zastavil</string>
     <string name="google_calendar_error_selector_worker_stopped">Pracovník selektoru Kalendáře Google se zastavil</string>
@@ -243,12 +245,14 @@
     <string name="google_calendar_reconnect_title">Opětovné připojení Kalendáře Google</string>
     <string name="google_calendar_refresh_failed_title">Aktualizace Kalendáře Google selhala</string>
     <string name="google_oauth_callback_failure_body">Připojení k Kalendáři Google se nezdařilo. Můžete zavřít tuto kartu a vrátit se do KnotQ.</string>
+    <string name="google_oauth_callback_scope_denied_body">KnotQ stále potřebuje oprávnění ke čtení vašich kalendářů. Na obrazovce oprávnění Google zůstávají políčka kalendáře vypnutá, dokud je nezaškrtnete — zavřete tento panel, připojte se znovu v KnotQ a zapněte obě oprávnění kalendáře.</string>
     <string name="google_oauth_callback_success_body">Kalendář Google je připojen. Můžete zavřít tuto kartu a vrátit se do KnotQ.</string>
+    <string name="google_oauth_error_calendar_scope_denied">KnotQ potřebuje oprávnění ke čtení vašich kalendářů. Na obrazovce oprávnění Google zaškrtněte obě políčka kalendáře a poté se připojte znovu.</string>
     <string name="google_oauth_error_cancelled">Zpětné volání prohlížeče Google OAuth zrušeno</string>
     <string name="google_oauth_error_missing_code">Zpětné volání Google OAuth neobsahovalo kód</string>
     <string name="google_oauth_error_no_refresh_token">Google nevrátil obnovovací token</string>
     <string name="google_oauth_error_provider_error">Chyba Google OAuth: {error}</string>
-    <string name="google_oauth_error_timeout">Časový limit Google OAuth vypršel během čekání na zpětné volání prohlížeče</string>
+    <string name="google_oauth_error_timeout">KnotQ se nedočkal odpovědi z prohlížeče. Pokud tam Google zobrazil chybovou stránku nebo byl panel zavřen, zkuste se připojit znovu.</string>
     <string name="google_oauth_error_unexpected_state">Google OAuth vrátilo neočekávaný stav</string>
     <string name="google_oauth_error_worker_stopped">Pracovník Google OAuth se zastavil</string>
     <plurals name="google_sync_imported_count">
@@ -266,6 +270,7 @@
     <string name="menu_calendar">Kalendář</string>
     <string name="menu_daily">Denní</string>
     <string name="menu_edit">Upravit</string>
+    <string name="menu_export_workspace_markdown">Exportovat pracovní prostor do Markdownu…</string>
     <string name="menu_file">Soubor</string>
     <string name="menu_new_folder">Nová složka</string>
     <string name="menu_new_item">Nová položka</string>
@@ -581,7 +586,7 @@
     <string name="onboarding_step_upcoming_title">Nadcházející</string>
     <string name="onboarding_step_welcome_body">KnotQ je jedinou aplikací pro kalendář, připomenutí, úkoly a obecné poznámky. Cílem je být jednoduchý a přitom funkční.</string>
     <string name="onboarding_step_welcome_title">Vítejte v KnotQ</string>
-    <string name="onboarding_sync_prompt_body">Synchronizace stojí 3,99 $ za měsíc a umožňuje vám sdílet pracovní prostor v zařízeních. Pouze lokální je zcela zdarma.</string>
+    <string name="onboarding_sync_prompt_body">Synchronizace stojí 2,99 $ za měsíc a umožňuje vám sdílet pracovní prostor v zařízeních. Pouze lokální je zcela zdarma.</string>
     <string name="onboarding_sync_prompt_continue_local">Pokud jde o místní, pokračujte nyní</string>
     <string name="onboarding_sync_prompt_opening_browser">Otevírám váš prohlížeč pro přihlášení…</string>
     <string name="onboarding_sync_prompt_panel_title">KnotQ Sync</string>
@@ -627,6 +632,7 @@
     <string name="scheme_empty_pick_a_list">Vyberte seznam vlevo</string>
     <string name="scheme_toolbar_bold">tučné (⌘B)</string>
     <string name="scheme_toolbar_bullet_line">řádek s odrážkou (⌘3)</string>
+    <string name="scheme_toolbar_cancel_connecting_google_calendar">zrušit připojování Kalendáře Google</string>
     <string name="scheme_toolbar_checkbox_line">řádek zaškrtávacího políčka (⌘2)</string>
     <string name="scheme_toolbar_connecting">Připojování</string>
     <string name="scheme_toolbar_connecting_google_calendar">připojování Google Kalendáře</string>
@@ -764,6 +770,54 @@
     <string name="sidebar_rename_error">Přejmenování se nezdařilo: {error}</string>
     <string name="sidebar_rename_placeholder">Název</string>
     <string name="sidebar_trash_label">Archiv</string>
+    <string name="starter_coursework_argument">==Teze:== porovnat ekonomický tlak a __důvěru veřejnosti__</string>
+    <string name="starter_coursework_citation_question">Dotaz k citaci</string>
+    <string name="starter_coursework_final_draft">Finální verze</string>
+    <string name="starter_coursework_flashcards">Vytvořit kartičky na __klíčové pojmy__</string>
+    <string name="starter_coursework_heading_exam_prep">### Příprava na zkoušku</string>
+    <string name="starter_coursework_heading_thesis">### Diplomová práce</string>
+    <string name="starter_coursework_lecture_notes">Projít poznámky z přednášek **3.-4. týdne**</string>
+    <string name="starter_coursework_name">Studium</string>
+    <string name="starter_coursework_office_hours">Otázky na konzultace</string>
+    <string name="starter_coursework_old_outline">Stará osnova zapracována do finální verze</string>
+    <string name="starter_coursework_primary_quotes">Přidat dvě primární citace ze 4. kapitoly</string>
+    <string name="starter_coursework_source_notes">Dokončit poznámky ke zdrojům</string>
+    <string name="starter_coursework_study_block">Blok učení</string>
+    <string name="starter_daily_carry_over">KnotQ umí přenést nedokončené položky na další den; hotová práce zůstává vzadu</string>
+    <string name="starter_daily_coffee">Uvařit kávu</string>
+    <string name="starter_daily_follow_up">Poslat jednu **promyšlenou** připomínku</string>
+    <string name="starter_daily_heading_recommendations">### Denní doporučení (můj postup)</string>
+    <string name="starter_daily_next_draft">Napsat další verzi</string>
+    <string name="starter_daily_next_one_there">Když dokončíš úkol, další je hned tady</string>
+    <string name="starter_daily_no_decision">Jde o to, že **se nikdy nemusíš rozhodovat, co dělat dál**</string>
+    <string name="starter_daily_optimistic_list">Na začátku každého dne si napiš optimistický seznam __konkrétních, malých__ úkolů a odškrtávej je, jak postupuješ</string>
+    <string name="starter_daily_past_available">Starší denní stránky tu zůstávají k dispozici</string>
+    <string name="starter_daily_past_completed">Hotová práce zůstává vzadu jako záznam</string>
+    <string name="starter_daily_personal_note">Před KnotQ jsem se ocital v paradoxním stavu, kdy jsem měl tolik věcí k udělání, že jsem nedělal nic, protože všechno vypadalo jako obrovský úkol. Každodenní rozdělení na konkrétní úkoly mi hodně pomohlo.</string>
+    <string name="starter_daily_review_calendar">Projít dnešní kalendář</string>
+    <string name="starter_projects_draft_outline">Načrtnout osnovu</string>
+    <string name="starter_projects_first_screen">Ať první obrazovka působí **jasně**, __rychle__ a živě</string>
+    <string name="starter_projects_heading_launch">### Plán spuštění</string>
+    <string name="starter_projects_heading_polish">### Doladění designu</string>
+    <string name="starter_projects_moment">Najít okamžik, na kterém záleží</string>
+    <string name="starter_projects_name">Projekty</string>
+    <string name="starter_projects_nested_notes">Vnořené poznámky drží kontext nablízku</string>
+    <string name="starter_projects_open_questions">Otevřené otázky</string>
+    <string name="starter_projects_risk">Riziko: ==příliš mnoho procesu==; udržet cestu lehkou</string>
+    <string name="starter_projects_sharper_labels">Zkrátit hrubý text na **ostřejší popisky**</string>
+    <string name="starter_projects_tiny_workspace">Vydat malý, hezký výchozí pracovní prostor</string>
+    <string name="starter_projects_work_session">Pracovní blok</string>
+    <string name="starter_scheduling_assignments">**Úkoly** mají termín</string>
+    <string name="starter_scheduling_backlog">Backlog: vybrat další experiment</string>
+    <string name="starter_scheduling_events">**Události** mají začátek a konec</string>
+    <string name="starter_scheduling_first_draft">První koncept</string>
+    <string name="starter_scheduling_focus_block">Blok soustředění</string>
+    <string name="starter_scheduling_heading_habits">### Opakující se návyky</string>
+    <string name="starter_scheduling_heading_shapes">### Tvary v kalendáři</string>
+    <string name="starter_scheduling_morning_review">Ranní přehled</string>
+    <string name="starter_scheduling_name">Plánování</string>
+    <string name="starter_scheduling_reminders">**Připomínky** nastanou v jednom okamžiku</string>
+    <string name="starter_scheduling_team_message">Zpráva týmu</string>
     <string name="sync_action_resync">Znovu synchronizovat</string>
     <string name="sync_action_resyncing">Probíhá opětovná synchronizace…</string>
     <string name="sync_action_sync_now">Synchronizovat nyní</string>
@@ -982,9 +1036,9 @@
     <string name="web_account_placeholder_current_password">Aktuální heslo</string>
     <string name="web_account_plan_annual">Roční</string>
     <string name="web_account_plan_monthly">Měsíční</string>
-    <string name="web_account_plan_save_badge" formatted="false">Ušetřete 25 %</string>
-    <string name="web_account_price_annual">$35,99/rok</string>
-    <string name="web_account_price_monthly">$3,99/měsíc</string>
+    <string name="web_account_plan_save_badge" formatted="false">Ušetřete 33 %</string>
+    <string name="web_account_price_annual">$23,99/rok</string>
+    <string name="web_account_price_monthly">$2,99/měsíc</string>
     <string name="web_account_provider_apple">Apple App Store</string>
     <string name="web_account_provider_google">Google Play</string>
     <string name="web_account_provider_unknown">Poskytovatel neznámý</string>
@@ -1096,12 +1150,12 @@
     <string name="web_checkout_placeholder_choose_period">Zvolte fakturační období pro načtení bezpečné platby.</string>
     <string name="web_checkout_plan_annual">Roční</string>
     <string name="web_checkout_plan_monthly">Měsíční</string>
-    <string name="web_checkout_plan_save_badge" formatted="false">Ušetřete 25 %</string>
+    <string name="web_checkout_plan_save_badge" formatted="false">Ušetřete 33 %</string>
     <string name="web_checkout_point_cancel_anytime">Zrušit kdykoli – vaše data zůstanou vždy místní</string>
     <string name="web_checkout_point_schemes_stay_in_step">Schémata, kalendář a média zůstanou v souladu</string>
     <string name="web_checkout_point_sync_workspace">Synchronizujte svůj pracovní prostor a oznámení mezi stolním počítačem a mobilním zařízením</string>
-    <string name="web_checkout_price_annual">$35,99/rok</string>
-    <string name="web_checkout_price_monthly">$3,99/měsíc</string>
+    <string name="web_checkout_price_annual">$23,99/rok</string>
+    <string name="web_checkout_price_monthly">$2,99/měsíc</string>
     <string name="web_checkout_sync_title">KnotQ Sync</string>
     <string name="web_checkout_verify_gate_body">Potvrďte ověřovací odkaz, který jsme poslali na e-mail vašeho účtu. Nákup zůstane uzamčen, dokud vaše adresa není ověřena.</string>
     <string name="web_checkout_verify_gate_title">Ověřte e-mail před přihlášením k odběru</string>
@@ -1369,7 +1423,7 @@
     <string name="web_home_sync_create_account">Vytvořit účet</string>
     <string name="web_home_sync_currency_note">Ceny v USD</string>
     <string name="web_home_sync_eyebrow">Volitelná synchronizace</string>
-    <string name="web_home_sync_plan_note" formatted="false">nebo 35,99 USD/rok — ušetřete 25 %</string>
+    <string name="web_home_sync_plan_note" formatted="false">nebo 23,99 USD/rok — ušetřete 33 %</string>
     <string name="web_home_sync_plan_period">/měsíc</string>
     <string name="web_home_sync_plan_subtitle">Synchronizace mezi zařízeními</string>
     <string name="web_home_sync_point1">Your workspace will follow you across devices</string>

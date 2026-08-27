@@ -223,10 +223,12 @@
     <string name="event_scope_dialog_this_event">This event</string>
     <string name="event_scope_dialog_title">Recurring Event</string>
     <string name="event_value_none">None</string>
+    <string name="export_choose_destination">Choose where to export</string>
     <string name="google_calendar_account_mismatch">signed in as {signed_in}, but this calendar belongs to {expected}</string>
     <string name="google_calendar_account_not_connected">That Google account is not connected locally anymore.</string>
     <string name="google_calendar_background_sync_failed_title">Google Calendar background sync failed</string>
     <string name="google_calendar_error_import_worker_stopped">Google Calendar import worker stopped</string>
+    <string name="google_calendar_error_permission_denied">KnotQ is not allowed to read {account}\'s Google calendars. Reconnect the account, and turn on both calendar permissions on Google\'s screen.</string>
     <string name="google_calendar_error_reconnect_worker_stopped">Google Calendar reconnect worker stopped</string>
     <string name="google_calendar_error_refresh_worker_stopped">Google Calendar refresh worker stopped</string>
     <string name="google_calendar_error_selector_worker_stopped">Google Calendar selector worker stopped</string>
@@ -235,12 +237,14 @@
     <string name="google_calendar_reconnect_title">Google Calendar reconnect</string>
     <string name="google_calendar_refresh_failed_title">Google Calendar refresh failed</string>
     <string name="google_oauth_callback_failure_body">Google Calendar connection failed. You can close this tab and return to KnotQ.</string>
+    <string name="google_oauth_callback_scope_denied_body">KnotQ still needs permission to read your calendars. Google\'s permission screen leaves the calendar checkboxes off until you turn them on — close this tab, connect again in KnotQ, and turn on both calendar permissions.</string>
     <string name="google_oauth_callback_success_body">Google Calendar is connected. You can close this tab and return to KnotQ.</string>
+    <string name="google_oauth_error_calendar_scope_denied">KnotQ needs permission to read your calendars. On Google\'s permission screen, turn on both calendar checkboxes, then connect again.</string>
     <string name="google_oauth_error_cancelled">Google OAuth browser callback cancelled</string>
     <string name="google_oauth_error_missing_code">Google OAuth callback did not include a code</string>
     <string name="google_oauth_error_no_refresh_token">Google did not return a refresh token</string>
     <string name="google_oauth_error_provider_error">Google OAuth error: {error}</string>
-    <string name="google_oauth_error_timeout">Google OAuth timed out waiting for browser callback</string>
+    <string name="google_oauth_error_timeout">KnotQ never heard back from your browser. If Google showed an error page there, or the tab was closed, try connecting again.</string>
     <string name="google_oauth_error_unexpected_state">Google OAuth returned an unexpected state</string>
     <string name="google_oauth_error_worker_stopped">Google OAuth worker stopped</string>
     <plurals name="google_sync_imported_count">
@@ -256,6 +260,7 @@
     <string name="menu_calendar">Calendar</string>
     <string name="menu_daily">Daily</string>
     <string name="menu_edit">Edit</string>
+    <string name="menu_export_workspace_markdown">Export Workspace to Markdown…</string>
     <string name="menu_file">File</string>
     <string name="menu_new_folder">New Folder</string>
     <string name="menu_new_item">New Item</string>
@@ -570,7 +575,7 @@
     <string name="onboarding_step_upcoming_title">Upcoming</string>
     <string name="onboarding_step_welcome_body">KnotQ is a single app for calendar events, reminders, assignments, and general notes. It aims to be simple yet functional.</string>
     <string name="onboarding_step_welcome_title">Welcome to KnotQ</string>
-    <string name="onboarding_sync_prompt_body">Sync is $3.99 a month and lets you share your workspace across devices. Local-only is fully free.</string>
+    <string name="onboarding_sync_prompt_body">Sync is $2.99 a month and lets you share your workspace across devices. Local-only is fully free.</string>
     <string name="onboarding_sync_prompt_continue_local">Continue local for now</string>
     <string name="onboarding_sync_prompt_opening_browser">Opening your browser to sign in…</string>
     <string name="onboarding_sync_prompt_panel_title">KnotQ Sync</string>
@@ -612,13 +617,14 @@
     <string name="scheme_empty_pick_a_list">Pick a list on the left</string>
     <string name="scheme_toolbar_bold">bold (⌘B)</string>
     <string name="scheme_toolbar_bullet_line">bullet line (⌘3)</string>
+    <string name="scheme_toolbar_cancel_connecting_google_calendar">cancel connecting Google Calendar</string>
     <string name="scheme_toolbar_checkbox_line">checkbox line (⌘2)</string>
     <string name="scheme_toolbar_connecting">Connecting</string>
     <string name="scheme_toolbar_connecting_google_calendar">connecting Google Calendar</string>
     <string name="scheme_toolbar_end_date">end date (⌘E)</string>
     <string name="scheme_toolbar_end_label">end</string>
     <string name="scheme_toolbar_heading">heading (⌘J)</string>
-    <string name="scheme_toolbar_highlight">highlight</string>
+    <string name="scheme_toolbar_highlight">highlight (⌘⇧H)</string>
     <string name="scheme_toolbar_imported_calendar">Imported calendar</string>
     <string name="scheme_toolbar_indent">indent (Tab)</string>
     <string name="scheme_toolbar_insert_table">insert table (⌘⇧T)</string>
@@ -650,13 +656,6 @@
     <string name="settings_calendar_view_label">View</string>
     <string name="settings_calendar_view_month">Month</string>
     <string name="settings_calendar_view_week">Week</string>
-    <string name="settings_display_lookahead_footer">Choose how far ahead each kind appears in Upcoming. Calendar events outside these ranges remain available in the calendar.</string>
-    <string name="settings_display_maximum_items">Maximum items</string>
-    <string name="settings_display_restore_defaults">Restore Defaults</string>
-    <string name="settings_display_show_completed">Show completed items</string>
-    <string name="settings_display_show_overdue">Show overdue items</string>
-    <string name="settings_display_upcoming_section">Upcoming lookahead</string>
-    <string name="settings_display_visibility_section">Visibility</string>
     <string name="settings_google_calendar_accounts_heading">Accounts</string>
     <string name="settings_google_calendar_accounts_offline_notice">No local Google account credentials. Calendars below will stay offline until you reconnect.</string>
     <plurals name="settings_google_calendar_calendar_count">
@@ -715,8 +714,6 @@
     <string name="settings_time_clock_24h">24-hour</string>
     <string name="settings_time_clock_label">Clock</string>
     <string name="settings_time_section">Time</string>
-    <string name="settings_timing_section">Planning</string>
-    <string name="settings_timing_title">Timing and Notifications</string>
     <string name="settings_updates_auto_check">Automatically check for updates</string>
     <string name="settings_updates_check_button">Check</string>
     <string name="settings_updates_check_failed">Update check failed</string>
@@ -757,6 +754,54 @@
     <string name="sidebar_rename_error">Could not rename: {error}</string>
     <string name="sidebar_rename_placeholder">Name</string>
     <string name="sidebar_trash_label">Archive</string>
+    <string name="starter_coursework_argument">==Argument:== compare economic pressure and __public trust__</string>
+    <string name="starter_coursework_citation_question">Citation question</string>
+    <string name="starter_coursework_final_draft">Final draft</string>
+    <string name="starter_coursework_flashcards">Make flashcards for __key terms__</string>
+    <string name="starter_coursework_heading_exam_prep">### Exam Prep</string>
+    <string name="starter_coursework_heading_thesis">### Thesis</string>
+    <string name="starter_coursework_lecture_notes">Review **weeks 3-4** lecture notes</string>
+    <string name="starter_coursework_name">Coursework</string>
+    <string name="starter_coursework_office_hours">Questions for office hours</string>
+    <string name="starter_coursework_old_outline">Old outline moved into final draft</string>
+    <string name="starter_coursework_primary_quotes">Add two primary quotes from chapter 4</string>
+    <string name="starter_coursework_source_notes">Finish source notes</string>
+    <string name="starter_coursework_study_block">Study block</string>
+    <string name="starter_daily_carry_over">KnotQ can carry over incomplete items to the next day; completed work stays behind</string>
+    <string name="starter_daily_coffee">Make coffee</string>
+    <string name="starter_daily_follow_up">Send one **thoughtful** follow-up</string>
+    <string name="starter_daily_heading_recommendations">### Daily Recommendations (My workflow)</string>
+    <string name="starter_daily_next_draft">Write the next draft</string>
+    <string name="starter_daily_next_one_there">When you finish a task the next one is right there</string>
+    <string name="starter_daily_no_decision">The point is that **you never have to make a decision about what to do next**</string>
+    <string name="starter_daily_optimistic_list">Write an optimistic list of __concrete, small__ tasks at the start of each day and check them as you progress</string>
+    <string name="starter_daily_past_available">Past daily pages stay available here</string>
+    <string name="starter_daily_past_completed">Completed work stays behind as a record</string>
+    <string name="starter_daily_personal_note">Before KnotQ, I found myself in the paradoxical state of having so many things I needed to get done yet not doing anything because everything was such a large task. Breaking these into actionable tasks daily helped me a lot.</string>
+    <string name="starter_daily_review_calendar">Review today\'s calendar</string>
+    <string name="starter_projects_draft_outline">Draft the outline</string>
+    <string name="starter_projects_first_screen">Make the first screen feel **clear**, __fast__, and alive</string>
+    <string name="starter_projects_heading_launch">### Launch Plan</string>
+    <string name="starter_projects_heading_polish">### Design polish</string>
+    <string name="starter_projects_moment">Find the moment that matters</string>
+    <string name="starter_projects_name">Projects</string>
+    <string name="starter_projects_nested_notes">Nested notes keep context close</string>
+    <string name="starter_projects_open_questions">Open questions</string>
+    <string name="starter_projects_risk">Risk: ==too much process==; keep the path light</string>
+    <string name="starter_projects_sharper_labels">Cut rough copy into **sharper labels**</string>
+    <string name="starter_projects_tiny_workspace">Ship a tiny, beautiful default workspace</string>
+    <string name="starter_projects_work_session">Work session</string>
+    <string name="starter_scheduling_assignments">**Assignments** have a deadline</string>
+    <string name="starter_scheduling_backlog">Backlog: choose next experiment</string>
+    <string name="starter_scheduling_events">**Events** have a start and end</string>
+    <string name="starter_scheduling_first_draft">First draft</string>
+    <string name="starter_scheduling_focus_block">Focus block</string>
+    <string name="starter_scheduling_heading_habits">### Repeating habits</string>
+    <string name="starter_scheduling_heading_shapes">### Calendar shapes</string>
+    <string name="starter_scheduling_morning_review">Morning review</string>
+    <string name="starter_scheduling_name">Scheduling</string>
+    <string name="starter_scheduling_reminders">**Reminders** happen at one time</string>
+    <string name="starter_scheduling_team_message">Team message</string>
     <string name="sync_action_resync">Resync</string>
     <string name="sync_action_resyncing">Resyncing…</string>
     <string name="sync_action_sync_now">Sync now</string>
@@ -971,9 +1016,9 @@
     <string name="web_account_placeholder_current_password">Current password</string>
     <string name="web_account_plan_annual">Annual</string>
     <string name="web_account_plan_monthly">Monthly</string>
-    <string name="web_account_plan_save_badge" formatted="false">Save 25%</string>
-    <string name="web_account_price_annual">$35.99/yr</string>
-    <string name="web_account_price_monthly">$3.99/mo</string>
+    <string name="web_account_plan_save_badge" formatted="false">Save 33%</string>
+    <string name="web_account_price_annual">$23.99/yr</string>
+    <string name="web_account_price_monthly">$2.99/mo</string>
     <string name="web_account_provider_apple">Apple App Store</string>
     <string name="web_account_provider_google">Google Play</string>
     <string name="web_account_provider_unknown">Provider unknown</string>
@@ -1085,12 +1130,12 @@
     <string name="web_checkout_placeholder_choose_period">Choose a billing period to load secure checkout.</string>
     <string name="web_checkout_plan_annual">Annual</string>
     <string name="web_checkout_plan_monthly">Monthly</string>
-    <string name="web_checkout_plan_save_badge" formatted="false">Save 25%</string>
+    <string name="web_checkout_plan_save_badge" formatted="false">Save 33%</string>
     <string name="web_checkout_point_cancel_anytime">Cancel anytime — your data always stays local</string>
     <string name="web_checkout_point_schemes_stay_in_step">Schemes, calendar, and media stay in step</string>
     <string name="web_checkout_point_sync_workspace">Sync your workspace and notifications across desktop and mobile</string>
-    <string name="web_checkout_price_annual">$35.99/yr</string>
-    <string name="web_checkout_price_monthly">$3.99/mo</string>
+    <string name="web_checkout_price_annual">$23.99/yr</string>
+    <string name="web_checkout_price_monthly">$2.99/mo</string>
     <string name="web_checkout_sync_title">KnotQ Sync</string>
     <string name="web_checkout_verify_gate_body">Confirm the verification link we sent to your account email. Checkout stays locked until your address is verified.</string>
     <string name="web_checkout_verify_gate_title">Verify your email before subscribing</string>
@@ -1343,7 +1388,7 @@
     <string name="web_home_hero_read_guide">Read the guide</string>
     <string name="web_home_hero_title">Reminders, Assignments, Events, and Plans in one workspace</string>
     <string name="web_home_meta_description">KnotQ is a local-first desktop planning workspace where structured notes become tasks, deadlines, reminders, and calendar events.</string>
-    <string name="web_home_meta_title">KnotQ — Reminders, assignments, events, and plans in one workspace</string>
+    <string name="web_home_meta_title">KnotQ: Calendar + Organization Planner</string>
     <string name="web_home_pitch_eyebrow">Why KnotQ</string>
     <string name="web_home_pitch_tile1_body">Plans from every scheme, plus your Google Calendar, in a single week view.</string>
     <string name="web_home_pitch_tile1_title">One calendar for everything</string>
@@ -1358,7 +1403,7 @@
     <string name="web_home_sync_create_account">Create account</string>
     <string name="web_home_sync_currency_note">Prices shown in USD</string>
     <string name="web_home_sync_eyebrow">Optional sync</string>
-    <string name="web_home_sync_plan_note" formatted="false">or $35.99 / year — save 25%</string>
+    <string name="web_home_sync_plan_note" formatted="false">or $23.99 / year — save 33%</string>
     <string name="web_home_sync_plan_period">/month</string>
     <string name="web_home_sync_plan_subtitle">Cross-device sync</string>
     <string name="web_home_sync_point1">Your workspace will follow you across devices</string>

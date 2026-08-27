@@ -222,10 +222,12 @@
     <string name="event_scope_dialog_this_event">Dette event</string>
     <string name="event_scope_dialog_title">Tilbagevendende event</string>
     <string name="event_value_none">Ingen</string>
+    <string name="export_choose_destination">Vælg hvor der skal eksporteres til</string>
     <string name="google_calendar_account_mismatch">logget ind som {signed_in}, men denne kalender tilhører {expected}</string>
     <string name="google_calendar_account_not_connected">Den Google-konto er ikke længere forbundet lokalt.</string>
     <string name="google_calendar_background_sync_failed_title">Google Calendar baggrundssynkronisering mislykkedes</string>
     <string name="google_calendar_error_import_worker_stopped">Google Calendar importarbejder stoppet</string>
+    <string name="google_calendar_error_permission_denied">KnotQ har ikke tilladelse til at læse {account}s Google-kalendere. Forbind kontoen igen, og slå begge kalendertilladelser til på Googles skærm.</string>
     <string name="google_calendar_error_reconnect_worker_stopped">Google Calendar genopretningsarbejder stoppet</string>
     <string name="google_calendar_error_refresh_worker_stopped">Google Calendar opdateringsarbejder stoppet</string>
     <string name="google_calendar_error_selector_worker_stopped">Google Calendar vælgerarbejder stoppet</string>
@@ -234,12 +236,14 @@
     <string name="google_calendar_reconnect_title">Google Calendar genopret</string>
     <string name="google_calendar_refresh_failed_title">Google Calendar opdatering mislykkedes</string>
     <string name="google_oauth_callback_failure_body">Google Calendar forbindelse mislykkedes. Du kan lukke denne fane og vende tilbage til KnotQ.</string>
+    <string name="google_oauth_callback_scope_denied_body">KnotQ har stadig brug for tilladelse til at læse dine kalendere. På Googles tilladelsesskærm er kalenderfelterne slået fra, indtil du slår dem til – luk denne fane, forbind igen i KnotQ, og slå begge kalendertilladelser til.</string>
     <string name="google_oauth_callback_success_body">Google Calendar er forbundet. Du kan lukke denne fane og vende tilbage til KnotQ.</string>
+    <string name="google_oauth_error_calendar_scope_denied">KnotQ har brug for tilladelse til at læse dine kalendere. Slå begge kalenderfelter til på Googles tilladelsesskærm, og forbind så igen.</string>
     <string name="google_oauth_error_cancelled">Google OAuth browserCallback annulleret</string>
     <string name="google_oauth_error_missing_code">Google OAuth callback indeholdt ikke en kode</string>
     <string name="google_oauth_error_no_refresh_token">Google returnerede ingen opdateringstoken</string>
     <string name="google_oauth_error_provider_error">Google OAuth fejl: {error}</string>
-    <string name="google_oauth_error_timeout">Google OAuth timeout mens der blev ventet på browserCallback</string>
+    <string name="google_oauth_error_timeout">KnotQ fik aldrig svar fra din browser. Hvis Google viste en fejlside der, eller fanen blev lukket, så prøv at forbinde igen.</string>
     <string name="google_oauth_error_unexpected_state">Google OAuth returnerede en uventet tilstand</string>
     <string name="google_oauth_error_worker_stopped">Google OAuth arbejder stoppet</string>
     <plurals name="google_sync_imported_count">
@@ -255,6 +259,7 @@
     <string name="menu_calendar">Kalender</string>
     <string name="menu_daily">Daglig</string>
     <string name="menu_edit">Rediger</string>
+    <string name="menu_export_workspace_markdown">Eksportér arbejdsområde til Markdown…</string>
     <string name="menu_file">Fil</string>
     <string name="menu_new_folder">Ny mappe</string>
     <string name="menu_new_item">Nyt element</string>
@@ -569,7 +574,7 @@
     <string name="onboarding_step_upcoming_title">Kommende</string>
     <string name="onboarding_step_welcome_body">KnotQ er en enkelt app til kalenderbegivenheder, påmindelser, opgaver og generelle noter. Det sigter mod at være simpelt, men funktionelt.</string>
     <string name="onboarding_step_welcome_title">Velkommen til KnotQ</string>
-    <string name="onboarding_sync_prompt_body">Synkronisering koster $3,99 pr. måned og lader dig dele dit arbejdsområde på tværs af enheder. Kun lokal er helt gratis.</string>
+    <string name="onboarding_sync_prompt_body">Synkronisering koster $2,99 pr. måned og lader dig dele dit arbejdsområde på tværs af enheder. Kun lokal er helt gratis.</string>
     <string name="onboarding_sync_prompt_continue_local">Fortsæt lokalt for nu</string>
     <string name="onboarding_sync_prompt_opening_browser">Åbner din browser for at logge ind…</string>
     <string name="onboarding_sync_prompt_panel_title">KnotQ Sync</string>
@@ -611,6 +616,7 @@
     <string name="scheme_empty_pick_a_list">Vælg en liste på venstre side</string>
     <string name="scheme_toolbar_bold">fed (⌘B)</string>
     <string name="scheme_toolbar_bullet_line">punktlinje (⌘3)</string>
+    <string name="scheme_toolbar_cancel_connecting_google_calendar">annuller forbindelsen til Google Kalender</string>
     <string name="scheme_toolbar_checkbox_line">afkrydsningsfelt-linje (⌘2)</string>
     <string name="scheme_toolbar_connecting">Forbinder</string>
     <string name="scheme_toolbar_connecting_google_calendar">forbinder Google Calendar</string>
@@ -747,6 +753,54 @@
     <string name="sidebar_rename_error">Kunne ikke omdøbe: {error}</string>
     <string name="sidebar_rename_placeholder">Navn</string>
     <string name="sidebar_trash_label">Arkiv</string>
+    <string name="starter_coursework_argument">==Tese:== sammenlign økonomisk pres og __offentlig tillid__</string>
+    <string name="starter_coursework_citation_question">Spørgsmål om kildeangivelse</string>
+    <string name="starter_coursework_final_draft">Endelig version</string>
+    <string name="starter_coursework_flashcards">Lav flashcards til __nøglebegreberne__</string>
+    <string name="starter_coursework_heading_exam_prep">### Eksamensforberedelse</string>
+    <string name="starter_coursework_heading_thesis">### Speciale</string>
+    <string name="starter_coursework_lecture_notes">Gennemgå forelæsningsnoter fra **uge 3-4**</string>
+    <string name="starter_coursework_name">Studier</string>
+    <string name="starter_coursework_office_hours">Spørgsmål til vejledningen</string>
+    <string name="starter_coursework_old_outline">Gammel disposition indarbejdet i den endelige version</string>
+    <string name="starter_coursework_primary_quotes">Tilføj to primære citater fra kapitel 4</string>
+    <string name="starter_coursework_source_notes">Bliv færdig med kildenoterne</string>
+    <string name="starter_coursework_study_block">Læseblok</string>
+    <string name="starter_daily_carry_over">KnotQ kan flytte ufærdige punkter til næste dag; færdigt arbejde bliver liggende</string>
+    <string name="starter_daily_coffee">Lav kaffe</string>
+    <string name="starter_daily_follow_up">Send én **gennemtænkt** opfølgning</string>
+    <string name="starter_daily_heading_recommendations">### Daglige anbefalinger (min arbejdsgang)</string>
+    <string name="starter_daily_next_draft">Skriv næste udkast</string>
+    <string name="starter_daily_next_one_there">Når du bliver færdig med en opgave, står den næste lige der</string>
+    <string name="starter_daily_no_decision">Pointen er, at **du aldrig skal beslutte, hvad du gør som det næste**</string>
+    <string name="starter_daily_optimistic_list">Skriv i starten af hver dag en optimistisk liste med __konkrete, små__ opgaver, og kryds dem af undervejs</string>
+    <string name="starter_daily_past_available">Tidligere dagssider er stadig tilgængelige her</string>
+    <string name="starter_daily_past_completed">Færdigt arbejde bliver liggende som dokumentation</string>
+    <string name="starter_daily_personal_note">Før KnotQ havnede jeg i den paradoksale tilstand at have så meget at lave, at jeg ikke lavede noget, fordi alt lignede en kæmpe opgave. At dele det op i konkrete opgaver hver dag hjalp mig meget.</string>
+    <string name="starter_daily_review_calendar">Gennemgå dagens kalender</string>
+    <string name="starter_projects_draft_outline">Skitser dispositionen</string>
+    <string name="starter_projects_first_screen">Få den første skærm til at føles **klar**, __hurtig__ og levende</string>
+    <string name="starter_projects_heading_launch">### Lanceringsplan</string>
+    <string name="starter_projects_heading_polish">### Designfinpudsning</string>
+    <string name="starter_projects_moment">Find det øjeblik, der betyder noget</string>
+    <string name="starter_projects_name">Projekter</string>
+    <string name="starter_projects_nested_notes">Indlejrede noter holder konteksten tæt på</string>
+    <string name="starter_projects_open_questions">Åbne spørgsmål</string>
+    <string name="starter_projects_risk">Risiko: ==for meget proces==; hold vejen let</string>
+    <string name="starter_projects_sharper_labels">Skær rå tekst ned til **skarpere labels**</string>
+    <string name="starter_projects_tiny_workspace">Udgiv et lille, smukt startarbejdsområde</string>
+    <string name="starter_projects_work_session">Arbejdssession</string>
+    <string name="starter_scheduling_assignments">**Opgaver** har en deadline</string>
+    <string name="starter_scheduling_backlog">Backlog: vælg næste eksperiment</string>
+    <string name="starter_scheduling_events">**Begivenheder** har en start og en slutning</string>
+    <string name="starter_scheduling_first_draft">Første udkast</string>
+    <string name="starter_scheduling_focus_block">Fokusblok</string>
+    <string name="starter_scheduling_heading_habits">### Tilbagevendende vaner</string>
+    <string name="starter_scheduling_heading_shapes">### Former i kalenderen</string>
+    <string name="starter_scheduling_morning_review">Morgengennemgang</string>
+    <string name="starter_scheduling_name">Planlægning</string>
+    <string name="starter_scheduling_reminders">**Påmindelser** sker på ét tidspunkt</string>
+    <string name="starter_scheduling_team_message">Besked til teamet</string>
     <string name="sync_action_resync">Gensynkroniser</string>
     <string name="sync_action_resyncing">Gensynkroniserer…</string>
     <string name="sync_action_sync_now">Synkroniser nu</string>
@@ -961,9 +1015,9 @@
     <string name="web_account_placeholder_current_password">Nuværende adgangskode</string>
     <string name="web_account_plan_annual">År</string>
     <string name="web_account_plan_monthly">Måned</string>
-    <string name="web_account_plan_save_badge" formatted="false">Spar 25%</string>
-    <string name="web_account_price_annual">$35.99/år</string>
-    <string name="web_account_price_monthly">$3.99/måned</string>
+    <string name="web_account_plan_save_badge" formatted="false">Spar 33%</string>
+    <string name="web_account_price_annual">$23.99/år</string>
+    <string name="web_account_price_monthly">$2.99/måned</string>
     <string name="web_account_provider_apple">Apple App Store</string>
     <string name="web_account_provider_google">Google Play</string>
     <string name="web_account_provider_unknown">Ukendt udbyder</string>
@@ -1075,12 +1129,12 @@
     <string name="web_checkout_placeholder_choose_period">Vælg en faktureringsperiode for at indlæse sikker checkout.</string>
     <string name="web_checkout_plan_annual">År</string>
     <string name="web_checkout_plan_monthly">Måned</string>
-    <string name="web_checkout_plan_save_badge" formatted="false">Spar 25%</string>
+    <string name="web_checkout_plan_save_badge" formatted="false">Spar 33%</string>
     <string name="web_checkout_point_cancel_anytime">Annuller når som helst — dine data forbliver altid lokale</string>
     <string name="web_checkout_point_schemes_stay_in_step">Skemaer, kalender og medier forbliver i takt</string>
     <string name="web_checkout_point_sync_workspace">Synkroniser dit arbejdsområde og notifikationer på tværs af desktop og mobile</string>
-    <string name="web_checkout_price_annual">$35.99/år</string>
-    <string name="web_checkout_price_monthly">$3.99/måned</string>
+    <string name="web_checkout_price_annual">$23.99/år</string>
+    <string name="web_checkout_price_monthly">$2.99/måned</string>
     <string name="web_checkout_sync_title">KnotQ Sync</string>
     <string name="web_checkout_verify_gate_body">Bekræft bekræftelseslinket, vi sendte til din kontos e-mail. Checkout forbliver låst til din adresse er bekræftet.</string>
     <string name="web_checkout_verify_gate_title">Bekræft din e-mail før du abonnerer</string>
@@ -1348,7 +1402,7 @@
     <string name="web_home_sync_create_account">Opret konto</string>
     <string name="web_home_sync_currency_note">Priser vises i USD</string>
     <string name="web_home_sync_eyebrow">Valgfri synkronisering</string>
-    <string name="web_home_sync_plan_note" formatted="false">eller $35,99 / år — spar 25%</string>
+    <string name="web_home_sync_plan_note" formatted="false">eller $23,99 / år — spar 33%</string>
     <string name="web_home_sync_plan_period">/måned</string>
     <string name="web_home_sync_plan_subtitle">Synkronisering på tværs af enheder</string>
     <string name="web_home_sync_point1">Your workspace will follow you across devices</string>

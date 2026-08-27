@@ -213,10 +213,12 @@
     <string name="event_scope_dialog_this_event">เหตุการณ์นี้</string>
     <string name="event_scope_dialog_title">เหตุการณ์ที่เกิดขึ้นซ้ำ</string>
     <string name="event_value_none">ไม่มี</string>
+    <string name="export_choose_destination">เลือกตำแหน่งที่จะส่งออก</string>
     <string name="google_calendar_account_mismatch">ลงชื่อเข้าใช้เป็น {signed_in} แต่ปฏิทินนี้เป็นของ {expected}</string>
     <string name="google_calendar_account_not_connected">บัญชี Google นั้นไม่ได้เชื่อมต่ออีกต่อไป</string>
     <string name="google_calendar_background_sync_failed_title">ซิงค์พื้นหลังปฏิทิน Google ล้มเหลว</string>
     <string name="google_calendar_error_import_worker_stopped">worker นำเข้าปฏิทิน Google หยุด</string>
+    <string name="google_calendar_error_permission_denied">KnotQ ไม่ได้รับอนุญาตให้อ่านปฏิทิน Google ของ {account} เชื่อมต่อบัญชีอีกครั้งและเปิดสิทธิ์ปฏิทินทั้งสองรายการในหน้าจอของ Google</string>
     <string name="google_calendar_error_reconnect_worker_stopped">worker เชื่อมต่อใหม่ปฏิทิน Google หยุด</string>
     <string name="google_calendar_error_refresh_worker_stopped">worker รีเฟรชปฏิทิน Google หยุด</string>
     <string name="google_calendar_error_selector_worker_stopped">worker เลือกปฏิทิน Google หยุด</string>
@@ -225,12 +227,14 @@
     <string name="google_calendar_reconnect_title">เชื่อมต่อใหม่ปฏิทิน Google</string>
     <string name="google_calendar_refresh_failed_title">รีเฟรชปฏิทิน Google ล้มเหลว</string>
     <string name="google_oauth_callback_failure_body">การเชื่อมต่อปฏิทิน Google ล้มเหลว คุณสามารถปิดแท็บนี้และกลับไปที่ KnotQ</string>
+    <string name="google_oauth_callback_scope_denied_body">KnotQ ยังต้องการสิทธิ์ในการอ่านปฏิทินของคุณ ในหน้าจอสิทธิ์ของ Google ช่องทำเครื่องหมายปฏิทินจะปิดอยู่จนกว่าคุณจะเปิด — ปิดแท็บนี้ เชื่อมต่ออีกครั้งใน KnotQ แล้วเปิดสิทธิ์ปฏิทินทั้งสองรายการ</string>
     <string name="google_oauth_callback_success_body">ปฏิทิน Google เชื่อมต่อแล้ว คุณสามารถปิดแท็บนี้และกลับไปที่ KnotQ</string>
+    <string name="google_oauth_error_calendar_scope_denied">KnotQ ต้องการสิทธิ์ในการอ่านปฏิทินของคุณ ในหน้าจอสิทธิ์ของ Google ให้เปิดช่องทำเครื่องหมายปฏิทินทั้งสองช่อง แล้วเชื่อมต่ออีกครั้ง</string>
     <string name="google_oauth_error_cancelled">ยกเลิกการโทรกลับ Google OAuth ของเบราว์เซอร์</string>
     <string name="google_oauth_error_missing_code">การโทรกลับ Google OAuth ไม่รวมรหัส</string>
     <string name="google_oauth_error_no_refresh_token">Google ไม่ได้ส่งโทเค็นรีเฟรช</string>
     <string name="google_oauth_error_provider_error">ข้อผิดพลาด Google OAuth: {error}</string>
-    <string name="google_oauth_error_timeout">Google OAuth หมดเวลาในการรอการโทรกลับของเบราว์เซอร์</string>
+    <string name="google_oauth_error_timeout">KnotQ ไม่ได้รับการตอบกลับจากเบราว์เซอร์ของคุณ หาก Google แสดงหน้าข้อผิดพลาดที่นั่น หรือแท็บถูกปิด ให้ลองเชื่อมต่ออีกครั้ง</string>
     <string name="google_oauth_error_unexpected_state">Google OAuth ส่งกลับสถานะที่ไม่คาดไว้</string>
     <string name="google_oauth_error_worker_stopped">worker Google OAuth หยุด</string>
     <plurals name="google_sync_imported_count">
@@ -244,6 +248,7 @@
     <string name="menu_calendar">ปฏิทิน</string>
     <string name="menu_daily">รายวัน</string>
     <string name="menu_edit">แก้ไข</string>
+    <string name="menu_export_workspace_markdown">ส่งออกพื้นที่ทำงานเป็น Markdown…</string>
     <string name="menu_file">ไฟล์</string>
     <string name="menu_new_folder">สร้างโฟลเดอร์ใหม่</string>
     <string name="menu_new_item">สร้างรายการใหม่</string>
@@ -557,7 +562,7 @@
     <string name="onboarding_step_upcoming_title">ที่จะมาถึง</string>
     <string name="onboarding_step_welcome_body">KnotQ เป็นแอปเดียวสำหรับเหตุการณ์ปฏิทิน การแจ้งเตือน งานมอบหมาย และบันทึกทั่วไป มีเป้าหมายให้เรียบง่ายแต่ใช้งานได้</string>
     <string name="onboarding_step_welcome_title">ยินดีต้อนรับสู่ KnotQ</string>
-    <string name="onboarding_sync_prompt_body">Sync คือ $3.99 ต่อเดือน และให้คุณแชร์พื้นที่ทำงานของคุณบนอุปกรณ์ต่างๆ Local-only ฟรีทั้งหมด</string>
+    <string name="onboarding_sync_prompt_body">Sync คือ $2.99 ต่อเดือน และให้คุณแชร์พื้นที่ทำงานของคุณบนอุปกรณ์ต่างๆ Local-only ฟรีทั้งหมด</string>
     <string name="onboarding_sync_prompt_continue_local">ดำเนินการต่อแบบท้องถิ่นสำหรับตอนนี้</string>
     <string name="onboarding_sync_prompt_opening_browser">กำลังเปิดเบราว์เซอร์ของคุณเพื่อลงชื่อเข้า…</string>
     <string name="onboarding_sync_prompt_panel_title">KnotQ Sync</string>
@@ -595,6 +600,7 @@
     <string name="scheme_empty_pick_a_list">เลือกรายการทางด้านซ้าย</string>
     <string name="scheme_toolbar_bold">ตัวหนา (⌘B)</string>
     <string name="scheme_toolbar_bullet_line">เส้นจุด (⌘3)</string>
+    <string name="scheme_toolbar_cancel_connecting_google_calendar">ยกเลิกการเชื่อมต่อ Google ปฏิทิน</string>
     <string name="scheme_toolbar_checkbox_line">เส้นช่องทำเครื่องหมาย (⌘2)</string>
     <string name="scheme_toolbar_connecting">กำลังเชื่อมต่อ</string>
     <string name="scheme_toolbar_connecting_google_calendar">กำลังเชื่อมต่อ Google Calendar</string>
@@ -730,6 +736,54 @@
     <string name="sidebar_rename_error">ไม่สามารถเปลี่ยนชื่อ: {error}</string>
     <string name="sidebar_rename_placeholder">ชื่อ</string>
     <string name="sidebar_trash_label">เก็บถาวร</string>
+    <string name="starter_coursework_argument">==ข้อโต้แย้ง:== เปรียบเทียบแรงกดดันทางเศรษฐกิจกับ__ความไว้วางใจของสาธารณะ__</string>
+    <string name="starter_coursework_citation_question">คำถามเรื่องการอ้างอิง</string>
+    <string name="starter_coursework_final_draft">ฉบับร่างสุดท้าย</string>
+    <string name="starter_coursework_flashcards">ทำบัตรคำสำหรับ__คำสำคัญ__</string>
+    <string name="starter_coursework_heading_exam_prep">### เตรียมสอบ</string>
+    <string name="starter_coursework_heading_thesis">### วิทยานิพนธ์</string>
+    <string name="starter_coursework_lecture_notes">ทบทวนบันทึกการบรรยาย **สัปดาห์ที่ 3-4**</string>
+    <string name="starter_coursework_name">การเรียน</string>
+    <string name="starter_coursework_office_hours">คำถามสำหรับเวลาให้คำปรึกษา</string>
+    <string name="starter_coursework_old_outline">โครงร่างเดิมถูกย้ายเข้าฉบับร่างสุดท้าย</string>
+    <string name="starter_coursework_primary_quotes">เพิ่มคำอ้างอิงต้นฉบับสองรายการจากบทที่ 4</string>
+    <string name="starter_coursework_source_notes">เขียนบันทึกแหล่งข้อมูลให้เสร็จ</string>
+    <string name="starter_coursework_study_block">ช่วงเวลาอ่านหนังสือ</string>
+    <string name="starter_daily_carry_over">KnotQ ย้ายรายการที่ยังไม่เสร็จไปวันถัดไปได้ ส่วนงานที่เสร็จแล้วจะคงอยู่กับวันเดิม</string>
+    <string name="starter_daily_coffee">ชงกาแฟ</string>
+    <string name="starter_daily_follow_up">ส่งข้อความติดตามที่ **ใส่ใจ** หนึ่งฉบับ</string>
+    <string name="starter_daily_heading_recommendations">### คำแนะนำประจำวัน (วิธีทำงานของผม)</string>
+    <string name="starter_daily_next_draft">เขียนร่างถัดไป</string>
+    <string name="starter_daily_next_one_there">เมื่อทำงานหนึ่งเสร็จ งานถัดไปก็รออยู่ตรงนั้นแล้ว</string>
+    <string name="starter_daily_no_decision">ประเด็นคือ **คุณไม่ต้องตัดสินใจเลยว่าจะทำอะไรต่อ**</string>
+    <string name="starter_daily_optimistic_list">ในตอนเริ่มต้นของแต่ละวัน ให้เขียนรายการที่มองโลกในแง่ดีของงาน __ที่เป็นรูปธรรมและเล็ก__ แล้วติ๊กออกเมื่อคืบหน้า</string>
+    <string name="starter_daily_past_available">หน้ารายวันที่ผ่านมายังอยู่ที่นี่</string>
+    <string name="starter_daily_past_completed">งานที่ทำเสร็จจะคงอยู่เป็นบันทึก</string>
+    <string name="starter_daily_personal_note">ก่อนมี KnotQ ผมตกอยู่ในสภาพย้อนแย้ง คือมีเรื่องต้องทำมากจนไม่ได้ทำอะไรเลย เพราะทุกอย่างดูเป็นงานใหญ่ไปหมด การแตกมันออกเป็นงานที่ลงมือได้ในแต่ละวันช่วยผมได้มาก</string>
+    <string name="starter_daily_review_calendar">ดูปฏิทินของวันนี้</string>
+    <string name="starter_projects_draft_outline">ร่างโครงเรื่อง</string>
+    <string name="starter_projects_first_screen">ทำให้หน้าจอแรกรู้สึก **ชัดเจน**, __รวดเร็ว__ และมีชีวิต</string>
+    <string name="starter_projects_heading_launch">### แผนเปิดตัว</string>
+    <string name="starter_projects_heading_polish">### ขัดเกลาการออกแบบ</string>
+    <string name="starter_projects_moment">หาช่วงเวลาที่สำคัญจริง</string>
+    <string name="starter_projects_name">โปรเจกต์</string>
+    <string name="starter_projects_nested_notes">บันทึกที่ซ้อนกันช่วยให้บริบทอยู่ใกล้</string>
+    <string name="starter_projects_open_questions">คำถามที่ยังเปิดอยู่</string>
+    <string name="starter_projects_risk">ความเสี่ยง: ==กระบวนการมากเกินไป==; ทำให้เส้นทางเบาไว้</string>
+    <string name="starter_projects_sharper_labels">ตัดข้อความดิบให้กลายเป็น**ป้ายกำกับที่คมขึ้น**</string>
+    <string name="starter_projects_tiny_workspace">ส่งมอบพื้นที่ทำงานเริ่มต้นที่เล็กและสวยงาม</string>
+    <string name="starter_projects_work_session">ช่วงเวลาทำงาน</string>
+    <string name="starter_scheduling_assignments">**งานที่ต้องส่ง** มีกำหนดส่ง</string>
+    <string name="starter_scheduling_backlog">งานค้าง: เลือกการทดลองถัดไป</string>
+    <string name="starter_scheduling_events">**กิจกรรม** มีเวลาเริ่มและเวลาจบ</string>
+    <string name="starter_scheduling_first_draft">ร่างแรก</string>
+    <string name="starter_scheduling_focus_block">ช่วงเวลาโฟกัส</string>
+    <string name="starter_scheduling_heading_habits">### นิสัยที่ทำซ้ำ</string>
+    <string name="starter_scheduling_heading_shapes">### รูปแบบในปฏิทิน</string>
+    <string name="starter_scheduling_morning_review">ทบทวนตอนเช้า</string>
+    <string name="starter_scheduling_name">การจัดตาราง</string>
+    <string name="starter_scheduling_reminders">**การเตือน** เกิดขึ้น ณ เวลาเดียว</string>
+    <string name="starter_scheduling_team_message">ข้อความถึงทีม</string>
     <string name="sync_action_resync">ซิงค์ใหม่</string>
     <string name="sync_action_resyncing">กำลังซิงค์ใหม่…</string>
     <string name="sync_action_sync_now">ซิงค์ตอนนี้</string>
@@ -940,9 +994,9 @@
     <string name="web_account_placeholder_current_password">รหัสผ่านปัจจุบัน</string>
     <string name="web_account_plan_annual">รายปี</string>
     <string name="web_account_plan_monthly">รายเดือน</string>
-    <string name="web_account_plan_save_badge" formatted="false">ประหยัด 25%</string>
-    <string name="web_account_price_annual">$35.99/ปี</string>
-    <string name="web_account_price_monthly">$3.99/เดือน</string>
+    <string name="web_account_plan_save_badge" formatted="false">ประหยัด 33%</string>
+    <string name="web_account_price_annual">$23.99/ปี</string>
+    <string name="web_account_price_monthly">$2.99/เดือน</string>
     <string name="web_account_provider_apple">Apple App Store</string>
     <string name="web_account_provider_google">Google Play</string>
     <string name="web_account_provider_unknown">ผู้ให้บริการที่ไม่รู้จัก</string>
@@ -1054,12 +1108,12 @@
     <string name="web_checkout_placeholder_choose_period">เลือกช่วงเวลาการเรียกเก็บเงินเพื่อโหลด Checkout ที่ปลอดภัย</string>
     <string name="web_checkout_plan_annual">รายปี</string>
     <string name="web_checkout_plan_monthly">รายเดือน</string>
-    <string name="web_checkout_plan_save_badge" formatted="false">ประหยัด 25%</string>
+    <string name="web_checkout_plan_save_badge" formatted="false">ประหยัด 33%</string>
     <string name="web_checkout_point_cancel_anytime">ยกเลิกได้ตลอดเวลา ข้อมูลของคุณจะคงอยู่ในเครื่องเสมอ</string>
     <string name="web_checkout_point_schemes_stay_in_step">โครงการ ปฏิทิน และสื่อยังคงเท่าที่เป็น</string>
     <string name="web_checkout_point_sync_workspace">ซิงค์พื้นที่ทำงานและการแจ้งเตือนของคุณในเดสก์ท็อปและมือถือ</string>
-    <string name="web_checkout_price_annual">$35.99/ปี</string>
-    <string name="web_checkout_price_monthly">$3.99/เดือน</string>
+    <string name="web_checkout_price_annual">$23.99/ปี</string>
+    <string name="web_checkout_price_monthly">$2.99/เดือน</string>
     <string name="web_checkout_sync_title">KnotQ Sync</string>
     <string name="web_checkout_verify_gate_body">ยืนยันลิงก์การยืนยันที่เราส่งไปยังอีเมลบัญชีของคุณ Checkout จะล็อกไว้จนกว่าที่อยู่ของคุณจะได้รับการยืนยัน</string>
     <string name="web_checkout_verify_gate_title">ยืนยันอีเมลของคุณก่อนสมัครสมาชิก</string>
@@ -1327,7 +1381,7 @@
     <string name="web_home_sync_create_account">สร้างบัญชี</string>
     <string name="web_home_sync_currency_note">ราคาแสดงเป็นสกุลเงิน USD</string>
     <string name="web_home_sync_eyebrow">การซิงค์เสริม</string>
-    <string name="web_home_sync_plan_note" formatted="false">หรือ $35.99 / ปี — ประหยัด 25%</string>
+    <string name="web_home_sync_plan_note" formatted="false">หรือ $23.99 / ปี — ประหยัด 33%</string>
     <string name="web_home_sync_plan_period">/เดือน</string>
     <string name="web_home_sync_plan_subtitle">การซิงค์ข้ามอุปกรณ์</string>
     <string name="web_home_sync_point1">Your workspace will follow you across devices</string>

@@ -222,10 +222,12 @@
     <string name="event_scope_dialog_this_event">Dit evenement</string>
     <string name="event_scope_dialog_title">Herhalend evenement</string>
     <string name="event_value_none">Geen</string>
+    <string name="export_choose_destination">Kies waar je wilt exporteren</string>
     <string name="google_calendar_account_mismatch">ingelogd als {signed_in}, maar deze agenda behoort toe aan {expected}</string>
     <string name="google_calendar_account_not_connected">Die Google-account is niet meer lokaal verbonden.</string>
     <string name="google_calendar_background_sync_failed_title">Achtergrond-synchronisatie Google Calendar mislukt</string>
     <string name="google_calendar_error_import_worker_stopped">Google Calendar-importeerder gestopt</string>
+    <string name="google_calendar_error_permission_denied">KnotQ mag de Google Agenda\'s van {account} niet lezen. Verbind het account opnieuw en zet beide agendarechten aan op het Google-scherm.</string>
     <string name="google_calendar_error_reconnect_worker_stopped">Google Calendar-herverbinder gestopt</string>
     <string name="google_calendar_error_refresh_worker_stopped">Google Calendar-vernieuwer gestopt</string>
     <string name="google_calendar_error_selector_worker_stopped">Google Calendar-selector gestopt</string>
@@ -234,12 +236,14 @@
     <string name="google_calendar_reconnect_title">Google Calendar opnieuw verbinden</string>
     <string name="google_calendar_refresh_failed_title">Google Calendar-vernieuwing mislukt</string>
     <string name="google_oauth_callback_failure_body">Google Calendar-verbinding mislukt. Je kunt dit tabblad sluiten en terugkeren naar KnotQ.</string>
+    <string name="google_oauth_callback_scope_denied_body">KnotQ heeft nog steeds toestemming nodig om je agenda\'s te lezen. Op het Google-toestemmingsscherm staan de agendavakjes uit totdat je ze aanzet — sluit dit tabblad, verbind opnieuw in KnotQ en zet beide agendarechten aan.</string>
     <string name="google_oauth_callback_success_body">Google Calendar is verbonden. Je kunt dit tabblad sluiten en terugkeren naar KnotQ.</string>
+    <string name="google_oauth_error_calendar_scope_denied">KnotQ heeft toestemming nodig om je agenda\'s te lezen. Zet op het Google-toestemmingsscherm beide agendavakjes aan en verbind opnieuw.</string>
     <string name="google_oauth_error_cancelled">Google OAuth-browserterugbellen geannuleerd</string>
     <string name="google_oauth_error_missing_code">Google OAuth-terugbellen bevatte geen code</string>
     <string name="google_oauth_error_no_refresh_token">Google heeft geen vernieuwingstoken geretourneerd</string>
     <string name="google_oauth_error_provider_error">Google OAuth-fout: {error}</string>
-    <string name="google_oauth_error_timeout">Google OAuth-time-out bij wachten op browserterugbellen</string>
+    <string name="google_oauth_error_timeout">KnotQ heeft nooit een reactie van je browser gekregen. Als Google daar een foutpagina toonde, of het tabblad is gesloten, probeer dan opnieuw te verbinden.</string>
     <string name="google_oauth_error_unexpected_state">Google OAuth retourneerde een onverwachte staat</string>
     <string name="google_oauth_error_worker_stopped">Google OAuth-werker gestopt</string>
     <plurals name="google_sync_imported_count">
@@ -255,6 +259,7 @@
     <string name="menu_calendar">Agenda</string>
     <string name="menu_daily">Dagelijks</string>
     <string name="menu_edit">Bewerken</string>
+    <string name="menu_export_workspace_markdown">Werkruimte exporteren naar Markdown…</string>
     <string name="menu_file">Bestand</string>
     <string name="menu_new_folder">Nieuwe map</string>
     <string name="menu_new_item">Nieuw item</string>
@@ -569,7 +574,7 @@
     <string name="onboarding_step_upcoming_title">Aankomend</string>
     <string name="onboarding_step_welcome_body">KnotQ is één app voor agendagebeurttenissen, herinneringen, taken en algemene aantekeningen. Het streeft ernaar eenvoudig maar functioneel te zijn.</string>
     <string name="onboarding_step_welcome_title">Welkom bij KnotQ</string>
-    <string name="onboarding_sync_prompt_body">Synchronisatie kost $3,99 per maand en laat je je werkruimte over apparaten delen. Alleen lokaal is volledig gratis.</string>
+    <string name="onboarding_sync_prompt_body">Synchronisatie kost $2,99 per maand en laat je je werkruimte over apparaten delen. Alleen lokaal is volledig gratis.</string>
     <string name="onboarding_sync_prompt_continue_local">Ga nu lokaal door</string>
     <string name="onboarding_sync_prompt_opening_browser">Je browser openen om je aan te melden…</string>
     <string name="onboarding_sync_prompt_panel_title">KnotQ Sync</string>
@@ -611,6 +616,7 @@
     <string name="scheme_empty_pick_a_list">Kies een lijst aan de linkerkant</string>
     <string name="scheme_toolbar_bold">vet (⌘B)</string>
     <string name="scheme_toolbar_bullet_line">opsommingsregel (⌘3)</string>
+    <string name="scheme_toolbar_cancel_connecting_google_calendar">verbinden met Google Agenda annuleren</string>
     <string name="scheme_toolbar_checkbox_line">selectievakjeregel (⌘2)</string>
     <string name="scheme_toolbar_connecting">Verbinden</string>
     <string name="scheme_toolbar_connecting_google_calendar">Google Calendar verbinden</string>
@@ -747,6 +753,54 @@
     <string name="sidebar_rename_error">Kon niet hernoemen: {error}</string>
     <string name="sidebar_rename_placeholder">Naam</string>
     <string name="sidebar_trash_label">Archief</string>
+    <string name="starter_coursework_argument">==Stelling:== economische druk en __publiek vertrouwen__ vergelijken</string>
+    <string name="starter_coursework_citation_question">Vraag over een bronvermelding</string>
+    <string name="starter_coursework_final_draft">Definitieve versie</string>
+    <string name="starter_coursework_flashcards">Flashcards maken voor de __kernbegrippen__</string>
+    <string name="starter_coursework_heading_exam_prep">### Tentamenvoorbereiding</string>
+    <string name="starter_coursework_heading_thesis">### Scriptie</string>
+    <string name="starter_coursework_lecture_notes">Collegeaantekeningen van **week 3-4** doornemen</string>
+    <string name="starter_coursework_name">Studie</string>
+    <string name="starter_coursework_office_hours">Vragen voor het spreekuur</string>
+    <string name="starter_coursework_old_outline">Oude opzet verwerkt in de definitieve versie</string>
+    <string name="starter_coursework_primary_quotes">Twee primaire citaten uit hoofdstuk 4 toevoegen</string>
+    <string name="starter_coursework_source_notes">Bronnotities afmaken</string>
+    <string name="starter_coursework_study_block">Studieblok</string>
+    <string name="starter_daily_carry_over">KnotQ kan onafgeronde items meenemen naar de volgende dag; afgerond werk blijft achter</string>
+    <string name="starter_daily_coffee">Koffie zetten</string>
+    <string name="starter_daily_follow_up">Eén **doordachte** follow-up sturen</string>
+    <string name="starter_daily_heading_recommendations">### Dagelijkse aanbevelingen (mijn werkwijze)</string>
+    <string name="starter_daily_next_draft">De volgende versie schrijven</string>
+    <string name="starter_daily_next_one_there">Als je een taak afrondt, staat de volgende er meteen</string>
+    <string name="starter_daily_no_decision">Het punt is dat **je nooit hoeft te beslissen wat je hierna doet**</string>
+    <string name="starter_daily_optimistic_list">Schrijf aan het begin van elke dag een optimistische lijst met __concrete, kleine__ taken en vink ze af naarmate je vordert</string>
+    <string name="starter_daily_past_available">Eerdere dagpagina\'s blijven hier beschikbaar</string>
+    <string name="starter_daily_past_completed">Afgerond werk blijft achter als verslag</string>
+    <string name="starter_daily_personal_note">Vóór KnotQ zat ik in de paradoxale situatie dat ik zoveel moest doen dat ik niets deed, omdat alles zo\'n grote taak leek. Het dagelijks opdelen in behapbare taken heeft me enorm geholpen.</string>
+    <string name="starter_daily_review_calendar">De agenda van vandaag doornemen</string>
+    <string name="starter_projects_draft_outline">De opzet schrijven</string>
+    <string name="starter_projects_first_screen">Het eerste scherm **helder**, __snel__ en levendig laten voelen</string>
+    <string name="starter_projects_heading_launch">### Lanceringsplan</string>
+    <string name="starter_projects_heading_polish">### Ontwerp bijschaven</string>
+    <string name="starter_projects_moment">Het moment vinden dat ertoe doet</string>
+    <string name="starter_projects_name">Projecten</string>
+    <string name="starter_projects_nested_notes">Geneste notities houden de context dichtbij</string>
+    <string name="starter_projects_open_questions">Open vragen</string>
+    <string name="starter_projects_risk">Risico: ==te veel proces==; houd het pad licht</string>
+    <string name="starter_projects_sharper_labels">Ruwe tekst terugbrengen tot **scherpere labels**</string>
+    <string name="starter_projects_tiny_workspace">Een kleine, mooie startwerkruimte opleveren</string>
+    <string name="starter_projects_work_session">Werksessie</string>
+    <string name="starter_scheduling_assignments">**Opdrachten** hebben een deadline</string>
+    <string name="starter_scheduling_backlog">Backlog: volgend experiment kiezen</string>
+    <string name="starter_scheduling_events">**Afspraken** hebben een begin en een einde</string>
+    <string name="starter_scheduling_first_draft">Eerste versie</string>
+    <string name="starter_scheduling_focus_block">Focusblok</string>
+    <string name="starter_scheduling_heading_habits">### Terugkerende gewoontes</string>
+    <string name="starter_scheduling_heading_shapes">### Vormen in de agenda</string>
+    <string name="starter_scheduling_morning_review">Ochtendoverzicht</string>
+    <string name="starter_scheduling_name">Planning</string>
+    <string name="starter_scheduling_reminders">**Herinneringen** gebeuren op één moment</string>
+    <string name="starter_scheduling_team_message">Bericht aan het team</string>
     <string name="sync_action_resync">Opnieuw synchroniseren</string>
     <string name="sync_action_resyncing">Opnieuw synchroniseren…</string>
     <string name="sync_action_sync_now">Nu synchroniseren</string>
@@ -961,9 +1015,9 @@
     <string name="web_account_placeholder_current_password">Huidige wachtwoord</string>
     <string name="web_account_plan_annual">Jaarlijks</string>
     <string name="web_account_plan_monthly">Maandelijks</string>
-    <string name="web_account_plan_save_badge" formatted="false">Bespaar 25%</string>
-    <string name="web_account_price_annual">$35,99/jr</string>
-    <string name="web_account_price_monthly">$3,99/mnd</string>
+    <string name="web_account_plan_save_badge" formatted="false">Bespaar 33%</string>
+    <string name="web_account_price_annual">$23,99/jr</string>
+    <string name="web_account_price_monthly">$2,99/mnd</string>
     <string name="web_account_provider_apple">Apple App Store</string>
     <string name="web_account_provider_google">Google Play</string>
     <string name="web_account_provider_unknown">Provider onbekend</string>
@@ -1075,12 +1129,12 @@
     <string name="web_checkout_placeholder_choose_period">Kies een factureringsperiode om beveiligde checkout te laden.</string>
     <string name="web_checkout_plan_annual">Jaarlijks</string>
     <string name="web_checkout_plan_monthly">Maandelijks</string>
-    <string name="web_checkout_plan_save_badge" formatted="false">Bespaar 25%</string>
+    <string name="web_checkout_plan_save_badge" formatted="false">Bespaar 33%</string>
     <string name="web_checkout_point_cancel_anytime">Annuleer op elk moment — je gegevens blijven altijd lokaal</string>
     <string name="web_checkout_point_schemes_stay_in_step">Schema\'s, kalender en media blijven synchroon</string>
     <string name="web_checkout_point_sync_workspace">Synchroniseer je workspace en meldingen op desktop en mobiel</string>
-    <string name="web_checkout_price_annual">$35,99/jr</string>
-    <string name="web_checkout_price_monthly">$3,99/mnd</string>
+    <string name="web_checkout_price_annual">$23,99/jr</string>
+    <string name="web_checkout_price_monthly">$2,99/mnd</string>
     <string name="web_checkout_sync_title">KnotQ Sync</string>
     <string name="web_checkout_verify_gate_body">Bevestig de verificatielink die wij naar je accounte-mail hebben verzonden. Checkout blijft vergrendeld totdat je adres is geverifieerd.</string>
     <string name="web_checkout_verify_gate_title">Verifieer je e-mailadres voordat je je abonneert</string>
@@ -1348,7 +1402,7 @@
     <string name="web_home_sync_create_account">Account aanmaken</string>
     <string name="web_home_sync_currency_note">Prijzen in USD</string>
     <string name="web_home_sync_eyebrow">Optionele synchronisatie</string>
-    <string name="web_home_sync_plan_note" formatted="false">of $35,99 / jaar — bespaar 25%</string>
+    <string name="web_home_sync_plan_note" formatted="false">of $23,99 / jaar — bespaar 33%</string>
     <string name="web_home_sync_plan_period">/maand</string>
     <string name="web_home_sync_plan_subtitle">Synchronisatie tussen verschillende apparaten</string>
     <string name="web_home_sync_point1">Your workspace will follow you across devices</string>

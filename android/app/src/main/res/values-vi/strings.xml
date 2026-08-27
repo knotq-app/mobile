@@ -213,10 +213,12 @@
     <string name="event_scope_dialog_this_event">Sự kiện này</string>
     <string name="event_scope_dialog_title">Sự kiện lặp lại</string>
     <string name="event_value_none">Không</string>
+    <string name="export_choose_destination">Chọn nơi xuất</string>
     <string name="google_calendar_account_mismatch">đã đăng nhập dưới tên {signed_in}, nhưng lịch này thuộc về {expected}</string>
     <string name="google_calendar_account_not_connected">Tài khoản Google đó không còn được kết nối cục bộ nữa.</string>
     <string name="google_calendar_background_sync_failed_title">Đồng bộ nền Google Calendar không thành công</string>
     <string name="google_calendar_error_import_worker_stopped">Công nhân nhập Google Calendar đã dừng</string>
+    <string name="google_calendar_error_permission_denied">KnotQ không được phép đọc lịch Google của {account}. Hãy kết nối lại tài khoản và bật cả hai quyền lịch trên màn hình của Google.</string>
     <string name="google_calendar_error_reconnect_worker_stopped">Công nhân kết nối lại Google Calendar đã dừng</string>
     <string name="google_calendar_error_refresh_worker_stopped">Công nhân làm mới Google Calendar đã dừng</string>
     <string name="google_calendar_error_selector_worker_stopped">Công nhân chọn Google Calendar đã dừng</string>
@@ -225,12 +227,14 @@
     <string name="google_calendar_reconnect_title">Kết nối lại Google Calendar</string>
     <string name="google_calendar_refresh_failed_title">Làm mới Google Calendar không thành công</string>
     <string name="google_oauth_callback_failure_body">Kết nối Google Calendar không thành công. Bạn có thể đóng tab này và quay lại KnotQ.</string>
+    <string name="google_oauth_callback_scope_denied_body">KnotQ vẫn cần quyền đọc lịch của bạn. Trên màn hình quyền của Google, các ô chọn lịch vẫn tắt cho đến khi bạn bật chúng — hãy đóng thẻ này, kết nối lại trong KnotQ và bật cả hai quyền lịch.</string>
     <string name="google_oauth_callback_success_body">Google Calendar đã được kết nối. Bạn có thể đóng tab này và quay lại KnotQ.</string>
+    <string name="google_oauth_error_calendar_scope_denied">KnotQ cần quyền đọc lịch của bạn. Trên màn hình quyền của Google, hãy bật cả hai ô chọn lịch, rồi kết nối lại.</string>
     <string name="google_oauth_error_cancelled">Lệnh gọi lại trình duyệt Google OAuth đã bị hủy</string>
     <string name="google_oauth_error_missing_code">Lệnh gọi lại Google OAuth không bao gồm mã</string>
     <string name="google_oauth_error_no_refresh_token">Google không trả về mã thông báo làm mới</string>
     <string name="google_oauth_error_provider_error">Lỗi Google OAuth: {error}</string>
-    <string name="google_oauth_error_timeout">Google OAuth hết thời gian chờ lệnh gọi lại trình duyệt</string>
+    <string name="google_oauth_error_timeout">KnotQ không nhận được phản hồi nào từ trình duyệt của bạn. Nếu Google hiển thị trang lỗi ở đó, hoặc thẻ đã bị đóng, hãy thử kết nối lại.</string>
     <string name="google_oauth_error_unexpected_state">Google OAuth trả về trạng thái không mong đợi</string>
     <string name="google_oauth_error_worker_stopped">Công nhân Google OAuth đã dừng</string>
     <plurals name="google_sync_imported_count">
@@ -244,6 +248,7 @@
     <string name="menu_calendar">Lịch</string>
     <string name="menu_daily">Hàng ngày</string>
     <string name="menu_edit">Chỉnh sửa</string>
+    <string name="menu_export_workspace_markdown">Xuất Không gian làm việc sang Markdown…</string>
     <string name="menu_file">Tệp</string>
     <string name="menu_new_folder">Thư mục mới</string>
     <string name="menu_new_item">Mục mới</string>
@@ -557,7 +562,7 @@
     <string name="onboarding_step_upcoming_title">Sắp tới</string>
     <string name="onboarding_step_welcome_body">KnotQ là một ứng dụng duy nhất cho các sự kiện lịch, nhắc nhở, bài tập và ghi chú chung. Nó nhằm đơn giản nhưng chức năng.</string>
     <string name="onboarding_step_welcome_title">Chào mừng đến với KnotQ</string>
-    <string name="onboarding_sync_prompt_body">Đồng bộ là $3.99 một tháng và cho phép bạn chia sẻ không gian làm việc của bạn trên các thiết bị. Cục bộ chỉ hoàn toàn miễn phí.</string>
+    <string name="onboarding_sync_prompt_body">Đồng bộ là $2.99 một tháng và cho phép bạn chia sẻ không gian làm việc của bạn trên các thiết bị. Cục bộ chỉ hoàn toàn miễn phí.</string>
     <string name="onboarding_sync_prompt_continue_local">Tiếp tục cục bộ bây giờ</string>
     <string name="onboarding_sync_prompt_opening_browser">Mở trình duyệt của bạn để đăng nhập…</string>
     <string name="onboarding_sync_prompt_panel_title">KnotQ Sync</string>
@@ -595,6 +600,7 @@
     <string name="scheme_empty_pick_a_list">Chọn danh sách ở bên trái</string>
     <string name="scheme_toolbar_bold">đậm (⌘B)</string>
     <string name="scheme_toolbar_bullet_line">dòng dấu đầu dòng (⌘3)</string>
+    <string name="scheme_toolbar_cancel_connecting_google_calendar">hủy kết nối Google Lịch</string>
     <string name="scheme_toolbar_checkbox_line">dòng hộp kiểm (⌘2)</string>
     <string name="scheme_toolbar_connecting">Đang kết nối</string>
     <string name="scheme_toolbar_connecting_google_calendar">đang kết nối Google Lịch</string>
@@ -730,6 +736,54 @@
     <string name="sidebar_rename_error">Không thể đổi tên: {error}</string>
     <string name="sidebar_rename_placeholder">Tên</string>
     <string name="sidebar_trash_label">Lưu trữ</string>
+    <string name="starter_coursework_argument">==Luận điểm:== so sánh áp lực kinh tế và __niềm tin của công chúng__</string>
+    <string name="starter_coursework_citation_question">Thắc mắc về trích dẫn</string>
+    <string name="starter_coursework_final_draft">Bản thảo cuối</string>
+    <string name="starter_coursework_flashcards">Làm thẻ ghi nhớ cho __các thuật ngữ chính__</string>
+    <string name="starter_coursework_heading_exam_prep">### Ôn thi</string>
+    <string name="starter_coursework_heading_thesis">### Luận văn</string>
+    <string name="starter_coursework_lecture_notes">Xem lại ghi chép bài giảng **tuần 3-4**</string>
+    <string name="starter_coursework_name">Học tập</string>
+    <string name="starter_coursework_office_hours">Câu hỏi cho giờ tiếp sinh viên</string>
+    <string name="starter_coursework_old_outline">Dàn ý cũ đã đưa vào bản thảo cuối</string>
+    <string name="starter_coursework_primary_quotes">Thêm hai trích dẫn gốc từ chương 4</string>
+    <string name="starter_coursework_source_notes">Hoàn tất ghi chú nguồn</string>
+    <string name="starter_coursework_study_block">Khối thời gian học</string>
+    <string name="starter_daily_carry_over">KnotQ có thể chuyển các mục chưa xong sang ngày hôm sau; việc đã hoàn thành thì ở lại</string>
+    <string name="starter_daily_coffee">Pha cà phê</string>
+    <string name="starter_daily_follow_up">Gửi một lời nhắc lại **chỉn chu**</string>
+    <string name="starter_daily_heading_recommendations">### Gợi ý hằng ngày (cách tôi làm)</string>
+    <string name="starter_daily_next_draft">Viết bản thảo tiếp theo</string>
+    <string name="starter_daily_next_one_there">Khi bạn xong một việc, việc kế tiếp đã ở ngay đó</string>
+    <string name="starter_daily_no_decision">Điểm mấu chốt là **bạn không bao giờ phải quyết định làm gì tiếp theo**</string>
+    <string name="starter_daily_optimistic_list">Đầu mỗi ngày hãy viết một danh sách lạc quan gồm các việc __cụ thể và nhỏ__, rồi đánh dấu khi bạn tiến triển</string>
+    <string name="starter_daily_past_available">Các trang ngày trước vẫn còn ở đây</string>
+    <string name="starter_daily_past_completed">Việc đã hoàn thành ở lại như một ghi nhận</string>
+    <string name="starter_daily_personal_note">Trước khi có KnotQ, tôi rơi vào trạng thái nghịch lý: có quá nhiều việc phải làm nên rốt cuộc chẳng làm gì cả, vì mọi thứ đều trông như một việc khổng lồ. Việc chia nhỏ chúng thành các việc làm được mỗi ngày đã giúp tôi rất nhiều.</string>
+    <string name="starter_daily_review_calendar">Xem lại lịch hôm nay</string>
+    <string name="starter_projects_draft_outline">Phác thảo dàn ý</string>
+    <string name="starter_projects_first_screen">Làm cho màn hình đầu tiên thấy **rõ ràng**, __nhanh__ và sống động</string>
+    <string name="starter_projects_heading_launch">### Kế hoạch ra mắt</string>
+    <string name="starter_projects_heading_polish">### Trau chuốt thiết kế</string>
+    <string name="starter_projects_moment">Tìm khoảnh khắc thực sự quan trọng</string>
+    <string name="starter_projects_name">Dự án</string>
+    <string name="starter_projects_nested_notes">Ghi chú lồng nhau giữ ngữ cảnh ở gần</string>
+    <string name="starter_projects_open_questions">Câu hỏi còn bỏ ngỏ</string>
+    <string name="starter_projects_risk">Rủi ro: ==quá nhiều quy trình==; giữ cho lối đi nhẹ nhàng</string>
+    <string name="starter_projects_sharper_labels">Rút gọn chữ thô thành **nhãn sắc nét hơn**</string>
+    <string name="starter_projects_tiny_workspace">Ra mắt một không gian làm việc khởi đầu nhỏ và đẹp</string>
+    <string name="starter_projects_work_session">Phiên làm việc</string>
+    <string name="starter_scheduling_assignments">**Bài tập** có hạn nộp</string>
+    <string name="starter_scheduling_backlog">Việc tồn: chọn thử nghiệm tiếp theo</string>
+    <string name="starter_scheduling_events">**Sự kiện** có giờ bắt đầu và kết thúc</string>
+    <string name="starter_scheduling_first_draft">Bản thảo đầu</string>
+    <string name="starter_scheduling_focus_block">Khối tập trung</string>
+    <string name="starter_scheduling_heading_habits">### Thói quen lặp lại</string>
+    <string name="starter_scheduling_heading_shapes">### Các dạng trên lịch</string>
+    <string name="starter_scheduling_morning_review">Rà soát buổi sáng</string>
+    <string name="starter_scheduling_name">Lên lịch</string>
+    <string name="starter_scheduling_reminders">**Lời nhắc** xảy ra tại một thời điểm</string>
+    <string name="starter_scheduling_team_message">Tin nhắn cho nhóm</string>
     <string name="sync_action_resync">Đồng bộ lại</string>
     <string name="sync_action_resyncing">Đang đồng bộ lại…</string>
     <string name="sync_action_sync_now">Đồng bộ ngay</string>
@@ -940,9 +994,9 @@
     <string name="web_account_placeholder_current_password">Mật khẩu hiện tại</string>
     <string name="web_account_plan_annual">Hàng năm</string>
     <string name="web_account_plan_monthly">Hàng tháng</string>
-    <string name="web_account_plan_save_badge" formatted="false">Tiết kiệm 25%</string>
-    <string name="web_account_price_annual">$35.99/năm</string>
-    <string name="web_account_price_monthly">$3.99/tháng</string>
+    <string name="web_account_plan_save_badge" formatted="false">Tiết kiệm 33%</string>
+    <string name="web_account_price_annual">$23.99/năm</string>
+    <string name="web_account_price_monthly">$2.99/tháng</string>
     <string name="web_account_provider_apple">Apple App Store</string>
     <string name="web_account_provider_google">Google Play</string>
     <string name="web_account_provider_unknown">Nhà cung cấp không xác định</string>
@@ -1054,12 +1108,12 @@
     <string name="web_checkout_placeholder_choose_period">Chọn khoảng thời gian thanh toán để tải thanh toán bảo mật.</string>
     <string name="web_checkout_plan_annual">Hàng năm</string>
     <string name="web_checkout_plan_monthly">Hàng tháng</string>
-    <string name="web_checkout_plan_save_badge" formatted="false">Tiết kiệm 25%</string>
+    <string name="web_checkout_plan_save_badge" formatted="false">Tiết kiệm 33%</string>
     <string name="web_checkout_point_cancel_anytime">Hủy bất kỳ lúc nào — dữ liệu của bạn luôn ở cục bộ</string>
     <string name="web_checkout_point_schemes_stay_in_step">Sơ đồ, lịch và phương tiện tiếp tục đồng bộ</string>
     <string name="web_checkout_point_sync_workspace">Đồng bộ không gian làm việc và thông báo của bạn trên máy tính để bàn và điện thoại di động</string>
-    <string name="web_checkout_price_annual">$35.99/năm</string>
-    <string name="web_checkout_price_monthly">$3.99/tháng</string>
+    <string name="web_checkout_price_annual">$23.99/năm</string>
+    <string name="web_checkout_price_monthly">$2.99/tháng</string>
     <string name="web_checkout_sync_title">KnotQ Sync</string>
     <string name="web_checkout_verify_gate_body">Xác nhận liên kết xác minh chúng tôi gửi tới email tài khoản của bạn. Thanh toán vẫn bị khóa cho đến khi địa chỉ của bạn được xác minh.</string>
     <string name="web_checkout_verify_gate_title">Xác minh email của bạn trước khi đăng ký</string>
@@ -1327,7 +1381,7 @@
     <string name="web_home_sync_create_account">Tạo tài khoản</string>
     <string name="web_home_sync_currency_note">Giá được hiển thị bằng USD</string>
     <string name="web_home_sync_eyebrow">Đồng bộ hóa tùy chọn</string>
-    <string name="web_home_sync_plan_note" formatted="false">hoặc 35,99 USD / năm — tiết kiệm 25%</string>
+    <string name="web_home_sync_plan_note" formatted="false">hoặc 23,99 USD / năm — tiết kiệm 33%</string>
     <string name="web_home_sync_plan_period">/tháng</string>
     <string name="web_home_sync_plan_subtitle">Đồng bộ hóa trên nhiều thiết bị</string>
     <string name="web_home_sync_point1">Your workspace will follow you across devices</string>

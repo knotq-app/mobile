@@ -231,10 +231,12 @@
     <string name="event_scope_dialog_this_event">Acest eveniment</string>
     <string name="event_scope_dialog_title">Eveniment recurent</string>
     <string name="event_value_none">Niciunul</string>
+    <string name="export_choose_destination">Alege unde să exporți</string>
     <string name="google_calendar_account_mismatch">conectat ca {signed_in}, dar acest calendar aparține {expected}</string>
     <string name="google_calendar_account_not_connected">Acel cont Google nu mai este conectat local.</string>
     <string name="google_calendar_background_sync_failed_title">Sincronizarea în fundal Google Calendar a eșuat</string>
     <string name="google_calendar_error_import_worker_stopped">Procesul import Google Calendar s-a oprit</string>
+    <string name="google_calendar_error_permission_denied">KnotQ nu are permisiunea de a citi calendarele Google ale {account}. Reconectați contul și activați ambele permisiuni de calendar pe ecranul Google.</string>
     <string name="google_calendar_error_reconnect_worker_stopped">Procesul reconectare Google Calendar s-a oprit</string>
     <string name="google_calendar_error_refresh_worker_stopped">Procesul reîmprospătare Google Calendar s-a oprit</string>
     <string name="google_calendar_error_selector_worker_stopped">Procesul selecție Google Calendar s-a oprit</string>
@@ -243,12 +245,14 @@
     <string name="google_calendar_reconnect_title">Reconecta Google Calendar</string>
     <string name="google_calendar_refresh_failed_title">Reîmprospătare Google Calendar eșuată</string>
     <string name="google_oauth_callback_failure_body">Conectarea Google Calendar a eșuat. Puteți închide această filă și vă întoarceți la KnotQ.</string>
+    <string name="google_oauth_callback_scope_denied_body">KnotQ are în continuare nevoie de permisiunea de a vă citi calendarele. Pe ecranul de permisiuni Google, căsuțele pentru calendar rămân nebifate până le bifați — închideți această filă, reconectați-vă în KnotQ și activați ambele permisiuni de calendar.</string>
     <string name="google_oauth_callback_success_body">Google Calendar este conectat. Puteți închide această filă și vă întoarceți la KnotQ.</string>
+    <string name="google_oauth_error_calendar_scope_denied">KnotQ are nevoie de permisiunea de a vă citi calendarele. Pe ecranul de permisiuni Google, bifați ambele căsuțe pentru calendar, apoi reconectați-vă.</string>
     <string name="google_oauth_error_cancelled">Apelul de retur Google OAuth a fost anulat</string>
     <string name="google_oauth_error_missing_code">Apelul de retur Google OAuth nu a inclus un cod</string>
     <string name="google_oauth_error_no_refresh_token">Google nu a returnat un token de reîmprospătare</string>
     <string name="google_oauth_error_provider_error">Eroare Google OAuth: {error}</string>
-    <string name="google_oauth_error_timeout">Timeout la așteptarea apelului de retur Google OAuth în browser</string>
+    <string name="google_oauth_error_timeout">KnotQ nu a primit niciun răspuns de la browser. Dacă Google a afișat acolo o pagină de eroare sau fila a fost închisă, încercați să vă conectați din nou.</string>
     <string name="google_oauth_error_unexpected_state">Google OAuth a returnat o stare neașteptată</string>
     <string name="google_oauth_error_worker_stopped">Procesul Google OAuth s-a oprit</string>
     <plurals name="google_sync_imported_count">
@@ -266,6 +270,7 @@
     <string name="menu_calendar">Calendar</string>
     <string name="menu_daily">Zilnic</string>
     <string name="menu_edit">Editare</string>
+    <string name="menu_export_workspace_markdown">Exportă spațiul de lucru în Markdown…</string>
     <string name="menu_file">Fișier</string>
     <string name="menu_new_folder">Folder nou</string>
     <string name="menu_new_item">Articol nou</string>
@@ -581,7 +586,7 @@
     <string name="onboarding_step_upcoming_title">Viitoare</string>
     <string name="onboarding_step_welcome_body">KnotQ este o aplicație unică pentru evenimente de calendar, reamintiri, atribuții și note generale. Scopul ei este să fie simplă, dar funcțională.</string>
     <string name="onboarding_step_welcome_title">Bun venit la KnotQ</string>
-    <string name="onboarding_sync_prompt_body">Sincronizarea costă 3,99 USD pe lună și vă permite să partajați spațiul de lucru pe mai multe dispozitive. Doar local este complet gratuit.</string>
+    <string name="onboarding_sync_prompt_body">Sincronizarea costă 2,99 USD pe lună și vă permite să partajați spațiul de lucru pe mai multe dispozitive. Doar local este complet gratuit.</string>
     <string name="onboarding_sync_prompt_continue_local">Continuă local pentru acum</string>
     <string name="onboarding_sync_prompt_opening_browser">Se deschide browserul dvs. pentru a vă conecta…</string>
     <string name="onboarding_sync_prompt_panel_title">KnotQ Sync</string>
@@ -627,6 +632,7 @@
     <string name="scheme_empty_pick_a_list">Selectați o listă pe stânga</string>
     <string name="scheme_toolbar_bold">bold (⌘B)</string>
     <string name="scheme_toolbar_bullet_line">linie glonț (⌘3)</string>
+    <string name="scheme_toolbar_cancel_connecting_google_calendar">anulează conectarea la Google Calendar</string>
     <string name="scheme_toolbar_checkbox_line">linie casetă de bifare (⌘2)</string>
     <string name="scheme_toolbar_connecting">Se conectează</string>
     <string name="scheme_toolbar_connecting_google_calendar">se conectează la Google Calendar</string>
@@ -764,6 +770,54 @@
     <string name="sidebar_rename_error">Nu s-a putut redenumi: {error}</string>
     <string name="sidebar_rename_placeholder">Nume</string>
     <string name="sidebar_trash_label">Arhivă</string>
+    <string name="starter_coursework_argument">==Argument:== compară presiunea economică și __încrederea publică__</string>
+    <string name="starter_coursework_citation_question">Întrebare despre citare</string>
+    <string name="starter_coursework_final_draft">Versiunea finală</string>
+    <string name="starter_coursework_flashcards">Fă fișe pentru __termenii-cheie__</string>
+    <string name="starter_coursework_heading_exam_prep">### Pregătire pentru examen</string>
+    <string name="starter_coursework_heading_thesis">### Lucrare de licență</string>
+    <string name="starter_coursework_lecture_notes">Recitește notițele de curs din **săptămânile 3-4**</string>
+    <string name="starter_coursework_name">Studii</string>
+    <string name="starter_coursework_office_hours">Întrebări pentru consultații</string>
+    <string name="starter_coursework_old_outline">Schița veche a intrat în versiunea finală</string>
+    <string name="starter_coursework_primary_quotes">Adaugă două citate primare din capitolul 4</string>
+    <string name="starter_coursework_source_notes">Termină notele de la surse</string>
+    <string name="starter_coursework_study_block">Bloc de studiu</string>
+    <string name="starter_daily_carry_over">KnotQ poate muta elementele nefinalizate în ziua următoare; munca finalizată rămâne în urmă</string>
+    <string name="starter_daily_coffee">Fă cafea</string>
+    <string name="starter_daily_follow_up">Trimite un mesaj de revenire **atent**</string>
+    <string name="starter_daily_heading_recommendations">### Recomandări zilnice (metoda mea)</string>
+    <string name="starter_daily_next_draft">Scrie următoarea ciornă</string>
+    <string name="starter_daily_next_one_there">Când termini o sarcină, următoarea e chiar acolo</string>
+    <string name="starter_daily_no_decision">Ideea este că **nu trebuie niciodată să decizi ce urmează**</string>
+    <string name="starter_daily_optimistic_list">Scrie la începutul fiecărei zile o listă optimistă de sarcini __concrete și mici__ și bifează-le pe măsură ce avansezi</string>
+    <string name="starter_daily_past_available">Paginile zilnice anterioare rămân disponibile aici</string>
+    <string name="starter_daily_past_completed">Munca finalizată rămâne în urmă ca înregistrare</string>
+    <string name="starter_daily_personal_note">Înainte de KnotQ ajungeam în starea paradoxală de a avea atât de multe de făcut încât nu făceam nimic, pentru că totul părea o sarcină uriașă. Împărțirea lor zilnică în sarcini concrete m-a ajutat mult.</string>
+    <string name="starter_daily_review_calendar">Trece în revistă calendarul de azi</string>
+    <string name="starter_projects_draft_outline">Schițează structura</string>
+    <string name="starter_projects_first_screen">Fă primul ecran să pară **clar**, __rapid__ și viu</string>
+    <string name="starter_projects_heading_launch">### Plan de lansare</string>
+    <string name="starter_projects_heading_polish">### Finisaje de design</string>
+    <string name="starter_projects_moment">Găsește momentul care contează</string>
+    <string name="starter_projects_name">Proiecte</string>
+    <string name="starter_projects_nested_notes">Notițele imbricate țin contextul aproape</string>
+    <string name="starter_projects_open_questions">Întrebări deschise</string>
+    <string name="starter_projects_risk">Risc: ==prea mult proces==; ține drumul ușor</string>
+    <string name="starter_projects_sharper_labels">Taie textul brut în **etichete mai clare**</string>
+    <string name="starter_projects_tiny_workspace">Livrează un spațiu de lucru inițial mic și frumos</string>
+    <string name="starter_projects_work_session">Sesiune de lucru</string>
+    <string name="starter_scheduling_assignments">**Temele** au un termen limită</string>
+    <string name="starter_scheduling_backlog">Backlog: alege următorul experiment</string>
+    <string name="starter_scheduling_events">**Evenimentele** au un început și un sfârșit</string>
+    <string name="starter_scheduling_first_draft">Prima ciornă</string>
+    <string name="starter_scheduling_focus_block">Bloc de concentrare</string>
+    <string name="starter_scheduling_heading_habits">### Obiceiuri care se repetă</string>
+    <string name="starter_scheduling_heading_shapes">### Formele din calendar</string>
+    <string name="starter_scheduling_morning_review">Recapitulare de dimineață</string>
+    <string name="starter_scheduling_name">Planificare</string>
+    <string name="starter_scheduling_reminders">**Mementourile** se întâmplă într-un singur moment</string>
+    <string name="starter_scheduling_team_message">Mesaj pentru echipă</string>
     <string name="sync_action_resync">Resincronizare</string>
     <string name="sync_action_resyncing">Se resincronizează…</string>
     <string name="sync_action_sync_now">Sincronizează acum</string>
@@ -982,9 +1036,9 @@
     <string name="web_account_placeholder_current_password">Parolă actuală</string>
     <string name="web_account_plan_annual">Anual</string>
     <string name="web_account_plan_monthly">Lunar</string>
-    <string name="web_account_plan_save_badge" formatted="false">Economisire 25%</string>
-    <string name="web_account_price_annual">$35.99/an</string>
-    <string name="web_account_price_monthly">$3.99/lună</string>
+    <string name="web_account_plan_save_badge" formatted="false">Economisire 33%</string>
+    <string name="web_account_price_annual">$23.99/an</string>
+    <string name="web_account_price_monthly">$2.99/lună</string>
     <string name="web_account_provider_apple">Apple App Store</string>
     <string name="web_account_provider_google">Google Play</string>
     <string name="web_account_provider_unknown">Furnizor necunoscut</string>
@@ -1096,12 +1150,12 @@
     <string name="web_checkout_placeholder_choose_period">Alegeți o perioadă de facturare pentru a încărca plata securizată.</string>
     <string name="web_checkout_plan_annual">Anual</string>
     <string name="web_checkout_plan_monthly">Lunar</string>
-    <string name="web_checkout_plan_save_badge" formatted="false">Economisire 25%</string>
+    <string name="web_checkout_plan_save_badge" formatted="false">Economisire 33%</string>
     <string name="web_checkout_point_cancel_anytime">Anulare oricând — datele dvs. rămân întotdeauna local</string>
     <string name="web_checkout_point_schemes_stay_in_step">Scheme, calendar și media sunt sincronizate</string>
     <string name="web_checkout_point_sync_workspace">Sincronizare spațiu de lucru și notificări pe desktop și mobilă</string>
-    <string name="web_checkout_price_annual">$35.99/an</string>
-    <string name="web_checkout_price_monthly">$3.99/lună</string>
+    <string name="web_checkout_price_annual">$23.99/an</string>
+    <string name="web_checkout_price_monthly">$2.99/lună</string>
     <string name="web_checkout_sync_title">KnotQ Sync</string>
     <string name="web_checkout_verify_gate_body">Confirmați linkul de verificare pe care l-am trimis la e-mailul contului. Plata rămâne blocată până la verificarea adresei.</string>
     <string name="web_checkout_verify_gate_title">Verificare e-mail înainte de abonare</string>
@@ -1369,7 +1423,7 @@
     <string name="web_home_sync_create_account">Creați cont</string>
     <string name="web_home_sync_currency_note">Prețuri în USD</string>
     <string name="web_home_sync_eyebrow">Sincronizare opțională</string>
-    <string name="web_home_sync_plan_note" formatted="false">sau 35,99 USD / an — economisți 25%</string>
+    <string name="web_home_sync_plan_note" formatted="false">sau 23,99 USD / an — economisți 33%</string>
     <string name="web_home_sync_plan_period">/lună</string>
     <string name="web_home_sync_plan_subtitle">Sincronizare între dispozitive</string>
     <string name="web_home_sync_point1">Your workspace will follow you across devices</string>

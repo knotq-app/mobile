@@ -213,10 +213,12 @@
     <string name="event_scope_dialog_this_event">此事件</string>
     <string name="event_scope_dialog_title">週期事件</string>
     <string name="event_value_none">無</string>
+    <string name="export_choose_destination">選擇匯出位置</string>
     <string name="google_calendar_account_mismatch">以 {signed_in} 登入，但此日曆屬於 {expected}</string>
     <string name="google_calendar_account_not_connected">該 Google 帳戶不再在本機連接。</string>
     <string name="google_calendar_background_sync_failed_title">Google 日曆背景同步失敗</string>
     <string name="google_calendar_error_import_worker_stopped">Google 日曆匯入背景工作已停止</string>
+    <string name="google_calendar_error_permission_denied">KnotQ 無權讀取 {account} 的 Google 日曆。請重新連接該帳戶，並在 Google 的授權畫面中開啟兩項日曆權限。</string>
     <string name="google_calendar_error_reconnect_worker_stopped">Google 日曆重新連接背景工作已停止</string>
     <string name="google_calendar_error_refresh_worker_stopped">Google 日曆重新整理背景工作已停止</string>
     <string name="google_calendar_error_selector_worker_stopped">Google 日曆選擇背景工作已停止</string>
@@ -225,12 +227,14 @@
     <string name="google_calendar_reconnect_title">Google 日曆重新連接</string>
     <string name="google_calendar_refresh_failed_title">Google 日曆重新整理失敗</string>
     <string name="google_oauth_callback_failure_body">Google 日曆連接失敗。您可以關閉此標籤並返回 KnotQ。</string>
+    <string name="google_oauth_callback_scope_denied_body">KnotQ 仍需要讀取日曆的權限。在 Google 授權畫面中，日曆核取方塊在你勾選之前一直是關閉的——請關閉此分頁，在 KnotQ 中重新連接，並開啟兩項日曆權限。</string>
     <string name="google_oauth_callback_success_body">Google 日曆已連接。您可以關閉此標籤並返回 KnotQ。</string>
+    <string name="google_oauth_error_calendar_scope_denied">KnotQ 需要讀取日曆的權限。請在 Google 授權畫面勾選兩個日曆核取方塊，然後重新連接。</string>
     <string name="google_oauth_error_cancelled">Google OAuth 瀏覽器回呼已取消</string>
     <string name="google_oauth_error_missing_code">Google OAuth 回呼不包含代碼</string>
     <string name="google_oauth_error_no_refresh_token">Google 未傳回重新整理令牌</string>
     <string name="google_oauth_error_provider_error">Google OAuth 錯誤：{error}</string>
-    <string name="google_oauth_error_timeout">Google OAuth 等待瀏覽器回呼時逾時</string>
+    <string name="google_oauth_error_timeout">KnotQ 沒有收到瀏覽器的任何回應。如果 Google 在那裡顯示了錯誤頁面，或分頁被關閉，請重新連接。</string>
     <string name="google_oauth_error_unexpected_state">Google OAuth 傳回非預期的狀態</string>
     <string name="google_oauth_error_worker_stopped">Google OAuth 背景工作已停止</string>
     <plurals name="google_sync_imported_count">
@@ -244,6 +248,7 @@
     <string name="menu_calendar">日曆</string>
     <string name="menu_daily">每日</string>
     <string name="menu_edit">編輯</string>
+    <string name="menu_export_workspace_markdown">將工作區匯出為 Markdown…</string>
     <string name="menu_file">檔案</string>
     <string name="menu_new_folder">新資料夾</string>
     <string name="menu_new_item">新項目</string>
@@ -557,7 +562,7 @@
     <string name="onboarding_step_upcoming_title">即將推出</string>
     <string name="onboarding_step_welcome_body">KnotQ 是一個單一應用程式，可用於日曆事件、提醒、代辦事項和常規筆記。它旨在簡潔但功能豐富。</string>
     <string name="onboarding_step_welcome_title">歡迎來到 KnotQ</string>
-    <string name="onboarding_sync_prompt_body">同步每月 $3.99，可讓您跨裝置共享工作區。僅限本機使用完全免費。</string>
+    <string name="onboarding_sync_prompt_body">同步每月 $2.99，可讓您跨裝置共享工作區。僅限本機使用完全免費。</string>
     <string name="onboarding_sync_prompt_continue_local">暫時繼續使用本機</string>
     <string name="onboarding_sync_prompt_opening_browser">正在開啟瀏覽器進行登入…</string>
     <string name="onboarding_sync_prompt_panel_title">KnotQ Sync</string>
@@ -595,6 +600,7 @@
     <string name="scheme_empty_pick_a_list">在左邊選擇清單</string>
     <string name="scheme_toolbar_bold">粗體 (⌘B)</string>
     <string name="scheme_toolbar_bullet_line">項目符號行 (⌘3)</string>
+    <string name="scheme_toolbar_cancel_connecting_google_calendar">取消連接 Google 日曆</string>
     <string name="scheme_toolbar_checkbox_line">核取方塊行 (⌘2)</string>
     <string name="scheme_toolbar_connecting">連接中</string>
     <string name="scheme_toolbar_connecting_google_calendar">正在連接 Google 日曆</string>
@@ -730,6 +736,54 @@
     <string name="sidebar_rename_error">無法重新命名: {error}</string>
     <string name="sidebar_rename_placeholder">名稱</string>
     <string name="sidebar_trash_label">封存</string>
+    <string name="starter_coursework_argument">==論點：== 比較經濟壓力與__公眾信任__</string>
+    <string name="starter_coursework_citation_question">關於引用格式的疑問</string>
+    <string name="starter_coursework_final_draft">定稿</string>
+    <string name="starter_coursework_flashcards">為__關鍵術語__製作記憶卡</string>
+    <string name="starter_coursework_heading_exam_prep">### 備考</string>
+    <string name="starter_coursework_heading_thesis">### 論文</string>
+    <string name="starter_coursework_lecture_notes">複習**第 3-4 週**的課堂筆記</string>
+    <string name="starter_coursework_name">課業</string>
+    <string name="starter_coursework_office_hours">晤談時間要問的問題</string>
+    <string name="starter_coursework_old_outline">舊大綱已併入定稿</string>
+    <string name="starter_coursework_primary_quotes">從第 4 章補上兩則原始引文</string>
+    <string name="starter_coursework_source_notes">完成資料筆記</string>
+    <string name="starter_coursework_study_block">讀書時段</string>
+    <string name="starter_daily_carry_over">KnotQ 可以把未完成的項目順延到隔天；已完成的工作則留在原處</string>
+    <string name="starter_daily_coffee">煮咖啡</string>
+    <string name="starter_daily_follow_up">傳送一則**用心的**追蹤訊息</string>
+    <string name="starter_daily_heading_recommendations">### 每日建議（我的工作方式）</string>
+    <string name="starter_daily_next_draft">寫下一稿</string>
+    <string name="starter_daily_next_one_there">做完一件，下一件就在那裡</string>
+    <string name="starter_daily_no_decision">關鍵在於**你永遠不必決定接下來要做什麼**</string>
+    <string name="starter_daily_optimistic_list">每天開始時寫下一份樂觀的清單，列出__具體而小__的任務，並在推進中逐項勾選</string>
+    <string name="starter_daily_past_available">過去的每日頁面仍保留在這裡</string>
+    <string name="starter_daily_past_completed">已完成的工作會留在原處作為紀錄</string>
+    <string name="starter_daily_personal_note">在用 KnotQ 之前，我常陷入一種矛盾狀態：要做的事太多，反而什麼都沒做，因為每件事看起來都是龐大的工程。把它們每天拆成可執行的小任務，對我幫助很大。</string>
+    <string name="starter_daily_review_calendar">查看今天的行事曆</string>
+    <string name="starter_projects_draft_outline">擬出大綱</string>
+    <string name="starter_projects_first_screen">讓第一個畫面顯得**清晰**、__快速__且有生氣</string>
+    <string name="starter_projects_heading_launch">### 發布計畫</string>
+    <string name="starter_projects_heading_polish">### 設計打磨</string>
+    <string name="starter_projects_moment">找到真正重要的那一刻</string>
+    <string name="starter_projects_name">專案</string>
+    <string name="starter_projects_nested_notes">巢狀筆記把脈絡留在手邊</string>
+    <string name="starter_projects_open_questions">尚未解決的問題</string>
+    <string name="starter_projects_risk">風險：==流程過多==；把路徑保持輕盈</string>
+    <string name="starter_projects_sharper_labels">把粗糙的文案削成**更銳利的標籤**</string>
+    <string name="starter_projects_tiny_workspace">交付一個小而美的初始工作區</string>
+    <string name="starter_projects_work_session">工作時段</string>
+    <string name="starter_scheduling_assignments">**作業**有截止時間</string>
+    <string name="starter_scheduling_backlog">待辦池：挑選下一個實驗</string>
+    <string name="starter_scheduling_events">**活動**有開始與結束</string>
+    <string name="starter_scheduling_first_draft">初稿</string>
+    <string name="starter_scheduling_focus_block">專注時段</string>
+    <string name="starter_scheduling_heading_habits">### 重複的習慣</string>
+    <string name="starter_scheduling_heading_shapes">### 行事曆中的形態</string>
+    <string name="starter_scheduling_morning_review">早晨回顧</string>
+    <string name="starter_scheduling_name">行程安排</string>
+    <string name="starter_scheduling_reminders">**提醒**只發生在某一刻</string>
+    <string name="starter_scheduling_team_message">給團隊的訊息</string>
     <string name="sync_action_resync">重新同步</string>
     <string name="sync_action_resyncing">重新同步中…</string>
     <string name="sync_action_sync_now">立即同步</string>
@@ -940,9 +994,9 @@
     <string name="web_account_placeholder_current_password">目前密碼</string>
     <string name="web_account_plan_annual">年繳</string>
     <string name="web_account_plan_monthly">月繳</string>
-    <string name="web_account_plan_save_badge" formatted="false">省 25%</string>
-    <string name="web_account_price_annual">$35.99/年</string>
-    <string name="web_account_price_monthly">$3.99/月</string>
+    <string name="web_account_plan_save_badge" formatted="false">省 33%</string>
+    <string name="web_account_price_annual">$23.99/年</string>
+    <string name="web_account_price_monthly">$2.99/月</string>
     <string name="web_account_provider_apple">Apple App Store</string>
     <string name="web_account_provider_google">Google Play</string>
     <string name="web_account_provider_unknown">提供者不明</string>
@@ -1054,12 +1108,12 @@
     <string name="web_checkout_placeholder_choose_period">選擇計費週期以載入安全結帳。</string>
     <string name="web_checkout_plan_annual">年繳</string>
     <string name="web_checkout_plan_monthly">月繳</string>
-    <string name="web_checkout_plan_save_badge" formatted="false">省 25%</string>
+    <string name="web_checkout_plan_save_badge" formatted="false">省 33%</string>
     <string name="web_checkout_point_cancel_anytime">隨時取消 — 您的資料始終保留在本機</string>
     <string name="web_checkout_point_schemes_stay_in_step">方案、日曆和媒體保持同步</string>
     <string name="web_checkout_point_sync_workspace">在桌面和行動裝置上同步您的工作區和通知</string>
-    <string name="web_checkout_price_annual">$35.99/年</string>
-    <string name="web_checkout_price_monthly">$3.99/月</string>
+    <string name="web_checkout_price_annual">$23.99/年</string>
+    <string name="web_checkout_price_monthly">$2.99/月</string>
     <string name="web_checkout_sync_title">KnotQ 同步</string>
     <string name="web_checkout_verify_gate_body">確認我們傳送到您帳戶電子郵件的驗證連結。結帳保持鎖定，直到您的地址經過驗證。</string>
     <string name="web_checkout_verify_gate_title">訂閱前請驗證您的電子郵件</string>
@@ -1327,7 +1381,7 @@
     <string name="web_home_sync_create_account">建立帳戶</string>
     <string name="web_home_sync_currency_note">價格以美元 (USD) 顯示</string>
     <string name="web_home_sync_eyebrow">選用同步</string>
-    <string name="web_home_sync_plan_note" formatted="false">或每年 $35.99 — 節省 25%</string>
+    <string name="web_home_sync_plan_note" formatted="false">或每年 $23.99 — 節省 33%</string>
     <string name="web_home_sync_plan_period">/月</string>
     <string name="web_home_sync_plan_subtitle">跨裝置同步</string>
     <string name="web_home_sync_point1">Your workspace will follow you across devices</string>

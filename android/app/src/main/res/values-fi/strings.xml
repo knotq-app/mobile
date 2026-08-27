@@ -222,10 +222,12 @@
     <string name="event_scope_dialog_this_event">Tämä tapahtuma</string>
     <string name="event_scope_dialog_title">Toistuva tapahtuma</string>
     <string name="event_value_none">Ei mitään</string>
+    <string name="export_choose_destination">Valitse, minne viedään</string>
     <string name="google_calendar_account_mismatch">kirjautunut käyttäjänä {signed_in}, mutta tämä kalenteri kuuluu käyttäjälle {expected}</string>
     <string name="google_calendar_account_not_connected">Tämä Google-tili ei ole enää yhteydessä paikallisesti.</string>
     <string name="google_calendar_background_sync_failed_title">Google Calendarin taustassa tapahtuva synkronointi epäonnistui</string>
     <string name="google_calendar_error_import_worker_stopped">Google Calendarin tuontityöntekijä pysähtyi</string>
+    <string name="google_calendar_error_permission_denied">KnotQ ei saa lukea käyttäjän {account} Google-kalentereita. Yhdistä tili uudelleen ja ota molemmat kalenterioikeudet käyttöön Googlen näytöllä.</string>
     <string name="google_calendar_error_reconnect_worker_stopped">Google Calendarin uudelleenyhteyden muodostamisen työntekijä pysähtyi</string>
     <string name="google_calendar_error_refresh_worker_stopped">Google Calendarin päivitystyöntekijä pysähtyi</string>
     <string name="google_calendar_error_selector_worker_stopped">Google Calendarin valitsintyöntekijä pysähtyi</string>
@@ -234,12 +236,14 @@
     <string name="google_calendar_reconnect_title">Google Calendarin uudelleenyhteys</string>
     <string name="google_calendar_refresh_failed_title">Google Calendarin päivitys epäonnistui</string>
     <string name="google_oauth_callback_failure_body">Google Calendarin yhteyden muodostaminen epäonnistui. Voit sulkea tämän välilehden ja palata KnotQ:lle.</string>
+    <string name="google_oauth_callback_scope_denied_body">KnotQ tarvitsee edelleen luvan lukea kalenterisi. Googlen lupanäytöllä kalenterin valintaruudut ovat pois päältä, kunnes valitset ne – sulje tämä välilehti, yhdistä uudelleen KnotQ:ssa ja ota molemmat kalenterioikeudet käyttöön.</string>
     <string name="google_oauth_callback_success_body">Google Calendar on yhdistetty. Voit sulkea tämän välilehden ja palata KnotQ:lle.</string>
+    <string name="google_oauth_error_calendar_scope_denied">KnotQ tarvitsee luvan lukea kalenterisi. Valitse Googlen lupanäytöllä molemmat kalenterin valintaruudut ja yhdistä uudelleen.</string>
     <string name="google_oauth_error_cancelled">Google OAuth-selaimen takaisinsoitto peruutettu</string>
     <string name="google_oauth_error_missing_code">Google OAuth-takaisinsoitto ei sisältänyt koodia</string>
     <string name="google_oauth_error_no_refresh_token">Google ei palauttanut päivitystokenia</string>
     <string name="google_oauth_error_provider_error">Google OAuth -virhe: {error}</string>
-    <string name="google_oauth_error_timeout">Google OAuth:n aikakatkaisu selaimen takaisinsoittoa odotettaessa</string>
+    <string name="google_oauth_error_timeout">KnotQ ei saanut koskaan vastausta selaimeltasi. Jos Google näytti siellä virhesivun tai välilehti suljettiin, yritä yhdistää uudelleen.</string>
     <string name="google_oauth_error_unexpected_state">Google OAuth palautti odottamattoman tilan</string>
     <string name="google_oauth_error_worker_stopped">Google OAuth -työntekijä pysähtyi</string>
     <plurals name="google_sync_imported_count">
@@ -255,6 +259,7 @@
     <string name="menu_calendar">Kalenteri</string>
     <string name="menu_daily">Päivittäin</string>
     <string name="menu_edit">Muokkaa</string>
+    <string name="menu_export_workspace_markdown">Vie työtila Markdown-muotoon…</string>
     <string name="menu_file">Tiedosto</string>
     <string name="menu_new_folder">Uusi kansio</string>
     <string name="menu_new_item">Uusi kohde</string>
@@ -569,7 +574,7 @@
     <string name="onboarding_step_upcoming_title">Tulevat</string>
     <string name="onboarding_step_welcome_body">KnotQ on yksi sovellus kalenteritapahtumille, muistutuksille, tehtäville ja yleisille muistiinpanoille. Se pyrkii olemaan yksinkertainen mutta toiminnallinen.</string>
     <string name="onboarding_step_welcome_title">Tervetuloa KnotQ:lle</string>
-    <string name="onboarding_sync_prompt_body">Synkronointi maksaa 3,99 $ kuukaudessa ja antaa sinun jakaa työtilaa laitteiden välillä. Pelkkä paikallinen käyttö on täysin ilmaista.</string>
+    <string name="onboarding_sync_prompt_body">Synkronointi maksaa 2,99 $ kuukaudessa ja antaa sinun jakaa työtilaa laitteiden välillä. Pelkkä paikallinen käyttö on täysin ilmaista.</string>
     <string name="onboarding_sync_prompt_continue_local">Jatka paikallisesti toistaiseksi</string>
     <string name="onboarding_sync_prompt_opening_browser">Avataan selain kirjautumista varten…</string>
     <string name="onboarding_sync_prompt_panel_title">KnotQ Sync</string>
@@ -611,6 +616,7 @@
     <string name="scheme_empty_pick_a_list">Valitse luettelo vasemmalta</string>
     <string name="scheme_toolbar_bold">lihavoitu (⌘B)</string>
     <string name="scheme_toolbar_bullet_line">luettelorivin merkki (⌘3)</string>
+    <string name="scheme_toolbar_cancel_connecting_google_calendar">peruuta Google-kalenterin yhdistäminen</string>
     <string name="scheme_toolbar_checkbox_line">valintaruuturi (⌘2)</string>
     <string name="scheme_toolbar_connecting">Yhdistetään</string>
     <string name="scheme_toolbar_connecting_google_calendar">yhdistetään Google Kalenteriin</string>
@@ -747,6 +753,54 @@
     <string name="sidebar_rename_error">Nimeäminen epäonnistui: {error}</string>
     <string name="sidebar_rename_placeholder">Nimi</string>
     <string name="sidebar_trash_label">Arkisto</string>
+    <string name="starter_coursework_argument">==Väite:== vertaa taloudellista painetta ja __julkista luottamusta__</string>
+    <string name="starter_coursework_citation_question">Kysymys lähdeviitteestä</string>
+    <string name="starter_coursework_final_draft">Lopullinen versio</string>
+    <string name="starter_coursework_flashcards">Tee muistikortit __avainkäsitteistä__</string>
+    <string name="starter_coursework_heading_exam_prep">### Tenttiin valmistautuminen</string>
+    <string name="starter_coursework_heading_thesis">### Tutkielma</string>
+    <string name="starter_coursework_lecture_notes">Kertaa **viikkojen 3-4** luentomuistiinpanot</string>
+    <string name="starter_coursework_name">Opinnot</string>
+    <string name="starter_coursework_office_hours">Kysymyksiä vastaanotolle</string>
+    <string name="starter_coursework_old_outline">Vanha runko siirretty lopulliseen versioon</string>
+    <string name="starter_coursework_primary_quotes">Lisää kaksi alkuperäislainausta luvusta 4</string>
+    <string name="starter_coursework_source_notes">Viimeistele lähdemuistiinpanot</string>
+    <string name="starter_coursework_study_block">Lukujakso</string>
+    <string name="starter_daily_carry_over">KnotQ voi siirtää keskeneräiset kohdat seuraavalle päivälle; valmis työ jää paikalleen</string>
+    <string name="starter_daily_coffee">Keitä kahvia</string>
+    <string name="starter_daily_follow_up">Lähetä yksi **harkittu** jatkoviesti</string>
+    <string name="starter_daily_heading_recommendations">### Päivittäiset suositukset (oma tapani)</string>
+    <string name="starter_daily_next_draft">Kirjoita seuraava luonnos</string>
+    <string name="starter_daily_next_one_there">Kun saat tehtävän valmiiksi, seuraava odottaa heti</string>
+    <string name="starter_daily_no_decision">Ideana on, että **sinun ei tarvitse koskaan päättää, mitä teet seuraavaksi**</string>
+    <string name="starter_daily_optimistic_list">Kirjoita jokaisen päivän aluksi optimistinen lista __konkreettisia, pieniä__ tehtäviä ja merkitse ne tehdyiksi edetessäsi</string>
+    <string name="starter_daily_past_available">Aiemmat päiväsivut säilyvät täällä</string>
+    <string name="starter_daily_past_completed">Valmis työ jää tähän merkinnäksi</string>
+    <string name="starter_daily_personal_note">Ennen KnotQ:ta ajauduin paradoksaaliseen tilaan: tekemistä oli niin paljon, etten tehnyt mitään, koska kaikki tuntui valtavalta urakalta. Niiden pilkkominen päivittäin konkreettisiksi tehtäviksi auttoi minua paljon.</string>
+    <string name="starter_daily_review_calendar">Käy läpi tämän päivän kalenteri</string>
+    <string name="starter_projects_draft_outline">Luonnostele runko</string>
+    <string name="starter_projects_first_screen">Saa ensimmäinen näkymä tuntumaan **selkeältä**, __nopealta__ ja elävältä</string>
+    <string name="starter_projects_heading_launch">### Julkaisusuunnitelma</string>
+    <string name="starter_projects_heading_polish">### Ulkoasun viimeistely</string>
+    <string name="starter_projects_moment">Etsi se hetki, jolla on merkitystä</string>
+    <string name="starter_projects_name">Projektit</string>
+    <string name="starter_projects_nested_notes">Sisennetyt muistiinpanot pitävät asiayhteyden lähellä</string>
+    <string name="starter_projects_open_questions">Avoimet kysymykset</string>
+    <string name="starter_projects_risk">Riski: ==liikaa prosessia==; pidä polku kevyenä</string>
+    <string name="starter_projects_sharper_labels">Tiivistä raaka teksti **terävämmiksi nimikkeiksi**</string>
+    <string name="starter_projects_tiny_workspace">Julkaise pieni ja kaunis aloitustyötila</string>
+    <string name="starter_projects_work_session">Työskentelyjakso</string>
+    <string name="starter_scheduling_assignments">**Tehtävillä** on määräaika</string>
+    <string name="starter_scheduling_backlog">Työjono: valitse seuraava kokeilu</string>
+    <string name="starter_scheduling_events">**Tapahtumilla** on alku ja loppu</string>
+    <string name="starter_scheduling_first_draft">Ensimmäinen luonnos</string>
+    <string name="starter_scheduling_focus_block">Keskittymisjakso</string>
+    <string name="starter_scheduling_heading_habits">### Toistuvat tavat</string>
+    <string name="starter_scheduling_heading_shapes">### Kalenterin muodot</string>
+    <string name="starter_scheduling_morning_review">Aamun katsaus</string>
+    <string name="starter_scheduling_name">Aikataulutus</string>
+    <string name="starter_scheduling_reminders">**Muistutukset** tapahtuvat yhtenä hetkenä</string>
+    <string name="starter_scheduling_team_message">Viesti tiimille</string>
     <string name="sync_action_resync">Synkronoi uudelleen</string>
     <string name="sync_action_resyncing">Synkronoidaan uudelleen…</string>
     <string name="sync_action_sync_now">Synkronoi nyt</string>
@@ -961,9 +1015,9 @@
     <string name="web_account_placeholder_current_password">Nykyinen salasana</string>
     <string name="web_account_plan_annual">Vuosittain</string>
     <string name="web_account_plan_monthly">Kuukausittain</string>
-    <string name="web_account_plan_save_badge" formatted="false">Säästä 25 %</string>
-    <string name="web_account_price_annual">$35,99/vuosi</string>
-    <string name="web_account_price_monthly">$3,99/kk</string>
+    <string name="web_account_plan_save_badge" formatted="false">Säästä 33 %</string>
+    <string name="web_account_price_annual">$23,99/vuosi</string>
+    <string name="web_account_price_monthly">$2,99/kk</string>
     <string name="web_account_provider_apple">Apple App Store</string>
     <string name="web_account_provider_google">Google Play</string>
     <string name="web_account_provider_unknown">Palveluntarjoaja tuntematon</string>
@@ -1075,12 +1129,12 @@
     <string name="web_checkout_placeholder_choose_period">Valitse laskutusjakso ladataksesi suojatun kassan.</string>
     <string name="web_checkout_plan_annual">Vuosittain</string>
     <string name="web_checkout_plan_monthly">Kuukausittain</string>
-    <string name="web_checkout_plan_save_badge" formatted="false">Säästä 25 %</string>
+    <string name="web_checkout_plan_save_badge" formatted="false">Säästä 33 %</string>
     <string name="web_checkout_point_cancel_anytime">Peruuta milloin tahansa — tietosi pysyvät aina paikallisesti</string>
     <string name="web_checkout_point_schemes_stay_in_step">Scheemat, kalenteri ja media pysyvät vaiheissa</string>
     <string name="web_checkout_point_sync_workspace">Synkronoi työtilasi ja ilmoitukset työpöydän ja mobiililaitteen välillä</string>
-    <string name="web_checkout_price_annual">$35,99/vuosi</string>
-    <string name="web_checkout_price_monthly">$3,99/kk</string>
+    <string name="web_checkout_price_annual">$23,99/vuosi</string>
+    <string name="web_checkout_price_monthly">$2,99/kk</string>
     <string name="web_checkout_sync_title">KnotQ Sync</string>
     <string name="web_checkout_verify_gate_body">Vahvista vahvistusenlinkki, jonka lähetimme tilin sähköpostiin. Kassa pysyy lukituna kunnes osoitteesi on vahvistettu.</string>
     <string name="web_checkout_verify_gate_title">Vahvista sähköpostiosoitteesi ennen tilaamista</string>
@@ -1348,7 +1402,7 @@
     <string name="web_home_sync_create_account">Luo tili</string>
     <string name="web_home_sync_currency_note">Hinnat USD-valuutassa</string>
     <string name="web_home_sync_eyebrow">Valinnainen synkronointi</string>
-    <string name="web_home_sync_plan_note" formatted="false">tai 35,99 $ / vuosi — säästä 25%</string>
+    <string name="web_home_sync_plan_note" formatted="false">tai 23,99 $ / vuosi — säästä 33%</string>
     <string name="web_home_sync_plan_period">/kk</string>
     <string name="web_home_sync_plan_subtitle">Laitteiden välinen synkronointi</string>
     <string name="web_home_sync_point1">Your workspace will follow you across devices</string>

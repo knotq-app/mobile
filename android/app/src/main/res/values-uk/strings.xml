@@ -240,10 +240,12 @@
     <string name="event_scope_dialog_this_event">Ця подія</string>
     <string name="event_scope_dialog_title">Повторювана подія</string>
     <string name="event_value_none">Жодна</string>
+    <string name="export_choose_destination">Виберіть, куди експортувати</string>
     <string name="google_calendar_account_mismatch">ви ввійшли як {signed_in}, але цей календар належить {expected}</string>
     <string name="google_calendar_account_not_connected">Той обліковий запис Google більше не підключений локально.</string>
     <string name="google_calendar_background_sync_failed_title">Фонова синхронізація Google Calendar не вдалась</string>
     <string name="google_calendar_error_import_worker_stopped">Робітник імпорту Google Calendar зупинився</string>
+    <string name="google_calendar_error_permission_denied">KnotQ не має дозволу читати календарі Google облікового запису {account}. Підключіть обліковий запис знову та ввімкніть обидва дозволи календаря на екрані Google.</string>
     <string name="google_calendar_error_reconnect_worker_stopped">Робітник повторного підключення Google Calendar зупинився</string>
     <string name="google_calendar_error_refresh_worker_stopped">Робітник оновлення Google Calendar зупинився</string>
     <string name="google_calendar_error_selector_worker_stopped">Робітник селектора Google Calendar зупинився</string>
@@ -252,12 +254,14 @@
     <string name="google_calendar_reconnect_title">Повторне підключення Google Calendar</string>
     <string name="google_calendar_refresh_failed_title">Оновлення Google Calendar не вдалось</string>
     <string name="google_oauth_callback_failure_body">Підключення до Google Calendar не вдалось. Ви можете закрити цю вкладку й повернутися до KnotQ.</string>
+    <string name="google_oauth_callback_scope_denied_body">KnotQ досі потрібен дозвіл на читання ваших календарів. На екрані дозволів Google прапорці календаря лишаються вимкненими, доки ви їх не ввімкнете — закрийте цю вкладку, підключіться знову в KnotQ і ввімкніть обидва дозволи календаря.</string>
     <string name="google_oauth_callback_success_body">Google Calendar підключено. Ви можете закрити цю вкладку й повернутися до KnotQ.</string>
+    <string name="google_oauth_error_calendar_scope_denied">KnotQ потрібен дозвіл на читання ваших календарів. На екрані дозволів Google увімкніть обидва прапорці календаря, а потім підключіться знову.</string>
     <string name="google_oauth_error_cancelled">Зворотний виклик браузера Google OAuth скасовано</string>
     <string name="google_oauth_error_missing_code">Зворотний виклик Google OAuth не містить коду</string>
     <string name="google_oauth_error_no_refresh_token">Google не повернув токен оновлення</string>
     <string name="google_oauth_error_provider_error">Помилка Google OAuth: {error}</string>
-    <string name="google_oauth_error_timeout">Тайм-аут Google OAuth при очікуванні на зворотний виклик браузера</string>
+    <string name="google_oauth_error_timeout">KnotQ так і не отримав відповіді від браузера. Якщо Google показав там сторінку помилки або вкладку було закрито, спробуйте підключитися знову.</string>
     <string name="google_oauth_error_unexpected_state">Google OAuth повернув несподіваний стан</string>
     <string name="google_oauth_error_worker_stopped">Робітник Google OAuth зупинився</string>
     <plurals name="google_sync_imported_count">
@@ -277,6 +281,7 @@
     <string name="menu_calendar">Календар</string>
     <string name="menu_daily">Щоденно</string>
     <string name="menu_edit">Редагувати</string>
+    <string name="menu_export_workspace_markdown">Експортувати робочий простір у Markdown…</string>
     <string name="menu_file">Файл</string>
     <string name="menu_new_folder">Нова папка</string>
     <string name="menu_new_item">Новий елемент</string>
@@ -593,7 +598,7 @@
     <string name="onboarding_step_upcoming_title">Наступні события</string>
     <string name="onboarding_step_welcome_body">KnotQ — це один додаток для подій календара, нагадування, завдань і загальних нотаток. Його метою є бути простим, але функціональним.</string>
     <string name="onboarding_step_welcome_title">Ласкаво просимо в KnotQ</string>
-    <string name="onboarding_sync_prompt_body">Синхронізація коштує 3,99 доларів США на місяць і дозволяє спільно використовувати робочий простір на пристроях. Тільки локально є повністю безплатно.</string>
+    <string name="onboarding_sync_prompt_body">Синхронізація коштує 2,99 доларів США на місяць і дозволяє спільно використовувати робочий простір на пристроях. Тільки локально є повністю безплатно.</string>
     <string name="onboarding_sync_prompt_continue_local">Продовжити локально поки що</string>
     <string name="onboarding_sync_prompt_opening_browser">Відкриття браузера для входу…</string>
     <string name="onboarding_sync_prompt_panel_title">KnotQ Sync</string>
@@ -643,6 +648,7 @@
     <string name="scheme_empty_pick_a_list">Виберіть список зліва</string>
     <string name="scheme_toolbar_bold">жирний (⌘B)</string>
     <string name="scheme_toolbar_bullet_line">рядок кулька (⌘3)</string>
+    <string name="scheme_toolbar_cancel_connecting_google_calendar">скасувати підключення Google Календаря</string>
     <string name="scheme_toolbar_checkbox_line">рядок прапорця (⌘2)</string>
     <string name="scheme_toolbar_connecting">Підключення</string>
     <string name="scheme_toolbar_connecting_google_calendar">підключення Google Календара</string>
@@ -781,6 +787,54 @@
     <string name="sidebar_rename_error">Не вдалося перейменувати: {error}</string>
     <string name="sidebar_rename_placeholder">Назва</string>
     <string name="sidebar_trash_label">Архів</string>
+    <string name="starter_coursework_argument">==Теза:== порівняти економічний тиск і __суспільну довіру__</string>
+    <string name="starter_coursework_citation_question">Питання щодо посилання</string>
+    <string name="starter_coursework_final_draft">Фінальна версія</string>
+    <string name="starter_coursework_flashcards">Зробити картки за __ключовими термінами__</string>
+    <string name="starter_coursework_heading_exam_prep">### Підготовка до іспиту</string>
+    <string name="starter_coursework_heading_thesis">### Дипломна робота</string>
+    <string name="starter_coursework_lecture_notes">Переглянути конспекти лекцій **тижнів 3-4**</string>
+    <string name="starter_coursework_name">Навчання</string>
+    <string name="starter_coursework_office_hours">Питання на консультацію</string>
+    <string name="starter_coursework_old_outline">Старий план увійшов до фінальної версії</string>
+    <string name="starter_coursework_primary_quotes">Додати дві первинні цитати з розділу 4</string>
+    <string name="starter_coursework_source_notes">Завершити нотатки до джерел</string>
+    <string name="starter_coursework_study_block">Блок навчання</string>
+    <string name="starter_daily_carry_over">KnotQ може переносити незавершені пункти на наступний день; завершена робота лишається позаду</string>
+    <string name="starter_daily_coffee">Зварити каву</string>
+    <string name="starter_daily_follow_up">Надіслати одне **продумане** нагадування</string>
+    <string name="starter_daily_heading_recommendations">### Щоденні рекомендації (мій підхід)</string>
+    <string name="starter_daily_next_draft">Написати наступний чернетковий варіант</string>
+    <string name="starter_daily_next_one_there">Коли завершуєте завдання, наступне вже тут</string>
+    <string name="starter_daily_no_decision">Суть у тому, що **вам ніколи не треба вирішувати, що робити далі**</string>
+    <string name="starter_daily_optimistic_list">На початку кожного дня запишіть оптимістичний список __конкретних, невеликих__ завдань і відмічайте їх у міру просування</string>
+    <string name="starter_daily_past_available">Попередні щоденні сторінки залишаються доступними тут</string>
+    <string name="starter_daily_past_completed">Завершена робота лишається позаду як запис</string>
+    <string name="starter_daily_personal_note">До KnotQ я потрапляв у парадоксальний стан: справ було так багато, що я не робив нічого, бо все здавалося величезним завданням. Щоденне розбиття їх на конкретні завдання дуже мені допомогло.</string>
+    <string name="starter_daily_review_calendar">Переглянути календар на сьогодні</string>
+    <string name="starter_projects_draft_outline">Накидати план</string>
+    <string name="starter_projects_first_screen">Зробити перший екран **зрозумілим**, __швидким__ і живим</string>
+    <string name="starter_projects_heading_launch">### План запуску</string>
+    <string name="starter_projects_heading_polish">### Доопрацювання дизайну</string>
+    <string name="starter_projects_moment">Знайти момент, який має значення</string>
+    <string name="starter_projects_name">Проєкти</string>
+    <string name="starter_projects_nested_notes">Вкладені нотатки тримають контекст поруч</string>
+    <string name="starter_projects_open_questions">Відкриті питання</string>
+    <string name="starter_projects_risk">Ризик: ==забагато процесу==; тримати шлях легким</string>
+    <string name="starter_projects_sharper_labels">Перетворити чорновий текст на **точніші підписи**</string>
+    <string name="starter_projects_tiny_workspace">Випустити маленький, гарний стартовий робочий простір</string>
+    <string name="starter_projects_work_session">Робоча сесія</string>
+    <string name="starter_scheduling_assignments">**Завдання** мають дедлайн</string>
+    <string name="starter_scheduling_backlog">Беклог: обрати наступний експеримент</string>
+    <string name="starter_scheduling_events">**Події** мають початок і кінець</string>
+    <string name="starter_scheduling_first_draft">Перший чернетковий варіант</string>
+    <string name="starter_scheduling_focus_block">Блок зосередження</string>
+    <string name="starter_scheduling_heading_habits">### Повторювані звички</string>
+    <string name="starter_scheduling_heading_shapes">### Форми в календарі</string>
+    <string name="starter_scheduling_morning_review">Ранковий огляд</string>
+    <string name="starter_scheduling_name">Планування</string>
+    <string name="starter_scheduling_reminders">**Нагадування** стаються в один момент</string>
+    <string name="starter_scheduling_team_message">Повідомлення команді</string>
     <string name="sync_action_resync">Пересинхронізувати</string>
     <string name="sync_action_resyncing">Пересинхронізація…</string>
     <string name="sync_action_sync_now">Синхронізувати зараз</string>
@@ -1003,9 +1057,9 @@
     <string name="web_account_placeholder_current_password">Поточний пароль</string>
     <string name="web_account_plan_annual">Щорічно</string>
     <string name="web_account_plan_monthly">Щомісячно</string>
-    <string name="web_account_plan_save_badge" formatted="false">Збереження 25%</string>
-    <string name="web_account_price_annual">$35.99/рік</string>
-    <string name="web_account_price_monthly">$3.99/місяць</string>
+    <string name="web_account_plan_save_badge" formatted="false">Збереження 33%</string>
+    <string name="web_account_price_annual">$23.99/рік</string>
+    <string name="web_account_price_monthly">$2.99/місяць</string>
     <string name="web_account_provider_apple">Apple App Store</string>
     <string name="web_account_provider_google">Google Play</string>
     <string name="web_account_provider_unknown">Постачальник невідомий</string>
@@ -1117,12 +1171,12 @@
     <string name="web_checkout_placeholder_choose_period">Виберіть період тарифікації для завантаження безпечної оплати.</string>
     <string name="web_checkout_plan_annual">Щорічно</string>
     <string name="web_checkout_plan_monthly">Щомісячно</string>
-    <string name="web_checkout_plan_save_badge" formatted="false">Збереження 25%</string>
+    <string name="web_checkout_plan_save_badge" formatted="false">Збереження 33%</string>
     <string name="web_checkout_point_cancel_anytime">Скасуйте у будь-який час — ваші дані завжди залишаються локальними</string>
     <string name="web_checkout_point_schemes_stay_in_step">Схеми, календар та медіа залишаються в кроці</string>
     <string name="web_checkout_point_sync_workspace">Синхронізуйте свій робочий простір та сповіщення на настільному та мобільному пристроях</string>
-    <string name="web_checkout_price_annual">$35.99/рік</string>
-    <string name="web_checkout_price_monthly">$3.99/місяць</string>
+    <string name="web_checkout_price_annual">$23.99/рік</string>
+    <string name="web_checkout_price_monthly">$2.99/місяць</string>
     <string name="web_checkout_sync_title">KnotQ Синхронізація</string>
     <string name="web_checkout_verify_gate_body">Підтвердьте посилання для перевірки, яке ми надіслали на адресу електронної пошти вашого облікового запису. Оплата залишається заблокованою, поки ваша адреса не буде перевірена.</string>
     <string name="web_checkout_verify_gate_title">Перевірте свою електронну пошту перед підпискою</string>
@@ -1390,7 +1444,7 @@
     <string name="web_home_sync_create_account">Створити обліковий запис</string>
     <string name="web_home_sync_currency_note">Ціни вказані в USD</string>
     <string name="web_home_sync_eyebrow">Додаткова синхронізація</string>
-    <string name="web_home_sync_plan_note" formatted="false">або $35.99 / рік — економія 25%</string>
+    <string name="web_home_sync_plan_note" formatted="false">або $23.99 / рік — економія 33%</string>
     <string name="web_home_sync_plan_period">/місяць</string>
     <string name="web_home_sync_plan_subtitle">Синхронізація між пристроями</string>
     <string name="web_home_sync_point1">Your workspace will follow you across devices</string>
