@@ -88,6 +88,15 @@ final class AppModel: ObservableObject {
     var googleSyncTask: Task<Void, Never>?
     // Non-nil while a post-edit push is waiting out its debounce window.
     var pendingEditSyncTask: Task<Void, Never>?
+    /// Search rebuilds the Rust index, so a typing burst must collapse to its
+    /// final query instead of occupying the serial bridge queue once per key.
+    var searchTask: Task<Void, Never>?
+    var searchGeneration = 0
+    /// A full snapshot rebuild also recalculates notifications and serializes a
+    /// widget payload. Lifecycle and navigation callbacks routinely arrive in
+    /// bursts, so keep one bridge read active and remember only that a fresher
+    /// one is needed after it lands.
+    var refreshFlight = RefreshFlightGate()
     var resendCooldownTask: Task<Void, Never>?
     var googleOAuthSession: WebAuthenticationSessionCoordinator?
     var browserSignInSession: WebAuthenticationSessionCoordinator?
@@ -171,6 +180,13 @@ final class AppModel: ObservableObject {
 
     func refresh() {
         guard let bridge else { return }
+        guard refreshFlight.request() else { return }
+        startRefresh(using: bridge)
+    }
+
+    /// Starts a refresh already admitted by `refreshFlight`. A queued follow-up
+    /// calls this directly because the gate remains in flight across the handoff.
+    private func startRefresh(using bridge: RustBridge) {
         let today = Self.dateOnly(selectedDate)
         let week = weekOffset
         let history = dailyHistoryDays
@@ -193,29 +209,35 @@ final class AppModel: ObservableObject {
             return result
         }) { [weak self] result in
             guard let self else { return }
+            var shouldApplyResult = true
             if isDailyHistoryLoad {
                 self.dailyHistoryLoadInProgress = false
-                guard Self.dateOnly(self.selectedDate) == today else {
+                if Self.dateOnly(self.selectedDate) != today {
                     self.dailyHistoryLoadAnchorDate = nil
-                    return
+                    shouldApplyResult = false
                 }
             }
-            switch result {
-            case .success(let (snapshot, pending, staleNotificationIds)):
-                self.apply(
-                    snapshot: snapshot,
-                    pendingNotifications: pending,
-                    staleNotificationIds: staleNotificationIds
-                )
-                if isDailyHistoryLoad {
-                    self.dailyHistoryLoadAnchorDate = loadAnchorDate
+            if shouldApplyResult {
+                switch result {
+                case .success(let (snapshot, pending, staleNotificationIds)):
+                    self.apply(
+                        snapshot: snapshot,
+                        pendingNotifications: pending,
+                        staleNotificationIds: staleNotificationIds
+                    )
+                    if isDailyHistoryLoad {
+                        self.dailyHistoryLoadAnchorDate = loadAnchorDate
+                    }
+                    self.errorMessage = nil
+                case .failure(let error):
+                    if isDailyHistoryLoad {
+                        self.dailyHistoryLoadAnchorDate = nil
+                    }
+                    self.errorMessage = error.localizedDescription
                 }
-                self.errorMessage = nil
-            case .failure(let error):
-                if isDailyHistoryLoad {
-                    self.dailyHistoryLoadAnchorDate = nil
-                }
-                self.errorMessage = error.localizedDescription
+            }
+            if self.refreshFlight.finish() {
+                self.startRefresh(using: bridge)
             }
         }
     }
@@ -270,19 +292,65 @@ final class AppModel: ObservableObject {
         staleNotificationIds: [String] = []
     ) {
         let firstSnapshot = self.snapshot == nil
-        self.snapshot = snapshot
-        KnotQWidgetSnapshotStore.publish(snapshot: snapshot)
-        if firstSnapshot {
-            CoreTiming.launch("widget published", since: CoreTiming.sinceProcessStart())
+        let snapshotChanged = Self.shouldPublishSnapshot(current: self.snapshot, next: snapshot)
+        // Periodic and lifecycle refreshes must still reconcile notifications,
+        // but publishing an equal value wakes every SwiftUI observer and can
+        // rebuild a large home/calendar tree for no visible change.
+        if snapshotChanged {
+            self.snapshot = snapshot
+            KnotQWidgetSnapshotStore.publish(snapshot: snapshot)
+            if firstSnapshot {
+                CoreTiming.launch("widget published", since: CoreTiming.sinceProcessStart())
+            }
+            MobileNotificationScheduler.shared.updateBadgeCount(Self.overdueBadgeCount(for: snapshot))
+            configureGoogleSyncPolling(accountCount: snapshot.settings.googleAccountCount)
+            BackgroundSyncCoordinator.shared.scheduleIfEligible(backgroundRefreshEligible)
         }
         MobileNotificationScheduler.shared.reschedule(pendingNotifications)
         MobileNotificationScheduler.shared.clearDelivered(staleNotificationIds)
-        MobileNotificationScheduler.shared.updateBadgeCount(Self.overdueBadgeCount(for: snapshot))
-        configureGoogleSyncPolling(accountCount: snapshot.settings.googleAccountCount)
-        BackgroundSyncCoordinator.shared.scheduleIfEligible(backgroundRefreshEligible)
         if firstSnapshot {
             CoreTiming.launch("first apply done", since: CoreTiming.sinceProcessStart())
         }
+    }
+
+    /// Kept separate from `apply` so the equality gate is pinned by unit tests.
+    static func shouldPublishSnapshot(current: MobileSnapshot?, next: MobileSnapshot) -> Bool {
+        current != next
+    }
+
+    /// Install the visual result of a local occurrence toggle before the Rust
+    /// write and snapshot rebuild finish. The core remains authoritative: the
+    /// next completed mutation replaces this temporary value with a fresh
+    /// snapshot. Keeping this narrow to the exact occurrence is important for
+    /// recurring items, where toggling one instance must not mark every
+    /// instance done on screen.
+    func optimisticallyToggleOccurrence(_ target: MobileOccurrence) {
+        guard let current = snapshot else { return }
+        let toggled = Self.toggledOccurrence(in: current, target: target)
+        guard toggled != current else { return }
+        snapshot = toggled
+        KnotQWidgetSnapshotStore.publish(snapshot: toggled)
+        MobileNotificationScheduler.shared.updateBadgeCount(Self.overdueBadgeCount(for: toggled))
+    }
+
+    static func toggledOccurrence(in snapshot: MobileSnapshot, target: MobileOccurrence) -> MobileSnapshot {
+        var result = snapshot
+        func matches(_ occurrence: MobileOccurrence) -> Bool {
+            occurrence.schemeId == target.schemeId
+                && occurrence.itemId == target.itemId
+                && occurrence.occurrenceJson == target.occurrenceJson
+        }
+        func toggle(_ occurrences: inout [MobileOccurrence]) {
+            for index in occurrences.indices where matches(occurrences[index]) {
+                occurrences[index].done.toggle()
+            }
+        }
+        toggle(&result.calendar.upcoming)
+        toggle(&result.calendar.overdue)
+        for dayIndex in result.calendar.days.indices {
+            toggle(&result.calendar.days[dayIndex].occurrences)
+        }
+        return result
     }
 
     /// Await-able variant of `refresh()` for background wakes: installs the
@@ -405,16 +473,32 @@ final class AppModel: ObservableObject {
         MobileNotificationScheduler.shared.updateBadgeCount(Self.overdueBadgeCount(for: result.0))
     }
 
-    func search(_ query: String) {
+    func search(_ query: String, debounce: Bool = true) {
         guard let bridge else { return }
-        bridge.enqueue({ try $0.search(query) }) { [weak self] result in
-            guard let self else { return }
-            switch result {
-            case .success(let hits):
-                self.searchHits = hits
-                self.errorMessage = nil
-            case .failure(let error):
-                self.errorMessage = error.localizedDescription
+        searchGeneration &+= 1
+        let generation = searchGeneration
+        searchTask?.cancel()
+        let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else {
+            searchHits = []
+            searchTask = nil
+            return
+        }
+        searchTask = Task { [weak self, bridge] in
+            if debounce {
+                try? await Task.sleep(nanoseconds: 140_000_000)
+            }
+            guard !Task.isCancelled else { return }
+            bridge.enqueue({ try $0.search(trimmed) }) { [weak self] result in
+                guard let self, self.searchGeneration == generation else { return }
+                self.searchTask = nil
+                switch result {
+                case .success(let hits):
+                    self.searchHits = hits
+                    self.errorMessage = nil
+                case .failure(let error):
+                    self.errorMessage = error.localizedDescription
+                }
             }
         }
     }

@@ -14,8 +14,7 @@ use knotq_model::{
     daily_queue_scheme_id, daily_queue_sync_metadata, AppSettings, CalendarProvider, FolderId,
     GoogleOAuthAccount, ImageAssetFormat, ImageInline, Inline, Item, ItemContent, ItemId,
     ItemMarker, NodeRef, NotificationDefaults, OccurrenceId, OperationId, Recurrence, Scheme,
-    SchemeId, SchemeSource, Table, UpcomingDisplaySettings, Workspace,
-    DAILY_QUEUE_COLOR_INDEX,
+    SchemeId, SchemeSource, Table, UpcomingDisplaySettings, Workspace, DAILY_QUEUE_COLOR_INDEX,
 };
 use knotq_notifications::{
     completed_notification_keys, compute_due_notifications_with_lead_times,
@@ -27,10 +26,10 @@ use knotq_state::{
     RetainedCompletedItems,
 };
 use knotq_storage_json::{
-    edit_timing_enabled, load_app_settings, load_crdt_state, load_daily_queue_scheme,
-    load_daily_queue_schemes_for_calendar_range, load_local_sync_state,
-    load_workspace_with_options, save_app_settings, save_crdt_state, save_local_sync_state,
-    save_workspace, save_workspace_incremental, WorkspaceLoadOptions,
+    crdt_state_dir, crdt_state_path, edit_timing_enabled, load_app_settings, load_crdt_state,
+    load_daily_queue_scheme, load_daily_queue_schemes_for_calendar_range, load_local_sync_state,
+    load_workspace_with_options, save_app_settings, save_crdt_state, save_crdt_state_incremental,
+    save_local_sync_state, save_workspace, save_workspace_incremental, WorkspaceLoadOptions,
 };
 use knotq_sync::{
     batch_pull_and_apply, batch_push_pending, compact_pending_documents,
@@ -61,10 +60,9 @@ use media_sync::{
 mod conversions;
 use conversions::{
     archived_scheme_node, as_u16, as_u8, format_daily_label,
-    google_account_matches_calendar_source,
-    mobile_inlines_to_inlines, mobile_notification_id, mobile_notification_lead_times,
-    mobile_upcoming, next_color_index, non_empty, offset_to_i32, opt_position, position_from_i32,
-    theme_mode_str, time_format_str,
+    google_account_matches_calendar_source, mobile_inlines_to_inlines, mobile_notification_id,
+    mobile_notification_lead_times, mobile_upcoming, next_color_index, non_empty, offset_to_i32,
+    opt_position, position_from_i32, theme_mode_str, time_format_str,
 };
 
 mod mobile_core_api;
@@ -173,6 +171,10 @@ struct MobileCoreInner {
     settings_path: PathBuf,
     image_assets_dir: PathBuf,
     workspace: Workspace,
+    /// Reused across consecutive read-only snapshot/month/search requests.
+    /// Every workspace write and lazy daily-queue hydration invalidates it, so
+    /// it can never outlive the materialized workspace it indexes.
+    indexed_workspace: Option<IndexedWorkspace>,
     settings: AppSettings,
     crdt: WorkspaceCrdtDocuments,
     next_sequence: u64,
@@ -187,6 +189,10 @@ struct MobileCoreInner {
     /// which is what the paths that can change any scheme (a sync pull, a
     /// migration) want.
     dirty_schemes: std::collections::HashSet<knotq_model::SchemeId>,
+    /// Scheme CRDT documents changed by ordinary item edits. Structure changes
+    /// leave this empty and take the full, pruning CRDT save path.
+    dirty_crdt_schemes: std::collections::HashSet<knotq_model::SchemeId>,
+    crdt_state_requires_full_save: bool,
     sync_notice: Option<String>,
     // Push registration handed in from the platform (e.g. an FCM token from
     // Firebase). Registered with the backend during sync_once; `registered_push_token`

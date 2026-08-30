@@ -132,11 +132,14 @@ impl MobileCoreInner {
             settings_path,
             image_assets_dir,
             workspace,
+            indexed_workspace: None,
             settings,
             crdt,
             next_sequence,
             sync_state_cache: None,
             dirty_schemes: std::collections::HashSet::new(),
+            dirty_crdt_schemes: std::collections::HashSet::new(),
+            crdt_state_requires_full_save: false,
             sync_notice: None,
             push_token: None,
             push_environment: None,
@@ -187,7 +190,8 @@ impl MobileCoreInner {
         // Only the schemes this command touched need their files rewritten. The
         // receipt's `touched` set is the same one the desktop's incremental save
         // relies on.
-        self.dirty_schemes.extend(receipt.touched.schemes.iter().copied());
+        self.dirty_schemes
+            .extend(receipt.touched.schemes.iter().copied());
         self.workspace.normalize_one_level_folders();
         self.workspace.normalize_item_markers();
         let t1 = std::time::Instant::now();
@@ -228,6 +232,10 @@ impl MobileCoreInner {
     }
 
     pub(crate) fn save_workspace(&mut self) -> Result<()> {
+        // A successful mutation may have changed any index dimension. Drop the
+        // read cache before persistence so a later snapshot/search can only
+        // observe a freshly-built view of the workspace.
+        self.indexed_workspace = None;
         // Rewrite only the scheme files that changed. A full save writes all of
         // them — measured at ~55 ms of a ~57 ms edit on a 170-scheme workspace,
         // which is the entire cost of a keystroke pause. An empty dirty set
@@ -236,18 +244,32 @@ impl MobileCoreInner {
         if self.dirty_schemes.is_empty() {
             save_workspace(&self.workspace_path, &self.workspace)?;
         } else {
-            save_workspace_incremental(
-                &self.workspace_path,
-                &self.workspace,
-                &self.dirty_schemes,
-            )?;
+            save_workspace_incremental(&self.workspace_path, &self.workspace, &self.dirty_schemes)?;
         }
         // Persist the CRDT documents' state in lockstep with the workspace so a
         // restart restores them consistently (and with their stable identity).
-        save_crdt_state(&self.workspace_path, &self.crdt.document_states())?;
+        // A checkbox or text edit changes exactly one scheme document. Once the
+        // per-document directory is authoritative, avoid encoding and probing
+        // every other CRDT document for that common path. Structural edits and
+        // all migration/legacy states retain the full writer, which also sweeps
+        // deleted documents safely.
+        let can_save_crdt_incrementally = !self.crdt_state_requires_full_save
+            && !self.dirty_crdt_schemes.is_empty()
+            && crdt_state_dir(&self.workspace_path).is_dir()
+            && !crdt_state_path(&self.workspace_path).exists();
+        if can_save_crdt_incrementally {
+            save_crdt_state_incremental(
+                &self.workspace_path,
+                &self.crdt.scheme_document_states(&self.dirty_crdt_schemes),
+            )?;
+        } else {
+            save_crdt_state(&self.workspace_path, &self.crdt.document_states())?;
+        }
         // Only clear once both writes landed: a failure must leave the schemes
         // marked so the next save retries them rather than leaving them stale.
         self.dirty_schemes.clear();
+        self.dirty_crdt_schemes.clear();
+        self.crdt_state_requires_full_save = false;
         Ok(())
     }
 
@@ -265,6 +287,7 @@ impl MobileCoreInner {
         match load_daily_queue_scheme(&self.workspace_path, date)? {
             Some(scheme) if scheme.id == expected_id => {
                 self.workspace.schemes.insert(expected_id, scheme);
+                self.indexed_workspace = None;
                 Ok(Some(expected_id))
             }
             Some(scheme) => Err(anyhow!(
@@ -275,6 +298,7 @@ impl MobileCoreInner {
             )),
             None => {
                 self.workspace.daily_queue.remove(&date);
+                self.indexed_workspace = None;
                 Ok(None)
             }
         }
@@ -326,7 +350,12 @@ impl MobileCoreInner {
                     expected_id
                 ));
             }
-            self.workspace.schemes.entry(scheme.id).or_insert(scheme);
+            if let std::collections::hash_map::Entry::Vacant(entry) =
+                self.workspace.schemes.entry(scheme.id)
+            {
+                entry.insert(scheme);
+                self.indexed_workspace = None;
+            }
         }
         Ok(())
     }
@@ -528,6 +557,13 @@ impl MobileCoreInner {
         }
         if outcome.updates.is_empty() {
             return Ok(());
+        }
+        if changeset.workspace {
+            self.crdt_state_requires_full_save = true;
+            self.dirty_crdt_schemes.clear();
+        } else {
+            self.dirty_crdt_schemes
+                .extend(changeset.schemes.iter().copied());
         }
 
         // This state is rewritten durably below on every edit. Reuse the exact
@@ -1013,8 +1049,7 @@ impl MobileCoreInner {
         parent: FolderId,
     ) -> Result<MobileGoogleSyncResult> {
         let sources = google_calendar::google_calendar_sources(&self.workspace);
-        let result =
-            google_calendar::run_google_calendar_import_with_identity(&identity, sources)?;
+        let result = google_calendar::run_google_calendar_import_with_identity(&identity, sources)?;
         self.finish_google_calendar_sync(result, true, parent)
     }
 

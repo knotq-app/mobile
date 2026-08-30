@@ -4,7 +4,51 @@ import XCTest
 /// `mergeRemoteSchemeItems` resolves a remote scheme update against unflushed
 /// local editor lines: lines the user touched since the last flush win locally,
 /// everything else — remote edits, additions, deletions — wins remotely.
+@MainActor
 final class RemoteMergeTests: XCTestCase {
+
+    private func occurrence(
+        scheme: String = "s",
+        item: String = "i",
+        json: String = "single",
+        done: Bool = false,
+        start: String? = nil,
+        localDate: String = "2026-08-28"
+    ) -> MobileOccurrence {
+        MobileOccurrence(
+            schemeId: scheme,
+            itemId: item,
+            occurrenceJson: json,
+            occurrenceIndex: 0,
+            isRecurring: json != "single",
+            canDeleteFuture: false,
+            schemeName: "Test",
+            colorIndex: 0,
+            isReadOnly: false,
+            title: "Task",
+            kind: "assignment",
+            done: done,
+            start: start,
+            end: nil,
+            notificationOffsetSecs: nil,
+            localDate: localDate,
+            repeatRule: nil
+        )
+    }
+
+    private func snapshot(
+        upcoming: [MobileOccurrence] = [],
+        overdue: [MobileOccurrence] = [],
+        days: [MobileCalendarDay] = []
+    ) -> MobileSnapshot {
+        MobileSnapshot(
+            root: MobileNode(kind: "folder", id: "root", name: "Root", colorIndex: nil, isDailyQueue: false, isReadOnly: false, children: []),
+            schemes: [], archivedSchemes: [], archivedNodes: [], daily: [],
+            calendar: MobileCalendar(startDate: "2026-08-28", endDate: "2026-09-04", days: days, upcoming: upcoming, overdue: overdue),
+            settings: MobileSettings(themeMode: "light", timeFormat: "twelve_hour", eventNotificationOffsetSecs: 0, assignmentNotificationOffsetSecs: 0, eventLookaheadDays: 7, reminderLookaheadDays: 7, assignmentLookaheadDays: 7, maximumUpcomingItems: 10, showOverdue: true, showCompleted: true, googleAccountCount: 0, googleAccounts: []),
+            workspacePath: ""
+        )
+    }
 
     private func item(_ id: String, _ text: String, marker: String = "blank", indent: Int32 = 0, done: Bool = false) -> MobileItem {
         MobileItem(
@@ -121,6 +165,92 @@ final class RemoteMergeTests: XCTestCase {
         let merged = mergeRemoteSchemeItems(remote: remote, baseline: baseline, local: local)
 
         XCTAssertTrue(merged[0].done)
+    }
+
+    func testOptimisticToggleUpdatesEveryVisibleCopyOfOneOccurrence() {
+        let target = occurrence(json: "2026-08-28T09:00:00Z")
+        let otherInstance = occurrence(json: "2026-08-29T09:00:00Z")
+        let original = snapshot(
+            upcoming: [target, otherInstance],
+            overdue: [target],
+            days: [MobileCalendarDay(date: "2026-08-28", occurrences: [target])]
+        )
+
+        let updated = AppModel.toggledOccurrence(in: original, target: target)
+
+        XCTAssertTrue(updated.calendar.upcoming[0].done)
+        XCTAssertTrue(updated.calendar.overdue[0].done)
+        XCTAssertTrue(updated.calendar.days[0].occurrences[0].done)
+        XCTAssertFalse(updated.calendar.upcoming[1].done, "another recurring instance must not change")
+        XCTAssertEqual(updated.calendar.startDate, original.calendar.startDate)
+    }
+
+    func testOptimisticToggleIsReversibleForRapidDoubleTap() {
+        let target = occurrence()
+        let original = snapshot(upcoming: [target])
+        let once = AppModel.toggledOccurrence(in: original, target: target)
+        let twice = AppModel.toggledOccurrence(in: once, target: once.calendar.upcoming[0])
+
+        XCTAssertFalse(twice.calendar.upcoming[0].done)
+    }
+
+    /// `localAnchorDateKey` buckets by the occurrence's own `start`, not by the
+    /// day the server happened to file it under — so an occurrence whose start
+    /// falls on a different local day than its enclosing `MobileCalendarDay`
+    /// lands on the day the user sees it.
+    ///
+    /// Midday UTC on purpose: it is the same calendar date in every timezone the
+    /// simulator is plausibly set to, so this does not depend on the host clock.
+    func testTimelineIndexKeepsOccurrencesOnTheirLocalDay() {
+        let first = occurrence(item: "first", start: "2026-08-28T12:00:00Z")
+        let second = occurrence(item: "second", start: "2026-08-29T12:00:00Z")
+        let calendar = MobileCalendar(
+            startDate: "2026-08-28",
+            endDate: "2026-08-30",
+            days: [
+                MobileCalendarDay(date: "2026-08-28", occurrences: [first]),
+                MobileCalendarDay(date: "2026-08-29", occurrences: [second])
+            ],
+            upcoming: [],
+            overdue: []
+        )
+
+        let index = timelineOccurrencesByLocalDay(calendar)
+        XCTAssertEqual(index["2026-08-28"]?.map(\.itemId), ["first"])
+        XCTAssertEqual(index["2026-08-29"]?.map(\.itemId), ["second"])
+        XCTAssertNil(index["2026-08-30"])
+    }
+
+    func testTimelineIndexDeduplicatesRepeatedOccurrenceWithinADay() {
+        let repeated = occurrence(item: "same", json: "2026-08-28T09:00:00Z")
+        let calendar = MobileCalendar(
+            startDate: "2026-08-28",
+            endDate: "2026-08-29",
+            days: [
+                MobileCalendarDay(date: "2026-08-28", occurrences: [repeated]),
+                MobileCalendarDay(date: "2026-08-28", occurrences: [repeated])
+            ],
+            upcoming: [],
+            overdue: []
+        )
+
+        XCTAssertEqual(timelineOccurrencesByLocalDay(calendar)["2026-08-28"]?.count, 1)
+    }
+
+    func testTimelineIndexTreatsNoCalendarAsEmpty() {
+        XCTAssertTrue(timelineOccurrencesByLocalDay(nil).isEmpty)
+    }
+
+    func testEqualSnapshotDoesNotRepublishTheSwiftUIModel() {
+        let value = snapshot(upcoming: [occurrence()])
+        XCTAssertFalse(AppModel.shouldPublishSnapshot(current: value, next: value))
+    }
+
+    func testChangedSnapshotRepublishesTheSwiftUIModel() {
+        let current = snapshot(upcoming: [occurrence(done: false)])
+        let next = snapshot(upcoming: [occurrence(done: true)])
+        XCTAssertTrue(AppModel.shouldPublishSnapshot(current: current, next: next))
+        XCTAssertTrue(AppModel.shouldPublishSnapshot(current: nil, next: next))
     }
 
     // MARK: why the baseline must never predate an in-flight write

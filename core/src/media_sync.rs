@@ -277,14 +277,16 @@ mod push_http_error_tests {
     fn push_426_is_not_push_rejected() {
         // Must NOT become SyncPushRejected: reseeding and re-pushing would just
         // be rejected the same way until the app is updated.
-        let err = mobile_sync_push_http_error(status_error(426, &error_body("client_protocol_outdated")));
+        let err =
+            mobile_sync_push_http_error(status_error(426, &error_body("client_protocol_outdated")));
         assert!(err.downcast_ref::<knotq_sync::SyncPushRejected>().is_none());
         assert!(format!("{err:#}").contains("client_protocol_outdated"));
     }
 
     #[test]
     fn push_4xx_content_rejection_still_uses_push_rejected() {
-        let err = mobile_sync_push_http_error(status_error(409, &error_body("document_epoch_stale")));
+        let err =
+            mobile_sync_push_http_error(status_error(409, &error_body("document_epoch_stale")));
         let rejected = err
             .downcast_ref::<knotq_sync::SyncPushRejected>()
             .expect("content rejection should drive push self-heal");

@@ -1419,12 +1419,10 @@ fn a_grant_without_calendar_access_is_reported_not_stored() {
         "openid email https://www.googleapis.com/auth/calendar.calendarlist.readonly https://www.googleapis.com/auth/calendar.events.readonly"
     )
     .is_empty());
-    assert!(
-        google_calendar::missing_google_calendar_scopes(
-            "https://www.googleapis.com/auth/calendar.readonly"
-        )
-        .is_empty()
-    );
+    assert!(google_calendar::missing_google_calendar_scopes(
+        "https://www.googleapis.com/auth/calendar.readonly"
+    )
+    .is_empty());
 }
 
 // A token from a platform identity service (Android's Google Identity) carries

@@ -393,10 +393,7 @@ fn google_event_recurrence(event: &GoogleEvent) -> Option<Recurrence> {
     }
 }
 
-fn apply_google_recurrence_exdates(
-    items: &mut [Item],
-    calendar: &ImportedGoogleCalendar,
-) -> bool {
+fn apply_google_recurrence_exdates(items: &mut [Item], calendar: &ImportedGoogleCalendar) -> bool {
     let mut changed = false;
     for item in items {
         if apply_google_recurrence_exdates_to_item(

@@ -586,7 +586,7 @@ struct DesktopSearchPane: View {
                         .focused($searchFocused)
                         .submitLabel(.search)
                         .autocorrectionDisabled()
-                        .onSubmit { model.search(query) }
+                        .onSubmit { model.search(query, debounce: false) }
                         .onChange(of: query) { _, value in model.search(value) }
                     if !query.isEmpty {
                         Button {

@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use super::*;
 
 impl MobileCoreInner {
@@ -41,11 +43,9 @@ impl MobileCoreInner {
             .iter_schemes()
             .map(|scheme| self.mobile_scheme(scheme))
             .collect();
-        schemes.sort_by(|a, b| {
-            a.is_daily_queue
-                .cmp(&b.is_daily_queue)
-                .then_with(|| a.name.to_lowercase().cmp(&b.name.to_lowercase()))
-        });
+        // Cache normalized names once. Sorting with `to_lowercase` in the
+        // comparator allocated them O(n log n) times for every snapshot.
+        schemes.sort_by_cached_key(|scheme| (scheme.is_daily_queue, scheme.name.to_lowercase()));
         let archived_schemes = self
             .workspace
             .iter_deleted_schemes()
@@ -68,7 +68,11 @@ impl MobileCoreInner {
             })
             .collect();
 
-        let indexed = IndexedWorkspace::build(self.workspace.clone());
+        self.ensure_indexed_workspace();
+        let indexed = self
+            .indexed_workspace
+            .as_ref()
+            .expect("index cache was just initialized");
         let range = knotq_date_util::DateRange {
             start: local_midnight_utc(query_start)?,
             end: local_midnight_utc(week_end)?,
@@ -79,29 +83,16 @@ impl MobileCoreInner {
             .into_iter()
             .map(|context| MobileOccurrence::from_context(&self.workspace, context))
             .collect::<Vec<_>>();
-        let days = (-1..7)
-            .map(|offset| {
-                let date = week_start + Duration::days(offset as i64);
-                let date_string = date.to_string();
-                MobileCalendarDay {
-                    date: date_string.clone(),
-                    occurrences: occurrences
-                        .iter()
-                        .filter(|occurrence| occurrence.local_date.as_deref() == Some(&date_string))
-                        .cloned()
-                        .collect(),
-                }
-            })
-            .collect();
+        let days = mobile_calendar_days(week_start, 8, occurrences);
         let upcoming = mobile_upcoming(
-            &indexed,
+            indexed,
             Utc::now(),
             self.settings.upcoming_display,
             MOBILE_UPCOMING_QUERY_LIMIT,
         )
-            .into_iter()
-            .map(|context| MobileOccurrence::from_context(&self.workspace, context))
-            .collect();
+        .into_iter()
+        .map(|context| MobileOccurrence::from_context(&self.workspace, context))
+        .collect();
         let retained = &self.retained_completed;
         let now = Utc::now();
         let overdue = indexed
@@ -150,9 +141,7 @@ impl MobileCoreInner {
                 assignment_lookahead_days: i32::from(
                     self.settings.upcoming_display.assignment_lookahead_days,
                 ),
-                maximum_upcoming_items: i32::from(
-                    self.settings.upcoming_display.maximum_items,
-                ),
+                maximum_upcoming_items: i32::from(self.settings.upcoming_display.maximum_items),
                 show_overdue: self.settings.upcoming_display.show_overdue,
                 show_completed: self.settings.upcoming_display.show_completed,
                 google_account_count: self.settings.google_accounts.len() as i32,
@@ -178,7 +167,11 @@ impl MobileCoreInner {
         self.load_daily_queue_date_range(grid_start, grid_end)?;
         self.load_daily_queue_calendar_range(grid_start, grid_end)?;
 
-        let indexed = IndexedWorkspace::build(self.workspace.clone());
+        self.ensure_indexed_workspace();
+        let indexed = self
+            .indexed_workspace
+            .as_ref()
+            .expect("index cache was just initialized");
         let range = knotq_date_util::DateRange {
             start: local_midnight_utc(grid_start)?,
             end: local_midnight_utc(grid_end)?,
@@ -191,20 +184,7 @@ impl MobileCoreInner {
             .collect::<Vec<_>>();
 
         let total_days = (grid_end - grid_start).num_days();
-        let days = (0..total_days)
-            .map(|offset| {
-                let date = grid_start + Duration::days(offset);
-                let date_string = date.to_string();
-                MobileCalendarDay {
-                    occurrences: occurrences
-                        .iter()
-                        .filter(|occurrence| occurrence.local_date.as_deref() == Some(&date_string))
-                        .cloned()
-                        .collect(),
-                    date: date_string,
-                }
-            })
-            .collect();
+        let days = mobile_calendar_days(grid_start, total_days, occurrences);
         Ok(days)
     }
 
@@ -342,11 +322,16 @@ impl MobileCoreInner {
         }
     }
 
-    pub(crate) fn search(&self, query: &str) -> Result<Vec<MobileSearchHit>> {
-        let indexed = IndexedWorkspace::build(self.workspace.clone());
+    pub(crate) fn search(&mut self, query: &str) -> Result<Vec<MobileSearchHit>> {
+        let time_format = self.settings.time_format;
+        self.ensure_indexed_workspace();
+        let indexed = self
+            .indexed_workspace
+            .as_ref()
+            .expect("index cache was just initialized");
         let hits = indexed
             .search_query(
-                self.settings.time_format,
+                time_format,
                 SearchOptions {
                     daily_queue_title: "Daily",
                     daily_queue_marker_color: DAILY_QUEUE_MARKER_COLOR,
@@ -385,6 +370,15 @@ impl MobileCoreInner {
             })
             .collect();
         Ok(hits)
+    }
+
+    /// Lazily build the expensive calendar/search/channel indexes once, then
+    /// share them across snapshot, month-grid, and search reads until a write or
+    /// lazy document load invalidates the cache.
+    fn ensure_indexed_workspace(&mut self) {
+        if self.indexed_workspace.is_none() {
+            self.indexed_workspace = Some(IndexedWorkspace::build(self.workspace.clone()));
+        }
     }
 
     pub(crate) fn restore_deleted_scheme(&mut self, scheme_id: SchemeId) -> Result<()> {
@@ -754,4 +748,29 @@ impl MobileCoreInner {
         }
         saved
     }
+}
+
+/// Build date buckets once, then consume them in chronological order. The old
+/// implementation scanned and cloned every occurrence for every visible day
+/// (eight scans in a snapshot and about forty-five in a month grid).
+fn mobile_calendar_days(
+    start: NaiveDate,
+    count: i64,
+    occurrences: Vec<MobileOccurrence>,
+) -> Vec<MobileCalendarDay> {
+    let mut by_date: HashMap<String, Vec<MobileOccurrence>> = HashMap::new();
+    for occurrence in occurrences {
+        if let Some(date) = occurrence.local_date.clone() {
+            by_date.entry(date).or_default().push(occurrence);
+        }
+    }
+    (0..count)
+        .map(|offset| {
+            let date = (start + Duration::days(offset)).to_string();
+            MobileCalendarDay {
+                occurrences: by_date.remove(&date).unwrap_or_default(),
+                date,
+            }
+        })
+        .collect()
 }

@@ -25,7 +25,9 @@ pub(crate) use apply::{
     apply_google_calendar_items, apply_google_calendar_metadata,
     archived_google_calendar_scheme_id, google_calendar_source,
 };
-pub(crate) use oauth::{google_auth_request, google_platform_token_expiry as platform_token_expiry};
+pub(crate) use oauth::{
+    google_auth_request, google_platform_token_expiry as platform_token_expiry,
+};
 pub(crate) use sync::{
     google_calendar_scheme_ids, google_calendar_sources, run_google_calendar_background_sync,
     run_google_calendar_import_from_callback, run_google_calendar_import_with_identity,

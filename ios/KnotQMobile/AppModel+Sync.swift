@@ -496,6 +496,11 @@ extension AppModel {
                 }
             case .failure(let error):
                 self.errorMessage = error.localizedDescription
+                // An optimistic presentation (currently used by home-screen
+                // occurrence toggles) must not survive a failed durable write.
+                // Refresh is queued after the failed operation, so it also
+                // preserves FIFO ordering with any writes submitted after it.
+                self.refresh()
             }
             completion?()
         }

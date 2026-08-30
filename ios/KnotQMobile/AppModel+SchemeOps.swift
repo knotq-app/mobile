@@ -343,6 +343,11 @@ extension AppModel {
     }
 
     func toggleOccurrence(_ occurrence: MobileOccurrence) {
+        // Sync and local writes share a serial bridge queue. A sync request can
+        // therefore delay the durable write, but it must not delay the user's
+        // visual feedback. The core result below remains authoritative and
+        // reconciles this optimistic value when it lands.
+        optimisticallyToggleOccurrence(occurrence)
         // Retention (keeping a just-completed item on the upcoming panel) is
         // handled in the core, so the snapshot already includes it.
         mutateScheme(occurrence.schemeId) {

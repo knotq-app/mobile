@@ -5,6 +5,40 @@ import StoreKit
 import SwiftUI
 import UIKit
 
+/// Collapses a burst of requests for the same expensive snapshot into the
+/// currently-running read plus, at most, one read of the latest model state.
+///
+/// `AppModel` owns this on the main actor. Keeping the state machine value-typed
+/// makes the no-lost-refresh contract independently testable without a Rust
+/// core, notification scheduler, or SwiftUI view tree.
+struct RefreshFlightGate: Equatable {
+    private(set) var isInFlight = false
+    private(set) var followUpRequested = false
+
+    /// Returns whether the caller should start a bridge read now.
+    mutating func request() -> Bool {
+        guard !isInFlight else {
+            followUpRequested = true
+            return false
+        }
+        isInFlight = true
+        return true
+    }
+
+    /// Completes the active read. When this returns true, the caller must start
+    /// exactly one more read directly (rather than calling `request()` again),
+    /// because that follow-up remains the active flight.
+    mutating func finish() -> Bool {
+        guard isInFlight else { return false }
+        guard followUpRequested else {
+            isInFlight = false
+            return false
+        }
+        followUpRequested = false
+        return true
+    }
+}
+
 #if DEBUG
 enum ScreenshotFixtureError: LocalizedError {
     case message(String)

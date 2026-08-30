@@ -34,12 +34,26 @@ extension KnotQWidgetSnapshotStore {
                 )
             }
 
-        save(KnotQWidgetSnapshot(
+        let next = KnotQWidgetSnapshot(
             generatedAt: Date(),
             timeFormat: snapshot.settings.timeFormat,
             themeMode: snapshot.settings.themeMode,
             items: items
-        ))
+        )
+        // Refreshes are deliberately coalesced, but lifecycle and background
+        // maintenance still produce unchanged snapshots. Re-encoding defaults
+        // and waking WidgetKit for an identical payload burns main-thread time
+        // and power without changing what the user can see.
+        guard shouldPublish(previous: load(), next: next) else { return }
+        save(next)
         WidgetCenter.shared.reloadTimelines(ofKind: knotQWidgetKind)
+    }
+
+    /// `generatedAt` is diagnostic metadata, not widget content. Keeping it out
+    /// of this comparison lets an unchanged refresh remain a true no-op.
+    static func shouldPublish(previous: KnotQWidgetSnapshot, next: KnotQWidgetSnapshot) -> Bool {
+        previous.timeFormat != next.timeFormat
+            || previous.themeMode != next.themeMode
+            || previous.items != next.items
     }
 }

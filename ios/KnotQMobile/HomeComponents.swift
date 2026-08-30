@@ -12,15 +12,16 @@ enum MobileUpcomingDisplay {
         showOverdue: Bool,
         showCompleted: Bool
     ) -> [MobileOccurrence] {
-        let candidates = (showOverdue ? overdue : []) + upcoming
         var seen = Set<String>()
         var visible: [MobileOccurrence] = []
         let limit = max(1, Int(maximumItems))
-        for occurrence in candidates {
-            guard showCompleted || !occurrence.done,
-                  seen.insert(occurrence.id).inserted else { continue }
-            visible.append(occurrence)
-            if visible.count == limit { break }
+        for occurrences in [showOverdue ? overdue : [], upcoming] {
+            for occurrence in occurrences {
+                guard showCompleted || !occurrence.done,
+                      seen.insert(occurrence.id).inserted else { continue }
+                visible.append(occurrence)
+                if visible.count == limit { return visible }
+            }
         }
         return visible
     }
@@ -378,7 +379,7 @@ struct HomeNavigationPane: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar(.hidden, for: .navigationBar)
             .onSubmit(of: .search) {
-                updateSearchResults(for: searchQuery)
+                updateSearchResults(for: searchQuery, debounce: false)
             }
             .onChange(of: searchQuery) { _, value in
                 updateSearchResults(for: value)
@@ -457,12 +458,12 @@ struct HomeNavigationPane: View {
         searchFocused || !trimmedSearchQuery.isEmpty
     }
 
-    private func updateSearchResults(for query: String) {
+    private func updateSearchResults(for query: String, debounce: Bool = true) {
         let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
         if trimmed.isEmpty {
-            model.searchHits = []
+            model.search("")
         } else {
-            model.search(query)
+            model.search(query, debounce: debounce)
         }
     }
 
@@ -492,7 +493,7 @@ struct HomeNavigationPane: View {
 
     private func closeHomeSearch() {
         searchQuery = ""
-        model.searchHits = []
+        model.search("")
         searchFocused = false
     }
 

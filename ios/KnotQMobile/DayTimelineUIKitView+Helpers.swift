@@ -1,6 +1,22 @@
 import SwiftUI
 import UIKit
 
+/// Builds the timeline's lookup table once per calendar snapshot. A recurring
+/// occurrence can be represented in more than one source day while a snapshot
+/// changes; retain the original first-seen ordering but show it once per local
+/// day, matching the renderer's previous behavior.
+func timelineOccurrencesByLocalDay(_ calendar: MobileCalendar?) -> [String: [MobileOccurrence]] {
+    guard let calendar else { return [:] }
+    var seenByDay: [String: Set<String>] = [:]
+    var result: [String: [MobileOccurrence]] = [:]
+    for occurrence in calendar.days.flatMap(\.occurrences) {
+        guard let day = occurrence.localAnchorDateKey else { continue }
+        guard seenByDay[day, default: []].insert(occurrence.id).inserted else { continue }
+        result[day, default: []].append(occurrence)
+    }
+    return result
+}
+
 extension DayTimelineUIKitView {
     func visibleDayCount() -> Int {
         if let preferredVisibleDays {
@@ -19,16 +35,7 @@ extension DayTimelineUIKitView {
 
     func occurrences(forDayIndex index: Int) -> [MobileOccurrence] {
         let key = AppModel.dateOnly(dayDate(index))
-        guard let calendarSnapshot else { return [] }
-        var seen = Set<String>()
-        var out: [MobileOccurrence] = []
-        for occurrence in calendarSnapshot.days.flatMap(\.occurrences) {
-            guard occurrence.localAnchorDateKey == key, seen.insert(occurrence.id).inserted else {
-                continue
-            }
-            out.append(occurrence)
-        }
-        return out
+        return occurrencesByLocalDay[key] ?? []
     }
 
     func minuteOfDay(_ raw: String?) -> CGFloat? {

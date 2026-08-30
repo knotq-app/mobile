@@ -24,7 +24,7 @@ struct SearchScreen: View {
             model.search(value)
         }
         .onAppear {
-            model.search(query)
+            model.search(query, debounce: false)
         }
     }
 }
@@ -49,4 +49,3 @@ struct SearchHitRow: View {
         }
     }
 }
-

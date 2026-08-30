@@ -144,6 +144,31 @@ fn mobile_core_flow_creates_edits_and_searches() {
     let _ = std::fs::remove_dir_all(dir);
 }
 
+/// Snapshot, month view, and search share a cached index between reads, but a
+/// local write must never let that cache hide newly-created content.
+#[test]
+fn cached_index_is_invalidated_by_a_local_write() {
+    let dir = std::env::temp_dir().join(format!("knotq-index-cache-test-{}", uuid::Uuid::new_v4()));
+    let core = MobileCore::new(dir.display().to_string()).expect("open mobile core");
+
+    core.snapshot(Some("2026-05-26".to_string()), 0)
+        .expect("initial snapshot builds index");
+    assert!(core.inner.lock().unwrap().indexed_workspace.is_some());
+
+    core.create_scheme(None, "Cache Freshness".to_string(), Some(1), None)
+        .expect("create scheme");
+    assert!(
+        core.inner.lock().unwrap().indexed_workspace.is_none(),
+        "a durable write must invalidate the read cache"
+    );
+
+    let hits = core.search("Cache Freshness".to_string()).expect("search");
+    assert!(hits.iter().any(|hit| hit.title == "Cache Freshness"));
+    assert!(core.inner.lock().unwrap().indexed_workspace.is_some());
+
+    let _ = std::fs::remove_dir_all(dir);
+}
+
 #[test]
 fn archive_keeps_folder_hierarchy_and_restores_and_purges() {
     let dir = std::env::temp_dir().join(format!("knotq-mobile-test-{}", uuid::Uuid::new_v4()));
@@ -827,7 +852,9 @@ fn google_calendar_import_restores_an_archived_calendar_instead_of_duplicating_i
     inner.workspace.schemes.insert(archived_id, archived);
     // Archiving detaches the scheme from its folder and records where it came
     // from, which is the state the next import actually meets.
-    inner.workspace.mark_scheme_deleted_from(archived_id, root, 0);
+    inner
+        .workspace
+        .mark_scheme_deleted_from(archived_id, root, 0);
     assert!(inner.workspace.is_scheme_deleted(archived_id));
 
     let result = inner

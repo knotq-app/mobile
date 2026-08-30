@@ -67,6 +67,10 @@ final class DayTimelineUIKitView: UIView, UIGestureRecognizerDelegate, UIScrollV
     var stickyDayColumnCount = 0
 
     var calendarSnapshot: MobileCalendar?
+    /// Occurrences are already keyed by local day in the core snapshot. Keep the
+    /// UIKit renderer's equivalent index so drawing each visible column does not
+    /// flatten and filter the entire calendar payload again.
+    var occurrencesByLocalDay: [String: [MobileOccurrence]] = [:]
     var selectedDate = Date()
     var theme: KnotQTheme?
     var timeFormat = "twelve_hour"
@@ -218,6 +222,9 @@ final class DayTimelineUIKitView: UIView, UIGestureRecognizerDelegate, UIScrollV
             || self.preferredVisibleDays != preferredVisibleDays
         let createClosed = creatingEvent && !isCreatingEvent
 
+        if self.calendarSnapshot != calendar {
+            self.occurrencesByLocalDay = timelineOccurrencesByLocalDay(calendar)
+        }
         self.calendarSnapshot = calendar
         self.selectedDate = nextSelectedDate
         self.theme = theme
@@ -333,7 +340,12 @@ final class DayTimelineUIKitView: UIView, UIGestureRecognizerDelegate, UIScrollV
         // A fraction of a minute rather than exactly 60s so the line is
         // never more than ~20s stale even right after the timer starts.
         let timer = Timer(timeInterval: 20, repeats: true) { [weak self] _ in
-            self?.tickNowIndicator()
+            // The timer is installed on RunLoop.main. Make that guarantee
+            // explicit to Swift 6 instead of hopping through an extra task on
+            // every tick.
+            MainActor.assumeIsolated {
+                self?.tickNowIndicator()
+            }
         }
         timer.tolerance = 5
         RunLoop.main.add(timer, forMode: .common)
