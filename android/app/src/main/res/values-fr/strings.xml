@@ -527,6 +527,7 @@
     <string name="mobile_sync_callback_state_mismatch">La connexion n\'a pas pu être vérifiée. Veuillez réessayer.</string>
     <string name="mobile_sync_cancelled_detail">La synchronisation reste active jusqu\'à la fin de votre période de facturation. Réactivez-la pour la conserver.</string>
     <string name="mobile_sync_code_hint_label">Code</string>
+    <string name="mobile_sync_coming_soon_detail">La synchronisation est disponible dans l\'application de bureau KnotQ et arrivera bientôt ici. En attendant, votre travail est enregistré sur cet appareil.</string>
     <string name="mobile_sync_continue_in_browser">Continuer dans votre navigateur.</string>
     <string name="mobile_sync_create_account">Créer un compte</string>
     <string name="mobile_sync_delete_account">Supprimer le compte</string>
@@ -655,6 +656,13 @@
     <string name="settings_calendar_view_label">Affichage</string>
     <string name="settings_calendar_view_month">Mois</string>
     <string name="settings_calendar_view_week">Semaine</string>
+    <string name="settings_display_lookahead_footer">Choisissez combien de temps à l\'avance chaque type apparaît dans À venir. Les événements de calendrier en dehors de ces plages restent disponibles dans le calendrier.</string>
+    <string name="settings_display_maximum_items">Nombre maximal d\'éléments</string>
+    <string name="settings_display_restore_defaults">Rétablir les valeurs par défaut</string>
+    <string name="settings_display_show_completed">Afficher les éléments terminés</string>
+    <string name="settings_display_show_overdue">Afficher les éléments en retard</string>
+    <string name="settings_display_upcoming_section">Anticipation d\'À venir</string>
+    <string name="settings_display_visibility_section">Visibilité</string>
     <string name="settings_google_calendar_accounts_heading">Comptes</string>
     <string name="settings_google_calendar_accounts_offline_notice">Pas d\'identifiants de compte Google locaux. Les calendriers ci-dessous resteront hors ligne jusqu\'à ce que vous vous reconnectiez.</string>
     <plurals name="settings_google_calendar_calendar_count">
@@ -713,6 +721,8 @@
     <string name="settings_time_clock_24h">24 heures</string>
     <string name="settings_time_clock_label">Format d\'heure</string>
     <string name="settings_time_section">Heure</string>
+    <string name="settings_timing_section">Planification</string>
+    <string name="settings_timing_title">Horaires et notifications</string>
     <string name="settings_updates_auto_check">Vérifier automatiquement les mises à jour</string>
     <string name="settings_updates_check_button">Vérifier</string>
     <string name="settings_updates_check_failed">Impossible de vérifier les mises à jour</string>
@@ -1387,7 +1397,7 @@
     <string name="web_home_hero_read_guide">Lisez le guide</string>
     <string name="web_home_hero_title">Rappels, tâches, événements et plans dans un espace de travail</string>
     <string name="web_home_meta_description">KnotQ est un espace de travail de planification de bureau d\'abord local où les notes structurées deviennent des tâches, des délais, des rappels et des événements de calendrier.</string>
-    <string name="web_home_meta_title">KnotQ — Rappels, tâches, événements et plans dans un espace de travail</string>
+    <string name="web_home_meta_title">KnotQ : agenda et organiseur de planification</string>
     <string name="web_home_pitch_eyebrow">Pourquoi KnotQ</string>
     <string name="web_home_pitch_tile1_body">Plans de chaque schéma, plus votre Google Calendrier, dans une seule vue hebdomadaire.</string>
     <string name="web_home_pitch_tile1_title">Un calendrier pour tout</string>

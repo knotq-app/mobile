@@ -539,6 +539,7 @@
     <string name="mobile_sync_callback_state_mismatch">Conectarea nu a putut fi verificată. Încercați din nou.</string>
     <string name="mobile_sync_cancelled_detail">Sincronizarea rămâne activă până la sfârșitul perioadei de facturare. Reactivați pentru a o menține.</string>
     <string name="mobile_sync_code_hint_label">Cod</string>
+    <string name="mobile_sync_coming_soon_detail">Sincronizarea este disponibilă în aplicația desktop KnotQ și va ajunge în curând și aici. Între timp, munca dvs. este salvată pe acest dispozitiv.</string>
     <string name="mobile_sync_continue_in_browser">Continuați în browserul dvs.</string>
     <string name="mobile_sync_create_account">Creează cont</string>
     <string name="mobile_sync_delete_account">Șterge cont</string>
@@ -671,6 +672,13 @@
     <string name="settings_calendar_view_label">Vedere</string>
     <string name="settings_calendar_view_month">Lună</string>
     <string name="settings_calendar_view_week">Săptămână</string>
+    <string name="settings_display_lookahead_footer">Alegeți cu cât timp înainte apare fiecare tip în secțiunea Viitoare. Evenimentele din calendar din afara acestor intervale rămân disponibile în calendar.</string>
+    <string name="settings_display_maximum_items">Număr maxim de elemente</string>
+    <string name="settings_display_restore_defaults">Restabiliți valorile implicite</string>
+    <string name="settings_display_show_completed">Afișează elementele finalizate</string>
+    <string name="settings_display_show_overdue">Afișează elementele întârziate</string>
+    <string name="settings_display_upcoming_section">Anticipare pentru Viitoare</string>
+    <string name="settings_display_visibility_section">Vizibilitate</string>
     <string name="settings_google_calendar_accounts_heading">Conturi</string>
     <string name="settings_google_calendar_accounts_offline_notice">Fără acreditări locale de cont Google. Calendarele de mai jos vor rămâne offline până vă reconectați.</string>
     <plurals name="settings_google_calendar_calendar_count">
@@ -730,6 +738,8 @@
     <string name="settings_time_clock_24h">24 ore</string>
     <string name="settings_time_clock_label">Ceas</string>
     <string name="settings_time_section">Timp</string>
+    <string name="settings_timing_section">Planificare</string>
+    <string name="settings_timing_title">Ore și notificări</string>
     <string name="settings_updates_auto_check">Verifică automat actualizări</string>
     <string name="settings_updates_check_button">Verifică</string>
     <string name="settings_updates_check_failed">Verificarea actualizării a eșuat</string>
@@ -1408,7 +1418,7 @@
     <string name="web_home_hero_read_guide">Citiți ghidul</string>
     <string name="web_home_hero_title">Mementouri, Sarcini, Evenimente și Planuri într-un spațiu de lucru</string>
     <string name="web_home_meta_description">KnotQ este un spațiu de lucru de planificare desktop local-first, unde notele structurate devin sarcini, termene limită, mementouri și evenimente de calendar.</string>
-    <string name="web_home_meta_title">KnotQ — Mementouri, sarcini, evenimente și planuri într-un spațiu de lucru</string>
+    <string name="web_home_meta_title">KnotQ: calendar și agendă de organizare</string>
     <string name="web_home_pitch_eyebrow">De ce KnotQ</string>
     <string name="web_home_pitch_tile1_body">Planuri din fiecare schemă, plus Google Calendar, într-o singură vizualizare săptămânală.</string>
     <string name="web_home_pitch_tile1_title">Un calendar pentru totul</string>

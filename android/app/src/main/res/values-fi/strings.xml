@@ -527,6 +527,7 @@
     <string name="mobile_sync_callback_state_mismatch">Kirjautumista ei voitu vahvistaa. Yritä uudelleen.</string>
     <string name="mobile_sync_cancelled_detail">Synkronointi säilyy aktiivisena kunnes laskutuskausi päättyy. Ota uudelleen käyttöön säilyttääksesi sen.</string>
     <string name="mobile_sync_code_hint_label">Koodi</string>
+    <string name="mobile_sync_coming_soon_detail">Synkronointi on saatavilla KnotQ:n työpöytäsovelluksessa ja tulee pian myös tähän. Sillä välin työsi tallennetaan tälle laitteelle.</string>
     <string name="mobile_sync_continue_in_browser">Jatka selaimessasi.</string>
     <string name="mobile_sync_create_account">Luo tili</string>
     <string name="mobile_sync_delete_account">Poista tili</string>
@@ -655,6 +656,13 @@
     <string name="settings_calendar_view_label">Näkymä</string>
     <string name="settings_calendar_view_month">Kuukausi</string>
     <string name="settings_calendar_view_week">Viikko</string>
+    <string name="settings_display_lookahead_footer">Valitse, kuinka pitkälle eteenpäin kukin tyyppi näkyy Tulevat-osiossa. Näiden aikavälien ulkopuoliset kalenteritapahtumat pysyvät saatavilla kalenterissa.</string>
+    <string name="settings_display_maximum_items">Kohteiden enimmäismäärä</string>
+    <string name="settings_display_restore_defaults">Palauta oletusarvot</string>
+    <string name="settings_display_show_completed">Näytä valmiit kohteet</string>
+    <string name="settings_display_show_overdue">Näytä erääntyneet kohteet</string>
+    <string name="settings_display_upcoming_section">Tulevien ennakointi</string>
+    <string name="settings_display_visibility_section">Näkyvyys</string>
     <string name="settings_google_calendar_accounts_heading">Tilit</string>
     <string name="settings_google_calendar_accounts_offline_notice">Paikallista Google-tiliä ei ole. Kalenterit alla pysyvät offline-tilassa kunnes muodostat yhteyden uudelleen.</string>
     <plurals name="settings_google_calendar_calendar_count">
@@ -713,6 +721,8 @@
     <string name="settings_time_clock_24h">24-tuntimuoto</string>
     <string name="settings_time_clock_label">Kello</string>
     <string name="settings_time_section">Aika</string>
+    <string name="settings_timing_section">Suunnittelu</string>
+    <string name="settings_timing_title">Ajat ja ilmoitukset</string>
     <string name="settings_updates_auto_check">Tarkista päivitykset automaattisesti</string>
     <string name="settings_updates_check_button">Tarkista</string>
     <string name="settings_updates_check_failed">Päivityksen tarkistaminen epäonnistui</string>
@@ -1387,7 +1397,7 @@
     <string name="web_home_hero_read_guide">Lue opas</string>
     <string name="web_home_hero_title">Muistutukset, tehtävät, tapahtumat ja suunnitelmat yhdessä työtilassa</string>
     <string name="web_home_meta_description">KnotQ on paikallisen ensimmäisen pöytäkoneen suunnittelutyötila, jossa strukturoidut muistiinpanot tulevat tehtäviksi, määräpäiviksi, muistutuksiksi ja kalenterin tapahtumiksi.</string>
-    <string name="web_home_meta_title">KnotQ — Muistutukset, tehtävät, tapahtumat ja suunnitelmat yhdessä työtilassa</string>
+    <string name="web_home_meta_title">KnotQ: kalenteri ja organisoinnin suunnittelija</string>
     <string name="web_home_pitch_eyebrow">Miksi KnotQ</string>
     <string name="web_home_pitch_tile1_body">Suunnitelmat jokaisesta kaavioista sekä Google Calendari, yhdessä viikon näkymässä.</string>
     <string name="web_home_pitch_tile1_title">Yksi kalenteri kaikkeen</string>

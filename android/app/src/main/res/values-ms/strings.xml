@@ -515,6 +515,7 @@
     <string name="mobile_sync_callback_state_mismatch">Pendaftaran masuk tidak dapat disahkan. Sila cuba lagi.</string>
     <string name="mobile_sync_cancelled_detail">Segerakan tetap aktif sehingga tempoh pengebilan anda berakhir. Dayakan semula untuk mempertahankannya.</string>
     <string name="mobile_sync_code_hint_label">Kod</string>
+    <string name="mobile_sync_coming_soon_detail">Penyegerakan tersedia dalam aplikasi desktop KnotQ dan akan tiba di sini tidak lama lagi. Sementara itu, kerja anda disimpan pada peranti ini.</string>
     <string name="mobile_sync_continue_in_browser">Teruskan dalam penyemak imbas anda.</string>
     <string name="mobile_sync_create_account">Buat Akaun</string>
     <string name="mobile_sync_delete_account">Padamkan Akaun</string>
@@ -639,6 +640,13 @@
     <string name="settings_calendar_view_label">Paparan</string>
     <string name="settings_calendar_view_month">Bulan</string>
     <string name="settings_calendar_view_week">Minggu</string>
+    <string name="settings_display_lookahead_footer">Pilih sejauh mana ke hadapan setiap jenis muncul dalam Akan Datang. Acara kalendar di luar julat ini kekal tersedia dalam kalendar.</string>
+    <string name="settings_display_maximum_items">Bilangan item maksimum</string>
+    <string name="settings_display_restore_defaults">Pulihkan lalai</string>
+    <string name="settings_display_show_completed">Tunjukkan item selesai</string>
+    <string name="settings_display_show_overdue">Tunjukkan item terlambat</string>
+    <string name="settings_display_upcoming_section">Jangkauan Akan Datang</string>
+    <string name="settings_display_visibility_section">Keterlihatan</string>
     <string name="settings_google_calendar_accounts_heading">Akaun</string>
     <string name="settings_google_calendar_accounts_offline_notice">Tiada kelayakan akaun Google tempatan. Kalendar di bawah akan tetap luar talian sehingga anda sambung semula.</string>
     <plurals name="settings_google_calendar_calendar_count">
@@ -696,6 +704,8 @@
     <string name="settings_time_clock_24h">24 Jam</string>
     <string name="settings_time_clock_label">Jam</string>
     <string name="settings_time_section">Masa</string>
+    <string name="settings_timing_section">Perancangan</string>
+    <string name="settings_timing_title">Masa dan notifikasi</string>
     <string name="settings_updates_auto_check">Periksa Kemas Kini Secara Automatik</string>
     <string name="settings_updates_check_button">Periksa</string>
     <string name="settings_updates_check_failed">Pemeriksaan Kemas Kini Gagal</string>
@@ -1366,7 +1376,7 @@
     <string name="web_home_hero_read_guide">Baca panduan</string>
     <string name="web_home_hero_title">Pengingat, Penugasan, Acara, dan Rencana dalam satu ruang kerja</string>
     <string name="web_home_meta_description">KnotQ adalah ruang kerja perencanaan desktop lokal-pertama di mana catatan terstruktur menjadi tugas, tenggat waktu, pengingat, dan acara kalender.</string>
-    <string name="web_home_meta_title">KnotQ — Pengingat, penugasan, acara, dan rencana dalam satu ruang kerja</string>
+    <string name="web_home_meta_title">KnotQ: kalendar dan perancang organisasi</string>
     <string name="web_home_pitch_eyebrow">Mengapa KnotQ</string>
     <string name="web_home_pitch_tile1_body">Rencana dari setiap skema, ditambah Kalender Google Anda, dalam satu tampilan mingguan.</string>
     <string name="web_home_pitch_tile1_title">Satu kalender untuk semuanya</string>

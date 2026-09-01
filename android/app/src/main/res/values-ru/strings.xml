@@ -551,6 +551,7 @@
     <string name="mobile_sync_callback_state_mismatch">Вход не удалось проверить. Пожалуйста, попробуйте еще раз.</string>
     <string name="mobile_sync_cancelled_detail">Синхронизация остается активной до конца вашего периода выставления счетов. Повторно включите, чтобы сохранить ее.</string>
     <string name="mobile_sync_code_hint_label">Код</string>
+    <string name="mobile_sync_coming_soon_detail">Синхронизация доступна в настольном приложении KnotQ и скоро появится здесь. А пока ваша работа сохраняется на этом устройстве.</string>
     <string name="mobile_sync_continue_in_browser">Продолжить в браузере.</string>
     <string name="mobile_sync_create_account">Создать аккаунт</string>
     <string name="mobile_sync_delete_account">Удалить аккаунт</string>
@@ -687,6 +688,13 @@
     <string name="settings_calendar_view_label">Вид</string>
     <string name="settings_calendar_view_month">Месяц</string>
     <string name="settings_calendar_view_week">Неделя</string>
+    <string name="settings_display_lookahead_footer">Выберите, насколько заранее каждый тип появляется в разделе «Предстоящее». События календаря за пределами этих диапазонов остаются доступны в календаре.</string>
+    <string name="settings_display_maximum_items">Максимум элементов</string>
+    <string name="settings_display_restore_defaults">Восстановить значения по умолчанию</string>
+    <string name="settings_display_show_completed">Показывать завершённые элементы</string>
+    <string name="settings_display_show_overdue">Показывать просроченные элементы</string>
+    <string name="settings_display_upcoming_section">Горизонт раздела «Предстоящее»</string>
+    <string name="settings_display_visibility_section">Видимость</string>
     <string name="settings_google_calendar_accounts_heading">Аккаунты</string>
     <string name="settings_google_calendar_accounts_offline_notice">Нет локальных учетных данных Google. Календари ниже останутся в режиме «оффлайн», пока вы не восстановите соединение.</string>
     <plurals name="settings_google_calendar_calendar_count">
@@ -747,6 +755,8 @@
     <string name="settings_time_clock_24h">24-часовой</string>
     <string name="settings_time_clock_label">Часы</string>
     <string name="settings_time_section">Время</string>
+    <string name="settings_timing_section">Планирование</string>
+    <string name="settings_timing_title">Время и уведомления</string>
     <string name="settings_updates_auto_check">Автоматически проверять обновления</string>
     <string name="settings_updates_check_button">Проверить</string>
     <string name="settings_updates_check_failed">Ошибка проверки обновления</string>
@@ -1429,7 +1439,7 @@
     <string name="web_home_hero_read_guide">Прочитать руководство</string>
     <string name="web_home_hero_title">Напоминания, задания, события и планы в одном рабочем пространстве</string>
     <string name="web_home_meta_description">KnotQ — это локально-первое рабочее пространство для планирования, где структурированные заметки становятся задачами, сроками, напоминаниями и событиями календаря.</string>
-    <string name="web_home_meta_title">KnotQ — напоминания, задания, события и планы в одном рабочем пространстве</string>
+    <string name="web_home_meta_title">KnotQ: календарь и планировщик организации</string>
     <string name="web_home_pitch_eyebrow">Почему KnotQ</string>
     <string name="web_home_pitch_tile1_body">Планы из каждой схемы плюс ваш Google Календарь в едином еженедельном просмотре.</string>
     <string name="web_home_pitch_tile1_title">Один календарь для всего</string>

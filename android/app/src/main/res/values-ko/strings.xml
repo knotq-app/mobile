@@ -515,6 +515,7 @@
     <string name="mobile_sync_callback_state_mismatch">로그인을 확인할 수 없습니다. 다시 시도하세요.</string>
     <string name="mobile_sync_cancelled_detail">동기화는 청구 기간이 끝날 때까지 활성화됩니다. 다시 활성화하여 유지하세요.</string>
     <string name="mobile_sync_code_hint_label">코드</string>
+    <string name="mobile_sync_coming_soon_detail">동기화는 KnotQ 데스크톱 앱에서 사용할 수 있으며 곧 이 앱에도 제공됩니다. 그때까지 작업 내용은 이 기기에 저장됩니다.</string>
     <string name="mobile_sync_continue_in_browser">브라우저에서 계속하세요.</string>
     <string name="mobile_sync_create_account">계정 만들기</string>
     <string name="mobile_sync_delete_account">계정 삭제</string>
@@ -639,6 +640,13 @@
     <string name="settings_calendar_view_label">보기</string>
     <string name="settings_calendar_view_month">월</string>
     <string name="settings_calendar_view_week">주</string>
+    <string name="settings_display_lookahead_footer">각 종류가 예정 목록에 얼마나 앞서 표시될지 선택하세요. 이 범위를 벗어난 캘린더 일정도 캘린더에서 계속 확인할 수 있습니다.</string>
+    <string name="settings_display_maximum_items">최대 항목 수</string>
+    <string name="settings_display_restore_defaults">기본값 복원</string>
+    <string name="settings_display_show_completed">완료된 항목 표시</string>
+    <string name="settings_display_show_overdue">기한 초과 항목 표시</string>
+    <string name="settings_display_upcoming_section">예정 미리 보기 기간</string>
+    <string name="settings_display_visibility_section">표시 여부</string>
     <string name="settings_google_calendar_accounts_heading">계정</string>
     <string name="settings_google_calendar_accounts_offline_notice">로컬 Google 계정 자격증명이 없습니다. 아래 캘린더는 다시 연결할 때까지 오프라인 상태로 유지됩니다.</string>
     <plurals name="settings_google_calendar_calendar_count">
@@ -696,6 +704,8 @@
     <string name="settings_time_clock_24h">24시간</string>
     <string name="settings_time_clock_label">시간 형식</string>
     <string name="settings_time_section">시간</string>
+    <string name="settings_timing_section">계획</string>
+    <string name="settings_timing_title">시간 및 알림</string>
     <string name="settings_updates_auto_check">자동으로 업데이트 확인</string>
     <string name="settings_updates_check_button">확인</string>
     <string name="settings_updates_check_failed">업데이트 확인 실패</string>
@@ -1366,7 +1376,7 @@
     <string name="web_home_hero_read_guide">가이드 읽기</string>
     <string name="web_home_hero_title">알림, 할당, 이벤트 및 계획이 한 워크스페이스에 통합됨</string>
     <string name="web_home_meta_description">KnotQ는 구조화된 노트가 작업, 기한, 알림 및 캘린더 이벤트로 변환되는 로컬 우선 데스크톱 계획 워크스페이스입니다.</string>
-    <string name="web_home_meta_title">KnotQ — 알림, 할당, 이벤트 및 계획이 한 워크스페이스에 통합됨</string>
+    <string name="web_home_meta_title">KnotQ: 캘린더 및 정리 플래너</string>
     <string name="web_home_pitch_eyebrow">왜 KnotQ인가</string>
     <string name="web_home_pitch_tile1_body">모든 스킴의 계획과 Google Calendar가 한 주간 보기에 표시됩니다.</string>
     <string name="web_home_pitch_tile1_title">모든 항목을 위한 하나의 캘린더</string>

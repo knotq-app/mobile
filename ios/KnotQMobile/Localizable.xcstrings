@@ -101571,6 +101571,203 @@
         }
       }
     },
+    "mobile.sync.coming_soon_detail": {
+      "extractionState": "manual",
+      "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "المزامنة متاحة في تطبيق KnotQ لسطح المكتب وستصل إلى هنا قريباً. في هذه الأثناء، يُحفظ عملك على هذا الجهاز."
+          }
+        },
+        "cs": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Synchronizace je dostupná v desktopové aplikaci KnotQ a brzy dorazí i sem. Mezitím se vaše práce ukládá do tohoto zařízení."
+          }
+        },
+        "da": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Synkronisering findes i KnotQ-skrivebordsappen og kommer snart hertil. I mellemtiden gemmes dit arbejde på denne enhed."
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Die Synchronisierung ist in der KnotQ-Desktop-App verfügbar und kommt bald auch hierher. In der Zwischenzeit wird Ihre Arbeit auf diesem Gerät gespeichert."
+          }
+        },
+        "el": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ο συγχρονισμός είναι διαθέσιμος στην εφαρμογή KnotQ για υπολογιστή και θα έρθει σύντομα και εδώ. Στο μεταξύ, η εργασία σας αποθηκεύεται σε αυτή τη συσκευή."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sync is available in the KnotQ desktop app and is coming to this one soon. Your work is saved on this device in the meantime."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "La sincronización está disponible en la app de escritorio de KnotQ y llegará pronto a esta. Mientras tanto, tu trabajo se guarda en este dispositivo."
+          }
+        },
+        "fi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Synkronointi on saatavilla KnotQ:n työpöytäsovelluksessa ja tulee pian myös tähän. Sillä välin työsi tallennetaan tälle laitteelle."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "La synchronisation est disponible dans l'application de bureau KnotQ et arrivera bientôt ici. En attendant, votre travail est enregistré sur cet appareil."
+          }
+        },
+        "he": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "סנכרון זמין באפליקציית שולחן העבודה של KnotQ ויגיע לכאן בקרוב. בינתיים, העבודה שלך נשמרת במכשיר זה."
+          }
+        },
+        "hi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "सिंक KnotQ डेस्कटॉप ऐप में उपलब्ध है और जल्द ही यहां भी आ रहा है। तब तक आपका काम इसी डिवाइस पर सहेजा जाता है।"
+          }
+        },
+        "hu": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "A szinkronizálás elérhető a KnotQ asztali alkalmazásában, és hamarosan ide is megérkezik. Addig is a munkád ezen az eszközön marad elmentve."
+          }
+        },
+        "id": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sinkronisasi tersedia di aplikasi desktop KnotQ dan akan segera hadir di sini. Sementara itu, pekerjaan Anda disimpan di perangkat ini."
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "La sincronizzazione è disponibile nell'app desktop di KnotQ e arriverà presto anche qui. Nel frattempo il tuo lavoro viene salvato su questo dispositivo."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "同期は KnotQ デスクトップアプリで利用でき、こちらにも間もなく対応します。それまでの間、作業内容はこの端末に保存されます。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "동기화는 KnotQ 데스크톱 앱에서 사용할 수 있으며 곧 이 앱에도 제공됩니다. 그때까지 작업 내용은 이 기기에 저장됩니다."
+          }
+        },
+        "ms": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Penyegerakan tersedia dalam aplikasi desktop KnotQ dan akan tiba di sini tidak lama lagi. Sementara itu, kerja anda disimpan pada peranti ini."
+          }
+        },
+        "nb": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Synkronisering finnes i KnotQ-skrivebordsappen og kommer hit snart. I mellomtiden lagres arbeidet ditt på denne enheten."
+          }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Synchronisatie is beschikbaar in de KnotQ-desktopapp en komt hier binnenkort ook. In de tussentijd wordt je werk op dit apparaat opgeslagen."
+          }
+        },
+        "pl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Synchronizacja jest dostępna w aplikacji komputerowej KnotQ, a wkrótce pojawi się także tutaj. W międzyczasie Twoja praca jest zapisywana na tym urządzeniu."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "A sincronização está disponível no aplicativo de desktop do KnotQ e chegará em breve a este. Enquanto isso, seu trabalho é salvo neste dispositivo."
+          }
+        },
+        "pt-PT": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "A sincronização está disponível na aplicação de ambiente de trabalho do KnotQ e chegará em breve a esta. Entretanto, o seu trabalho é guardado neste dispositivo."
+          }
+        },
+        "ro": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sincronizarea este disponibilă în aplicația desktop KnotQ și va ajunge în curând și aici. Între timp, munca dvs. este salvată pe acest dispozitiv."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Синхронизация доступна в настольном приложении KnotQ и скоро появится здесь. А пока ваша работа сохраняется на этом устройстве."
+          }
+        },
+        "sk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Synchronizácia je dostupná v desktopovej aplikácii KnotQ a čoskoro príde aj sem. Medzitým sa vaša práca ukladá do tohto zariadenia."
+          }
+        },
+        "sv": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Synkronisering finns i KnotQ:s skrivbordsapp och kommer snart hit. Under tiden sparas ditt arbete på den här enheten."
+          }
+        },
+        "th": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "การซิงค์พร้อมใช้งานในแอป KnotQ บนเดสก์ท็อป และจะมาถึงที่นี่เร็ว ๆ นี้ ในระหว่างนี้งานของคุณจะถูกบันทึกไว้บนอุปกรณ์นี้"
+          }
+        },
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Senkronizasyon KnotQ masaüstü uygulamasında mevcut ve yakında buraya da geliyor. Bu arada çalışmalarınız bu cihazda kaydedilir."
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Синхронізація доступна в настільному застосунку KnotQ і незабаром з'явиться тут. А поки ваша робота зберігається на цьому пристрої."
+          }
+        },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Đồng bộ hóa có sẵn trong ứng dụng KnotQ trên máy tính và sẽ sớm có ở đây. Trong thời gian đó, công việc của bạn được lưu trên thiết bị này."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "同步已在 KnotQ 桌面应用中提供，即将登陆此应用。在此期间，您的内容会保存在本设备上。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "同步功能已在 KnotQ 桌面版應用程式中提供，很快也會登陸此應用程式。在此之前，您的內容會儲存在本裝置上。"
+          }
+        }
+      }
+    },
     "mobile.sync.continue_in_browser": {
       "extractionState": "manual",
       "localizations": {
@@ -126103,6 +126300,1385 @@
         }
       }
     },
+    "settings.display.lookahead_footer": {
+      "extractionState": "manual",
+      "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "اختر مدى استباق ظهور كل نوع في «القادم». تظل أحداث التقويم خارج هذه النطاقات متاحة في التقويم."
+          }
+        },
+        "cs": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Zvolte, jak daleko dopředu se každý typ zobrazí v sekci Nadcházející. Události kalendáře mimo tyto rozsahy zůstávají dostupné v kalendáři."
+          }
+        },
+        "da": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Vælg hvor langt frem hver type vises i Kommende. Kalenderbegivenheder uden for disse intervaller forbliver tilgængelige i kalenderen."
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Wählen Sie, wie weit im Voraus jede Art unter Anstehend erscheint. Kalendereinträge außerhalb dieser Zeiträume bleiben im Kalender verfügbar."
+          }
+        },
+        "el": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Επιλέξτε πόσο νωρίτερα εμφανίζεται κάθε είδος στα Επικείμενα. Τα συμβάντα ημερολογίου εκτός αυτών των ευρών παραμένουν διαθέσιμα στο ημερολόγιο."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Choose how far ahead each kind appears in Upcoming. Calendar events outside these ranges remain available in the calendar."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Elige con cuánta antelación aparece cada tipo en Próximos. Los eventos de calendario fuera de estos rangos siguen disponibles en el calendario."
+          }
+        },
+        "fi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Valitse, kuinka pitkälle eteenpäin kukin tyyppi näkyy Tulevat-osiossa. Näiden aikavälien ulkopuoliset kalenteritapahtumat pysyvät saatavilla kalenterissa."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Choisissez combien de temps à l'avance chaque type apparaît dans À venir. Les événements de calendrier en dehors de ces plages restent disponibles dans le calendrier."
+          }
+        },
+        "he": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "בחר כמה זמן מראש כל סוג מופיע ברשימת הקרובים. אירועי לוח שנה מחוץ לטווחים אלה נשארים זמינים בלוח השנה."
+          }
+        },
+        "hi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "चुनें कि प्रत्येक प्रकार आने वाला अनुभाग में कितना पहले दिखाई देता है। इन श्रेणियों के बाहर के कैलेंडर ईवेंट कैलेंडर में उपलब्ध रहते हैं।"
+          }
+        },
+        "hu": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Válaszd ki, mennyivel előre jelenjen meg az egyes típusok a Közelgő szakaszban. Az ezeken a tartományokon kívüli naptáresemények továbbra is elérhetők a naptárban."
+          }
+        },
+        "id": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pilih seberapa jauh ke depan setiap jenis muncul di Akan Datang. Acara kalender di luar rentang ini tetap tersedia di kalender."
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Scegli con quanto anticipo ogni tipo appare in Prossimi. Gli eventi del calendario al di fuori di questi intervalli restano disponibili nel calendario."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "各種類が「今後」にどれくらい先まで表示されるかを選択します。この範囲外のカレンダーイベントもカレンダーで引き続き利用できます。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "각 종류가 예정 목록에 얼마나 앞서 표시될지 선택하세요. 이 범위를 벗어난 캘린더 일정도 캘린더에서 계속 확인할 수 있습니다."
+          }
+        },
+        "ms": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pilih sejauh mana ke hadapan setiap jenis muncul dalam Akan Datang. Acara kalendar di luar julat ini kekal tersedia dalam kalendar."
+          }
+        },
+        "nb": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Velg hvor langt fram hver type vises i Kommende. Kalenderhendelser utenfor disse områdene forblir tilgjengelige i kalenderen."
+          }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Kies hoe ver vooruit elk type in Aankomend verschijnt. Agenda-afspraken buiten deze bereiken blijven beschikbaar in de agenda."
+          }
+        },
+        "pl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Wybierz, z jakim wyprzedzeniem każdy rodzaj pojawia się w sekcji Nadchodzące. Wydarzenia kalendarza spoza tych zakresów pozostają dostępne w kalendarzu."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Escolha com quanta antecedência cada tipo aparece em Próximos. Eventos de calendário fora desses intervalos continuam disponíveis no calendário."
+          }
+        },
+        "pt-PT": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Escolha com que antecedência cada tipo aparece em Próximos. Os eventos de calendário fora destes intervalos continuam disponíveis no calendário."
+          }
+        },
+        "ro": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Alegeți cu cât timp înainte apare fiecare tip în secțiunea Viitoare. Evenimentele din calendar din afara acestor intervale rămân disponibile în calendar."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Выберите, насколько заранее каждый тип появляется в разделе «Предстоящее». События календаря за пределами этих диапазонов остаются доступны в календаре."
+          }
+        },
+        "sk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Zvoľte, ako ďaleko dopredu sa každý typ zobrazí v sekcii Nadchádzajúce. Udalosti kalendára mimo týchto rozsahov zostávajú dostupné v kalendári."
+          }
+        },
+        "sv": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Välj hur långt i förväg varje typ visas i Kommande. Kalenderhändelser utanför dessa intervall förblir tillgängliga i kalendern."
+          }
+        },
+        "th": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "เลือกว่าแต่ละประเภทจะแสดงล่วงหน้านานเท่าใดในรายการที่กำลังจะมาถึง กิจกรรมปฏิทินที่อยู่นอกช่วงเหล่านี้ยังคงใช้งานได้ในปฏิทิน"
+          }
+        },
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Her türün Yaklaşan bölümünde ne kadar önceden görüneceğini seçin. Bu aralıkların dışındaki takvim etkinlikleri takvimde kullanılabilir kalır."
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Виберіть, наскільки заздалегідь кожен тип з'являється в розділі «Майбутнє». Події календаря поза цими діапазонами залишаються доступними в календарі."
+          }
+        },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Chọn mỗi loại xuất hiện trước bao lâu trong Sắp tới. Các sự kiện lịch nằm ngoài các khoảng này vẫn có sẵn trong lịch."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "选择每种类型要提前多久显示在即将到来的列表中。超出这些范围的日历事件仍可在日历中查看。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "選擇每種類型要提前多久顯示在即將到來的清單中。超出這些範圍的日曆活動仍可在日曆中查看。"
+          }
+        }
+      }
+    },
+    "settings.display.maximum_items": {
+      "extractionState": "manual",
+      "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "الحد الأقصى للعناصر"
+          }
+        },
+        "cs": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Maximální počet položek"
+          }
+        },
+        "da": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Maksimalt antal emner"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Maximale Anzahl an Einträgen"
+          }
+        },
+        "el": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Μέγιστος αριθμός στοιχείων"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Maximum items"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Máximo de elementos"
+          }
+        },
+        "fi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Kohteiden enimmäismäärä"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Nombre maximal d'éléments"
+          }
+        },
+        "he": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "מספר פריטים מרבי"
+          }
+        },
+        "hi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "अधिकतम आइटम"
+          }
+        },
+        "hu": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Elemek maximális száma"
+          }
+        },
+        "id": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Jumlah item maksimum"
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Numero massimo di elementi"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "項目の最大数"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "최대 항목 수"
+          }
+        },
+        "ms": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Bilangan item maksimum"
+          }
+        },
+        "nb": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Maksimalt antall elementer"
+          }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Maximum aantal items"
+          }
+        },
+        "pl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Maksymalna liczba elementów"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Máximo de itens"
+          }
+        },
+        "pt-PT": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Máximo de itens"
+          }
+        },
+        "ro": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Număr maxim de elemente"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Максимум элементов"
+          }
+        },
+        "sk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Maximálny počet položiek"
+          }
+        },
+        "sv": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Högsta antal objekt"
+          }
+        },
+        "th": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "จำนวนรายการสูงสุด"
+          }
+        },
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "En fazla öğe sayısı"
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Максимум елементів"
+          }
+        },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Số mục tối đa"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "最大项目数"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "項目數上限"
+          }
+        }
+      }
+    },
+    "settings.display.restore_defaults": {
+      "extractionState": "manual",
+      "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "استعادة الإعدادات الافتراضية"
+          }
+        },
+        "cs": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Obnovit výchozí nastavení"
+          }
+        },
+        "da": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Gendan standardindstillinger"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Standardwerte wiederherstellen"
+          }
+        },
+        "el": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Επαναφορά προεπιλογών"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Restore Defaults"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Restaurar valores predeterminados"
+          }
+        },
+        "fi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Palauta oletusarvot"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Rétablir les valeurs par défaut"
+          }
+        },
+        "he": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "שחזר ברירות מחדל"
+          }
+        },
+        "hi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "डिफ़ॉल्ट पुनर्स्थापित करें"
+          }
+        },
+        "hu": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Alapértelmezések visszaállítása"
+          }
+        },
+        "id": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pulihkan default"
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ripristina valori predefiniti"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "デフォルトに戻す"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "기본값 복원"
+          }
+        },
+        "ms": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pulihkan lalai"
+          }
+        },
+        "nb": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Gjenopprett standardverdier"
+          }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Standaardwaarden herstellen"
+          }
+        },
+        "pl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Przywróć domyślne"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Restaurar padrões"
+          }
+        },
+        "pt-PT": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Restaurar predefinições"
+          }
+        },
+        "ro": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Restabiliți valorile implicite"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Восстановить значения по умолчанию"
+          }
+        },
+        "sk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Obnoviť predvolené hodnoty"
+          }
+        },
+        "sv": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Återställ standardvärden"
+          }
+        },
+        "th": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "คืนค่าเริ่มต้น"
+          }
+        },
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Varsayılanları geri yükle"
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Відновити значення за замовчуванням"
+          }
+        },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Khôi phục mặc định"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "恢复默认设置"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "還原預設值"
+          }
+        }
+      }
+    },
+    "settings.display.show_completed": {
+      "extractionState": "manual",
+      "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "إظهار العناصر المكتملة"
+          }
+        },
+        "cs": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Zobrazit dokončené položky"
+          }
+        },
+        "da": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Vis fuldførte emner"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Erledigte Einträge anzeigen"
+          }
+        },
+        "el": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Εμφάνιση ολοκληρωμένων στοιχείων"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Show completed items"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Mostrar elementos completados"
+          }
+        },
+        "fi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Näytä valmiit kohteet"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Afficher les éléments terminés"
+          }
+        },
+        "he": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "הצג פריטים שהושלמו"
+          }
+        },
+        "hi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "पूर्ण किए गए आइटम दिखाएं"
+          }
+        },
+        "hu": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Befejezett elemek megjelenítése"
+          }
+        },
+        "id": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tampilkan item selesai"
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Mostra elementi completati"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "完了した項目を表示"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "완료된 항목 표시"
+          }
+        },
+        "ms": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tunjukkan item selesai"
+          }
+        },
+        "nb": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Vis fullførte elementer"
+          }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Voltooide items tonen"
+          }
+        },
+        "pl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pokaż ukończone elementy"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Mostrar itens concluídos"
+          }
+        },
+        "pt-PT": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Mostrar itens concluídos"
+          }
+        },
+        "ro": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Afișează elementele finalizate"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Показывать завершённые элементы"
+          }
+        },
+        "sk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Zobraziť dokončené položky"
+          }
+        },
+        "sv": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Visa slutförda objekt"
+          }
+        },
+        "th": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "แสดงรายการที่เสร็จแล้ว"
+          }
+        },
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tamamlanmış öğeleri göster"
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Показувати завершені елементи"
+          }
+        },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Hiện mục đã hoàn thành"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "显示已完成项目"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "顯示已完成項目"
+          }
+        }
+      }
+    },
+    "settings.display.show_overdue": {
+      "extractionState": "manual",
+      "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "إظهار العناصر المتأخرة"
+          }
+        },
+        "cs": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Zobrazit položky po splatnosti"
+          }
+        },
+        "da": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Vis forfaldne emner"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Überfällige Einträge anzeigen"
+          }
+        },
+        "el": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Εμφάνιση ληξιπρόθεσμων στοιχείων"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Show overdue items"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Mostrar elementos vencidos"
+          }
+        },
+        "fi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Näytä erääntyneet kohteet"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Afficher les éléments en retard"
+          }
+        },
+        "he": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "הצג פריטים חריגים"
+          }
+        },
+        "hi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "देरी से चल रहे आइटम दिखाएं"
+          }
+        },
+        "hu": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Lejárt elemek megjelenítése"
+          }
+        },
+        "id": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tampilkan item terlambat"
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Mostra elementi scaduti"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "期限超過の項目を表示"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "기한 초과 항목 표시"
+          }
+        },
+        "ms": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tunjukkan item terlambat"
+          }
+        },
+        "nb": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Vis forfalte elementer"
+          }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Achterstallige items tonen"
+          }
+        },
+        "pl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pokaż zaległe elementy"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Mostrar itens atrasados"
+          }
+        },
+        "pt-PT": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Mostrar itens atrasados"
+          }
+        },
+        "ro": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Afișează elementele întârziate"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Показывать просроченные элементы"
+          }
+        },
+        "sk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Zobraziť prekonané položky"
+          }
+        },
+        "sv": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Visa förfallna objekt"
+          }
+        },
+        "th": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "แสดงรายการที่ล้าหลัง"
+          }
+        },
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Gecikmiş öğeleri göster"
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Показувати прострочені елементи"
+          }
+        },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Hiện mục quá hạn"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "显示逾期项目"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "顯示逾期項目"
+          }
+        }
+      }
+    },
+    "settings.display.upcoming_section": {
+      "extractionState": "manual",
+      "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "مدى الاستباق في «القادم»"
+          }
+        },
+        "cs": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Předstih sekce Nadcházející"
+          }
+        },
+        "da": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Fremsyn for Kommende"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Vorausschau für Anstehend"
+          }
+        },
+        "el": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Προεπισκόπηση Επικείμενων"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Upcoming lookahead"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Antelación de Próximos"
+          }
+        },
+        "fi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tulevien ennakointi"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Anticipation d'À venir"
+          }
+        },
+        "he": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "טווח קדימה לקרובים"
+          }
+        },
+        "hi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "आने वाला के लिए पूर्वावधि"
+          }
+        },
+        "hu": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Közelgő előretekintés"
+          }
+        },
+        "id": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Jangkauan Akan Datang"
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Anticipo di Prossimi"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "「今後」の先読み期間"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "예정 미리 보기 기간"
+          }
+        },
+        "ms": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Jangkauan Akan Datang"
+          }
+        },
+        "nb": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Framsyn for Kommende"
+          }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Vooruitblik van Aankomend"
+          }
+        },
+        "pl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Wyprzedzenie sekcji Nadchodzące"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Antecedência de Próximos"
+          }
+        },
+        "pt-PT": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Antecedência de Próximos"
+          }
+        },
+        "ro": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Anticipare pentru Viitoare"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Горизонт раздела «Предстоящее»"
+          }
+        },
+        "sk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Predstih sekcie Nadchádzajúce"
+          }
+        },
+        "sv": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Framförhållning för Kommande"
+          }
+        },
+        "th": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ระยะล่วงหน้าของรายการที่กำลังจะมาถึง"
+          }
+        },
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Yaklaşan için ileri görünüm"
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Горизонт розділу «Майбутнє»"
+          }
+        },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Khoảng nhìn trước cho Sắp tới"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "即将到来的预览范围"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "即將到來的預覽範圍"
+          }
+        }
+      }
+    },
+    "settings.display.visibility_section": {
+      "extractionState": "manual",
+      "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "إمكانية الظهور"
+          }
+        },
+        "cs": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Viditelnost"
+          }
+        },
+        "da": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Synlighed"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sichtbarkeit"
+          }
+        },
+        "el": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ορατότητα"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Visibility"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Visibilidad"
+          }
+        },
+        "fi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Näkyvyys"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Visibilité"
+          }
+        },
+        "he": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "נראות"
+          }
+        },
+        "hi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "दृश्यता"
+          }
+        },
+        "hu": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Láthatóság"
+          }
+        },
+        "id": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Visibilitas"
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Visibilità"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "表示設定"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "표시 여부"
+          }
+        },
+        "ms": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Keterlihatan"
+          }
+        },
+        "nb": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Synlighet"
+          }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Zichtbaarheid"
+          }
+        },
+        "pl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Widoczność"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Visibilidade"
+          }
+        },
+        "pt-PT": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Visibilidade"
+          }
+        },
+        "ro": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Vizibilitate"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Видимость"
+          }
+        },
+        "sk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Viditeľnosť"
+          }
+        },
+        "sv": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Synlighet"
+          }
+        },
+        "th": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "การมองเห็น"
+          }
+        },
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Görünürlük"
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Видимість"
+          }
+        },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Khả năng hiển thị"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "可见性"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "可見性"
+          }
+        }
+      }
+    },
     "settings.google_calendar.accounts_heading": {
       "extractionState": "manual",
       "localizations": {
@@ -137354,6 +138930,400 @@
           "stringUnit": {
             "state": "translated",
             "value": "時間"
+          }
+        }
+      }
+    },
+    "settings.timing.section": {
+      "extractionState": "manual",
+      "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "التخطيط"
+          }
+        },
+        "cs": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Plánování"
+          }
+        },
+        "da": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Planlægning"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Planung"
+          }
+        },
+        "el": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Σχεδιασμός"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Planning"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Planificación"
+          }
+        },
+        "fi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Suunnittelu"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Planification"
+          }
+        },
+        "he": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "תכנון"
+          }
+        },
+        "hi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "नियोजन"
+          }
+        },
+        "hu": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tervezés"
+          }
+        },
+        "id": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Perencanaan"
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pianificazione"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "プランニング"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "계획"
+          }
+        },
+        "ms": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Perancangan"
+          }
+        },
+        "nb": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Planlegging"
+          }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Planning"
+          }
+        },
+        "pl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Planowanie"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Planejamento"
+          }
+        },
+        "pt-PT": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Planeamento"
+          }
+        },
+        "ro": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Planificare"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Планирование"
+          }
+        },
+        "sk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Plánovanie"
+          }
+        },
+        "sv": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Planering"
+          }
+        },
+        "th": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "การวางแผน"
+          }
+        },
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Planlama"
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Планування"
+          }
+        },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Lập kế hoạch"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "规划"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "規劃"
+          }
+        }
+      }
+    },
+    "settings.timing.title": {
+      "extractionState": "manual",
+      "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "التوقيت والإشعارات"
+          }
+        },
+        "cs": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Časy a oznámení"
+          }
+        },
+        "da": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tider og notifikationer"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Zeiten und Benachrichtigungen"
+          }
+        },
+        "el": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ώρες και ειδοποιήσεις"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Timing and Notifications"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Horarios y notificaciones"
+          }
+        },
+        "fi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ajat ja ilmoitukset"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Horaires et notifications"
+          }
+        },
+        "he": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "תזמון והודעות"
+          }
+        },
+        "hi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "समय और सूचनाएं"
+          }
+        },
+        "hu": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Időzítés és értesítések"
+          }
+        },
+        "id": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Waktu dan notifikasi"
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Orari e notifiche"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "時間と通知"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "시간 및 알림"
+          }
+        },
+        "ms": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Masa dan notifikasi"
+          }
+        },
+        "nb": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tider og varsler"
+          }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tijden en meldingen"
+          }
+        },
+        "pl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Czasy i powiadomienia"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Horários e notificações"
+          }
+        },
+        "pt-PT": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Horários e notificações"
+          }
+        },
+        "ro": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ore și notificări"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Время и уведомления"
+          }
+        },
+        "sk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Časy a notifikácie"
+          }
+        },
+        "sv": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tider och meddelanden"
+          }
+        },
+        "th": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "เวลาและการแจ้งเตือน"
+          }
+        },
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Zamanlama ve bildirimler"
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Час і сповіщення"
+          }
+        },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Thời gian và thông báo"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "时间与通知"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "時間與通知"
           }
         }
       }
@@ -269458,31 +271428,31 @@
         "ar": {
           "stringUnit": {
             "state": "translated",
-            "value": "KnotQ — التذكيرات والمهام والأحداث والخطط في مساحة عمل واحدة"
+            "value": "‏KnotQ: تقويم ومخطط تنظيمي"
           }
         },
         "cs": {
           "stringUnit": {
             "state": "translated",
-            "value": "KnotQ — Připomenutí, úkoly, události a plány v jednom pracovním prostoru"
+            "value": "KnotQ: kalendář a plánovač organizace"
           }
         },
         "da": {
           "stringUnit": {
             "state": "translated",
-            "value": "KnotQ — Påmindelser, opgaver, begivenheder og planer på ét arbejdsområde"
+            "value": "KnotQ: kalender og planlægger til organisering"
           }
         },
         "de": {
           "stringUnit": {
             "state": "translated",
-            "value": "KnotQ — Erinnerungen, Aufgaben, Ereignisse und Pläne in einem Workspace"
+            "value": "KnotQ: Kalender- und Organisationsplaner"
           }
         },
         "el": {
           "stringUnit": {
             "state": "translated",
-            "value": "KnotQ — Υπενθυμίσεις, αναθέσεις, γεγονότα και σχέδια σε έναν χώρο εργασίας"
+            "value": "KnotQ: ημερολόγιο και οργανωτής προγραμματισμού"
           }
         },
         "en": {
@@ -269494,157 +271464,157 @@
         "es": {
           "stringUnit": {
             "state": "translated",
-            "value": "KnotQ — Recordatorios, asignaciones, eventos y planes en un espacio de trabajo"
+            "value": "KnotQ: calendario y agenda de organización"
           }
         },
         "fi": {
           "stringUnit": {
             "state": "translated",
-            "value": "KnotQ — Muistutukset, tehtävät, tapahtumat ja suunnitelmat yhdessä työtilassa"
+            "value": "KnotQ: kalenteri ja organisoinnin suunnittelija"
           }
         },
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "KnotQ — Rappels, tâches, événements et plans dans un espace de travail"
+            "value": "KnotQ : agenda et organiseur de planification"
           }
         },
         "he": {
           "stringUnit": {
             "state": "translated",
-            "value": "KnotQ — תזכורות, הקצאות, אירועים ותוכניות במרחב עבודה אחד"
+            "value": "KnotQ: יומן ומתכנן ארגון"
           }
         },
         "hi": {
           "stringUnit": {
             "state": "translated",
-            "value": "KnotQ — एक वर्कस्पेस में रिमाइंडर, असाइनमेंट, इवेंट, और योजनाएं"
+            "value": "KnotQ: कैलेंडर और संगठन प्लानर"
           }
         },
         "hu": {
           "stringUnit": {
             "state": "translated",
-            "value": "KnotQ — Emlékeztetõk, feladatok, események és tervek egy munkahelyen"
+            "value": "KnotQ: naptár és szervezési tervező"
           }
         },
         "id": {
           "stringUnit": {
             "state": "translated",
-            "value": "KnotQ — Pengingat, penugasan, acara, dan rencana dalam satu ruang kerja"
+            "value": "KnotQ: kalender dan perencana organisasi"
           }
         },
         "it": {
           "stringUnit": {
             "state": "translated",
-            "value": "KnotQ — Promemoria, compiti, eventi e piani in un workspace"
+            "value": "KnotQ: calendario e agenda organizzativa"
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "KnotQ — リマインダー、課題、イベント、計画を1つのワークスペースで"
+            "value": "KnotQ：カレンダー＆整理プランナー"
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "KnotQ — 알림, 할당, 이벤트 및 계획이 한 워크스페이스에 통합됨"
+            "value": "KnotQ: 캘린더 및 정리 플래너"
           }
         },
         "ms": {
           "stringUnit": {
             "state": "translated",
-            "value": "KnotQ — Pengingat, penugasan, acara, dan rencana dalam satu ruang kerja"
+            "value": "KnotQ: kalendar dan perancang organisasi"
           }
         },
         "nb": {
           "stringUnit": {
             "state": "translated",
-            "value": "KnotQ — Påminnelser, oppgaver, begivenheter og planer på ett sted"
+            "value": "KnotQ: kalender og planlegger for organisering"
           }
         },
         "nl": {
           "stringUnit": {
             "state": "translated",
-            "value": "KnotQ — Herinneringen, taken, evenementen en plannen in één werkruimte"
+            "value": "KnotQ: agenda- en organisatieplanner"
           }
         },
         "pl": {
           "stringUnit": {
             "state": "translated",
-            "value": "KnotQ — Przypomnienia, przypisania, zdarzenia i plany w jednym obszarze roboczym"
+            "value": "KnotQ: kalendarz i planer organizacji"
           }
         },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
-            "value": "KnotQ — Lembretes, atribuições, eventos e planos em um workspace"
+            "value": "KnotQ: calendário e agenda de organização"
           }
         },
         "pt-PT": {
           "stringUnit": {
             "state": "translated",
-            "value": "KnotQ — Lembretes, atribuições, eventos e planos numa área de trabalho"
+            "value": "KnotQ: calendário e agenda de organização"
           }
         },
         "ro": {
           "stringUnit": {
             "state": "translated",
-            "value": "KnotQ — Mementouri, sarcini, evenimente și planuri într-un spațiu de lucru"
+            "value": "KnotQ: calendar și agendă de organizare"
           }
         },
         "ru": {
           "stringUnit": {
             "state": "translated",
-            "value": "KnotQ — напоминания, задания, события и планы в одном рабочем пространстве"
+            "value": "KnotQ: календарь и планировщик организации"
           }
         },
         "sk": {
           "stringUnit": {
             "state": "translated",
-            "value": "KnotQ — Pripomienky, úlohy, udalosti a plány v jednom pracovnom priestore"
+            "value": "KnotQ: kalendár a plánovač organizácie"
           }
         },
         "sv": {
           "stringUnit": {
             "state": "translated",
-            "value": "KnotQ — Påminnelser, uppdrag, händelser och planer i ett arbetsutrymme"
+            "value": "KnotQ: kalender och planerare för organisation"
           }
         },
         "th": {
           "stringUnit": {
             "state": "translated",
-            "value": "KnotQ — การเตือน งาน เหตุการณ์ และแผนในพื้นที่ทำงานเดียว"
+            "value": "KnotQ: ปฏิทินและตัววางแผนการจัดระเบียบ"
           }
         },
         "tr": {
           "stringUnit": {
             "state": "translated",
-            "value": "KnotQ — Bir çalışma alanında hatırlatıcılar, ödevler, etkinlikler ve planlar"
+            "value": "KnotQ: takvim ve organizasyon planlayıcı"
           }
         },
         "uk": {
           "stringUnit": {
             "state": "translated",
-            "value": "KnotQ — Нагадування, завдання, события та плани в одному робочому просторі"
+            "value": "KnotQ: календар і планувальник організації"
           }
         },
         "vi": {
           "stringUnit": {
             "state": "translated",
-            "value": "KnotQ — Nhắc nhở, bài tập, sự kiện và kế hoạch trong một không gian làm việc"
+            "value": "KnotQ: lịch và trình lập kế hoạch tổ chức"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "KnotQ — 提醒、分配、事件和计划在一个工作区中"
+            "value": "KnotQ：日历与整理规划工具"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "KnotQ — 在一個工作區中提醒、指派、事件和計劃"
+            "value": "KnotQ：行事曆與整理規劃工具"
           }
         }
       }

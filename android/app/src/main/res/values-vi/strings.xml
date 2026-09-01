@@ -515,6 +515,7 @@
     <string name="mobile_sync_callback_state_mismatch">Không thể xác minh đăng nhập. Vui lòng thử lại.</string>
     <string name="mobile_sync_cancelled_detail">Đồng bộ vẫn hoạt động cho đến khi kỳ thanh toán của bạn kết thúc. Bật lại để giữ nó.</string>
     <string name="mobile_sync_code_hint_label">Mã</string>
+    <string name="mobile_sync_coming_soon_detail">Đồng bộ hóa có sẵn trong ứng dụng KnotQ trên máy tính và sẽ sớm có ở đây. Trong thời gian đó, công việc của bạn được lưu trên thiết bị này.</string>
     <string name="mobile_sync_continue_in_browser">Tiếp tục trong trình duyệt của bạn.</string>
     <string name="mobile_sync_create_account">Tạo tài khoản</string>
     <string name="mobile_sync_delete_account">Xóa Tài khoản</string>
@@ -639,6 +640,13 @@
     <string name="settings_calendar_view_label">Xem</string>
     <string name="settings_calendar_view_month">Tháng</string>
     <string name="settings_calendar_view_week">Tuần</string>
+    <string name="settings_display_lookahead_footer">Chọn mỗi loại xuất hiện trước bao lâu trong Sắp tới. Các sự kiện lịch nằm ngoài các khoảng này vẫn có sẵn trong lịch.</string>
+    <string name="settings_display_maximum_items">Số mục tối đa</string>
+    <string name="settings_display_restore_defaults">Khôi phục mặc định</string>
+    <string name="settings_display_show_completed">Hiện mục đã hoàn thành</string>
+    <string name="settings_display_show_overdue">Hiện mục quá hạn</string>
+    <string name="settings_display_upcoming_section">Khoảng nhìn trước cho Sắp tới</string>
+    <string name="settings_display_visibility_section">Khả năng hiển thị</string>
     <string name="settings_google_calendar_accounts_heading">Tài khoản</string>
     <string name="settings_google_calendar_accounts_offline_notice">Không có thông tin xác thực tài khoản Google cục bộ. Các lịch dưới đây sẽ ở ngoại tuyến cho đến khi bạn kết nối lại.</string>
     <plurals name="settings_google_calendar_calendar_count">
@@ -696,6 +704,8 @@
     <string name="settings_time_clock_24h">24 giờ</string>
     <string name="settings_time_clock_label">Đồng hồ</string>
     <string name="settings_time_section">Thời gian</string>
+    <string name="settings_timing_section">Lập kế hoạch</string>
+    <string name="settings_timing_title">Thời gian và thông báo</string>
     <string name="settings_updates_auto_check">Tự động kiểm tra cập nhật</string>
     <string name="settings_updates_check_button">Kiểm tra</string>
     <string name="settings_updates_check_failed">Kiểm tra cập nhật không thành công</string>
@@ -1366,7 +1376,7 @@
     <string name="web_home_hero_read_guide">Đọc hướng dẫn</string>
     <string name="web_home_hero_title">Nhắc nhở, Bài tập, Sự kiện và Kế hoạch trong một không gian làm việc</string>
     <string name="web_home_meta_description">KnotQ là một không gian làm việc lên kế hoạch cục bộ-trước tiên nơi các ghi chú có cấu trúc trở thành tác vụ, hạn chót, nhắc nhở và sự kiện lịch.</string>
-    <string name="web_home_meta_title">KnotQ — Nhắc nhở, bài tập, sự kiện và kế hoạch trong một không gian làm việc</string>
+    <string name="web_home_meta_title">KnotQ: lịch và trình lập kế hoạch tổ chức</string>
     <string name="web_home_pitch_eyebrow">Tại sao KnotQ</string>
     <string name="web_home_pitch_tile1_body">Kế hoạch từ mọi lược đồ, cộng với Lịch Google của bạn, trong một chế độ xem tuần.</string>
     <string name="web_home_pitch_tile1_title">Một lịch cho mọi thứ</string>

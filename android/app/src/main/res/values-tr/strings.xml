@@ -527,6 +527,7 @@
     <string name="mobile_sync_callback_state_mismatch">Oturum açma doğrulanamadı. Lütfen tekrar deneyin.</string>
     <string name="mobile_sync_cancelled_detail">Senkronizasyon, fatura döneminin sonuna kadar etkin kalır. Devam etmesini sağlamak için yeniden etkinleştirin.</string>
     <string name="mobile_sync_code_hint_label">Kod</string>
+    <string name="mobile_sync_coming_soon_detail">Senkronizasyon KnotQ masaüstü uygulamasında mevcut ve yakında buraya da geliyor. Bu arada çalışmalarınız bu cihazda kaydedilir.</string>
     <string name="mobile_sync_continue_in_browser">Tarayıcınızda devam edin.</string>
     <string name="mobile_sync_create_account">Hesap oluştur</string>
     <string name="mobile_sync_delete_account">Hesabı Sil</string>
@@ -655,6 +656,13 @@
     <string name="settings_calendar_view_label">Görünüm</string>
     <string name="settings_calendar_view_month">Ay</string>
     <string name="settings_calendar_view_week">Hafta</string>
+    <string name="settings_display_lookahead_footer">Her türün Yaklaşan bölümünde ne kadar önceden görüneceğini seçin. Bu aralıkların dışındaki takvim etkinlikleri takvimde kullanılabilir kalır.</string>
+    <string name="settings_display_maximum_items">En fazla öğe sayısı</string>
+    <string name="settings_display_restore_defaults">Varsayılanları geri yükle</string>
+    <string name="settings_display_show_completed">Tamamlanmış öğeleri göster</string>
+    <string name="settings_display_show_overdue">Gecikmiş öğeleri göster</string>
+    <string name="settings_display_upcoming_section">Yaklaşan için ileri görünüm</string>
+    <string name="settings_display_visibility_section">Görünürlük</string>
     <string name="settings_google_calendar_accounts_heading">Hesaplar</string>
     <string name="settings_google_calendar_accounts_offline_notice">Yerel Google hesabı kimlik bilgileri yok. Aşağıdaki takvimler yeniden bağlanana kadar çevrimdışı kalacaktır.</string>
     <plurals name="settings_google_calendar_calendar_count">
@@ -713,6 +721,8 @@
     <string name="settings_time_clock_24h">24 saatlik</string>
     <string name="settings_time_clock_label">Saat</string>
     <string name="settings_time_section">Zaman</string>
+    <string name="settings_timing_section">Planlama</string>
+    <string name="settings_timing_title">Zamanlama ve bildirimler</string>
     <string name="settings_updates_auto_check">Güncellemeleri otomatik olarak kontrol et</string>
     <string name="settings_updates_check_button">Kontrol Et</string>
     <string name="settings_updates_check_failed">Güncelleme kontrolü başarısız oldu</string>
@@ -1387,7 +1397,7 @@
     <string name="web_home_hero_read_guide">Rehberi Oku</string>
     <string name="web_home_hero_title">Bir Çalışma Alanında Hatırlatıcılar, Ödevler, Etkinlikler ve Planlar</string>
     <string name="web_home_meta_description">KnotQ, yapılandırılmış notların görevler, son tarihler, hatırlatıcılar ve takvim etkinlikleri haline geldiği yerel-ilk bir masaüstü planlama çalışma alanıdır.</string>
-    <string name="web_home_meta_title">KnotQ — Bir çalışma alanında hatırlatıcılar, ödevler, etkinlikler ve planlar</string>
+    <string name="web_home_meta_title">KnotQ: takvim ve organizasyon planlayıcı</string>
     <string name="web_home_pitch_eyebrow">Neden KnotQ</string>
     <string name="web_home_pitch_tile1_body">Her şemadan planlar, artı Google Takvim\'iniz, tek bir hafta görünümünde.</string>
     <string name="web_home_pitch_tile1_title">Her Şey İçin Bir Takvim</string>

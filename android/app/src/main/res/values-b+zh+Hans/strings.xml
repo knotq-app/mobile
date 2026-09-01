@@ -515,6 +515,7 @@
     <string name="mobile_sync_callback_state_mismatch">登录无法验证。请重试。</string>
     <string name="mobile_sync_cancelled_detail">同步保持活跃直到计费周期结束。重新启用以保持它。</string>
     <string name="mobile_sync_code_hint_label">代码</string>
+    <string name="mobile_sync_coming_soon_detail">同步已在 KnotQ 桌面应用中提供，即将登陆此应用。在此期间，您的内容会保存在本设备上。</string>
     <string name="mobile_sync_continue_in_browser">在浏览器中继续。</string>
     <string name="mobile_sync_create_account">创建账户</string>
     <string name="mobile_sync_delete_account">删除账户</string>
@@ -639,6 +640,13 @@
     <string name="settings_calendar_view_label">视图</string>
     <string name="settings_calendar_view_month">月</string>
     <string name="settings_calendar_view_week">周</string>
+    <string name="settings_display_lookahead_footer">选择每种类型要提前多久显示在即将到来的列表中。超出这些范围的日历事件仍可在日历中查看。</string>
+    <string name="settings_display_maximum_items">最大项目数</string>
+    <string name="settings_display_restore_defaults">恢复默认设置</string>
+    <string name="settings_display_show_completed">显示已完成项目</string>
+    <string name="settings_display_show_overdue">显示逾期项目</string>
+    <string name="settings_display_upcoming_section">即将到来的预览范围</string>
+    <string name="settings_display_visibility_section">可见性</string>
     <string name="settings_google_calendar_accounts_heading">账户</string>
     <string name="settings_google_calendar_accounts_offline_notice">没有本地 Google 账户凭据。下面的日历将保持离线直到您重新连接。</string>
     <plurals name="settings_google_calendar_calendar_count">
@@ -696,6 +704,8 @@
     <string name="settings_time_clock_24h">24 小时制</string>
     <string name="settings_time_clock_label">时制</string>
     <string name="settings_time_section">时间</string>
+    <string name="settings_timing_section">规划</string>
+    <string name="settings_timing_title">时间与通知</string>
     <string name="settings_updates_auto_check">自动检查更新</string>
     <string name="settings_updates_check_button">检查</string>
     <string name="settings_updates_check_failed">更新检查失败</string>
@@ -1366,7 +1376,7 @@
     <string name="web_home_hero_read_guide">阅读指南</string>
     <string name="web_home_hero_title">提醒、分配、事件和计划在一个工作区中</string>
     <string name="web_home_meta_description">KnotQ 是一个本地优先的桌面规划工作区，其中结构化笔记变成任务、截止日期、提醒和日历事件。</string>
-    <string name="web_home_meta_title">KnotQ — 提醒、分配、事件和计划在一个工作区中</string>
+    <string name="web_home_meta_title">KnotQ：日历与整理规划工具</string>
     <string name="web_home_pitch_eyebrow">为什么选择 KnotQ</string>
     <string name="web_home_pitch_tile1_body">来自每个方案的计划加上您的 Google Calendar，在一个周视图中。</string>
     <string name="web_home_pitch_tile1_title">一个日历用于所有事项</string>
