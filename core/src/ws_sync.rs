@@ -116,6 +116,13 @@ impl<'a> FallbackTransport<'a> {
     pub(crate) fn new(ws: Option<&'a WsClient>, http: &'a MobileSyncHttpClient) -> Self {
         Self { ws, http }
     }
+
+    /// Used by an explicit user resync. A WebSocket retained across suspension
+    /// can briefly report connected while it is no longer a reliable transport;
+    /// an HTTP pull gives that action a deterministic path to the backend.
+    pub(crate) fn http_only(http: &'a MobileSyncHttpClient) -> Self {
+        Self { ws: None, http }
+    }
 }
 
 impl SyncTransport for FallbackTransport<'_> {

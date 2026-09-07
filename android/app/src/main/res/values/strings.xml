@@ -528,6 +528,7 @@
     <string name="mobile_sync_callback_state_mismatch">Sign-in could not be verified. Please try again.</string>
     <string name="mobile_sync_cancelled_detail">Sync stays active until your billing period ends. Re-enable to keep it.</string>
     <string name="mobile_sync_code_hint_label">Code</string>
+    <string name="mobile_sync_coming_soon_detail">Sync is available in the KnotQ desktop app and is coming to this one soon. Your work is saved on this device in the meantime.</string>
     <string name="mobile_sync_continue_in_browser">Continue in your browser.</string>
     <string name="mobile_sync_create_account">Create account</string>
     <string name="mobile_sync_delete_account">Delete Account</string>
@@ -656,6 +657,13 @@
     <string name="settings_calendar_view_label">View</string>
     <string name="settings_calendar_view_month">Month</string>
     <string name="settings_calendar_view_week">Week</string>
+    <string name="settings_display_lookahead_footer">Choose how far ahead each kind appears in Upcoming. Calendar events outside these ranges remain available in the calendar.</string>
+    <string name="settings_display_maximum_items">Maximum items</string>
+    <string name="settings_display_restore_defaults">Restore Defaults</string>
+    <string name="settings_display_show_completed">Show completed items</string>
+    <string name="settings_display_show_overdue">Show overdue items</string>
+    <string name="settings_display_upcoming_section">Upcoming lookahead</string>
+    <string name="settings_display_visibility_section">Visibility</string>
     <string name="settings_google_calendar_accounts_heading">Accounts</string>
     <string name="settings_google_calendar_accounts_offline_notice">No local Google account credentials. Calendars below will stay offline until you reconnect.</string>
     <plurals name="settings_google_calendar_calendar_count">
@@ -714,6 +722,8 @@
     <string name="settings_time_clock_24h">24-hour</string>
     <string name="settings_time_clock_label">Clock</string>
     <string name="settings_time_section">Time</string>
+    <string name="settings_timing_section">Planning</string>
+    <string name="settings_timing_title">Timing and Notifications</string>
     <string name="settings_updates_auto_check">Automatically check for updates</string>
     <string name="settings_updates_check_button">Check</string>
     <string name="settings_updates_check_failed">Update check failed</string>

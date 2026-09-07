@@ -1018,7 +1018,7 @@ import kotlin.math.roundToInt
                             leftAction = { startGooglePlaySubscribe() }
                         }
                         else -> {
-                            leftLabel = if (syncInProgress) L10n.t(this@syncSettingsCard, "sync.action.resyncing") else L10n.t(this@syncSettingsCard, "sync.action.resync"); leftPrimary = false; leftAction = { syncOnce() }
+                            leftLabel = if (syncInProgress) L10n.t(this@syncSettingsCard, "sync.action.resyncing") else L10n.t(this@syncSettingsCard, "sync.action.resync"); leftPrimary = false; leftAction = { syncOnce(force = true) }
                         }
                     }
                     addView(syncCardButton(leftLabel, primary = leftPrimary, listener = leftAction),

@@ -551,6 +551,7 @@
     <string name="mobile_sync_callback_state_mismatch">Вхід не вдалося перевірити. Будь ласка, спробуйте ще раз.</string>
     <string name="mobile_sync_cancelled_detail">Синхронізація залишається активною до завершення вашого періоду виставлення рахунків. Повторно ввімкніть, щоб зберегти її.</string>
     <string name="mobile_sync_code_hint_label">Код</string>
+    <string name="mobile_sync_coming_soon_detail">Синхронізація доступна в настільному застосунку KnotQ і незабаром з\'явиться тут. А поки ваша робота зберігається на цьому пристрої.</string>
     <string name="mobile_sync_continue_in_browser">Продовжіть у своєму браузері.</string>
     <string name="mobile_sync_create_account">Створити обліковий запис</string>
     <string name="mobile_sync_delete_account">Видалити обліковий запис</string>
@@ -687,6 +688,13 @@
     <string name="settings_calendar_view_label">Вигляд</string>
     <string name="settings_calendar_view_month">Місяць</string>
     <string name="settings_calendar_view_week">Тиждень</string>
+    <string name="settings_display_lookahead_footer">Виберіть, наскільки заздалегідь кожен тип з\'являється в розділі «Майбутнє». Події календаря поза цими діапазонами залишаються доступними в календарі.</string>
+    <string name="settings_display_maximum_items">Максимум елементів</string>
+    <string name="settings_display_restore_defaults">Відновити значення за замовчуванням</string>
+    <string name="settings_display_show_completed">Показувати завершені елементи</string>
+    <string name="settings_display_show_overdue">Показувати прострочені елементи</string>
+    <string name="settings_display_upcoming_section">Горизонт розділу «Майбутнє»</string>
+    <string name="settings_display_visibility_section">Видимість</string>
     <string name="settings_google_calendar_accounts_heading">Облікові записи</string>
     <string name="settings_google_calendar_accounts_offline_notice">Немає локальних облікових даних Google. Календарі нижче залишатимуться в режимі офлайн, доки ви не повторно підключитеся.</string>
     <plurals name="settings_google_calendar_calendar_count">
@@ -747,6 +755,8 @@
     <string name="settings_time_clock_24h">24-годинний</string>
     <string name="settings_time_clock_label">Час</string>
     <string name="settings_time_section">Час</string>
+    <string name="settings_timing_section">Планування</string>
+    <string name="settings_timing_title">Час і сповіщення</string>
     <string name="settings_updates_auto_check">Автоматично перевіряти оновлення</string>
     <string name="settings_updates_check_button">Перевірити</string>
     <string name="settings_updates_check_failed">Помилка при перевірці оновлення</string>
@@ -1429,7 +1439,7 @@
     <string name="web_home_hero_read_guide">Прочитайте посібник</string>
     <string name="web_home_hero_title">Нагадування, завдання, события та плани в одному робочому просторі</string>
     <string name="web_home_meta_description">KnotQ — це локальний робочий простір планування, де структуровані нотатки стають завданнями, крайніми термінами, нагадуваннями та подіями календаря.</string>
-    <string name="web_home_meta_title">KnotQ — Нагадування, завдання, события та плани в одному робочому просторі</string>
+    <string name="web_home_meta_title">KnotQ: календар і планувальник організації</string>
     <string name="web_home_pitch_eyebrow">Чому KnotQ</string>
     <string name="web_home_pitch_tile1_body">Плани з кожної схеми, плюс ваш Google Календар, в одному тижневому представленні.</string>
     <string name="web_home_pitch_tile1_title">Один календар для всього</string>

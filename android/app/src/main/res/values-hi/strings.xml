@@ -527,6 +527,7 @@
     <string name="mobile_sync_callback_state_mismatch">साइन-इन को सत्यापित नहीं किया जा सका। कृपया फिर से प्रयास करें।</string>
     <string name="mobile_sync_cancelled_detail">सिंक आपकी बिलिंग अवधि समाप्त होने तक सक्रिय रहता है। इसे रखने के लिए फिर से सक्षम करें।</string>
     <string name="mobile_sync_code_hint_label">कोड</string>
+    <string name="mobile_sync_coming_soon_detail">सिंक KnotQ डेस्कटॉप ऐप में उपलब्ध है और जल्द ही यहां भी आ रहा है। तब तक आपका काम इसी डिवाइस पर सहेजा जाता है।</string>
     <string name="mobile_sync_continue_in_browser">अपने ब्राउज़र में जारी रखें।</string>
     <string name="mobile_sync_create_account">खाता बनाएं</string>
     <string name="mobile_sync_delete_account">खाता हटाएं</string>
@@ -655,6 +656,13 @@
     <string name="settings_calendar_view_label">दृश्य</string>
     <string name="settings_calendar_view_month">महीना</string>
     <string name="settings_calendar_view_week">सप्ताह</string>
+    <string name="settings_display_lookahead_footer">चुनें कि प्रत्येक प्रकार आने वाला अनुभाग में कितना पहले दिखाई देता है। इन श्रेणियों के बाहर के कैलेंडर ईवेंट कैलेंडर में उपलब्ध रहते हैं।</string>
+    <string name="settings_display_maximum_items">अधिकतम आइटम</string>
+    <string name="settings_display_restore_defaults">डिफ़ॉल्ट पुनर्स्थापित करें</string>
+    <string name="settings_display_show_completed">पूर्ण किए गए आइटम दिखाएं</string>
+    <string name="settings_display_show_overdue">देरी से चल रहे आइटम दिखाएं</string>
+    <string name="settings_display_upcoming_section">आने वाला के लिए पूर्वावधि</string>
+    <string name="settings_display_visibility_section">दृश्यता</string>
     <string name="settings_google_calendar_accounts_heading">खाते</string>
     <string name="settings_google_calendar_accounts_offline_notice">कोई स्थानीय Google खाता क्रेडेंशियल नहीं। नीचे दिए गए कैलेंडर तब तक ऑफ़लाइन रहेंगे जब तक आप फिर से कनेक्ट न करें।</string>
     <plurals name="settings_google_calendar_calendar_count">
@@ -713,6 +721,8 @@
     <string name="settings_time_clock_24h">24-घंटा</string>
     <string name="settings_time_clock_label">घड़ी</string>
     <string name="settings_time_section">समय</string>
+    <string name="settings_timing_section">नियोजन</string>
+    <string name="settings_timing_title">समय और सूचनाएं</string>
     <string name="settings_updates_auto_check">स्वचालित रूप से अपडेट की जांच करें</string>
     <string name="settings_updates_check_button">जांचें</string>
     <string name="settings_updates_check_failed">अपडेट की जांच विफल</string>
@@ -1387,7 +1397,7 @@
     <string name="web_home_hero_read_guide">गाइड पढ़ें</string>
     <string name="web_home_hero_title">एक वर्कस्पेस में रिमाइंडर, असाइनमेंट, इवेंट, और योजनाएं</string>
     <string name="web_home_meta_description">KnotQ एक स्थानीय-प्रथम डेस्कटॉप योजना वर्कस्पेस है जहां संरचित नोट्स कार्य, समय सीमा, रिमाइंडर, और कैलेंडर इवेंट बन जाते हैं।</string>
-    <string name="web_home_meta_title">KnotQ — एक वर्कस्पेस में रिमाइंडर, असाइनमेंट, इवेंट, और योजनाएं</string>
+    <string name="web_home_meta_title">KnotQ: कैलेंडर और संगठन प्लानर</string>
     <string name="web_home_pitch_eyebrow">KnotQ क्यों</string>
     <string name="web_home_pitch_tile1_body">हर योजना से योजनाएं, साथ ही आपका Google कैलेंडर, एक सप्ताह के दृश्य में।</string>
     <string name="web_home_pitch_tile1_title">सब कुछ के लिए एक कैलेंडर</string>

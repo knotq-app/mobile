@@ -515,6 +515,7 @@
     <string name="mobile_sync_callback_state_mismatch">ไม่สามารถยืนยันการลงชื่อเข้า โปรดลองอีกครั้ง</string>
     <string name="mobile_sync_cancelled_detail">การซิงค์จะยังคงใช้งานจนกว่าระยะเวลาการเรียกเก็บเงินของคุณจะสิ้นสุด เปิดใช้งานอีกครั้งเพื่อเก็บไว้</string>
     <string name="mobile_sync_code_hint_label">รหัส</string>
+    <string name="mobile_sync_coming_soon_detail">การซิงค์พร้อมใช้งานในแอป KnotQ บนเดสก์ท็อป และจะมาถึงที่นี่เร็ว ๆ นี้ ในระหว่างนี้งานของคุณจะถูกบันทึกไว้บนอุปกรณ์นี้</string>
     <string name="mobile_sync_continue_in_browser">ดำเนินการต่อในเบราว์เซอร์ของคุณ</string>
     <string name="mobile_sync_create_account">สร้างบัญชี</string>
     <string name="mobile_sync_delete_account">ลบบัญชี</string>
@@ -639,6 +640,13 @@
     <string name="settings_calendar_view_label">มุมมอง</string>
     <string name="settings_calendar_view_month">เดือน</string>
     <string name="settings_calendar_view_week">สัปดาห์</string>
+    <string name="settings_display_lookahead_footer">เลือกว่าแต่ละประเภทจะแสดงล่วงหน้านานเท่าใดในรายการที่กำลังจะมาถึง กิจกรรมปฏิทินที่อยู่นอกช่วงเหล่านี้ยังคงใช้งานได้ในปฏิทิน</string>
+    <string name="settings_display_maximum_items">จำนวนรายการสูงสุด</string>
+    <string name="settings_display_restore_defaults">คืนค่าเริ่มต้น</string>
+    <string name="settings_display_show_completed">แสดงรายการที่เสร็จแล้ว</string>
+    <string name="settings_display_show_overdue">แสดงรายการที่ล้าหลัง</string>
+    <string name="settings_display_upcoming_section">ระยะล่วงหน้าของรายการที่กำลังจะมาถึง</string>
+    <string name="settings_display_visibility_section">การมองเห็น</string>
     <string name="settings_google_calendar_accounts_heading">บัญชี</string>
     <string name="settings_google_calendar_accounts_offline_notice">ไม่มีข้อมูลประจำตัวบัญชี Google ในเครื่อง ปฏิทินด้านล่างจะยังคงออฟไลน์จนกว่าคุณจะเชื่อมต่ออีกครั้ง</string>
     <plurals name="settings_google_calendar_calendar_count">
@@ -696,6 +704,8 @@
     <string name="settings_time_clock_24h">24 ชั่วโมง</string>
     <string name="settings_time_clock_label">นาฬิกา</string>
     <string name="settings_time_section">เวลา</string>
+    <string name="settings_timing_section">การวางแผน</string>
+    <string name="settings_timing_title">เวลาและการแจ้งเตือน</string>
     <string name="settings_updates_auto_check">ตรวจสอบการอัปเดตโดยอัตโนมัติ</string>
     <string name="settings_updates_check_button">ตรวจสอบ</string>
     <string name="settings_updates_check_failed">ตรวจสอบการอัปเดตล้มเหลว</string>
@@ -1366,7 +1376,7 @@
     <string name="web_home_hero_read_guide">อ่านคำแนะนำ</string>
     <string name="web_home_hero_title">การเตือน งาน เหตุการณ์ และแผนในพื้นที่ทำงานเดียว</string>
     <string name="web_home_meta_description">KnotQ เป็นพื้นที่ทำงานการวางแผนที่เป็นเครื่องหมายแรกท้องถิ่นซึ่งหมายเหตุที่มีโครงสร้างกลายเป็นงาน เส้นตาย การเตือน และเหตุการณ์ปฏิทิน</string>
-    <string name="web_home_meta_title">KnotQ — การเตือน งาน เหตุการณ์ และแผนในพื้นที่ทำงานเดียว</string>
+    <string name="web_home_meta_title">KnotQ: ปฏิทินและตัววางแผนการจัดระเบียบ</string>
     <string name="web_home_pitch_eyebrow">ทำไมถึง KnotQ</string>
     <string name="web_home_pitch_tile1_body">แผนจากทุกโครงการ บวกกับ Google Calendar ของคุณ ในมุมมองสัปดาห์เดียว</string>
     <string name="web_home_pitch_tile1_title">ปฏิทินหนึ่งเรื่องสำหรับทุกสิ่ง</string>

@@ -348,9 +348,6 @@ struct SyncSettingsCard: View {
                 }
                 .disabled(model.purchaseInProgress)
             }
-            Button(L10n.t("mobile.sync.sign_out")) {
-                model.signOutSync()
-            }
             if model.syncSession?.supportsSync == true {
                 if model.subscriptionCancelled {
                     Button(L10n.t("mobile.sync.reenable_subscription")) {
@@ -364,6 +361,12 @@ struct SyncSettingsCard: View {
                 }
             }
             #endif
+            // Sign-out is account/session housekeeping, not a StoreKit action.
+            // Keep it available in accounts-only builds as well, so a stalled
+            // transport can be reset without deleting local workspace data.
+            Button(L10n.t("mobile.sync.sign_out")) {
+                model.signOutSync()
+            }
             Button(L10n.t("mobile.sync.delete_account"), role: .destructive) {
                 showingDeleteAccount = true
             }
@@ -385,7 +388,7 @@ struct SyncSettingsCard: View {
 
     private var checkStatusButton: some View {
         Button {
-            Task { await model.refreshEntitlement() }
+            Task { await model.manualResync() }
         } label: {
             if model.syncInProgress {
                 HStack(spacing: 6) {

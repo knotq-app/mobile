@@ -575,6 +575,7 @@
     <string name="mobile_sync_callback_state_mismatch">لم يتمكن من التحقق من التسجيل. الرجاء المحاولة مرة أخرى.</string>
     <string name="mobile_sync_cancelled_detail">تبقى المزامنة نشطة حتى نهاية فترة فواتيرك. أعد التمكين للاحتفاظ بها.</string>
     <string name="mobile_sync_code_hint_label">الرمز</string>
+    <string name="mobile_sync_coming_soon_detail">المزامنة متاحة في تطبيق KnotQ لسطح المكتب وستصل إلى هنا قريباً. في هذه الأثناء، يُحفظ عملك على هذا الجهاز.</string>
     <string name="mobile_sync_continue_in_browser">المتابعة في متصفحك.</string>
     <string name="mobile_sync_create_account">إنشاء حساب</string>
     <string name="mobile_sync_delete_account">حذف الحساب</string>
@@ -719,6 +720,13 @@
     <string name="settings_calendar_view_label">العرض</string>
     <string name="settings_calendar_view_month">الشهر</string>
     <string name="settings_calendar_view_week">الأسبوع</string>
+    <string name="settings_display_lookahead_footer">اختر مدى استباق ظهور كل نوع في «القادم». تظل أحداث التقويم خارج هذه النطاقات متاحة في التقويم.</string>
+    <string name="settings_display_maximum_items">الحد الأقصى للعناصر</string>
+    <string name="settings_display_restore_defaults">استعادة الإعدادات الافتراضية</string>
+    <string name="settings_display_show_completed">إظهار العناصر المكتملة</string>
+    <string name="settings_display_show_overdue">إظهار العناصر المتأخرة</string>
+    <string name="settings_display_upcoming_section">مدى الاستباق في «القادم»</string>
+    <string name="settings_display_visibility_section">إمكانية الظهور</string>
     <string name="settings_google_calendar_accounts_heading">الحسابات</string>
     <string name="settings_google_calendar_accounts_offline_notice">لا توجد بيانات اعتماد حساب Google محلية. ستبقى التقاويم أدناه غير متصلة حتى تعيد الاتصال.</string>
     <plurals name="settings_google_calendar_calendar_count">
@@ -781,6 +789,8 @@
     <string name="settings_time_clock_24h">24 ساعة</string>
     <string name="settings_time_clock_label">الساعة</string>
     <string name="settings_time_section">الوقت</string>
+    <string name="settings_timing_section">التخطيط</string>
+    <string name="settings_timing_title">التوقيت والإشعارات</string>
     <string name="settings_updates_auto_check">التحقق التلقائي من التحديثات</string>
     <string name="settings_updates_check_button">تحقق</string>
     <string name="settings_updates_check_failed">فشل التحقق من التحديثات</string>
@@ -1471,7 +1481,7 @@
     <string name="web_home_hero_read_guide">اقرأ الدليل</string>
     <string name="web_home_hero_title">التذكيرات والمهام والأحداث والخطط في مساحة عمل واحدة</string>
     <string name="web_home_meta_description">KnotQ مساحة عمل تخطيط محلية أولاً حيث تصبح الملاحظات المنظمة مهام وآجال نهائية وتذكيرات وأحداث تقويم.</string>
-    <string name="web_home_meta_title">KnotQ — التذكيرات والمهام والأحداث والخطط في مساحة عمل واحدة</string>
+    <string name="web_home_meta_title">‏KnotQ: تقويم ومخطط تنظيمي</string>
     <string name="web_home_pitch_eyebrow">لماذا KnotQ</string>
     <string name="web_home_pitch_tile1_body">خطط من كل خطة، بالإضافة إلى Google Calendar، في عرض أسبوع واحد.</string>
     <string name="web_home_pitch_tile1_title">تقويم واحد لكل شيء</string>

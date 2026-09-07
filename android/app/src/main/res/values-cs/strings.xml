@@ -539,6 +539,7 @@
     <string name="mobile_sync_callback_state_mismatch">Přihlášení nelze ověřit. Prosím, zkuste to znovu.</string>
     <string name="mobile_sync_cancelled_detail">Synchronizace zůstane aktivní do konce vašeho fakturačního období. Znovu ji povolte, aby zůstala.</string>
     <string name="mobile_sync_code_hint_label">Kód</string>
+    <string name="mobile_sync_coming_soon_detail">Synchronizace je dostupná v desktopové aplikaci KnotQ a brzy dorazí i sem. Mezitím se vaše práce ukládá do tohoto zařízení.</string>
     <string name="mobile_sync_continue_in_browser">Pokračujte v prohlížeči.</string>
     <string name="mobile_sync_create_account">Vytvořit účet</string>
     <string name="mobile_sync_delete_account">Smazat účet</string>
@@ -671,6 +672,13 @@
     <string name="settings_calendar_view_label">Zobrazení</string>
     <string name="settings_calendar_view_month">Měsíc</string>
     <string name="settings_calendar_view_week">Týden</string>
+    <string name="settings_display_lookahead_footer">Zvolte, jak daleko dopředu se každý typ zobrazí v sekci Nadcházející. Události kalendáře mimo tyto rozsahy zůstávají dostupné v kalendáři.</string>
+    <string name="settings_display_maximum_items">Maximální počet položek</string>
+    <string name="settings_display_restore_defaults">Obnovit výchozí nastavení</string>
+    <string name="settings_display_show_completed">Zobrazit dokončené položky</string>
+    <string name="settings_display_show_overdue">Zobrazit položky po splatnosti</string>
+    <string name="settings_display_upcoming_section">Předstih sekce Nadcházející</string>
+    <string name="settings_display_visibility_section">Viditelnost</string>
     <string name="settings_google_calendar_accounts_heading">Účty</string>
     <string name="settings_google_calendar_accounts_offline_notice">Žádné místní přihlašovací údaje k účtu Google. Kalendáře níže zůstanou offline, dokud se znovu nepřipojíte.</string>
     <plurals name="settings_google_calendar_calendar_count">
@@ -730,6 +738,8 @@
     <string name="settings_time_clock_24h">24hodinový</string>
     <string name="settings_time_clock_label">Čas</string>
     <string name="settings_time_section">Čas</string>
+    <string name="settings_timing_section">Plánování</string>
+    <string name="settings_timing_title">Časy a oznámení</string>
     <string name="settings_updates_auto_check">Automaticky kontrolovat aktualizace</string>
     <string name="settings_updates_check_button">Zkontrolovat</string>
     <string name="settings_updates_check_failed">Kontrola aktualizace se nezdařila</string>
@@ -1408,7 +1418,7 @@
     <string name="web_home_hero_read_guide">Přečtěte si průvodce</string>
     <string name="web_home_hero_title">Připomenutí, úkoly, události a plány v jednom pracovním prostoru</string>
     <string name="web_home_meta_description">KnotQ je místně první desktopový plánovací pracovní prostor, kde se strukturované poznámky stávají úkoly, termíny, připomenutí a událostmi kalendáře.</string>
-    <string name="web_home_meta_title">KnotQ — Připomenutí, úkoly, události a plány v jednom pracovním prostoru</string>
+    <string name="web_home_meta_title">KnotQ: kalendář a plánovač organizace</string>
     <string name="web_home_pitch_eyebrow">Proč KnotQ</string>
     <string name="web_home_pitch_tile1_body">Plány ze všech schémat plus váš Kalendář Google v jednom pohledu na týden.</string>
     <string name="web_home_pitch_tile1_title">Jeden kalendář pro všechno</string>

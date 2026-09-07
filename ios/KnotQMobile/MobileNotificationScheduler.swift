@@ -231,6 +231,35 @@ final class MobileNotificationScheduler: NSObject, UNUserNotificationCenterDeleg
         if !stale.isEmpty {
             center.removePendingNotificationRequests(withIdentifiers: stale)
         }
+
+        await sweepExpiredDeliveredNotifications()
+    }
+
+    /// Drop delivered banners for events whose end time has already passed.
+    ///
+    /// iOS has no per-notification TTL, so a fired event banner sits in
+    /// Notification Center until something removes it. The core's
+    /// `delivered_notifications_to_clear` covers this on a foreground open or a
+    /// background wake, but those can be hours apart. Every reschedule (a synced
+    /// edit, a debounced local edit) also runs this cheap self-check against the
+    /// `end_at` each notification carries in its own `userInfo`, so an ended
+    /// event clears at the next schedule touch without a core round-trip.
+    @MainActor
+    func sweepExpiredDeliveredNotifications() async {
+        let now = Date()
+        let expired = await center.deliveredNotifications().compactMap { delivered -> String? in
+            let id = delivered.request.identifier
+            guard id.hasPrefix("knotq-") else { return nil }
+            let info = delivered.request.content.userInfo
+            guard (info["kind"] as? String) == "event" else { return nil }
+            guard let endRaw = info["end_at"] as? String, !endRaw.isEmpty,
+                  let end = iso.date(from: endRaw)
+            else { return nil }
+            return end <= now ? id : nil
+        }
+        if !expired.isEmpty {
+            center.removeDeliveredNotifications(withIdentifiers: expired)
+        }
     }
 
     /// Tear down delivered (and any still-pending) notifications the core has

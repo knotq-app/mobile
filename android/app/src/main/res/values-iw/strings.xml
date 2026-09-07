@@ -539,6 +539,7 @@
     <string name="mobile_sync_callback_state_mismatch">לא ניתן לאמת את ההכניסה. בואו נסה שוב.</string>
     <string name="mobile_sync_cancelled_detail">סנכרון נשאר פעיל עד סוף תקופת החיוב שלך. הפעל מחדש כדי לשמור על זה.</string>
     <string name="mobile_sync_code_hint_label">קוד</string>
+    <string name="mobile_sync_coming_soon_detail">סנכרון זמין באפליקציית שולחן העבודה של KnotQ ויגיע לכאן בקרוב. בינתיים, העבודה שלך נשמרת במכשיר זה.</string>
     <string name="mobile_sync_continue_in_browser">המשך בדפדפן שלך.</string>
     <string name="mobile_sync_create_account">צור חשבון</string>
     <string name="mobile_sync_delete_account">מחק חשבון</string>
@@ -671,6 +672,13 @@
     <string name="settings_calendar_view_label">תצוגה</string>
     <string name="settings_calendar_view_month">חודש</string>
     <string name="settings_calendar_view_week">שבוע</string>
+    <string name="settings_display_lookahead_footer">בחר כמה זמן מראש כל סוג מופיע ברשימת הקרובים. אירועי לוח שנה מחוץ לטווחים אלה נשארים זמינים בלוח השנה.</string>
+    <string name="settings_display_maximum_items">מספר פריטים מרבי</string>
+    <string name="settings_display_restore_defaults">שחזר ברירות מחדל</string>
+    <string name="settings_display_show_completed">הצג פריטים שהושלמו</string>
+    <string name="settings_display_show_overdue">הצג פריטים חריגים</string>
+    <string name="settings_display_upcoming_section">טווח קדימה לקרובים</string>
+    <string name="settings_display_visibility_section">נראות</string>
     <string name="settings_google_calendar_accounts_heading">חשבונות</string>
     <string name="settings_google_calendar_accounts_offline_notice">אין פרטי הכניסה של חשבון Google מקומי. לוחות שנה למטה יישארו לא מחוברים עד שתתחבר מחדש.</string>
     <plurals name="settings_google_calendar_calendar_count">
@@ -730,6 +738,8 @@
     <string name="settings_time_clock_24h">24 שעות</string>
     <string name="settings_time_clock_label">שעון</string>
     <string name="settings_time_section">זמן</string>
+    <string name="settings_timing_section">תכנון</string>
+    <string name="settings_timing_title">תזמון והודעות</string>
     <string name="settings_updates_auto_check">בדוק עדכונים באופן אוטומטי</string>
     <string name="settings_updates_check_button">בדוק</string>
     <string name="settings_updates_check_failed">בדיקת העדכון נכשלה</string>
@@ -1408,7 +1418,7 @@
     <string name="web_home_hero_read_guide">קרא את המדריך</string>
     <string name="web_home_hero_title">תזכורות, הקצאות, אירועים ותוכניות במרחב עבודה אחד</string>
     <string name="web_home_meta_description">KnotQ היא מרחב עבודה תכנון מקומי קדם שלו מסמכים מובנים הופכים משימות, דדליינים, תזכורות ופריטי לוח שנה.</string>
-    <string name="web_home_meta_title">KnotQ — תזכורות, הקצאות, אירועים ותוכניות במרחב עבודה אחד</string>
+    <string name="web_home_meta_title">KnotQ: יומן ומתכנן ארגון</string>
     <string name="web_home_pitch_eyebrow">למה KnotQ</string>
     <string name="web_home_pitch_tile1_body">תוכניות מכל סכמה, בתוספת Google Calendar שלך, בתצוגה שבועית יחידה.</string>
     <string name="web_home_pitch_tile1_title">לוח שנה אחד עבור הכל</string>

@@ -515,6 +515,7 @@
     <string name="mobile_sync_callback_state_mismatch">サインインを確認できません。もう一度試してください。</string>
     <string name="mobile_sync_cancelled_detail">同期は請求期間が終わるまでアクティブなままです。有効にして保持します。</string>
     <string name="mobile_sync_code_hint_label">コード</string>
+    <string name="mobile_sync_coming_soon_detail">同期は KnotQ デスクトップアプリで利用でき、こちらにも間もなく対応します。それまでの間、作業内容はこの端末に保存されます。</string>
     <string name="mobile_sync_continue_in_browser">ブラウザで続ける。</string>
     <string name="mobile_sync_create_account">アカウントを作成</string>
     <string name="mobile_sync_delete_account">アカウントを削除</string>
@@ -639,6 +640,13 @@
     <string name="settings_calendar_view_label">ビュー</string>
     <string name="settings_calendar_view_month">月</string>
     <string name="settings_calendar_view_week">週</string>
+    <string name="settings_display_lookahead_footer">各種類が「今後」にどれくらい先まで表示されるかを選択します。この範囲外のカレンダーイベントもカレンダーで引き続き利用できます。</string>
+    <string name="settings_display_maximum_items">項目の最大数</string>
+    <string name="settings_display_restore_defaults">デフォルトに戻す</string>
+    <string name="settings_display_show_completed">完了した項目を表示</string>
+    <string name="settings_display_show_overdue">期限超過の項目を表示</string>
+    <string name="settings_display_upcoming_section">「今後」の先読み期間</string>
+    <string name="settings_display_visibility_section">表示設定</string>
     <string name="settings_google_calendar_accounts_heading">アカウント</string>
     <string name="settings_google_calendar_accounts_offline_notice">ローカル Google アカウント認証情報がありません。以下のカレンダーは再度接続するまでオフラインのままです。</string>
     <plurals name="settings_google_calendar_calendar_count">
@@ -696,6 +704,8 @@
     <string name="settings_time_clock_24h">24時間</string>
     <string name="settings_time_clock_label">時刻</string>
     <string name="settings_time_section">時刻</string>
+    <string name="settings_timing_section">プランニング</string>
+    <string name="settings_timing_title">時間と通知</string>
     <string name="settings_updates_auto_check">自動的に更新を確認</string>
     <string name="settings_updates_check_button">確認</string>
     <string name="settings_updates_check_failed">更新確認に失敗しました</string>
@@ -1366,7 +1376,7 @@
     <string name="web_home_hero_read_guide">ガイドを読む</string>
     <string name="web_home_hero_title">リマインダー、課題、イベント、計画を1つのワークスペースで</string>
     <string name="web_home_meta_description">KnotQはローカルファースト デスクトップ計画ワークスペースで、構造化されたメモはタスク、期限、リマインダー、カレンダーイベントになります。</string>
-    <string name="web_home_meta_title">KnotQ — リマインダー、課題、イベント、計画を1つのワークスペースで</string>
+    <string name="web_home_meta_title">KnotQ：カレンダー＆整理プランナー</string>
     <string name="web_home_pitch_eyebrow">KnotQを選ぶ理由</string>
     <string name="web_home_pitch_tile1_body">すべてのスキームからの計画、およびGoogle Calendarを、1つの週表示に統合します。</string>
     <string name="web_home_pitch_tile1_title">すべてのカレンダー</string>

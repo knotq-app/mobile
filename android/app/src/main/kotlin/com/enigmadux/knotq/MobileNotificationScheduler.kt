@@ -204,6 +204,13 @@ internal object MobileNotificationScheduler {
             builder
                 .setUsesChronometer(true)
                 .setChronometerCountDown(true)
+                // Past the event's end there is no point showing it. Android will
+                // dismiss the banner itself at that moment — no app wake needed,
+                // unlike iOS which has no per-notification TTL and must sweep on
+                // the next foreground/background run. `end_at` is always set for
+                // an event (the core synthesizes one when the item has no
+                // explicit end).
+                .setTimeoutAfter(endAt.toEpochMilli() - now.toEpochMilli())
         }
         snoozeActions.forEach { (action, titleKey) ->
             builder.addAction(notificationAction(appContext, id, action, L10n.t(appContext, titleKey), intent))

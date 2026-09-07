@@ -527,6 +527,7 @@
     <string name="mobile_sync_callback_state_mismatch">Login kunne ikke bekræftes. Prøv igen.</string>
     <string name="mobile_sync_cancelled_detail">Synkronisering forbliver aktiv indtil din faktureringsperiode slutter. Genaktiver for at beholde den.</string>
     <string name="mobile_sync_code_hint_label">Kode</string>
+    <string name="mobile_sync_coming_soon_detail">Synkronisering findes i KnotQ-skrivebordsappen og kommer snart hertil. I mellemtiden gemmes dit arbejde på denne enhed.</string>
     <string name="mobile_sync_continue_in_browser">Fortsæt i din browser.</string>
     <string name="mobile_sync_create_account">Opret konto</string>
     <string name="mobile_sync_delete_account">Slet konto</string>
@@ -655,6 +656,13 @@
     <string name="settings_calendar_view_label">Visning</string>
     <string name="settings_calendar_view_month">Måned</string>
     <string name="settings_calendar_view_week">Uge</string>
+    <string name="settings_display_lookahead_footer">Vælg hvor langt frem hver type vises i Kommende. Kalenderbegivenheder uden for disse intervaller forbliver tilgængelige i kalenderen.</string>
+    <string name="settings_display_maximum_items">Maksimalt antal emner</string>
+    <string name="settings_display_restore_defaults">Gendan standardindstillinger</string>
+    <string name="settings_display_show_completed">Vis fuldførte emner</string>
+    <string name="settings_display_show_overdue">Vis forfaldne emner</string>
+    <string name="settings_display_upcoming_section">Fremsyn for Kommende</string>
+    <string name="settings_display_visibility_section">Synlighed</string>
     <string name="settings_google_calendar_accounts_heading">Konti</string>
     <string name="settings_google_calendar_accounts_offline_notice">Ingen lokale Google-kontooplysninger. Kalenderne herunder forbliver offline, indtil du forbinder igen.</string>
     <plurals name="settings_google_calendar_calendar_count">
@@ -713,6 +721,8 @@
     <string name="settings_time_clock_24h">24-timer</string>
     <string name="settings_time_clock_label">Klokke</string>
     <string name="settings_time_section">Tid</string>
+    <string name="settings_timing_section">Planlægning</string>
+    <string name="settings_timing_title">Tider og notifikationer</string>
     <string name="settings_updates_auto_check">Kontroller automatisk for opdateringer</string>
     <string name="settings_updates_check_button">Tjek</string>
     <string name="settings_updates_check_failed">Opdateringskontrol mislykkedes</string>
@@ -1387,7 +1397,7 @@
     <string name="web_home_hero_read_guide">Læs vejledningen</string>
     <string name="web_home_hero_title">Påmindelser, opgaver, begivenheder og planer på ét arbejdsområde</string>
     <string name="web_home_meta_description">KnotQ er et lokalt-først skrivebordsplanarbejdsområde, hvor strukturerede noter bliver opgaver, deadlines, påmindelser og kalenderhændelser.</string>
-    <string name="web_home_meta_title">KnotQ — Påmindelser, opgaver, begivenheder og planer på ét arbejdsområde</string>
+    <string name="web_home_meta_title">KnotQ: kalender og planlægger til organisering</string>
     <string name="web_home_pitch_eyebrow">Hvorfor KnotQ</string>
     <string name="web_home_pitch_tile1_body">Planer fra ethvert skema plus din Google Calendar i en enkelt ugevisning.</string>
     <string name="web_home_pitch_tile1_title">Én kalender til alt</string>

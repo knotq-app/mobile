@@ -527,6 +527,7 @@
     <string name="mobile_sync_callback_state_mismatch">Aanmelden kon niet worden geverifieerd. Probeer het opnieuw.</string>
     <string name="mobile_sync_cancelled_detail">Synchronisatie blijft actief tot het einde van je factureringsperiode. Schakel dit in om het te behouden.</string>
     <string name="mobile_sync_code_hint_label">Code</string>
+    <string name="mobile_sync_coming_soon_detail">Synchronisatie is beschikbaar in de KnotQ-desktopapp en komt hier binnenkort ook. In de tussentijd wordt je werk op dit apparaat opgeslagen.</string>
     <string name="mobile_sync_continue_in_browser">Ga verder in je browser.</string>
     <string name="mobile_sync_create_account">Account aanmaken</string>
     <string name="mobile_sync_delete_account">Account verwijderen</string>
@@ -655,6 +656,13 @@
     <string name="settings_calendar_view_label">Weergave</string>
     <string name="settings_calendar_view_month">Maand</string>
     <string name="settings_calendar_view_week">Week</string>
+    <string name="settings_display_lookahead_footer">Kies hoe ver vooruit elk type in Aankomend verschijnt. Agenda-afspraken buiten deze bereiken blijven beschikbaar in de agenda.</string>
+    <string name="settings_display_maximum_items">Maximum aantal items</string>
+    <string name="settings_display_restore_defaults">Standaardwaarden herstellen</string>
+    <string name="settings_display_show_completed">Voltooide items tonen</string>
+    <string name="settings_display_show_overdue">Achterstallige items tonen</string>
+    <string name="settings_display_upcoming_section">Vooruitblik van Aankomend</string>
+    <string name="settings_display_visibility_section">Zichtbaarheid</string>
     <string name="settings_google_calendar_accounts_heading">Accounts</string>
     <string name="settings_google_calendar_accounts_offline_notice">Geen lokale Google-accountgegevens. Onderstaande agenda\'s blijven offline tot je ze opnieuw verbindt.</string>
     <plurals name="settings_google_calendar_calendar_count">
@@ -713,6 +721,8 @@
     <string name="settings_time_clock_24h">24-uur</string>
     <string name="settings_time_clock_label">Klok</string>
     <string name="settings_time_section">Tijd</string>
+    <string name="settings_timing_section">Planning</string>
+    <string name="settings_timing_title">Tijden en meldingen</string>
     <string name="settings_updates_auto_check">Automatisch controleren op updates</string>
     <string name="settings_updates_check_button">Controleren</string>
     <string name="settings_updates_check_failed">Updatecontrole mislukt</string>
@@ -1387,7 +1397,7 @@
     <string name="web_home_hero_read_guide">Lees de gids</string>
     <string name="web_home_hero_title">Herinneringen, Taken, Evenementen en Plannen in één werkruimte</string>
     <string name="web_home_meta_description">KnotQ is een desktop-planningswerkruimte die eerst lokaal werkt, waar gestructureerde notities taken, deadlines, herinneringen en agendagebeurtenissen worden.</string>
-    <string name="web_home_meta_title">KnotQ — Herinneringen, taken, evenementen en plannen in één werkruimte</string>
+    <string name="web_home_meta_title">KnotQ: agenda- en organisatieplanner</string>
     <string name="web_home_pitch_eyebrow">Waarom KnotQ</string>
     <string name="web_home_pitch_tile1_body">Plannen uit elk schema, plus je Google Calendar, in één weekweergave.</string>
     <string name="web_home_pitch_tile1_title">Één agenda voor alles</string>

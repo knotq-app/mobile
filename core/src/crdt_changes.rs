@@ -11,6 +11,47 @@ pub(crate) fn mobile_crdt_change_set_for_command(command: &Command) -> Workspace
     changes
 }
 
+/// Whether applying `command` can change what a *peer's* notification schedule
+/// or Upcoming widget shows without necessarily changing the notification-hash
+/// this device pushes — completing an already-past occurrence is the canonical
+/// case (it drops out of the upcoming window, so the hash is stable, but the
+/// peer still needs to cancel a delivered banner and redraw its widget).
+///
+/// Mirrors the desktop's `service_signals_for_command` "recompute" set. When
+/// true, the mobile core sets `background_refresh_required` on the next push so
+/// the backend wakes offline peers even though `notification_schedule_changed`
+/// is false. Plain prose edits to undated items stay out, matching the desktop
+/// gate — peers pick those up on their next foreground/socket sync.
+pub(crate) fn mobile_command_requires_background_refresh(command: &Command) -> bool {
+    match command {
+        Command::ToggleOccurrence { .. }
+        | Command::SetOccurrenceNotificationOffset { .. }
+        | Command::SetItemDate { .. }
+        | Command::SetItemRecurrence { .. }
+        | Command::SetItemMarker { .. }
+        | Command::DeleteItem { .. }
+        | Command::DeleteScheme { .. }
+        | Command::PermanentlyDeleteScheme { .. }
+        | Command::RestoreScheme { .. }
+        | Command::RestoreDeletedScheme { .. }
+        | Command::DeleteFolder { .. }
+        | Command::RestoreDeletedFolder { .. } => true,
+        Command::InsertItem { item, .. } | Command::ReplaceItem { item, .. } => {
+            item.start.is_some() || item.end.is_some()
+        }
+        Command::UpdateItemText { .. } => {
+            // A dated item's text is its notification title; but we don't have
+            // the item here, so be conservative and let the schedule-hash gate
+            // handle a title change (it will differ), keeping undated prose out.
+            false
+        }
+        Command::Batch(commands) => commands
+            .iter()
+            .any(mobile_command_requires_background_refresh),
+        _ => false,
+    }
+}
+
 fn mobile_collect_crdt_changes(command: &Command, out: &mut WorkspaceCrdtChangeSet) {
     match command {
         Command::CreateFolder { .. }

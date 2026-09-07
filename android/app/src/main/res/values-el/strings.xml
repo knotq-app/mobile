@@ -527,6 +527,7 @@
     <string name="mobile_sync_callback_state_mismatch">Η σύνδεση δεν μπορούσε να επιβεβαιωθεί. Δοκιμάστε ξανά.</string>
     <string name="mobile_sync_cancelled_detail">Ο συγχρονισμός παραμένει ενεργός έως το τέλος της περιόδου χρέωσής σας. Επανενεργοποιήστε για να τον διατηρήσετε.</string>
     <string name="mobile_sync_code_hint_label">Κώδικας</string>
+    <string name="mobile_sync_coming_soon_detail">Ο συγχρονισμός είναι διαθέσιμος στην εφαρμογή KnotQ για υπολογιστή και θα έρθει σύντομα και εδώ. Στο μεταξύ, η εργασία σας αποθηκεύεται σε αυτή τη συσκευή.</string>
     <string name="mobile_sync_continue_in_browser">Συνέχεια στο πρόγραμμα περιήγησής σας.</string>
     <string name="mobile_sync_create_account">Δημιουργία λογαριασμού</string>
     <string name="mobile_sync_delete_account">Διαγραφή λογαριασμού</string>
@@ -655,6 +656,13 @@
     <string name="settings_calendar_view_label">Προβολή</string>
     <string name="settings_calendar_view_month">Μήνα</string>
     <string name="settings_calendar_view_week">Εβδομάδα</string>
+    <string name="settings_display_lookahead_footer">Επιλέξτε πόσο νωρίτερα εμφανίζεται κάθε είδος στα Επικείμενα. Τα συμβάντα ημερολογίου εκτός αυτών των ευρών παραμένουν διαθέσιμα στο ημερολόγιο.</string>
+    <string name="settings_display_maximum_items">Μέγιστος αριθμός στοιχείων</string>
+    <string name="settings_display_restore_defaults">Επαναφορά προεπιλογών</string>
+    <string name="settings_display_show_completed">Εμφάνιση ολοκληρωμένων στοιχείων</string>
+    <string name="settings_display_show_overdue">Εμφάνιση ληξιπρόθεσμων στοιχείων</string>
+    <string name="settings_display_upcoming_section">Προεπισκόπηση Επικείμενων</string>
+    <string name="settings_display_visibility_section">Ορατότητα</string>
     <string name="settings_google_calendar_accounts_heading">Λογαριασμοί</string>
     <string name="settings_google_calendar_accounts_offline_notice">Δεν υπάρχουν τοπικά διαπιστευτήρια λογαριασμού Google. Τα ημερολόγια παρακάτω θα παραμείνουν χωρίς σύνδεση έως ότου συνδεθείτε ξανά.</string>
     <plurals name="settings_google_calendar_calendar_count">
@@ -713,6 +721,8 @@
     <string name="settings_time_clock_24h">24ωρη</string>
     <string name="settings_time_clock_label">Ρολόι</string>
     <string name="settings_time_section">Ώρα</string>
+    <string name="settings_timing_section">Σχεδιασμός</string>
+    <string name="settings_timing_title">Ώρες και ειδοποιήσεις</string>
     <string name="settings_updates_auto_check">Αυτόματη έλεγχος για ενημερώσεις</string>
     <string name="settings_updates_check_button">Έλεγχος</string>
     <string name="settings_updates_check_failed">Ο έλεγχος ενημέρωσης απέτυχε</string>
@@ -1387,7 +1397,7 @@
     <string name="web_home_hero_read_guide">Διαβάστε τον οδηγό</string>
     <string name="web_home_hero_title">Υπενθυμίσεις, Αναθέσεις, Γεγονότα και Σχέδια σε έναν χώρο εργασίας</string>
     <string name="web_home_meta_description">Το KnotQ είναι ένας τοπικός χώρος εργασίας σχεδιασμού επιτραπέζιου υπολογιστή όπου δομημένες σημειώσεις γίνονται εργασίες, προθεσμίες, υπενθυμίσεις και γεγονότα ημερολογίου.</string>
-    <string name="web_home_meta_title">KnotQ — Υπενθυμίσεις, αναθέσεις, γεγονότα και σχέδια σε έναν χώρο εργασίας</string>
+    <string name="web_home_meta_title">KnotQ: ημερολόγιο και οργανωτής προγραμματισμού</string>
     <string name="web_home_pitch_eyebrow">Γιατί KnotQ</string>
     <string name="web_home_pitch_tile1_body">Σχέδια από κάθε σχέδιο, συν το Google Calendar, σε μια μόνο προβολή εβδομάδας.</string>
     <string name="web_home_pitch_tile1_title">Ένα ημερολόγιο για τα πάντα</string>
