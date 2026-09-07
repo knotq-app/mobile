@@ -517,6 +517,7 @@ private func paragraphBody(_ paragraph: EditorParagraphRange, in ns: NSString) -
 }
 
 private func plainEdit(paragraph: EditorParagraphRange, meta: LineMeta, ns: NSString) -> MobileItemEdit {
+    let markerValue = meta.markerFamily == "standard" ? meta.marker.rawValue : "\(meta.marker.rawValue).\(meta.markerFamily)"
     // A block line carries no text — its body is the sentinel glyph — so it is
     // sent as content (image/table) which the core stores block-wins.
     if meta.hasBlockContent {
@@ -524,7 +525,7 @@ private func plainEdit(paragraph: EditorParagraphRange, meta: LineMeta, ns: NSSt
         return MobileItemEdit(
             id: meta.itemID,
             text: "",
-            marker: meta.marker.rawValue,
+            marker: markerValue,
             indent: Int32(meta.indent),
             done: meta.done,
             start: meta.start,
@@ -538,7 +539,7 @@ private func plainEdit(paragraph: EditorParagraphRange, meta: LineMeta, ns: NSSt
     return MobileItemEdit(
         id: meta.itemID,
         text: paragraphBody(paragraph, in: ns),
-        marker: meta.marker.rawValue,
+        marker: markerValue,
         indent: Int32(meta.indent),
         done: meta.done,
         start: meta.start,
@@ -641,4 +642,3 @@ func lineRange(from paragraphRange: NSRange, in ns: NSString) -> NSRange {
 func rangesOverlapOrTouch(_ a: NSRange, _ b: NSRange) -> Bool {
     a.location <= NSMaxRange(b) && b.location <= NSMaxRange(a)
 }
-

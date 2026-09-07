@@ -16,7 +16,7 @@ use knotq_notifications::{NotificationLeadTimes, ScheduledNotification};
 use sha2::{Digest, Sha256};
 
 use crate::media_sync::{mobile_item_image_assets, mobile_media_to_item_media};
-use crate::parsing::{parse_datetime_opt, parse_id, parse_marker};
+use crate::parsing::{parse_datetime_opt, parse_id, parse_marker_spec};
 use crate::{
     MobileCellLine, MobileInline, MobileItem, MobileItemMedia, MobileNode,
     MobileNotificationRequest, MobileOccurrence, MobileTable, MobileTableCell, MobileTableColumn,
@@ -36,7 +36,7 @@ impl MobileItem {
         Self {
             id: item.id.to_string(),
             text: item.text(),
-            marker: marker_str(item.marker).to_string(),
+            marker: format!("{}{}", marker_str(item.marker), item.marker_family.as_suffix().map_or(String::new(), |s| format!(".{s}"))),
             indent: i32::from(item.indent),
             kind: item_kind_str(item.kind()).to_string(),
             done: item.single_state().is_done(),
@@ -216,7 +216,9 @@ impl MobileCellLine {
     pub(crate) fn to_item(&self, image_assets_dir: &Path) -> Result<Item> {
         let mut item = Item::new(self.text.clone());
         item.id = parse_id::<ItemId>(&self.id)?;
-        item.marker = parse_marker(Some(&self.marker))?;
+        let (marker, family) = parse_marker_spec(Some(&self.marker))?;
+        item.marker = marker;
+        item.marker_family = family;
         item.start = parse_datetime_opt(self.start.as_deref())?;
         item.end = parse_datetime_opt(self.end.as_deref())?;
         // Legacy cell line: text plus optional media collapses to single-content

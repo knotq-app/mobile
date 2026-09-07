@@ -310,7 +310,9 @@ impl MobileCore {
         let scheme_id = parse_id(&scheme_id)?;
         let mut inner = self.lock()?;
         let mut item = Item::new(text);
-        item.marker = parse_marker(marker.as_deref())?;
+        let (parsed_marker, family) = parse_marker_spec(marker.as_deref())?;
+        item.marker = parsed_marker;
+        item.marker_family = family;
         item.indent = as_u8(indent.unwrap_or(0), "indent")?;
         let position = match position {
             Some(position) => position_from_i32(position)?,
@@ -340,7 +342,9 @@ impl MobileCore {
         let mut inner = self.lock()?;
         let (scheme_id, _created) = inner.ensure_daily_queue(today)?;
         let mut item = Item::new(text);
-        item.marker = parse_marker(marker.as_deref())?;
+        let (parsed_marker, family) = parse_marker_spec(marker.as_deref())?;
+        item.marker = parsed_marker;
+        item.marker_family = family;
         item.indent = as_u8(indent.unwrap_or(0), "indent")?;
         let position = inner
             .workspace
@@ -633,13 +637,19 @@ impl MobileCore {
         item_id: String,
         marker: String,
     ) -> Result<(), MobileError> {
-        self.lock()?
-            .apply(Command::SetItemMarker {
+        let mut inner = self.lock()?;
+        let (marker, family) = parse_marker_spec(Some(&marker))?;
+        inner.apply(Command::SetItemMarker {
                 scheme: parse_id(&scheme_id)?,
                 item: parse_id(&item_id)?,
-                marker: parse_marker(Some(&marker))?,
-            })
-            .map_err(Into::into)
+                marker,
+            }).map_err(MobileError::from)?;
+        if !family.is_standard() {
+            inner.apply(Command::SetItemMarkerFamily {
+                scheme: parse_id(&scheme_id)?, item: parse_id(&item_id)?, family
+            }).map_err(MobileError::from)?;
+        }
+        Ok(())
     }
 
     pub fn set_item_indent(

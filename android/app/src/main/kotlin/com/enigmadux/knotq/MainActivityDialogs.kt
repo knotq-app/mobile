@@ -723,7 +723,17 @@ import kotlin.math.roundToInt
         AlertDialog.Builder(this)
             .setTitle(L10n.t(this, "mobile.marker.title"))
             .setItems(markerLabels) { _, which ->
-                mutate(obj("type" to "set_item_marker", "scheme_id" to schemeId, "item_id" to itemId, "marker" to markers[which]))
+                val marker = markers[which]
+                if (marker == "bullet") {
+                    AlertDialog.Builder(this)
+                        .setTitle("Bullet style")
+                        .setItems(arrayOf("Standard", "Discs", "Rings", "Squares", "Dashes", "Alternating")) { _, family ->
+                            val suffixes = arrayOf("", "discs", "rings", "squares", "dashes", "alternating")
+                            mutate(obj("type" to "set_item_marker", "scheme_id" to schemeId, "item_id" to itemId, "marker" to ("bullet" + suffixes[family].let { if (it.isEmpty()) "" else ".$it" })))
+                        }.show()
+                } else {
+                    mutate(obj("type" to "set_item_marker", "scheme_id" to schemeId, "item_id" to itemId, "marker" to marker))
+                }
             }
             .show()
     }

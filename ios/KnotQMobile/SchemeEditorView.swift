@@ -102,6 +102,7 @@ enum DesktopEditorMetrics {
 
 @objc final class LineMeta: NSObject {
     let marker: Marker
+    let markerFamily: String
     let indent: Int
     let done: Bool
     // var (not let) solely for `adoptItemID` below; treat as immutable elsewhere.
@@ -122,6 +123,7 @@ enum DesktopEditorMetrics {
 
     init(
         marker: Marker = .blank,
+        markerFamily: String = "standard",
         indent: Int = 0,
         done: Bool = false,
         itemID: String? = nil,
@@ -135,6 +137,7 @@ enum DesktopEditorMetrics {
         content: [MobileInline] = []
     ) {
         self.marker = marker
+        self.markerFamily = markerFamily
         self.indent = indent
         self.done = done
         self.itemID = itemID
@@ -151,7 +154,8 @@ enum DesktopEditorMetrics {
 
     convenience init(item: MobileItem, timeFormat: String) {
         self.init(
-            marker: Marker(rawValue: item.marker) ?? .blank,
+            marker: Marker(rawValue: item.marker.split(separator: ".", maxSplits: 1).first.map(String.init) ?? item.marker) ?? .blank,
+            markerFamily: item.marker.split(separator: ".", maxSplits: 1).dropFirst().first.map(String.init) ?? "standard",
             indent: Int(item.indent),
             done: item.done,
             itemID: item.id.isEmpty ? nil : item.id,
@@ -200,6 +204,7 @@ enum DesktopEditorMetrics {
 
     func with(
         marker: Marker? = nil,
+        markerFamily: String? = nil,
         indent: Int? = nil,
         done: Bool? = nil,
         itemID: String?? = nil,
@@ -214,6 +219,7 @@ enum DesktopEditorMetrics {
     ) -> LineMeta {
         LineMeta(
             marker: marker ?? self.marker,
+            markerFamily: markerFamily ?? self.markerFamily,
             indent: indent ?? self.indent,
             done: done ?? self.done,
             itemID: itemID ?? self.itemID,

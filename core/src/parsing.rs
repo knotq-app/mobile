@@ -3,7 +3,7 @@ use std::str::FromStr;
 use anyhow::{anyhow, Context, Result};
 use chrono::{DateTime, Duration, Local, NaiveDate, TimeZone, Utc};
 use knotq_commands::{DateEditScope, DateKind, EventDeleteScope};
-use knotq_model::{ItemMarker, OccurrenceId, Recurrence, ThemeMode, TimeFormat};
+use knotq_model::{ItemMarker, MarkerFamily, OccurrenceId, Recurrence, ThemeMode, TimeFormat};
 
 use crate::{MOBILE_DAILY_DEFAULT_HISTORY_DAYS, MOBILE_DAILY_MAX_HISTORY_DAYS};
 
@@ -26,6 +26,15 @@ pub(crate) fn parse_marker(raw: Option<&str>) -> Result<ItemMarker> {
         "checkbox" => ItemMarker::Checkbox,
         other => return Err(anyhow!("unknown marker {other}")),
     })
+}
+
+pub(crate) fn parse_marker_spec(raw: Option<&str>) -> Result<(ItemMarker, MarkerFamily)> {
+    let raw = raw.unwrap_or("blank");
+    let (marker, suffix) = raw.split_once('.').map_or((raw, "standard"), |(m, s)| (m, s));
+    let marker = parse_marker(Some(marker))?;
+    let family = MarkerFamily::from_suffix(suffix);
+    if !family.is_valid_for(marker) { return Err(anyhow!("marker family {suffix} is not valid for {marker:?}")); }
+    Ok((marker, family))
 }
 
 pub(crate) fn parse_date_kind(raw: &str) -> Result<DateKind> {

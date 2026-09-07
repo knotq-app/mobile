@@ -145,7 +145,16 @@ extension EditorCoordinator {
     func markerButton(_ marker: Marker, systemName: String) -> UIButton {
         let button = toolbarButton(systemName) { [weak self] in
             guard let self else { return }
-            self.view?.setCurrentMarker(marker, theme: self.theme)
+            if marker == .bullet, let view = self.view {
+                let alert = UIAlertController(title: "Bullet style", message: nil, preferredStyle: .actionSheet)
+                [("Standard", "standard"), ("Discs", "discs"), ("Rings", "rings"), ("Squares", "squares"), ("Dashes", "dashes"), ("Alternating", "alternating")].forEach { label, family in
+                    alert.addAction(UIAlertAction(title: label, style: .default) { _ in view.setCurrentMarker(.bullet, theme: self.theme, family: family) })
+                }
+                alert.addAction(UIAlertAction(title: "Cancel", style: .cancel))
+                view.window?.rootViewController?.present(alert, animated: true)
+            } else {
+                self.view?.setCurrentMarker(marker, theme: self.theme)
+            }
         }
         markerButtons[marker] = button
         return button

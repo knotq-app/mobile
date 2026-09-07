@@ -962,12 +962,13 @@ final class EditorTextView: UITextView {
     @objc private func handleMarkerBulletKeyCommand() { setCurrentMarker(.bullet, theme: theme) }
     @objc private func handleMarkerNumberedKeyCommand() { setCurrentMarker(.numbered, theme: theme) }
 
-    func setCurrentMarker(_ marker: Marker, theme: KnotQTheme) {
+    func setCurrentMarker(_ marker: Marker, theme: KnotQTheme, family: String? = nil) {
         let para = editableParagraphRange(in: textStorage.string as NSString, at: selectedRange.location)
         let old = lineMeta(at: para.location, in: textStorage)
         let newDone = (marker == .checkbox && old.marker == .checkbox) ? !old.done : false
         let new = LineMeta(
             marker: marker,
+            markerFamily: family ?? (marker == old.marker ? old.markerFamily : "standard"),
             indent: old.indent,
             done: newDone,
             itemID: old.itemID,

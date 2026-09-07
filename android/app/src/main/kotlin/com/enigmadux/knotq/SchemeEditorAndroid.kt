@@ -879,7 +879,8 @@ internal class SchemeEditText(context: android.content.Context) : EditText(conte
         ordinal: Int,
         textBaseline: Float
     ) {
-        when (marker) {
+        val markerParts = marker.split('.', limit = 2)
+        when (markerParts[0]) {
             "checkbox" -> {
                 chromePaint.style = Paint.Style.FILL
                 chromePaint.color = if (done) accentColor else editorTheme.buttonBg
@@ -904,7 +905,12 @@ internal class SchemeEditText(context: android.content.Context) : EditText(conte
             "bullet" -> {
                 chromePaint.style = Paint.Style.FILL
                 chromePaint.color = accentColor
-                canvas.drawCircle(rect.centerX(), rect.centerY(), dp(2.2f), chromePaint)
+                when (markerParts.getOrNull(1)) {
+                    "rings" -> { chromePaint.style = Paint.Style.STROKE; chromePaint.strokeWidth = dp(1.5f); canvas.drawCircle(rect.centerX(), rect.centerY(), dp(3f), chromePaint) }
+                    "squares" -> canvas.drawRect(rect.centerX() - dp(2.5f), rect.centerY() - dp(2.5f), rect.centerX() + dp(2.5f), rect.centerY() + dp(2.5f), chromePaint)
+                    "dashes" -> canvas.drawRect(rect.left + dp(1f), rect.centerY() - dp(1f), rect.right - dp(1f), rect.centerY() + dp(1f), chromePaint)
+                    else -> canvas.drawCircle(rect.centerX(), rect.centerY(), dp(2.2f), chromePaint)
+                }
             }
             "numbered" -> {
                 // iOS/desktop: ordinal is right-aligned in the marker slot, but

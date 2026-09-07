@@ -689,7 +689,9 @@ impl MobileCoreInner {
             if !preserve_existing_block {
                 item.set_text(draft.text);
             }
-            item.marker = parse_marker(Some(&draft.marker))?;
+            let (marker, family) = parse_marker_spec(Some(&draft.marker))?;
+            item.marker = marker;
+            item.marker_family = family;
             item.indent = as_u8(draft.indent, "indent")?.min(8);
             if should_apply_rich_metadata {
                 item.start = parse_datetime_opt(draft.start.as_deref())?;

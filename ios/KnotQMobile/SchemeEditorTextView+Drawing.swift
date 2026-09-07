@@ -134,7 +134,12 @@ extension EditorTextView {
             return
         case .bullet:
             context.setFillColor(chrome.cgColor)
-            context.fillEllipse(in: rect.insetBy(dx: 4.5, dy: 4.5))
+            switch meta.markerFamily {
+            case "rings": context.setLineWidth(1.5); context.strokeEllipse(in: rect.insetBy(dx: 3.5, dy: 3.5))
+            case "squares": context.fill(CGRect(x: rect.midX - 2.5, y: rect.midY - 2.5, width: 5, height: 5))
+            case "dashes": context.fill(CGRect(x: rect.minX + 1, y: rect.midY - 1, width: rect.width - 2, height: 2))
+            default: context.fillEllipse(in: rect.insetBy(dx: 4.5, dy: 4.5))
+            }
         case .numbered:
             let label = "\(ordinal)." as NSString
             let attrs: [NSAttributedString.Key: Any] = [
