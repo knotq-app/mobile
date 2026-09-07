@@ -572,6 +572,8 @@ public protocol MobileCoreProtocol: AnyObject, Sendable {
     
     func ensureDailyQueue(date: String?) throws  -> Bool
     
+    func forceSyncOnce(apiBase: String, bearerToken: String) throws  -> Bool
+    
     func googleAuthRequest(clientId: String, redirectUri: String) throws  -> MobileGoogleAuthRequest
     
     func importGoogleCalendarsWithIdentity(account: MobileGoogleIdentityAccount, parentId: String?) throws  -> MobileGoogleSyncResult
@@ -940,6 +942,16 @@ open func ensureDailyQueue(date: String?)throws  -> Bool  {
     uniffi_knotq_mobile_core_fn_method_mobilecore_ensure_daily_queue(
             self.uniffiCloneHandle(),
         FfiConverterOptionString.lower(date),$0
+    )
+})
+}
+    
+open func forceSyncOnce(apiBase: String, bearerToken: String)throws  -> Bool  {
+    return try  FfiConverterBool.lift(try rustCallWithError(FfiConverterTypeMobileError_lift) {
+    uniffi_knotq_mobile_core_fn_method_mobilecore_force_sync_once(
+            self.uniffiCloneHandle(),
+        FfiConverterString.lower(apiBase),
+        FfiConverterString.lower(bearerToken),$0
     )
 })
 }
@@ -3850,6 +3862,9 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_knotq_mobile_core_checksum_method_mobilecore_ensure_daily_queue() != 18110) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_knotq_mobile_core_checksum_method_mobilecore_force_sync_once() != 29540) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_knotq_mobile_core_checksum_method_mobilecore_google_auth_request() != 56614) {

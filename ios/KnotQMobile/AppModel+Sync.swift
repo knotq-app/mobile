@@ -136,7 +136,7 @@ extension AppModel {
     }
 
 #if ACCOUNTS_ENABLED
-    func syncOnce() async {
+    func syncOnce(force: Bool = false) async {
         // Set the in-progress guard before refreshing so concurrent callers bail
         // out — two simultaneous refreshes would replay the same (single-use)
         // refresh token and trip the server's reuse detection, revoking the session.
@@ -155,7 +155,9 @@ extension AppModel {
                 let apiBase = session.apiBase
                 let bearerToken = session.bearerToken
                 let result = try await bridge.perform { b in
-                    let changed = try b.syncOnce(apiBase: apiBase, bearerToken: bearerToken)
+                    let changed = try force
+                        ? b.forceSyncOnce(apiBase: apiBase, bearerToken: bearerToken)
+                        : b.syncOnce(apiBase: apiBase, bearerToken: bearerToken)
                     let notice = try b.takeSyncNotice()
                     return (changed, notice)
                 }
@@ -207,6 +209,17 @@ extension AppModel {
     func scheduleSync() {
         guard syncSession != nil else { return }
         Task { await self.syncOnce() }
+    }
+
+    /// A visible user action must not be quietly coalesced behind a recent poll
+    /// or sent through a socket that survived app suspension. Refresh the session,
+    /// rebuild the socket for later background updates, then make a forced HTTP
+    /// pull through the shared core.
+    func manualResync() async {
+        guard await refreshEntitlement(scheduleSyncWhenReady: false) else { return }
+        stopWsSync()
+        startWsSync()
+        await syncOnce(force: true)
     }
 
     /// Push that follows a local edit, debounced so a burst of edits coalesces
@@ -346,8 +359,9 @@ extension AppModel {
     }
 #else
     // Accounts/sync disabled: no-op stubs preserving signatures for shared callers.
-    func syncOnce() async {}
+    func syncOnce(force: Bool = false) async {}
     func scheduleSync() {}
+    func manualResync() async {}
     func scheduleEditSync() {}
     func flushPendingEditSyncOverWebSocket() {}
     func flushPendingEditSyncAndTeardown() {}
@@ -568,6 +582,18 @@ extension AppModel {
     }
 
 #if ACCOUNTS_ENABLED
+    /// Reconcile immediately whenever iOS returns the app to the foreground.
+    /// Silent pushes are best-effort, and a socket retained across suspension can
+    /// briefly look connected even though it can no longer receive `changed`
+    /// nudges. Refresh the entitlement first, rebuild the transport, then perform
+    /// an explicit pull so merely opening KnotQ is always enough to converge.
+    func resumeForegroundSync() async {
+        await refreshSubscriptionStatus()
+        stopWsSync()
+        startWsSync()
+        await syncOnce()
+    }
+
     /// Open the persistent sync WebSocket for the current session (online, poll-free
     /// sync; `sync_once`'s pull/push then ride the socket). Idempotent in the core.
     func startWsSync() {

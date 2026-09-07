@@ -830,6 +830,8 @@ impl MobileCore {
         })?;
         // Retain it on the upcoming panel while it's completed, so checking it off
         // fades the row in place instead of dropping it until the next reload.
+        // (`inner.apply` above already set `background_refresh_required` for the
+        // ToggleOccurrence — it covers every completion path, not just this one.)
         inner.sync_retained_completed(scheme, item, occurrence);
         Ok(())
     }
@@ -1084,6 +1086,26 @@ impl MobileCore {
 
     #[cfg(not(feature = "accounts"))]
     pub fn sync_once(&self, _api_base: String, _bearer_token: String) -> Result<bool, MobileError> {
+        Ok(false)
+    }
+
+    #[cfg(feature = "accounts")]
+    pub fn force_sync_once(
+        &self,
+        api_base: String,
+        bearer_token: String,
+    ) -> Result<bool, MobileError> {
+        self.lock()?
+            .force_sync_once(&api_base, &bearer_token)
+            .map_err(Into::into)
+    }
+
+    #[cfg(not(feature = "accounts"))]
+    pub fn force_sync_once(
+        &self,
+        _api_base: String,
+        _bearer_token: String,
+    ) -> Result<bool, MobileError> {
         Ok(false)
     }
 

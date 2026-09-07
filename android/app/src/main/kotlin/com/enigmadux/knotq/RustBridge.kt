@@ -223,6 +223,15 @@ internal class RustBridge(context: Context) : AutoCloseable {
                 }
                 return response
             }
+            "force_sync_once" -> {
+                val changed = core.forceSyncOnce(body.getString("api_base"), body.getString("bearer_token"))
+                val notice = core.takeSyncNotice()
+                val response = JSONObject().put("changed", changed)
+                if (notice != null) {
+                    response.put("notice", notice)
+                }
+                return response
+            }
             "set_push_registration" -> core.setPushRegistration(
                 body.getString("token"),
                 body.getString("environment")

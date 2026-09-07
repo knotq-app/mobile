@@ -678,6 +678,8 @@ internal object IntegrityCheckingUniffiLib {
     ): Short
     external fun uniffi_knotq_mobile_core_checksum_method_mobilecore_ensure_daily_queue(
     ): Short
+    external fun uniffi_knotq_mobile_core_checksum_method_mobilecore_force_sync_once(
+    ): Short
     external fun uniffi_knotq_mobile_core_checksum_method_mobilecore_google_auth_request(
     ): Short
     external fun uniffi_knotq_mobile_core_checksum_method_mobilecore_import_google_calendars_with_identity(
@@ -843,6 +845,8 @@ external fun uniffi_knotq_mobile_core_fn_method_mobilecore_delivered_notificatio
 external fun uniffi_knotq_mobile_core_fn_method_mobilecore_empty_archive(`ptr`: Long,uniffi_out_err: UniffiRustCallStatus, 
 ): Unit
 external fun uniffi_knotq_mobile_core_fn_method_mobilecore_ensure_daily_queue(`ptr`: Long,`date`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+): Byte
+external fun uniffi_knotq_mobile_core_fn_method_mobilecore_force_sync_once(`ptr`: Long,`apiBase`: RustBuffer.ByValue,`bearerToken`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
 ): Byte
 external fun uniffi_knotq_mobile_core_fn_method_mobilecore_google_auth_request(`ptr`: Long,`clientId`: RustBuffer.ByValue,`redirectUri`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
 ): RustBuffer.ByValue
@@ -1125,6 +1129,9 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_knotq_mobile_core_checksum_method_mobilecore_ensure_daily_queue() != 18110.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_knotq_mobile_core_checksum_method_mobilecore_force_sync_once() != 29540.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_knotq_mobile_core_checksum_method_mobilecore_google_auth_request() != 56614.toShort()) {
@@ -1725,6 +1732,8 @@ public interface MobileCoreInterface {
     
     fun `ensureDailyQueue`(`date`: kotlin.String?): kotlin.Boolean
     
+    fun `forceSyncOnce`(`apiBase`: kotlin.String, `bearerToken`: kotlin.String): kotlin.Boolean
+    
     fun `googleAuthRequest`(`clientId`: kotlin.String, `redirectUri`: kotlin.String): MobileGoogleAuthRequest
     
     fun `importGoogleCalendarsWithIdentity`(`account`: MobileGoogleIdentityAccount, `parentId`: kotlin.String?): MobileGoogleSyncResult
@@ -2179,6 +2188,20 @@ open class MobileCore: Disposable, AutoCloseable, MobileCoreInterface
     UniffiLib.uniffi_knotq_mobile_core_fn_method_mobilecore_ensure_daily_queue(
         it,
         FfiConverterOptionalString.lower(`date`),_status)
+}
+    }
+    )
+    }
+    
+
+    
+    @Throws(MobileException::class)override fun `forceSyncOnce`(`apiBase`: kotlin.String, `bearerToken`: kotlin.String): kotlin.Boolean {
+            return FfiConverterBoolean.lift(
+    callWithHandle {
+    uniffiRustCallWithError(MobileException) { _status ->
+    UniffiLib.uniffi_knotq_mobile_core_fn_method_mobilecore_force_sync_once(
+        it,
+        FfiConverterString.lower(`apiBase`),FfiConverterString.lower(`bearerToken`),_status)
 }
     }
     )

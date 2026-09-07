@@ -73,6 +73,23 @@ impl MobileCoreInner {
         timing.phase("normalize");
         let settings = load_app_settings(&settings_path).unwrap_or_default();
         timing.phase("load_settings");
+        if should_reset_workspace_dir {
+            // The workspace index could not be parsed, so the fresh in-memory
+            // replacement must not inherit its old "already pulled" cursor.
+            // Reset only the workspace-index cursor: the next pull receives
+            // that one document, discovers the actual scheme set, and the sync
+            // engine re-fetches only scheme documents missing from the new
+            // local CRDT store. Keeping every scheme cursor and pending edit is
+            // both faster and safer than a workspace-wide reset.
+            let mut sync_state = load_local_sync_state(&workspace_path).unwrap_or_default();
+            if sync_state.reset_workspace_pull_cursor() {
+                if let Err(error) = save_local_sync_state(&workspace_path, &sync_state) {
+                    eprintln!(
+                        "knotq: could not persist workspace parse-recovery cursor reset: {error:#}"
+                    );
+                }
+            }
+        }
         if should_reset_workspace_dir && workspace_dir.exists() {
             // Preserve the unreadable workspace for recovery instead of
             // deleting it. If even the rename fails, keep going — the save
@@ -145,6 +162,7 @@ impl MobileCoreInner {
             push_environment: None,
             registered_push_token: None,
             retained_completed: RetainedCompletedItems::default(),
+            background_refresh_required: false,
             last_remote_sync_at: None,
             ws_client: None,
             ws_token: std::sync::Arc::new(std::sync::Mutex::new(String::new())),
@@ -186,6 +204,15 @@ impl MobileCoreInner {
     pub(crate) fn apply(&mut self, command: Command) -> Result<()> {
         let t0 = std::time::Instant::now();
         let crdt_changes = mobile_crdt_change_set_for_command(&command);
+        // A completion or schedule edit can require offline peers to redraw
+        // their Upcoming widget / cancel a delivered banner even when the
+        // pushed notification hash is unchanged (e.g. completing a past
+        // occurrence). Carry that intent through the next push. Covers every
+        // apply path — direct edits, notification "Mark Done", event-popup
+        // commits — not just the toggle_occurrence entry point.
+        if mobile_command_requires_background_refresh(&command) {
+            self.background_refresh_required = true;
+        }
         let receipt = self.workspace.apply(command)?;
         // Only the schemes this command touched need their files rewritten. The
         // receipt's `touched` set is the same one the desktop's incremental save
@@ -227,6 +254,7 @@ impl MobileCoreInner {
             changeset.schemes.insert(key.scheme_id);
         }
         self.record_crdt_changes(changeset)?;
+        self.background_refresh_required = true;
         self.save_workspace()?;
         Ok(changed)
     }
@@ -284,22 +312,39 @@ impl MobileCoreInner {
             return Ok(Some(expected_id));
         }
 
-        match load_daily_queue_scheme(&self.workspace_path, date)? {
-            Some(scheme) if scheme.id == expected_id => {
+        match load_daily_queue_scheme(&self.workspace_path, date) {
+            Ok(Some(scheme)) if scheme.id == expected_id => {
                 self.workspace.schemes.insert(expected_id, scheme);
                 self.indexed_workspace = None;
                 Ok(Some(expected_id))
             }
-            Some(scheme) => Err(anyhow!(
+            Ok(Some(scheme)) => Err(anyhow!(
                 "daily queue {} loaded with unexpected id {}, expected {}",
                 date,
                 scheme.id,
                 expected_id
             )),
-            None => {
+            Ok(None) => {
                 self.workspace.daily_queue.remove(&date);
                 self.indexed_workspace = None;
                 Ok(None)
+            }
+            Err(parse_error) => {
+                // The Daily Queue file for this date is unreadable (a partial
+                // write, malformed XML, bad bytes). Its durable CRDT state may
+                // still be intact: decode just that one document from the
+                // deferred bytes so the next sync -- even a caught-up one --
+                // re-materializes the day and the following save rewrites a
+                // good file. Unrelated deferred dailies are untouched. The
+                // parse error is still surfaced so the caller knows this exact
+                // date is not yet renderable; the retry after a sync succeeds.
+                if self.crdt.request_deferred_recovery(expected_id) {
+                    eprintln!(
+                        "knotq: daily queue {date} file unreadable ({parse_error:#}); \
+                         scheduled CRDT-backed recovery for {expected_id}"
+                    );
+                }
+                Err(parse_error)
             }
         }
     }
@@ -685,6 +730,22 @@ impl MobileCoreInner {
     }
 
     pub(crate) fn sync_once(&mut self, api_base: &str, bearer_token: &str) -> Result<bool> {
+        self.sync_once_with_mode(api_base, bearer_token, false)
+    }
+
+    /// A user-requested resync must be a real pull, even if an automatic poll or
+    /// silent wake ran moments ago. It deliberately uses HTTP instead of a socket
+    /// that may look connected after the app was suspended.
+    pub(crate) fn force_sync_once(&mut self, api_base: &str, bearer_token: &str) -> Result<bool> {
+        self.sync_once_with_mode(api_base, bearer_token, true)
+    }
+
+    fn sync_once_with_mode(
+        &mut self,
+        api_base: &str,
+        bearer_token: &str,
+        force_remote_pull: bool,
+    ) -> Result<bool> {
         // Coalesce wake-storms: a silent push wakes every device on each push, so two
         // devices that re-push on every sync form a feedback loop that barrages the
         // backend. Skip the round-trip when nothing local is queued and we synced
@@ -700,7 +761,7 @@ impl MobileCoreInner {
         let ws_changed = self
             .ws_changed
             .swap(false, std::sync::atomic::Ordering::SeqCst);
-        if !ws_changed && self.should_coalesce_idle_sync(has_local_pending) {
+        if !force_remote_pull && !ws_changed && self.should_coalesce_idle_sync(has_local_pending) {
             return Ok(false);
         }
         self.last_remote_sync_at = Some(std::time::Instant::now());
@@ -718,7 +779,11 @@ impl MobileCoreInner {
         // Clone the Arc into a local so the transport doesn't borrow `self` (which is
         // mutated below).
         let ws_client = self.ws_client.clone();
-        let transport = crate::ws_sync::FallbackTransport::new(ws_client.as_deref(), &client);
+        let transport = if force_remote_pull {
+            crate::ws_sync::FallbackTransport::http_only(&client)
+        } else {
+            crate::ws_sync::FallbackTransport::new(ws_client.as_deref(), &client)
+        };
         // The account this bearer token belongs to owns the one canonical
         // personal-workspace document id; always adopt it. The previous shortcut
         // ("if sync.id == id we're already canonicalized, reuse it") only proved
@@ -785,14 +850,46 @@ impl MobileCoreInner {
         // wake it via silent push. Best effort — never block sync on it.
         self.register_push_device(&client);
 
+        self.run_sync_cycle(
+            &transport,
+            &mut sync_state,
+            server_workspace_id,
+            account_switched,
+            local_workspace_changed,
+            Some(&client),
+        )
+    }
+
+    /// The transport-agnostic core of a sync cycle: pull + merge + workspace
+    /// repair + account-switch reseed + bootstrap + durable save + push (with a
+    /// single `document_epoch_stale` retry) + cursor persistence, then media.
+    ///
+    /// [`Self::sync_once`] runs this straight after its HTTP-only prelude
+    /// (account-status lookup, identity canonicalization, wake coalescing). The
+    /// disk-backed sync fuzz drives this exact method with an in-memory
+    /// transport, so the fuzz exercises the production sync path rather than a
+    /// re-implementation of it. `media_client` is `None` when there is no media
+    /// transport (the fuzz) and media transfer is then skipped.
+    ///
+    /// Returns whether anything changed (a remote update landed, a workspace was
+    /// repaired, something was pushed, or media moved).
+    pub(crate) fn run_sync_cycle(
+        &mut self,
+        transport: &dyn knotq_sync::SyncTransport,
+        sync_state: &mut knotq_sync::LocalSyncState,
+        server_workspace_id: knotq_model::WorkspaceId,
+        account_switched: bool,
+        prelude_workspace_changed: bool,
+        media_client: Option<&MobileSyncHttpClient>,
+    ) -> Result<bool> {
         // One batched pull syncs the whole workspace: the server returns the current
         // merged state of every document past our cursor (and any document created
         // on another device). Applying merged state is idempotent in Yjs.
         let workspace = self.workspace.clone();
         let pull = batch_pull_and_apply(
-            &transport,
+            transport,
             &mut self.crdt,
-            &mut sync_state,
+            sync_state,
             workspace,
             self.settings.replica_id,
         )?;
@@ -849,7 +946,7 @@ impl MobileCoreInner {
             // documents pending after the destination index removes them, producing
             // an avoidable schema-invalid orphan push.
             queue_account_switch_reseed(
-                &mut sync_state,
+                sync_state,
                 &self.crdt,
                 &self.workspace,
                 self.settings.replica_id,
@@ -864,15 +961,21 @@ impl MobileCoreInner {
                 + 1;
         }
 
-        mobile_upload_local_media_assets(
-            &client,
-            &mut sync_state,
-            &self.workspace,
-            &self.image_assets_dir,
-            &pull.remote_latest,
-        )?;
-        let mut media_downloaded =
-            mobile_download_missing_media_assets(&client, &self.workspace, &self.image_assets_dir)?;
+        let mut media_downloaded = false;
+        if let Some(client) = media_client {
+            mobile_upload_local_media_assets(
+                client,
+                sync_state,
+                &self.workspace,
+                &self.image_assets_dir,
+                &pull.remote_latest,
+            )?;
+            media_downloaded |= mobile_download_missing_media_assets(
+                client,
+                &self.workspace,
+                &self.image_assets_dir,
+            )?;
+        }
 
         // Persist the merged workspace BEFORE pushing. The durable pull cursors are
         // saved after the push regardless of its outcome, so the workspace must be
@@ -893,7 +996,7 @@ impl MobileCoreInner {
         // repopulating them from the workspace before snapshotting — run it before
         // the save so the healed state is persisted alongside the workspace.
         let healed_documents = queue_workspace_bootstrap_updates(
-            &mut sync_state,
+            sync_state,
             &mut self.crdt,
             &self.workspace,
             self.settings.replica_id,
@@ -903,7 +1006,7 @@ impl MobileCoreInner {
             eprintln!("mobile sync: repopulated schema-less CRDT document {document}");
         }
         if remote_updates_applied > 0
-            || local_workspace_changed
+            || prelude_workspace_changed
             || repaired_workspace_changed
             || !healed_documents.is_empty()
         {
@@ -920,11 +1023,13 @@ impl MobileCoreInner {
         // the next sync to re-download every document from sequence zero. The merged
         // workspace above is already durable, so the cursor never runs ahead of it.
         let mut pushed = Vec::new();
+        let background_refresh_required = self.background_refresh_required;
         let mut push_result = batch_push_pending(
-            &transport,
-            &mut sync_state,
+            transport,
+            sync_state,
             self.settings.replica_id,
             &notification_schedule,
+            background_refresh_required,
             &mut pushed,
             &mut self.crdt,
             &self.workspace,
@@ -942,9 +1047,9 @@ impl MobileCoreInner {
                 "mobile sync: push hit a stale document epoch; re-pulling to adopt and retrying"
             );
             let adoption = batch_pull_and_apply(
-                &transport,
+                transport,
                 &mut self.crdt,
-                &mut sync_state,
+                sync_state,
                 self.workspace.clone(),
                 self.settings.replica_id,
             )?;
@@ -952,37 +1057,44 @@ impl MobileCoreInner {
             self.workspace = adoption.workspace;
             self.save_workspace()?;
             push_result = batch_push_pending(
-                &transport,
-                &mut sync_state,
+                transport,
+                sync_state,
                 self.settings.replica_id,
                 &notification_schedule,
+                background_refresh_required,
                 &mut pushed,
                 &mut self.crdt,
                 &self.workspace,
             );
         }
-        save_local_sync_state(&self.workspace_path, &sync_state)?;
+        save_local_sync_state(&self.workspace_path, sync_state)?;
         push_result?;
+        self.background_refresh_required = false;
 
-        // Retry media after the CRDT push using a head map that treats newly
-        // pushed documents as present, so successful pre-push uploads are not
-        // re-sent but skipped or changed local assets still get uploaded.
-        let mut media_remote_latest = pull.remote_latest;
-        for pushed_document in &pushed {
-            media_remote_latest
-                .entry(pushed_document.document)
-                .or_insert(1);
+        if let Some(client) = media_client {
+            // Retry media after the CRDT push using a head map that treats newly
+            // pushed documents as present, so successful pre-push uploads are not
+            // re-sent but skipped or changed local assets still get uploaded.
+            let mut media_remote_latest = pull.remote_latest;
+            for pushed_document in &pushed {
+                media_remote_latest
+                    .entry(pushed_document.document)
+                    .or_insert(1);
+            }
+            mobile_upload_local_media_assets(
+                client,
+                sync_state,
+                &self.workspace,
+                &self.image_assets_dir,
+                &media_remote_latest,
+            )?;
+            save_local_sync_state(&self.workspace_path, sync_state)?;
+            media_downloaded |= mobile_download_missing_media_assets(
+                client,
+                &self.workspace,
+                &self.image_assets_dir,
+            )?;
         }
-        mobile_upload_local_media_assets(
-            &client,
-            &mut sync_state,
-            &self.workspace,
-            &self.image_assets_dir,
-            &media_remote_latest,
-        )?;
-        save_local_sync_state(&self.workspace_path, &sync_state)?;
-        media_downloaded |=
-            mobile_download_missing_media_assets(&client, &self.workspace, &self.image_assets_dir)?;
 
         Ok(remote_updates_applied > 0
             || repaired_workspace_changed

@@ -446,6 +446,9 @@ interface MobileCore {
   boolean sync_once(string api_base, string bearer_token);
 
   [Throws=MobileError]
+  boolean force_sync_once(string api_base, string bearer_token);
+
+  [Throws=MobileError]
   string? take_sync_notice();
 
   [Throws=MobileError]

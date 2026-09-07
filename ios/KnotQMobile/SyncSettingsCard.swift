@@ -388,7 +388,7 @@ struct SyncSettingsCard: View {
 
     private var checkStatusButton: some View {
         Button {
-            Task { await model.refreshEntitlement() }
+            Task { await model.manualResync() }
         } label: {
             if model.syncInProgress {
                 HStack(spacing: 6) {

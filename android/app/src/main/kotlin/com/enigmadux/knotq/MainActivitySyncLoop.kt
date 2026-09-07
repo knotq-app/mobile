@@ -253,7 +253,7 @@ internal fun MainActivity.cancelBackgroundSyncWork() {
     runCatching { WorkManager.getInstance(this).cancelUniqueWork(BACKGROUND_SYNC_WORK) }
 }
 
-internal fun MainActivity.syncOnce() {
+internal fun MainActivity.syncOnce(force: Boolean = false) {
     if (!BuildConfig.ACCOUNTS_ENABLED) return
     // The in-progress guard also serializes refresh: two concurrent refreshes
     // would replay the same single-use refresh token and trip the server's
@@ -319,7 +319,7 @@ internal fun MainActivity.syncOnce() {
             result = runCatching {
                 bridge.request(
                     obj(
-                        "type" to "sync_once",
+                        "type" to if (force) "force_sync_once" else "sync_once",
                         "api_base" to active.apiBase,
                         "bearer_token" to active.bearerToken
                     )

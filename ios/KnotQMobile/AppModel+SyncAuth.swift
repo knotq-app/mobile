@@ -601,13 +601,13 @@ extension AppModel {
     /// billing webhook) is reflected locally. Guarded by syncInProgress so it can't
     /// race the poll loop into replaying the single-use refresh token.
     @discardableResult
-    func refreshEntitlement() async -> Bool {
+    func refreshEntitlement(scheduleSyncWhenReady: Bool = true) async -> Bool {
         guard !syncInProgress, syncSession != nil else { return false }
         syncInProgress = true
         var shouldScheduleSync = false
         defer {
             syncInProgress = false
-            if shouldScheduleSync {
+            if scheduleSyncWhenReady && shouldScheduleSync {
                 scheduleSync()
             }
         }

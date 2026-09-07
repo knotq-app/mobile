@@ -49,11 +49,9 @@ struct KnotQMobileApp: App {
                         // the access token to expire. Cold launch and sign-in are covered
                         // by startSyncPolling's own refresh.
                         #if ACCOUNTS_ENABLED
-                        Task { await model.refreshSubscriptionStatus() }
+                        Task { await model.resumeForegroundSync() }
                         #endif
                         MobileReviewPrompt.maybeRequestReview()
-                        // Re-open the sync socket on return to the foreground.
-                        model.startWsSync()
                     case .inactive:
                         // Blur: the app just lost focus but the socket is still alive.
                         // Push a still-debounced edit over it right away so a quick
