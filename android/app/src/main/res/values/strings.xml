@@ -500,7 +500,7 @@
     <string name="mobile_subscription_cancel_confirm_title">Cancel sync subscription?</string>
     <string name="mobile_subscription_cancelled_message">Sync remains available until the current billing period ends.</string>
     <string name="mobile_subscription_cancelled_title">Subscription cancelled</string>
-    <string name="mobile_subscription_disclosure_body">KnotQ Sync is an auto-renewing subscription billed through your Google Play account. It renews automatically each period unless you cancel at least 24 hours before the period ends; manage or cancel anytime in Google Play. The price and billing period are shown on the next screen.</string>
+    <string name="mobile_subscription_disclosure_body">Eligible new subscribers get one month free. KnotQ Sync then renews automatically through Google Play unless cancelled at least 24 hours before the period ends. Manage or cancel anytime in Google Play; the price and billing period appear on the next screen.</string>
     <string name="mobile_subscription_disclosure_continue">Continue</string>
     <string name="mobile_subscription_disclosure_title">KnotQ Sync subscription</string>
     <string name="mobile_subscription_error_open_title">Could not open subscriptions</string>
