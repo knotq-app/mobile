@@ -45,7 +45,9 @@ mod parsing;
 use parsing::*;
 
 mod crdt_changes;
-use crdt_changes::mobile_crdt_change_set_for_command;
+use crdt_changes::{
+    mobile_command_requires_background_refresh, mobile_crdt_change_set_for_command,
+};
 
 // Sync internals stay compiled in every configuration; when `accounts` is off
 // they are unreferenced (the UDL sync fns stub out), so silence dead-code here.
@@ -204,6 +206,9 @@ struct MobileCoreInner {
     // place) until they're un-completed, their retention TTL elapses, or the app
     // reloads — mirroring desktop's retained-completed set.
     retained_completed: RetainedCompletedItems,
+    // A completion can change Upcoming/widgets even when the notification hash
+    // remains stable; carry that intent through the next sync push.
+    background_refresh_required: bool,
     // Monotonic time of the last remote sync that actually ran. Used to coalesce
     // wake-storms (silent-push/poll triggers that arrive in bursts) so a device
     // can't barrage the backend — see `sync_once`.

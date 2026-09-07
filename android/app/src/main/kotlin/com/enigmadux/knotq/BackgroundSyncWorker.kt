@@ -115,6 +115,14 @@ internal class BackgroundSyncWorker(
                     applicationContext,
                     bridge.requestArray(JSONObject().put("type", "pending_notifications"))
                 )
+                // And tear down banners for events that have since ended or
+                // occurrences a peer completed (e.g. "mark done" on a desktop):
+                // reschedule() only re-aims future alarms, so without this the
+                // stale banner lingers in the tray until the app is next opened.
+                MobileNotificationScheduler.clearStale(
+                    applicationContext,
+                    bridge.requestArray(JSONObject().put("type", "delivered_notifications_to_clear"))
+                )
             }
             if (pulledRemoteChange) {
                 // This pull mutated the (stopped) activity's own in-memory core, and
