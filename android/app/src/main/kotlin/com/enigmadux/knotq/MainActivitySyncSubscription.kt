@@ -641,7 +641,17 @@ private fun MainActivity.launchSyncBillingFlow() {
         // List<ProductDetails> in 7.x); the fetched list lives on productDetailsList.
         client.queryProductDetailsAsync(params) { result, productDetailsResult ->
             val details = productDetailsResult.productDetailsList.firstOrNull()
-            val offerToken = details?.subscriptionOfferDetails?.firstOrNull()?.offerToken
+            // Prefer the one-month introductory trial when Play says the user is
+            // eligible. Fall back to the regular base-plan offer for returning
+            // subscribers or when the trial is unavailable in their region.
+            val offer = details?.subscriptionOfferDetails
+                ?.firstOrNull { subscriptionOffer ->
+                    subscriptionOffer.pricingPhases.pricingPhaseList.any { phase ->
+                        phase.priceAmountMicros == 0L
+                    }
+                }
+                ?: details?.subscriptionOfferDetails?.firstOrNull()
+            val offerToken = offer?.offerToken
             if (result.responseCode != BillingClient.BillingResponseCode.OK || details == null || offerToken == null) {
                 runOnUiThread {
                     purchaseInProgress = false
