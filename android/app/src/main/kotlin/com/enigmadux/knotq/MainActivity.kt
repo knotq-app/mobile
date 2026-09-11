@@ -31,6 +31,7 @@ import android.graphics.drawable.GradientDrawable
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
@@ -657,6 +658,16 @@ class MainActivity : Activity() {
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
+        // Must run before super.onCreate(). Holding the OS splash (background
+        // set to match UiTheme.light/dark.bgApp; see Theme.App.Starting) until
+        // the workspace publishes its first frame turns what used to be two
+        // visibly different loading screens back to back -- the system splash,
+        // then this Activity's own "Loading workspace..." shell -- into one
+        // continuous screen for the common (fast) cold start. The old shell in
+        // renderStartupLoading() is left in place as the fallback for whatever
+        // the system does not let this condition hold indefinitely.
+        val splashScreen = installSplashScreen()
+        splashScreen.setKeepOnScreenCondition { !workspaceUiPublished }
         super.onCreate(savedInstanceState)
         restoreActivityState(savedInstanceState)
         // Treat the Activity as foreground from the start of construction. A
@@ -1448,7 +1459,9 @@ class MainActivity : Activity() {
         val outgoingView = activeTransitionOutgoingView
         activeContentTransition?.cancel()
         incomingView?.translationX = 0f
+        incomingView?.setLayerType(View.LAYER_TYPE_NONE, null)
         outgoingView?.translationX = 0f
+        outgoingView?.setLayerType(View.LAYER_TYPE_NONE, null)
         if (outgoingView?.parent === content) content.removeView(outgoingView)
         activeContentTransition = null
         activeTransitionIncomingView = null
@@ -1485,6 +1498,17 @@ class MainActivity : Activity() {
         previousView.translationX = 0f
         content.addView(previousView, FrameLayout.LayoutParams(-1, -1))
 
+        // Both pages are full-tree renders (the editor's canvas-drawn markdown
+        // chrome in particular), and TRANSLATION_X alone does not stop a plain
+        // software view from re-running its full measure/layout/draw on every
+        // animation frame. Cache each page to a GPU layer for the slide so the
+        // animator is just compositing two bitmaps -- the difference between a
+        // 60-110ms frame (measured via dumpsys gfxinfo) and a smooth 60fps push,
+        // and how this reads as an iOS-style layer-backed transition rather than
+        // a live re-render.
+        previousView.setLayerType(View.LAYER_TYPE_HARDWARE, null)
+        incomingView.setLayerType(View.LAYER_TYPE_HARDWARE, null)
+
         val animator = AnimatorSet().apply {
             playTogether(
                 ObjectAnimator.ofFloat(previousView, View.TRANSLATION_X, 0f, outgoingTarget),
@@ -1507,7 +1531,9 @@ class MainActivity : Activity() {
                     activeTransitionIncomingView = null
                     activeTransitionOutgoingView = null
                     incomingView.translationX = 0f
+                    incomingView.setLayerType(View.LAYER_TYPE_NONE, null)
                     previousView.translationX = 0f
+                    previousView.setLayerType(View.LAYER_TYPE_NONE, null)
                     if (!cancelled && previousView.parent === content) content.removeView(previousView)
                     if (
                         !cancelled &&

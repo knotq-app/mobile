@@ -9,6 +9,20 @@
         <item name="android:windowNoTitle">true</item>
     </style>
 
+    <!-- OS splash screen (Android 12+, back-ported by core-splashscreen on
+         older versions). Matches UiTheme.light.bgApp (0xfafbf9), the app's own
+         default theme, so the system splash reads as the SAME screen as the
+         "Loading workspace..." shell it hands off to rather than a visibly
+         different one flashing first. See values-night for the dark match.
+         MainActivity holds this splash on screen (setKeepOnScreenCondition)
+         until the workspace is ready, so the custom loading shell underneath
+         is only ever seen on an unusually slow cold start. -->
+    <style name="Theme.App.Starting" parent="Theme.SplashScreen">
+        <item name="windowSplashScreenBackground">#FAFBF9</item>
+        <item name="windowSplashScreenAnimationDuration">1</item>
+        <item name="postSplashScreenTheme">@style/AppTheme</item>
+    </style>
+
     <!-- Compact wheel (spinner) widget styles so time/date pickers feel like the
          iOS inline wheels rather than the multi-tap clock/calendar dialogs. -->
     <style name="KnotQSpinnerTimePicker" parent="@android:style/Widget.Material.TimePicker">

@@ -110,6 +110,7 @@ dependencies {
     // alignment, which Play rejects for 16 KB page-size devices.
     implementation "net.java.dev.jna:jna:5.17.0@aar"
     implementation "androidx.annotation:annotation:1.9.1"
+    implementation "androidx.core:core-splashscreen:1.0.1"
     // Account/sync-only libraries are packaged in every build variant now that
     // production Android builds ship the account surface too.
     implementation "com.android.billingclient:billing:8.3.0"
