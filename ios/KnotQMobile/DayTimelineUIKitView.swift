@@ -257,10 +257,15 @@ final class DayTimelineUIKitView: UIView, UIGestureRecognizerDelegate, UIScrollV
         creatingEvent = isCreatingEvent
         backgroundColor = UIColor(theme.bgApp)
         let calendarBlue = UIColor(theme.accent)
-        // Keep the whole calendar chrome on the active palette. In particular,
-        // do not use a fixed OLED-black surface here: UIKit views do not inherit
-        // SwiftUI's theme automatically.
-        headerSurface.backgroundColor = UIColor(theme.bgToolbar)
+        // Keep the whole calendar chrome on the active palette rather than a
+        // fixed OLED-black surface (UIKit views do not inherit SwiftUI's theme
+        // automatically). In dark themes the root behind the status bar is
+        // theme.bgApp (see ContentView's `.background(theme.bgApp.ignoresSafeArea())`),
+        // so the header must match bgApp there too or it reads as a seam right
+        // under the notch/status bar on every dark palette, not just Obsidian.
+        // Light themes keep bgToolbar, whose small delta from bgApp is already
+        // an intentional, subtle surface distinction.
+        headerSurface.backgroundColor = theme.isDark ? UIColor(theme.bgApp) : UIColor(theme.bgToolbar)
         headerSurface.layer.shadowColor = UIColor.black.cgColor
         headerSurface.layer.shadowOpacity = theme.isDark ? 0 : 0.07
         headerSurface.layer.shadowRadius = 5

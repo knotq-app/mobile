@@ -91,6 +91,102 @@ class MainActivitySmokeTest {
     }
 
     @Test
+    fun daySwipeDoesNotArmStaleLongPressAfterSettling() {
+        val context = instrumentation.targetContext
+        context.getSharedPreferences("knotq", Context.MODE_PRIVATE)
+            .edit()
+            .putBoolean(ONBOARDING_PREF, true)
+            .apply()
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            runCatching {
+                instrumentation.uiAutomation.grantRuntimePermission(
+                    context.packageName,
+                    Manifest.permission.POST_NOTIFICATIONS,
+                )
+            }
+        }
+        val activity = instrumentation.startActivitySync(
+            Intent(context, MainActivity::class.java).apply {
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
+            },
+        ) as MainActivity
+        try {
+            assertTrue("workspace shell did not start", waitForActivityState(activity, 30_000L) {
+                findByContentDescription(it.window.decorView, "Calendar") != null
+            })
+            instrumentation.runOnMainSync {
+                val calendar = findByContentDescription(activity.window.decorView, "Calendar")
+                check(calendar != null) { "missing Calendar dock button" }
+                check(calendar!!.performClick()) { "Calendar dock button was not clickable" }
+            }
+            assertTrue(
+                "calendar timeline should appear",
+                waitForActivityState(activity, 5_000L) { findCalendarTimeline(it.window.decorView) != null },
+            )
+            val beforeSwipe = activity.selectedDate
+            // A day-swipe starting on empty timeline space used to leave Android's
+            // GestureDetector holding a long-press message armed from the original
+            // ACTION_DOWN: once the swipe claimed the gesture, later MOVE/UP events
+            // were consumed internally and never reached the detector, so it never
+            // saw the touch end. ~500ms of real time after the original touch-down
+            // (independent of how quickly the page had already settled), that stale
+            // message fired and opened a phantom "create event" drag on empty space
+            // (reproduced on-device under load; see maybeStartDaySwipe's synthetic
+            // ACTION_CANCEL fix). This assertion pins the invariant the fix
+            // establishes -- a settled swipe must leave no interaction armed --
+            // even though forcing GestureDetector's real Handler-timed race
+            // through synthetic input in this harness was not reliable enough to
+            // gate on directly.
+            instrumentation.runOnMainSync {
+                val timeline = findCalendarTimeline(activity.window.decorView)
+                check(timeline != null) { "missing calendar timeline" }
+                val downTime = SystemClock.uptimeMillis()
+                fun dispatch(action: Int, time: Long, x: Float, y: Float) {
+                    val motion = android.view.MotionEvent.obtain(downTime, time, action, x, y, 0)
+                    try {
+                        timeline!!.dispatchTouchEvent(motion)
+                    } finally {
+                        motion.recycle()
+                    }
+                }
+                dispatch(android.view.MotionEvent.ACTION_DOWN, downTime, 850f, 480f)
+                dispatch(android.view.MotionEvent.ACTION_MOVE, downTime + 80L, 520f, 480f)
+                dispatch(android.view.MotionEvent.ACTION_UP, downTime + 180L, 250f, 480f)
+            }
+            assertTrue(
+                "calendar swipe should advance exactly one day",
+                waitForActivityState(activity, 5_000L) {
+                    it.selectedDate == beforeSwipe.plusDays(1) && !it.calendarGestureActive
+                },
+            )
+            // Wait well past ViewConfiguration's long-press timeout (500ms default)
+            // measured from the original touch-down above, then confirm no phantom
+            // create/drag interaction ever started.
+            val deadline = SystemClock.uptimeMillis() + 1_000L
+            while (SystemClock.uptimeMillis() < deadline) {
+                instrumentation.waitForIdleSync()
+                SystemClock.sleep(50L)
+            }
+            var interactionMode = -1
+            var stillOnBeforeDate = false
+            instrumentation.runOnMainSync {
+                interactionMode = findCalendarTimeline(activity.window.decorView)?.interactionMode ?: -1
+                stillOnBeforeDate = activity.selectedDate == beforeSwipe.plusDays(1)
+            }
+            assertTrue("settled swipe date should still hold after the long-press window", stillOnBeforeDate)
+            assertEquals(
+                "a settled day-swipe must not leave a phantom create/drag interaction armed",
+                CALENDAR_INTERACTION_NONE,
+                interactionMode,
+            )
+        } finally {
+            instrumentation.runOnMainSync {
+                if (!activity.isFinishing && !activity.isDestroyed) activity.finish()
+            }
+        }
+    }
+
+    @Test
     fun asyncStartupPublishesWorkspaceAndTabRebuildsStayAlive() {
         val context = instrumentation.targetContext
         // The app requests this permission after the first workspace frame so

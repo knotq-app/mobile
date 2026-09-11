@@ -2032,6 +2032,12 @@ class MainActivity : Activity() {
         internal val pageOffsetX: Float
             get() = swipeOffsetX
 
+        // Device-side tests use this to confirm a completed day-swipe leaves no
+        // stray drag/create interaction armed (see the ACTION_CANCEL forwarded
+        // to gestureDetector in maybeStartDaySwipe).
+        internal val interactionMode: Int
+            get() = dragMode
+
         private val hourPx = dp(44)
         private val gutterPx = dp(48)
         private val topOffset = dp(8)
@@ -3052,6 +3058,24 @@ class MainActivity : Activity() {
                 swipingDays = true
                 beginCalendarGesture()
                 parent?.requestDisallowInterceptTouchEvent(true)
+                // Once a day-swipe claims the gesture, every later MOVE/UP/CANCEL
+                // for it is consumed here and never reaches gestureDetector (see
+                // onTouchEvent below). Android's GestureDetector still has a
+                // long-press message armed from the initial ACTION_DOWN, keyed to
+                // real elapsed time rather than this event's timestamp; without an
+                // explicit cancel it fires ~500ms after the original touch-down
+                // regardless of the swipe already having settled, opening a
+                // phantom "New event" create on empty space (or grabbing a real
+                // event for drag) well after the page has changed. Synthesizing a
+                // CANCEL here clears that pending message the same way it would if
+                // the detector had seen this gesture end normally.
+                val cancel = MotionEvent.obtain(event)
+                cancel.action = MotionEvent.ACTION_CANCEL
+                try {
+                    gestureDetector.onTouchEvent(cancel)
+                } finally {
+                    cancel.recycle()
+                }
             }
             if (!swipingDays) return false
             swipeAnimator?.cancel()
