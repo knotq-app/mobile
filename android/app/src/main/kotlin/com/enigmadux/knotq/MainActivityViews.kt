@@ -100,6 +100,28 @@ import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.roundToInt
 
+/**
+ * Replaces a dynamic child list as one layout transaction. This prevents a
+ * transient empty/intermediate container from being measured between the
+ * remove and add calls used by search, calendars, and small modal grids.
+ */
+internal inline fun ViewGroup.batchLayoutChanges(block: () -> Unit) {
+    val host = this as? LayoutRequestTransactionHost
+    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q && host == null) {
+        block()
+        return
+    }
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) suppressLayout(true)
+    else host?.setKnotQLayoutSuppressed(true)
+    try {
+        block()
+    } finally {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) suppressLayout(false)
+        else host?.setKnotQLayoutSuppressed(false)
+        requestLayout()
+    }
+}
+
 // Leaf UI / view-builder / color / date / dimension helpers for MainActivity,
 // extracted as extension functions (same module) to shrink MainActivity.kt.
 
@@ -144,8 +166,9 @@ internal fun MainActivity.addOccurrenceSection(root: LinearLayout, title: String
 }
 
 internal fun MainActivity.titleText(): String {
-    return if (selectedTab == TAB_SCHEMES && selectedSchemeId != null) {
-        findScheme(selectedSchemeId!!)?.optString("display_name") ?: L10n.t(this, "mobile.nav.scheme_title_fallback")
+    val schemeId = selectedSchemeId
+    return if (selectedTab == TAB_SCHEMES && schemeId != null) {
+        findScheme(schemeId)?.optString("display_name") ?: L10n.t(this, "mobile.nav.scheme_title_fallback")
     } else {
         when (selectedTab) {
             TAB_HOME -> L10n.t(this, "mobile.nav.tab_home")
@@ -160,8 +183,9 @@ internal fun MainActivity.titleText(): String {
 }
 
 internal fun MainActivity.titleColor(): Int {
-    if (selectedTab == TAB_SCHEMES && selectedSchemeId != null) {
-        return findScheme(selectedSchemeId!!)?.optInt("color_index")?.let(::schemeColor) ?: theme.textDim
+    val schemeId = selectedSchemeId
+    if (selectedTab == TAB_SCHEMES && schemeId != null) {
+        return findScheme(schemeId)?.optInt("color_index")?.let(::schemeColor) ?: theme.textDim
     }
     return when (selectedTab) {
         TAB_HOME -> theme.accent
@@ -307,7 +331,7 @@ internal fun MainActivity.dialogSpinnerField(label: String, spinner: Spinner): V
         addView(dialogLabel(label))
         addView(FrameLayout(this@dialogSpinnerField).apply {
             addView(spinner, FrameLayout.LayoutParams(-1, dp(42)))
-            addView(iconImage(R.drawable.ic_knotq_chevron_down_24, theme.textMuted, null), FrameLayout.LayoutParams(dp(15), dp(15), Gravity.RIGHT or Gravity.CENTER_VERTICAL).apply { rightMargin = dp(11) })
+            addView(iconImage(R.drawable.ic_knotq_chevron_down_24, theme.textMuted, null), FrameLayout.LayoutParams(dp(15), dp(15), Gravity.END or Gravity.CENTER_VERTICAL).apply { marginEnd = dp(11) })
         }, LinearLayout.LayoutParams(-1, dp(42)))
         alpha = if (spinner.isEnabled) 1f else 0.55f
     }
@@ -455,6 +479,8 @@ internal fun MainActivity.navSpecial(value: String, color: Int, selected: Boolea
         addView(text(value, theme.textPrimary, 12f, false), LinearLayout.LayoutParams(0, -1, 1f).apply {
             setMargins(dp(7), 0, 0, 0)
         })
+        contentDescription = value
+        isFocusable = true
         setOnClickListener { listener() }
     }.also { it.layoutParams = LinearLayout.LayoutParams(-1, dp(22)) }
 }
@@ -550,7 +576,13 @@ internal fun MainActivity.floatingAction(iconRes: Int, description: String, list
 
 internal fun MainActivity.iconImage(iconRes: Int, color: Int, description: String? = null): ImageView =
     ImageView(this).apply {
-        setImageResource(iconRes)
+        val drawable = synchronized(iconDrawableStates) {
+            iconDrawableStates[iconRes]?.newDrawable(resources)?.mutate()
+                ?: resources.getDrawable(iconRes, getTheme()).also { loaded ->
+                    loaded.constantState?.let { iconDrawableStates[iconRes] = it }
+                }.mutate()
+        }
+        setImageDrawable(drawable)
         setColorFilter(color, PorterDuff.Mode.SRC_IN)
         scaleType = ImageView.ScaleType.CENTER_INSIDE
         contentDescription = description
@@ -623,6 +655,16 @@ internal fun MainActivity.brandMark(size: Int): ImageView = ImageView(this).appl
     layoutParams = LinearLayout.LayoutParams(dp(size), dp(size))
 }
 
+// The launcher icon is intentionally adaptive, so Android adds a launcher mask
+// and background when it is resolved through applicationInfo.icon. In an
+// in-app card that produces a second rounded square around the mark. Use the
+// transparent-corner brand artwork directly for UI surfaces instead.
+internal fun MainActivity.syncBrandMark(size: Int): ImageView = ImageView(this).apply {
+    setImageResource(R.drawable.brand_logo)
+    scaleType = ImageView.ScaleType.FIT_CENTER
+    layoutParams = LinearLayout.LayoutParams(dp(size), dp(size))
+}
+
 internal fun MainActivity.colorSwatch(index: Int, active: Int): View = View(this).apply {
     background = rounded(schemeColor(index), dp(3), if (index == active) theme.accent else Color.TRANSPARENT, dp(1))
     setOnClickListener {
@@ -650,16 +692,31 @@ internal fun MainActivity.markerLabel(marker: String): String = when (marker) {
     else -> " "
 }
 
-internal fun MainActivity.calendarTimeColor(occurrence: JSONObject): Int {
+internal fun MainActivity.calendarTimeColor(
+    occurrence: JSONObject,
+    now: Instant = Instant.now(),
+    zone: ZoneId = ZoneId.systemDefault(),
+): Int = calendarTimeColor(
+    done = occurrence.optBoolean("done"),
+    start = MobileDateFormatting.parseInstant(occurrence.optionalString("start") ?: occurrence.optionalString("end")),
+    end = MobileDateFormatting.parseInstant(occurrence.optionalString("end")),
+    now = now,
+    zone = zone,
+)
+
+internal fun MainActivity.calendarTimeColor(
+    done: Boolean,
+    start: Instant?,
+    end: Instant?,
+    now: Instant,
+    zone: ZoneId,
+): Int {
     val default = if (theme.isDark) adjustAlpha(rgb(0xe8edf2), 0.90f) else adjustAlpha(rgb(0x2e291f), 0.90f)
-    if (occurrence.optBoolean("done")) return default
-    val start = MobileDateFormatting.parseInstant(occurrence.optionalString("start") ?: occurrence.optionalString("end")) ?: return default
-    val now = Instant.now()
-    val end = MobileDateFormatting.parseInstant(occurrence.optionalString("end"))
+    if (done || start == null) return default
     if (end != null && !start.isAfter(now) && end.isAfter(now)) return todayTimeColor()
     if (start.isBefore(now)) return if (theme.isDark) rgb(0xff5a53) else rgb(0xd20f39)
-    val startDay = start.atZone(ZoneId.systemDefault()).toLocalDate()
-    val dayDiff = java.time.temporal.ChronoUnit.DAYS.between(LocalDate.now(), startDay)
+    val startDay = start.atZone(zone).toLocalDate()
+    val dayDiff = java.time.temporal.ChronoUnit.DAYS.between(now.atZone(zone).toLocalDate(), startDay)
     return when {
         dayDiff <= 0 -> todayTimeColor()
         dayDiff <= 1 -> if (theme.isDark) rgb(0xe5e5ff) else rgb(0x4f5f8f)
@@ -781,6 +838,10 @@ internal fun MainActivity.toast(value: String?) {
 }
 
 internal fun MainActivity.showError(title: String, message: String?) {
+    // Network, billing, and sync callbacks can outlive the visible Activity.
+    // Never ask WindowManager to attach a dialog to a stopped/destroyed window;
+    // the next foreground refresh remains responsible for showing current state.
+    if (!isUiActive()) return
     AlertDialog.Builder(this)
         .setTitle(title)
         .setMessage(message ?: L10n.t(this, "mobile.common.unknown_error"))

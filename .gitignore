@@ -14,4 +14,11 @@ ios/DerivedData-Release/
 ios/com.apple.DeveloperTools/
 ios/KnotQMobile.xcodeproj/project.xcworkspace/xcuserdata/
 ios/KnotQMobile.xcodeproj/xcuserdata/
+*.xcresult
+*.xcarchive
+*.ipa
+*.dSYM
+*.dSYM.zip
+.build/
+.swiftpm/
 *.hprof

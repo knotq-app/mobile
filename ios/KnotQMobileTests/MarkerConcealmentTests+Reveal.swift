@@ -172,7 +172,7 @@ extension MarkerConcealmentTests {
         assertMarkerCharacters(selectedMarkers, hidden: false, in: layoutManager)
         assertMarkerCharacters(unselectedMarkers, hidden: true, in: layoutManager)
 
-        view.resignFirstResponder()
+        _ = view.resignFirstResponder()
         view.refreshMarkerVisibility(force: true)
         assertMarkerCharacters(markerIndexes, hidden: true, in: layoutManager)
         view.removeFromSuperview()

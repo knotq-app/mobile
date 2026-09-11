@@ -17,8 +17,7 @@ import android.graphics.BitmapFactory
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
-import android.graphics.PorterDuff
-import android.graphics.PorterDuffXfermode
+import android.graphics.Path
 import android.graphics.Rect
 import android.graphics.RectF
 import android.graphics.Typeface
@@ -87,6 +86,7 @@ import java.time.LocalDateTime
 import java.time.ZoneId
 import java.time.format.TextStyle
 import java.io.File
+import java.util.ArrayDeque
 import java.util.Locale
 import java.util.UUID
 import java.util.WeakHashMap
@@ -100,7 +100,7 @@ import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.roundToInt
 
-    internal fun MainActivity.maybeStartOnboarding() {
+    internal fun MainActivity.maybeStartOnboarding(renderUi: Boolean = true) {
         if (onboardingActive) return
         if (getSharedPreferences("knotq", Context.MODE_PRIVATE).getBoolean(ONBOARDING_PREF, false)) return
         if (snapshot.optJSONObject("root") == null) return
@@ -109,14 +109,15 @@ import kotlin.math.roundToInt
         // Tutorial first (mirrors iOS); the sign-in prompt is the last step and only
         // appears when the user isn't already signed in.
         onboardingPhase = ONBOARDING_GUIDE
-        applyOnboardingStep(0)
+        applyOnboardingStep(0, renderUi)
     }
 
     /// Navigates to the step's pane (mirrors desktop) and then redraws the overlay
     /// once the new content has been laid out so the cutout hugs it.
-    internal fun MainActivity.applyOnboardingStep(step: Int) {
-        onboardingStep = step.coerceIn(0, ONBOARDING_STEPS.size - 1)
-        when (ONBOARDING_STEPS[onboardingStep].tab) {
+    internal fun MainActivity.applyOnboardingStep(step: Int, renderUi: Boolean = true) {
+        onboardingStep = clampedOnboardingStep(step, ONBOARDING_STEPS.size)
+        val currentStep = ONBOARDING_STEPS[onboardingStep]
+        when (currentStep.tab) {
             TAB_SCHEMES -> {
                 val id = firstRegularSchemeId()
                 if (id != null) {
@@ -129,17 +130,36 @@ import kotlin.math.roundToInt
                 }
             }
             TAB_DAILY -> {
-                ensureTodayDailyQueue()
                 selectedTab = TAB_DAILY
                 selectedSchemeId = null
+                // Queue creation can take the same core lock as sync. Keep the
+                // tutorial responsive and reveal the cutout after mutate has
+                // published the refreshed Daily snapshot.
+                mutate(obj("type" to "ensure_daily_queue", "date" to LocalDate.now().toString())) {
+                    rootFrame.post {
+                        if (!isUiActive() || !onboardingActive) return@post
+                        showOnboardingOverlay()
+                    }
+                }
+                return
             }
             else -> {
-                selectedTab = ONBOARDING_STEPS[onboardingStep].tab
+                selectedTab = currentStep.tab
                 selectedSchemeId = null
             }
         }
-        render()
-        rootFrame.post { showOnboardingOverlay() }
+        if (renderUi) render()
+        // Startup preselects the first tutorial route before the first full
+        // render. Do not attach the software scrim to the loading shell or to
+        // that same expensive render turn; MainActivity publishes it on the
+        // following animation frame. Normal tutorial navigation still posts the
+        // overlay immediately after its route render.
+        if (renderUi || workspaceUiPublished) {
+            rootFrame.post {
+                if (!isUiActive() || !onboardingActive) return@post
+                showOnboardingOverlay()
+            }
+        }
     }
 
     internal fun MainActivity.onboardingAdvance() {
@@ -172,8 +192,10 @@ import kotlin.math.roundToInt
         selectedSchemeId = null
         render()
         // Ask for notification permission now that onboarding is complete, matching
-        // iOS (ContentView.finishOnboarding → requestAuthorizationIfNeeded).
-        MobileNotificationScheduler.requestPermission(this)
+        // iOS (ContentView.finishOnboarding → requestAuthorizationIfNeeded). Let
+        // the completed Home frame paint before Android presents its full-window
+        // permission surface.
+        scheduleNotificationPermissionRequest()
     }
 
 
@@ -217,7 +239,9 @@ import kotlin.math.roundToInt
     }
 
     internal fun MainActivity.buildGuideOverlay(): View {
-        val def = ONBOARDING_STEPS[onboardingStep]
+        val currentStep = clampedOnboardingStep(onboardingStep, ONBOARDING_STEPS.size)
+        onboardingStep = currentStep
+        val def = ONBOARDING_STEPS[currentStep]
         val cutout = if (def.ringsContent) {
             val r = contentRectInRoot()
             if (r.width() > 0 && r.height() > 0) {
@@ -254,33 +278,41 @@ import kotlin.math.roundToInt
         val radius = dp(14).toFloat()
         return object : View(this) {
             private val dimPaint = Paint().apply { color = dimColor }
-            private val clearPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-                xfermode = PorterDuffXfermode(PorterDuff.Mode.CLEAR)
-            }
             private val ringPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
                 style = Paint.Style.STROKE
                 strokeWidth = dp(2).toFloat()
                 color = ringColor
             }
-
-            init {
-                setLayerType(LAYER_TYPE_SOFTWARE, null)
+            private val cutoutRect = RectF()
+            private val dimPath = Path().apply {
+                fillType = Path.FillType.EVEN_ODD
             }
 
             override fun onDraw(canvas: Canvas) {
-                canvas.drawRect(0f, 0f, width.toFloat(), height.toFloat(), dimPaint)
+                // Keep the spotlight hardware accelerated. The former CLEAR
+                // xfermode required a full-screen software layer, which forced
+                // a large bitmap upload on every frame and could stall the
+                // emulator compositor while the onboarding card appeared.
+                dimPath.reset()
+                dimPath.fillType = Path.FillType.EVEN_ODD
+                dimPath.addRect(0f, 0f, width.toFloat(), height.toFloat(), Path.Direction.CW)
                 cutout?.let { r ->
-                    val rect = RectF(r.left.toFloat(), r.top.toFloat(), r.right.toFloat(), r.bottom.toFloat())
-                    canvas.drawRoundRect(rect, radius, radius, clearPaint)
-                    canvas.drawRoundRect(rect, radius, radius, ringPaint)
+                    cutoutRect.set(r.left.toFloat(), r.top.toFloat(), r.right.toFloat(), r.bottom.toFloat())
+                    dimPath.addRoundRect(cutoutRect, radius, radius, Path.Direction.CW)
+                }
+                canvas.drawPath(dimPath, dimPaint)
+                cutout?.let {
+                    canvas.drawRoundRect(cutoutRect, radius, radius, ringPaint)
                 }
             }
         }
     }
 
     internal fun MainActivity.buildGuideCard(): View {
-        val def = ONBOARDING_STEPS[onboardingStep]
-        val isLast = onboardingStep >= ONBOARDING_STEPS.size - 1
+        val currentStep = clampedOnboardingStep(onboardingStep, ONBOARDING_STEPS.size)
+        onboardingStep = currentStep
+        val def = ONBOARDING_STEPS[currentStep]
+        val isLast = currentStep >= ONBOARDING_STEPS.size - 1
         val card = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(16), dp(16), dp(16), dp(14))
@@ -293,7 +325,7 @@ import kotlin.math.roundToInt
             gravity = Gravity.CENTER_VERTICAL
         }
         ONBOARDING_STEPS.indices.forEach { i ->
-            val active = i == onboardingStep
+            val active = i == currentStep
             dots.addView(View(this).apply {
                 background = rounded(if (active) theme.accent else adjustAlpha(theme.borderOverlay, 0.6f), dp(3))
             }, LinearLayout.LayoutParams(dp(if (active) 18 else 6), dp(6)).apply { rightMargin = dp(5) })
@@ -313,7 +345,7 @@ import kotlin.math.roundToInt
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
         }
-        if (onboardingStep > 0) {
+        if (currentStep > 0) {
             buttons.addView(
                 onboardingButton(L10n.t(this, "common.back"), false) { onboardingBack() },
                 LinearLayout.LayoutParams(-2, -2).apply { rightMargin = dp(8) }
@@ -363,15 +395,22 @@ import kotlin.math.roundToInt
         snapshot.optJSONObject("root")?.let { firstRegularSchemeId(it) }
 
     internal fun MainActivity.firstRegularSchemeId(node: JSONObject): String? {
+        val pending = ArrayDeque<JSONObject>()
         val children = node.optJSONArray("children") ?: return null
-        for (index in 0 until children.length()) {
-            val child = children.optJSONObject(index) ?: continue
-            when (child.optString("kind")) {
-                "folder" -> firstRegularSchemeId(child)?.let { return it }
-                "scheme" -> {
-                    if (!child.optBoolean("is_daily_queue", false) && !child.optBoolean("is_read_only", false)) {
-                        child.optString("id").takeIf { it.isNotEmpty() }?.let { return it }
+        for (index in children.length() - 1 downTo 0) {
+            children.optJSONObject(index)?.let(pending::addLast)
+        }
+        while (pending.isNotEmpty()) {
+            val current = pending.removeLast()
+            when (current.optString("kind")) {
+                "folder" -> {
+                    val nested = current.optJSONArray("children") ?: continue
+                    for (index in nested.length() - 1 downTo 0) {
+                        nested.optJSONObject(index)?.let(pending::addLast)
                     }
+                }
+                "scheme" -> if (!current.optBoolean("is_daily_queue", false) && !current.optBoolean("is_read_only", false)) {
+                    current.optString("id").takeIf { it.isNotEmpty() }?.let { return it }
                 }
             }
         }

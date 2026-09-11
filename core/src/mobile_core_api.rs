@@ -639,15 +639,21 @@ impl MobileCore {
     ) -> Result<(), MobileError> {
         let mut inner = self.lock()?;
         let (marker, family) = parse_marker_spec(Some(&marker))?;
-        inner.apply(Command::SetItemMarker {
+        inner
+            .apply(Command::SetItemMarker {
                 scheme: parse_id(&scheme_id)?,
                 item: parse_id(&item_id)?,
                 marker,
-            }).map_err(MobileError::from)?;
+            })
+            .map_err(MobileError::from)?;
         if !family.is_standard() {
-            inner.apply(Command::SetItemMarkerFamily {
-                scheme: parse_id(&scheme_id)?, item: parse_id(&item_id)?, family
-            }).map_err(MobileError::from)?;
+            inner
+                .apply(Command::SetItemMarkerFamily {
+                    scheme: parse_id(&scheme_id)?,
+                    item: parse_id(&item_id)?,
+                    family,
+                })
+                .map_err(MobileError::from)?;
         }
         Ok(())
     }
@@ -971,6 +977,7 @@ impl MobileCore {
             return Ok(());
         }
         inner.settings.notification_defaults = defaults;
+        inner.notification_schedule_cache = None;
         inner.save_settings().map_err(Into::into)
     }
 
@@ -1022,6 +1029,7 @@ impl MobileCore {
         inner.workspace = make_default_workspace();
         inner.crdt =
             WorkspaceCrdtDocuments::empty_for_replica(&inner.workspace, inner.settings.replica_id);
+        inner.notification_schedule_cache = None;
         let mut changes = WorkspaceCrdtChangeSet::default().workspace();
         for id in inner.workspace.schemes.keys().copied().collect::<Vec<_>>() {
             changes = changes.touch_scheme(id);
@@ -1088,14 +1096,24 @@ impl MobileCore {
     // ---------------------------------------------------------------------
 
     #[cfg(feature = "accounts")]
-    pub fn sync_once(&self, api_base: String, bearer_token: String) -> Result<bool, MobileError> {
+    pub fn sync_once(
+        &self,
+        api_base: String,
+        bearer_token: String,
+        account_user_id: String,
+    ) -> Result<bool, MobileError> {
         self.lock()?
-            .sync_once(&api_base, &bearer_token)
+            .sync_once(&api_base, &bearer_token, &account_user_id)
             .map_err(Into::into)
     }
 
     #[cfg(not(feature = "accounts"))]
-    pub fn sync_once(&self, _api_base: String, _bearer_token: String) -> Result<bool, MobileError> {
+    pub fn sync_once(
+        &self,
+        _api_base: String,
+        _bearer_token: String,
+        _account_user_id: String,
+    ) -> Result<bool, MobileError> {
         Ok(false)
     }
 
@@ -1104,9 +1122,10 @@ impl MobileCore {
         &self,
         api_base: String,
         bearer_token: String,
+        account_user_id: String,
     ) -> Result<bool, MobileError> {
         self.lock()?
-            .force_sync_once(&api_base, &bearer_token)
+            .force_sync_once(&api_base, &bearer_token, &account_user_id)
             .map_err(Into::into)
     }
 
@@ -1115,6 +1134,7 @@ impl MobileCore {
         &self,
         _api_base: String,
         _bearer_token: String,
+        _account_user_id: String,
     ) -> Result<bool, MobileError> {
         Ok(false)
     }
@@ -1217,14 +1237,18 @@ impl MobileCore {
             inner.push_environment = None;
             return Ok(());
         }
-        if inner.push_token.as_deref() != Some(token.as_str()) {
-            // Token changed: force a re-register on the next sync.
-            inner.registered_push_token = None;
-        }
-        inner.push_environment = Some(match environment.as_str() {
+        let next_environment = match environment.as_str() {
             "production" => PushEnvironment::Production,
             _ => PushEnvironment::Sandbox,
-        });
+        };
+        if inner.push_token.as_deref() != Some(token.as_str())
+            || inner.push_environment != Some(next_environment)
+        {
+            // Token or APNs environment changed: force a re-register on the next sync.
+            inner.registered_push_token = None;
+            inner.registered_push_environment = None;
+        }
+        inner.push_environment = Some(next_environment);
         inner.push_token = Some(token);
         Ok(())
     }

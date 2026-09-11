@@ -1,3 +1,4 @@
+import ImageIO
 import SwiftUI
 import UIKit
 
@@ -7,7 +8,17 @@ extension EditorTextView {
         renderedTableCellHits.removeAll()
         let storage = textStorage
         let ns = storage.string as NSString
-        let paragraphs = paragraphRanges(in: ns)
+        guard glyphsToShow.length > 0, ns.length > 0 else { return }
+        // TextKit gives this callback a glyph range, while editor metadata is
+        // character/paragraph based. Restrict the metadata scan to the visible
+        // character slice; adjacent paragraphs are read directly below for
+        // annotation continuity and list numbering.
+        let charactersToShow = editorLayoutManager.characterRange(
+            forGlyphRange: glyphsToShow,
+            actualGlyphRange: nil
+        )
+        let paragraphs = paragraphRanges(in: ns, intersecting: charactersToShow)
+        guard !paragraphs.isEmpty else { return }
         let metas: [LineMeta] = paragraphs.map { lineMeta(at: $0.fullRange.location, in: storage) }
         for index in paragraphs.indices {
             let paragraph = paragraphs[index]
@@ -17,15 +28,35 @@ extension EditorTextView {
             guard let firstFragment = geometry.fragments.first else { continue }
             let visualBounds = geometry.bounds
             let meta = metas[index]
-            let previousMeta = index > 0 ? metas[index - 1] : nil
-            let nextMeta = index + 1 < metas.count ? metas[index + 1] : nil
+            let previousMeta: LineMeta?
+            if index > 0 {
+                previousMeta = metas[index - 1]
+            } else if paragraph.fullRange.location > 0 {
+                previousMeta = lineMeta(
+                    forParagraphAt: paragraph.fullRange.location - 1,
+                    in: storage
+                )
+            } else {
+                previousMeta = nil
+            }
+            let nextMeta: LineMeta?
+            let nextLocation = NSMaxRange(paragraph.fullRange)
+            if index + 1 < metas.count {
+                nextMeta = metas[index + 1]
+            } else if nextLocation < ns.length {
+                nextMeta = lineMeta(forParagraphAt: nextLocation, in: storage)
+            } else {
+                nextMeta = nil
+            }
             let previousAnnotated = previousMeta?.annotation != nil
             let nextAnnotated = nextMeta?.annotation != nil
             // A block line's image/table occupies its line fragment (the
             // attachment glyph sized it), so no extra height is reserved here.
             let annotationHeight = meta.annotation == nil ? CGFloat(0) : DesktopEditorMetrics.annotationHeight
             let rowExtraHeight = annotationHeight
-            let ordinal = meta.marker == .numbered ? numberedOrdinal(at: index, in: metas) : 1
+            let ordinal = meta.marker == .numbered
+                ? numberedOrdinal(for: paragraph, meta: meta, in: ns, storage: storage)
+                : 1
             drawIndentGuides(
                 meta: meta, previousMeta: previousMeta, nextMeta: nextMeta,
                 firstFragment: firstFragment, visualBounds: visualBounds,
@@ -87,18 +118,29 @@ extension EditorTextView {
     /// Counts the current line as Nth where N = 1 + the number of consecutive
     /// prior Numbered siblings at the same indent (nested-deeper lines are
     /// transparent; anything at a shallower indent or a non-Numbered at the
-    /// same indent ends the run). Mirrors desktop's `numbered_marker_ordinal`.
-    func numberedOrdinal(at index: Int, in metas: [LineMeta]) -> Int {
-        let currentIndent = metas[index].indent
+    /// same indent ends the run). This walks source paragraphs rather than
+    /// assuming the visible draw slice starts at the beginning of the list.
+    func numberedOrdinal(
+        for paragraph: EditorParagraphRange,
+        meta: LineMeta,
+        in ns: NSString,
+        storage: NSAttributedString
+    ) -> Int {
+        let currentIndent = meta.indent
         var ordinal = 1
-        var i = index - 1
-        while i >= 0 {
-            let prev = metas[i]
-            if prev.indent > currentIndent { i -= 1; continue }
-            if prev.indent < currentIndent { break }
-            if prev.marker != .numbered { break }
+        var cursor = paragraph.fullRange.location
+        while cursor > 0 {
+            let previousParagraph = ns.paragraphRange(
+                for: NSRange(location: cursor - 1, length: 0)
+            )
+            let previous = paragraphMeta(of: previousParagraph, in: storage)
+            if previous.indent > currentIndent {
+                cursor = previousParagraph.location
+                continue
+            }
+            if previous.indent < currentIndent || previous.marker != .numbered { break }
             ordinal += 1
-            i -= 1
+            cursor = previousParagraph.location
         }
         return ordinal
     }
@@ -206,9 +248,12 @@ extension EditorTextView {
         path.stroke()
 
         path.addClip()
-        if let image = imageForMedia(media), image.size.width > 2, image.size.height > 2 {
+        let scale = window?.screen.scale ?? UIScreen.main.scale
+        let maxPixelSize = max(1, Int(ceil(max(rect.width, rect.height) * scale)))
+        if let image = cachedImageForMedia(media, maxPixelSize: maxPixelSize), image.size.width > 2, image.size.height > 2 {
             image.draw(in: rect)
         } else {
+            requestImageForMedia(media, maxPixelSize: maxPixelSize)
             drawImageFallback(in: rect)
         }
     }
@@ -272,14 +317,78 @@ extension EditorTextView {
         return CGSize(width: rawWidth * clampedScale, height: rawHeight * clampedScale)
     }
 
-    func imageForMedia(_ media: MobileItemMedia) -> UIImage? {
+    func imageForMedia(_ media: MobileItemMedia, maxPixelSize: Int? = nil) -> UIImage? {
         guard let path = media.path, !path.isEmpty else { return nil }
-        if let cached = imageCache[path] {
+        let boundedPixelSize = maxPixelSize.map { max(1, $0) }
+        let cacheKey = "\(path)\u{1f}\(boundedPixelSize ?? 0)" as NSString
+        if let cached = imageCache.object(forKey: cacheKey) {
             return cached
         }
-        guard let image = UIImage(contentsOfFile: path) else { return nil }
-        imageCache[path] = image
+        let image = Self.decodeImage(at: path, maxPixelSize: boundedPixelSize)
+        guard let image else { return nil }
+        let cost = image.cgImage.map { $0.bytesPerRow * $0.height } ?? 0
+        imageCache.setObject(image, forKey: cacheKey, cost: cost)
         return image
+    }
+
+    /// Draw-time cache lookup. Unlike `imageForMedia`, this method never
+    /// decodes a file and is therefore safe to call from NSLayoutManager's
+    /// synchronous background-drawing pass.
+    func cachedImageForMedia(_ media: MobileItemMedia, maxPixelSize: Int? = nil) -> UIImage? {
+        guard let path = media.path, !path.isEmpty else { return nil }
+        let boundedPixelSize = maxPixelSize.map { max(1, $0) }
+        let cacheKey = "\(path)\u{1f}\(boundedPixelSize ?? 0)" as NSString
+        return imageCache.object(forKey: cacheKey)
+    }
+
+    /// Starts a single bounded thumbnail decode for a draw-time cache miss.
+    /// The fallback is painted immediately; the editor invalidates its display
+    /// after the thumbnail arrives, so a camera-sized image cannot stall the
+    /// user's first frame.
+    func requestImageForMedia(_ media: MobileItemMedia, maxPixelSize: Int) {
+        guard let path = media.path, !path.isEmpty else { return }
+        let boundedPixelSize = max(1, maxPixelSize)
+        let cacheKey = "\(path)\u{1f}\(boundedPixelSize)"
+        guard imageCache.object(forKey: cacheKey as NSString) == nil else { return }
+
+        imageLoadsLock.lock()
+        let inserted = imageLoadsInFlight.insert(cacheKey).inserted
+        imageLoadsLock.unlock()
+        guard inserted else { return }
+
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            let image = Self.decodeImage(at: path, maxPixelSize: boundedPixelSize)
+            let cost = image?.cgImage.map { $0.bytesPerRow * $0.height } ?? 0
+            DispatchQueue.main.async {
+                guard let self else { return }
+                self.imageLoadsLock.lock()
+                self.imageLoadsInFlight.remove(cacheKey)
+                self.imageLoadsLock.unlock()
+                if let image {
+                    self.imageCache.setObject(image, forKey: cacheKey as NSString, cost: cost)
+                    self.setNeedsDisplay()
+                }
+            }
+        }
+    }
+
+    nonisolated private static func decodeImage(at path: String, maxPixelSize: Int?) -> UIImage? {
+        if let maxPixelSize,
+           let source = CGImageSourceCreateWithURL(URL(fileURLWithPath: path) as CFURL, nil),
+           let thumbnail = CGImageSourceCreateThumbnailAtIndex(
+               source,
+               0,
+               [
+                   kCGImageSourceCreateThumbnailFromImageAlways: true,
+                   kCGImageSourceCreateThumbnailWithTransform: true,
+                   kCGImageSourceThumbnailMaxPixelSize: maxPixelSize
+               ] as CFDictionary
+           ) {
+            return UIImage(cgImage: thumbnail)
+        }
+        // Keep the old behavior for unsupported/corrupt formats so a
+        // thumbnailing failure still gets the same fallback/error path.
+        return UIImage(contentsOfFile: path)
     }
 
     func editorInlineBlockMaxWidth(textLeft: CGFloat) -> CGFloat {

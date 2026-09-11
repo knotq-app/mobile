@@ -104,7 +104,7 @@ private fun MainActivity.beginGoogleCalendarImport(accountEmail: String?, parent
             // Always re-render: the row reads "Connecting…" off this flag, and a
             // failure that only raised a dialog used to leave it saying that
             // forever.
-            render()
+            requestRender()
         }
     }
 }
@@ -161,27 +161,30 @@ internal fun MainActivity.completeGoogleCalendarImport(
     )
     Thread {
         val result = runCatching {
-            bridge.request(
-                obj(
-                    "type" to "import_google_calendars_with_identity",
-                    "account" to identity,
-                    "parent_id" to parentId
+            coreExecutor.call {
+                bridge.request(
+                    obj(
+                        "type" to "import_google_calendars_with_identity",
+                        "account" to identity,
+                        "parent_id" to parentId
+                    )
                 )
-            )
+            }
         }
         // Read the snapshot back on this thread too. It is another trip through
         // the core's lock, and taking it on the main thread right after an import
         // is how "Connecting…" turned into an ANR: the import (or a sync running
         // beside it) still holds the lock, and the UI thread waits behind it.
-        val refreshed = result.map { snapshotFromCore() }
+        val refreshed = result.map { coreExecutor.call { snapshotFromCore() } }
         runOnUiThread {
             googleAuthInProgress = false
             pendingGoogleParentId = null
+            if (!isUiActive()) return@runOnUiThread
             result.onSuccess { response ->
                 googleCalendarStatus = response.optString("message")
                 refreshed.getOrNull()?.let { snapshot = it }
                 configureGoogleSyncPolling()
-                render()
+                requestRender()
                 // After the repaint, not before: rescheduling walks every pending
                 // occurrence and re-registers the alarms, and doing that first is
                 // what kept the row on "Connecting…" while the work ran.
@@ -191,7 +194,7 @@ internal fun MainActivity.completeGoogleCalendarImport(
                 showError("Google Calendar", error.message)
                 // The row reads "Connecting…" off the flag above, so it has to be
                 // repainted even when all the user sees is the error dialog.
-                render()
+                requestRender()
             }
         }
     }.start()
@@ -238,35 +241,45 @@ internal fun MainActivity.syncGoogleCalendars(silent: Boolean = false) {
         // attention is flagged even if the sync itself then fails.
         reconnect.forEach { accountId ->
             runCatching {
-                bridge.request(
-                    obj(
-                        "type" to "set_google_account_needs_reauth",
-                        "account_id" to accountId,
-                        "needs_reauth" to true
+                coreExecutor.call {
+                    bridge.request(
+                        obj(
+                            "type" to "set_google_account_needs_reauth",
+                            "account_id" to accountId,
+                            "needs_reauth" to true
+                        )
                     )
-                )
+                }
             }
         }
 
         val result = runCatching {
-            bridge.request(
-                obj(
-                    "type" to "sync_google_calendars_with_identity",
-                    "accounts" to identities
+            coreExecutor.call {
+                bridge.request(
+                    obj(
+                        "type" to "sync_google_calendars_with_identity",
+                        "accounts" to identities
+                    )
                 )
-            )
+            }
         }
+        // Snapshot expansion also takes the core lock. Keep periodic Google
+        // refreshes from blocking the UI thread immediately after the import.
+        val refreshed = result.map { coreExecutor.call { snapshotFromCore() } }
         runOnUiThread {
             googleSyncInProgress = false
+            if (!isUiActive()) return@runOnUiThread
             result.onSuccess { response ->
                 googleCalendarStatus = response.optString("message")
-                loadSnapshot()
+                refreshed.getOrNull()?.let { snapshot = it }
+                configureGoogleSyncPolling()
                 rescheduleNotifications()
-                render()
+                requestRender()
                 if (syncSession != null) syncOnce()
             }.onFailure { error ->
                 if (silent) {
                     googleCalendarStatus = error.message
+                    requestRender()
                 } else {
                     showError("Google Calendar", error.message)
                 }
@@ -287,7 +300,7 @@ internal fun MainActivity.reconnectGoogleAccount(accountId: String, email: Strin
         return
     }
     googleAuthInProgress = true
-    render()
+    requestRender()
     requestGoogleAuthorization(accountEmail = email, allowConsent = true) { result ->
         result.onSuccess { authorization ->
             googleAuthInProgress = false
@@ -304,7 +317,7 @@ internal fun MainActivity.reconnectGoogleAccount(accountId: String, email: Strin
             googleAuthInProgress = false
             if (error is GoogleAuthorizationError.Canceled) {
                 googleCalendarStatus = error.message
-                render()
+                requestRender()
             } else {
                 showError("Google Calendar", googleAuthorizationMessage(error))
             }
@@ -429,7 +442,7 @@ internal fun MainActivity.onGoogleAuthorizationResult(resultCode: Int, data: Int
         // in-flight flow is gone. Reset rather than leaving the UI spinning.
         googleAuthInProgress = false
         pendingGoogleParentId = null
-        render()
+        requestRender()
         return
     }
     if (resultCode != android.app.Activity.RESULT_OK) {
@@ -498,6 +511,7 @@ internal fun MainActivity.renderGoogleCalendarPage(): LinearLayout {
         background = underline(theme.bgApp)
         addView(iconChipImage(R.drawable.ic_knotq_chevron_left_24, L10n.t(this@renderGoogleCalendarPage, "common.back"), iconSize = 20) {
             settingsShowingGoogle = false
+            queueContentTransition(ContentTransitionDirection.BACKWARD)
             render()
         })
         addView(text(L10n.t(this@renderGoogleCalendarPage, "settings.google_calendar.section"), theme.textPrimary, 16f, true).apply {

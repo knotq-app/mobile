@@ -6,6 +6,8 @@ import android.app.DatePickerDialog
 import android.app.TimePickerDialog
 import android.animation.Animator
 import android.animation.AnimatorListenerAdapter
+import android.animation.AnimatorSet
+import android.animation.ObjectAnimator
 import android.animation.ValueAnimator
 import android.content.ActivityNotFoundException
 import android.content.Context
@@ -17,18 +19,21 @@ import android.graphics.BitmapFactory
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
+import android.graphics.Path
 import android.graphics.PorterDuff
 import android.graphics.PorterDuffXfermode
 import android.graphics.Rect
 import android.graphics.RectF
 import android.graphics.Typeface
 import android.graphics.drawable.ColorDrawable
+import android.graphics.drawable.Drawable
 import android.graphics.drawable.GradientDrawable
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
+import android.os.SystemClock
 import android.text.Editable
 import android.text.InputType
 import android.text.TextPaint
@@ -44,7 +49,7 @@ import android.view.Gravity
 import android.view.VelocityTracker
 import android.view.View
 import android.view.ViewConfiguration
-import android.view.animation.DecelerateInterpolator
+import android.view.animation.PathInterpolator
 import android.view.ViewGroup
 import android.view.inputmethod.EditorInfo
 import android.view.inputmethod.InputMethodManager
@@ -81,7 +86,6 @@ import com.android.billingclient.api.QueryPurchasesParams
 import com.google.android.play.core.review.ReviewManagerFactory
 import org.json.JSONArray
 import org.json.JSONObject
-import java.lang.ref.WeakReference
 import java.time.Instant
 import java.time.LocalDate
 import java.time.LocalTime
@@ -89,6 +93,7 @@ import java.time.LocalDateTime
 import java.time.ZoneId
 import java.time.format.TextStyle
 import java.io.File
+import java.util.ArrayDeque
 import java.util.Locale
 import java.util.UUID
 import java.util.WeakHashMap
@@ -96,12 +101,25 @@ import java.net.HttpURLConnection
 import java.net.URL
 import java.security.MessageDigest
 import java.security.SecureRandom
+import java.util.concurrent.ExecutorService
+import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 import kotlin.math.abs
 import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.roundToInt
 
+internal enum class ContentTransitionDirection {
+    FORWARD,
+    BACKWARD,
+}
+
+private data class NavigatorTraversalFrame(
+    val children: JSONArray,
+    val parentId: String,
+    val depth: Int,
+    var nextIndex: Int = 0,
+)
 
 class MainActivity : Activity() {
     internal lateinit var bridge: RustBridge
@@ -110,7 +128,105 @@ class MainActivity : Activity() {
     internal lateinit var titleBar: LinearLayout
     internal lateinit var content: FrameLayout
     internal lateinit var dock: LinearLayout
+    // Vector resources are used throughout the chrome and repeated in every
+    // row. Cache their immutable constant states per Activity; each ImageView
+    // still receives a fresh mutable drawable for its tint, but startup and
+    // route rebuilds no longer re-inflate the same XML over and over.
+    internal val iconDrawableStates = HashMap<Int, Drawable.ConstantState>()
+    // Foreground state belongs to this Activity instance. A process-wide flag
+    // can be cleared by the old Activity's onStop while a replacement Activity
+    // is already live during recreation.
+    @Volatile internal var activityForeground = false
+    // The main content is intentionally rebuilt from the immutable snapshot, but
+    // the title bar and phone dock are stable chrome. Recreating them on every
+    // sync/status repaint adds measure work and briefly detaches their icons.
+    // These signatures let a data refresh reuse the existing controls while
+    // navigation, theme, account, or title changes still rebuild them.
+    private data class TitleBarRenderSignature(
+        val title: String,
+        val selectedTab: Int,
+        val selectedSchemeId: String?,
+        val leadingColor: Int,
+        val accountEmail: String,
+        val theme: UiTheme,
+    )
+
+    private data class DockRenderSignature(
+        val selectedTab: Int,
+        val wide: Boolean,
+        val theme: UiTheme,
+    )
+
+    /**
+     * State that changes the main content subtree itself. Sync/account status
+     * often asks for a repaint while the immutable workspace snapshot and route
+     * are unchanged; keeping that repaint from tearing down the whole native
+     * tree is the Android equivalent of SwiftUI's stable identity here.
+     */
+    private data class ContentRenderState(
+        val selectedTab: Int,
+        val selectedSchemeId: String?,
+        val selectedDate: LocalDate,
+        val weekOffset: Int,
+        val wide: Boolean,
+        val theme: UiTheme,
+        val settingsShowingArchive: Boolean,
+        val settingsShowingTiming: Boolean,
+        val settingsShowingGoogle: Boolean,
+        val dailyHistoryDays: Int,
+        val collapsedFolderIds: Set<String>,
+        val pendingDailyAnchorDate: String?,
+        val pendingDailyAutoFocusDate: String?,
+        val pendingTitleFocusSchemeId: String?,
+        val keyboardActive: Boolean,
+        val showPhoneDock: Boolean,
+        val showPhoneQuickActions: Boolean,
+        // Settings includes account/Google status that is intentionally kept
+        // outside the workspace snapshot. Include only the visible fields so
+        // status changes repaint that route without making every render rebuild
+        // it unconditionally.
+        val settingsAccountEmail: String,
+        val settingsAccountSupportsSync: Boolean?,
+        val settingsSyncOffline: Boolean,
+        val settingsSyncInProgress: Boolean,
+        val settingsSubscriptionCancelled: Boolean,
+        val settingsEmailVerified: Boolean?,
+        val settingsResendInProgress: Boolean,
+        val settingsResendCooldown: Int,
+        val settingsPurchaseInProgress: Boolean,
+        val settingsGoogleAuthInProgress: Boolean,
+        val settingsGoogleSyncInProgress: Boolean,
+        val settingsGoogleCalendarStatus: String?,
+    )
+
+    private var renderedTitleBarSignature: TitleBarRenderSignature? = null
+    private var renderedDockSignature: DockRenderSignature? = null
+    private var renderedContentSnapshot: JSONObject? = null
+    private var renderedContentState: ContentRenderState? = null
+    private var pendingContentTransition: ContentTransitionDirection? = null
+    private var activeContentTransition: Animator? = null
+    private var activeTransitionIncomingView: View? = null
+    private var activeTransitionOutgoingView: View? = null
+    // Read-only transition state used by device-side motion regressions. Keep
+    // the animator and its view ownership private so callers can observe the
+    // invariant without being able to mutate an in-flight animation.
+    internal val contentTransitionActive: Boolean
+        get() = activeContentTransition != null
+    internal val contentTransitionIncomingTranslationX: Float
+        get() = activeTransitionIncomingView?.translationX ?: 0f
+    // A scheme save can finish while its Back transition is still running.
+    // Defer that snapshot-driven rebuild until the transition has released the
+    // outgoing page, otherwise the render would cancel the animation mid-flight.
+    private var pendingContentTransitionRender = false
+    // `updateChromeVisibility()` is also called directly by IME/window-inset
+    // callbacks. Keep those visibility changes atomic without unsuppressing
+    // the outer transaction while `renderNow()` is rebuilding the page.
+    private var renderingMainTree = false
     internal lateinit var theme: UiTheme
+    // System-bar/window colors are process chrome, not per-render content. Keep
+    // the last applied value so snapshot refreshes do not repeatedly cross the
+    // window manager boundary and briefly repaint the bars.
+    internal var lastSystemBarTheme: UiTheme? = null
 
     // First-run onboarding overlay state. The overlay lives in `rootFrame` as a
     // sibling of `shell`, so it survives `render()` (which only rebuilds shell).
@@ -127,6 +243,10 @@ class MainActivity : Activity() {
     // rollover and advance the daily/home "today" instead of staying stuck on
     // yesterday when the app is reopened the next day without a restart.
     internal var anchoredDay: LocalDate = LocalDate.now()
+    // The viewer's timezone is part of calendar presentation state. Android can
+    // change it while this Activity stays alive, so keep a lifecycle checkpoint
+    // and refresh the snapshot when the zone changes.
+    internal var lastObservedTimeZoneId: String = ZoneId.systemDefault().id
     internal var selectedSchemeId: String? = null
     // Tab the scheme editor was entered from, so its back button returns there.
     internal var schemeReturnTab = TAB_HOME
@@ -144,30 +264,104 @@ class MainActivity : Activity() {
     // scannable on a phone instead of becoming a wall of selectors.
     internal var settingsShowingTiming = false
     internal var settingsShowingGoogle = false
+    // The month picker owns a separate Dialog window. Track it so a fast
+    // rotation/background/destroy cannot leave a stale window attached to an
+    // old Activity (or flash over the newly recreated shell).
+    internal var activeMonthPickerDialog: AlertDialog? = null
     // Daily feed paging + scroll anchoring, mirroring the iOS bottom-pinned
     // feed: history grows by a month each time the user scrolls to the top.
+    internal var homeScrollY = 0
     internal var dailyHistoryDays = 3
     internal var dailyHistoryLoadTriggerDate: String? = null
     internal var dailyScrollY = 0
     internal var dailyScrollDate: String? = null
+    internal var dailyFirstVisibleDate: String? = null
+    internal var dailyFirstVisibleTop = 0
     internal var pendingDailyAnchorDate: String? = null
     internal var pendingDailyAutoFocusDate: String? = null
     internal var pendingTitleFocusSchemeId: String? = null
     internal var lastRenderedTab: Int? = null
+    // The first native snapshot can be large (calendar expansion + JSON
+    // materialization). Keep the shell responsive while it is loaded off the
+    // main thread, then publish one coherent snapshot/render on completion.
+    internal var workspaceReady = false
+    // Startup can finish while the Activity is stopped. Keep the loaded
+    // snapshot until onStart can publish it into the live view tree exactly
+    // once.
+    internal var workspaceUiPublished = false
+        // Publish the first full workspace tree after the loading shell has had
+        // one frame to settle. Building hundreds of native views is synchronous
+        // on Android; doing it in the same turn as the first focus transition
+        // can make the window manager report an input ANR even though the app is
+        // otherwise healthy. Keep this pending state explicit so onStart and a
+        // late snapshot completion cannot schedule duplicate full renders.
+    internal var workspaceRenderPending = false
+    private var workspaceRenderRunnable: Runnable? = null
+    internal var startupEffectsApplied = false
+    internal var startupSeededScreenshotFixture = false
+    internal var pendingStartupAuthIntent: Uri? = null
+    // Android's notification permission dialog is a full-window system surface
+    // on some landscape/tablet configurations. Do not launch it in the same
+    // frame as the first workspace tree, or the user can briefly see only the
+    // dialog and mistake the underlying Home/Settings shell for a blank page.
+    private var notificationPermissionRunnable: Runnable? = null
+    private var notificationPermissionDeferred = false
+    private val notificationPermissionDelayMs = 650L
+    // JNA/native loading is expensive on a cold Android process. Keep it off
+    // Activity.onCreate so the platform can display the stable shell while the
+    // bridge opens in the same serialized executor used by all core work.
+    internal var bridgeStartupPending = false
+    // Background sync/status completions can arrive in a burst. Coalesce their
+    // full-tree redraws onto the next frame so the old tree is not torn down and
+    // rebuilt several times before Android has drawn any of them.
+    internal var renderRequestPending = false
+    internal var renderDeferredWhileEditing = false
+    // Snapshot callbacks must not replace the CalendarTimelineView while a
+    // swipe is settling. Replacing it cancels the animator and can drop the
+    // user's second rapid swipe before it commits its adjacent day.
+    internal var calendarGestureActive = false
+    internal var renderDeferredWhileCalendarGesture = false
+    internal val renderRequestRunnable = Runnable {
+        renderRequestPending = false
+        if (!isUiActive()) return@Runnable
+        // The request may have been posted just before the user's swipe
+        // crossed the touch slop. Re-check ownership at execution time too;
+        // guarding only requestRender() still lets an already queued runnable
+        // detach the timeline in the middle of the snap animation.
+        if (calendarGestureActive) {
+            renderDeferredWhileCalendarGesture = true
+            return@Runnable
+        }
+        if (activeContentTransition != null) {
+            // A status/sync repaint must not cancel an in-flight page slide.
+            // The transition listener will flush this request after both
+            // pages have reached their final positions.
+            pendingContentTransitionRender = true
+            return@Runnable
+        }
+        render()
+    }
     internal val editorSchemeIds = WeakHashMap<EditText, String>()
     // The FrameLayout wrapping each editor, used to float the inline table-cell
     // editor over a tapped cell.
     internal val editorHosts = WeakHashMap<EditText, FrameLayout>()
     internal var lastActiveEditor: EditText? = null
     internal var suppressEditorBlurCommit = false
+    // A render can be triggered by two adjacent table/editor mutations. The
+    // older posted clear must not release the suppression window belonging to
+    // the newer render.
+    private var editorMutationGeneration = 0L
     // Pending debounced live flush of the active editor into the core (push-on-type).
     internal var editorFlushRunnable: Runnable? = null
-    // Serial executor for core WRITES (edits/flushes), so they run OFF the main
-    // thread — a sync run holds the core lock across network I/O, and doing a core
-    // write on the UI thread blocks (hangs) until that lock frees. Single-threaded
-    // = FIFO, so edit order is preserved (like iOS's serial bridge queue).
-    internal val coreExecutor: java.util.concurrent.ExecutorService =
-        java.util.concurrent.Executors.newSingleThreadExecutor()
+    // A live editor flush is a replace-the-whole-document write. If it is still
+    // queued behind sync or a blur commit, a newer document supersedes it; let
+    // the core queue skip that stale payload before it enters native code.
+    internal val editorFlushGate = LatestRequestGate()
+    // One FIFO boundary for every native-core call. Writes/snapshots use
+    // `execute`; background loops that need a result use `call` on their own
+    // thread. Keeping both on the same queue avoids native-lock contention and
+    // preserves edit order (like iOS's serial bridge queue) without blocking UI.
+    internal val coreExecutor = SerialCoreExecutor()
     // The inline cell editor currently shown (if any), so a second tap commits
     // the first before moving on.
     internal var activeCellEdit: ActiveCellEdit? = null
@@ -178,6 +372,20 @@ class MainActivity : Activity() {
     internal var formatBarMarkerRefresh: (() -> Unit)? = null
     // Keep the format bar's horizontal scroll position across re-renders.
     internal var formatBarScrollX = 0
+    // Search runs through the same serial core executor as edits, but never on
+    // the UI thread. The serial invalidates stale results when typing quickly.
+    internal var searchRequestSerial = 0L
+    internal var searchRequestRunnable: Runnable? = null
+    // Search can be triggered by text changes, IME action, and focus loss. Keep
+    // the last query's snapshot identity so those overlapping callbacks do not
+    // submit the same core search twice, while a newer workspace snapshot can
+    // still refresh an unchanged query.
+    internal var searchLastQuery: String? = null
+    internal var searchLastSnapshot: JSONObject? = null
+    // Calendar/day rollover/external refreshes share one serialized core
+    // executor. Only the newest snapshot may reach the view tree; older queued
+    // completions otherwise flash an intermediate week before the latest choice.
+    internal val snapshotRefreshGate = LatestRequestGate()
     // The bottom format bar's FrameLayout host plus its two interchangeable
     // contents: the normal format controls and (while a table cell is open) the
     // cell controls that replace them, matching iOS.
@@ -186,11 +394,26 @@ class MainActivity : Activity() {
     internal var formatBarCellContent: View? = null
     // Scheme + line awaiting an image pick from the system photo chooser.
     internal var pendingImageAttach: Pair<String, Int>? = null
+    // URI reads/bitmap decoding/file writes must not occupy the serialized
+    // native-core queue. The executor is lazy because most sessions never
+    // attach media, and is torn down with this Activity instance.
+    private var imageAttachExecutor: ExecutorService? = null
+    internal val imageAttachGate = LatestRequestGate()
+
+    internal fun imageAttachExecutor(): ExecutorService = synchronized(this) {
+        imageAttachExecutor ?: Executors.newSingleThreadExecutor { runnable ->
+            Thread(runnable, "KnotQ-image-attach")
+        }.also { imageAttachExecutor = it }
+    }
     internal var syncSession: SyncSession? = null
     internal var syncLoginChallenge: SyncLoginChallenge? = null
     internal var syncAuthInProgress = false
     internal var syncAccountActionInProgress = false
     internal var syncInProgress = false
+    // Entitlement/status refresh is auxiliary metadata, not a CRDT sync. Keep
+    // it out of syncInProgress so a slow status request cannot make the UI say
+    // "Resyncing" after the actual pull has already completed.
+    internal var syncStatusInProgress = false
     // From /v1/auth/account/status: the subscription is cancelled (won't renew) but
     // still entitling, so Settings offers to re-enable instead of cancel. The
     // provider routes re-enable to the store (Google/Apple) or our backend (web).
@@ -226,9 +449,31 @@ class MainActivity : Activity() {
     internal val syncPollHandler = Handler(Looper.getMainLooper())
     internal val syncPollRunnable = object : Runnable {
         override fun run() {
+            if (!isUiActive()) return
             syncOnce()
             syncPollHandler.postDelayed(this, 30_000)
         }
+    }
+    // The initial pull must not race a newly-created WebSocket. Start the
+    // socket only after that first sync has finished, so it cannot route the
+    // bootstrap request through a not-yet-ready or stale connection.
+    internal val syncInitialTransportRunnable = object : Runnable {
+        override fun run() {
+            if (!isUiActive()) return
+            val session = syncSession
+            when {
+                session == null || !session.supportsSync -> Unit
+                syncInProgress -> syncPollHandler.postDelayed(this, 50)
+                else -> {
+                    startWsSync { startWsNudge() }
+                }
+            }
+        }
+    }
+    // Subscription lifecycle is auxiliary UI state. Run it after the initial
+    // CRDT sync instead of racing/serializing ahead of it on every onStart.
+    internal val syncStatusRunnable = Runnable {
+        if (isUiActive() && syncSession != null && !syncInProgress) refreshSubscriptionStatus()
     }
     // True while the post-edit push is waiting out SYNC_EDIT_DEBOUNCE_MS, so a
     // burst of edits arms the timer once (leading-window) and onStop knows to
@@ -242,6 +487,7 @@ class MainActivity : Activity() {
     // syncing on every mutation.
     internal val syncEditRunnable = object : Runnable {
         override fun run() {
+            if (!isUiActive()) return
             // If a sync is already running, don't drop this edit — retry shortly so
             // it isn't stranded until some other trigger (there's no foreground poll
             // backstop now). Keep syncEditPending set so the retry stays armed.
@@ -256,6 +502,7 @@ class MainActivity : Activity() {
     internal val googleSyncHandler = Handler(Looper.getMainLooper())
     internal val googleSyncRunnable = object : Runnable {
         override fun run() {
+            if (!isUiActive()) return
             syncGoogleCalendars(silent = true)
             googleSyncHandler.postDelayed(this, GOOGLE_SYNC_INTERVAL_MS)
         }
@@ -268,20 +515,62 @@ class MainActivity : Activity() {
     internal val notifRescheduleHandler = Handler(Looper.getMainLooper())
     internal var notifRescheduleCooldown = false
     internal var notifReschedulePending = false
+    internal val resendCooldownHandler = Handler(Looper.getMainLooper())
+    internal var resendCooldownRunnable: Runnable? = null
     // Set while a reschedule is running off the main thread, so two of them can
     // never register alarms over each other.
     internal var notifRescheduleRunning = false
 
     companion object {
+        private const val STATE_SELECTED_TAB = "knotq.state.selected_tab"
+        private const val STATE_SELECTED_DATE = "knotq.state.selected_date"
+        private const val STATE_WEEK_OFFSET = "knotq.state.week_offset"
+        private const val STATE_SELECTED_SCHEME_ID = "knotq.state.selected_scheme_id"
+        private const val STATE_SCHEME_RETURN_TAB = "knotq.state.scheme_return_tab"
+        private const val STATE_CALENDAR_SCROLL_Y = "knotq.state.calendar_scroll_y"
+        private const val STATE_CALENDAR_SCROLL_DATE = "knotq.state.calendar_scroll_date"
+        private const val STATE_COLLAPSED_FOLDER_IDS = "knotq.state.collapsed_folder_ids"
+        private const val STATE_SETTINGS_ARCHIVE = "knotq.state.settings_archive"
+        private const val STATE_SETTINGS_TIMING = "knotq.state.settings_timing"
+        private const val STATE_SETTINGS_GOOGLE = "knotq.state.settings_google"
+        private const val STATE_DAILY_HISTORY_DAYS = "knotq.state.daily_history_days"
+
         // The background sync worker runs in this process: it reuses the live
         // bridge when the activity exists (two open cores would clobber each
         // other's in-memory workspace) and skips work while in the foreground.
         @Volatile internal var sharedBridge: RustBridge? = null
-        @Volatile internal var isInForeground = false
+        // Prevent a background worker from opening a second MobileCore during
+        // the short window where this Activity has stopped but its cold-start
+        // bridge is still being constructed on the core executor.
+        @Volatile internal var bridgeStartupInProgress = false
 
         // The live activity, so out-of-UI state changes (a "Done"/snooze tapped on
         // a notification, handled in NotificationReceiver) can refresh it.
-        @Volatile private var liveActivity: WeakReference<MainActivity>? = null
+        internal val liveActivity = LiveInstanceGate<MainActivity>()
+
+        /** True only when the currently published Activity is foregrounded. */
+        fun hasForegroundActivity(): Boolean =
+            liveActivity.current()?.activityForeground == true
+
+        /**
+         * Return the Activity that actually owns [sharedBridge]. During fast
+         * recreation the live Activity can briefly be the replacement while
+         * the old instance is still closing its bridge; callers must not pair
+         * that old handle with the replacement's executor.
+         */
+        fun sharedBridgeOwner(): MainActivity? {
+            val activity = liveActivity.current() ?: return null
+            val bridge = sharedBridge ?: return null
+            return activity.takeIf { it.ownsBridge(bridge) }
+        }
+
+        /**
+         * The static flag is kept for the no-Activity cold-start window, but a
+         * live Activity is authoritative during recreation. The old instance's
+         * onDestroy must not clear the replacement's startup guard.
+         */
+        fun hasBridgeStartupInProgress(): Boolean =
+            liveActivity.current()?.bridgeStartupPending == true || bridgeStartupInProgress
 
         // Set when the core was mutated from outside the UI. Consumed either
         // immediately (activity in the foreground) or at the next onStart, so a
@@ -295,7 +584,7 @@ class MainActivity : Activity() {
         /// no one to apply to, and the next launch reads the fresh state anyway.
         fun notifyExternalStateChanged() {
             externalRefreshPending = true
-            val activity = liveActivity?.get() ?: return
+            val activity = liveActivity.current() ?: return
             activity.runOnUiThread { activity.consumeExternalRefresh() }
         }
     }
@@ -307,13 +596,36 @@ class MainActivity : Activity() {
     /// skip a second rebuild.
     internal fun consumeExternalRefresh(): Boolean {
         if (!externalRefreshPending) return false
-        if (!isInForeground || isFinishing || isDestroyed) return false
+        if (!isUiActive()) return false
         if (!::bridge.isInitialized) return false
+        if (hasFocusedEditableField()) {
+            renderDeferredWhileEditing = true
+            return false
+        }
         externalRefreshPending = false
-        loadSnapshot()
-        render()
+        refreshSnapshotAsync(
+            onFailure = { externalRefreshPending = true },
+        )
         return true
     }
+
+    /**
+     * Core work can finish after onStop/onDestroy. Only these callbacks may
+     * publish UI state or show a dialog; stopped/dead Activities discard the
+     * result and let the next foreground refresh load the durable state.
+     */
+    // The live-instance identity rejects completions from an older Activity
+    // during recreation, while `activityForeground` rejects callbacks after
+    // this instance's onStop without allowing the old instance to affect the
+    // replacement's state.
+    internal fun isLiveActivity(): Boolean =
+        liveActivity.isCurrent(this) && !isFinishing && !isDestroyed
+
+    internal fun ownsBridge(candidate: RustBridge): Boolean =
+        ::bridge.isInitialized && bridge === candidate
+
+    internal fun isUiActive(): Boolean =
+        isLiveActivity() && activityForeground && ::rootFrame.isInitialized
 
     internal val purchasesUpdatedListener = PurchasesUpdatedListener { result, purchases ->
         when (result.responseCode) {
@@ -322,14 +634,23 @@ class MainActivity : Activity() {
                 if (purchase != null) {
                     verifyGooglePlayPurchase(purchase)
                 } else {
-                    runOnUiThread { purchaseInProgress = false; render() }
+                    runOnUiThread {
+                        if (!isUiActive()) return@runOnUiThread
+                        purchaseInProgress = false
+                        requestRender()
+                    }
                 }
             }
             BillingClient.BillingResponseCode.USER_CANCELED ->
-                runOnUiThread { purchaseInProgress = false; render() }
+                runOnUiThread {
+                    if (!isUiActive()) return@runOnUiThread
+                    purchaseInProgress = false
+                    requestRender()
+                }
             else -> runOnUiThread {
+                if (!isUiActive()) return@runOnUiThread
                 purchaseInProgress = false
-                render()
+                requestRender()
                 showError("Purchase failed", result.debugMessage.ifEmpty { "Could not complete the purchase." })
             }
         }
@@ -337,68 +658,310 @@ class MainActivity : Activity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        restoreActivityState(savedInstanceState)
+        // Treat the Activity as foreground from the start of construction. A
+        // WorkManager job can be delivered while the splash screen is still up;
+        // publishing this state before opening the core prevents that job from
+        // opening a second MobileCore against the same on-disk workspace.
+        activityForeground = true
         try {
-            setLocale(java.util.Locale.getDefault().toLanguageTag())
-            bridge = RustBridge(this)
-            syncSession = loadSyncSession()
-            loadSnapshot()
-            val seededScreenshotFixture = seedScreenshotFixtureIfRequested()
-            ensureTodayDailyQueue()
+            // Build a lightweight local shell immediately. Native loading,
+            // snapshot expansion, fixture seeding, and daily-queue creation all
+            // happen asynchronously, so a cold process never blocks the first
+            // Activity frame on JNA or the native core lock.
             applyTheme()
             buildShell()
-            render()
-            if (!seededScreenshotFixture) maybeStartOnboarding()
-            // Notification permission is requested *after* onboarding finishes
-            // (iOS parity — see finishOnboarding), so the system dialog doesn't
-            // pop over the sign-in sheet. Returning users who've already onboarded
-            // (onboarding didn't start) get asked here on launch as before.
-            if (!seededScreenshotFixture && !onboardingActive) {
-                MobileNotificationScheduler.requestPermission(this)
-            }
-            rescheduleNotifications()
-            sharedBridge = bridge
-            liveActivity = WeakReference(this)
-            if (BuildConfig.ACCOUNTS_ENABLED) {
-                registerForPushNotifications()
-                handleIncomingAuthIntent(intent?.data)
-            }
+            renderStartupLoading()
+            liveActivity.publish(this)
+            startBridgeForStartup(intent?.data)
         } catch (error: Throwable) {
+            activityForeground = false
             theme = UiTheme.dark
             showFatal(error.message)
         }
     }
 
+    /**
+     * Keep route state across rotation/recreation without serializing the
+     * workspace snapshot into Android's saved-state bundle. The snapshot is
+     * authoritative on disk/native; only the small presentation checkpoint is
+     * restored here, then validated when that snapshot is published.
+     */
+    private fun restoreActivityState(state: Bundle?) {
+        if (state == null) return
+        selectedTab = when (state.getInt(STATE_SELECTED_TAB, TAB_HOME)) {
+            TAB_HOME, TAB_CALENDAR, TAB_SCHEMES, TAB_DAILY, TAB_SEARCH, TAB_SETTINGS ->
+                state.getInt(STATE_SELECTED_TAB, TAB_HOME)
+            else -> TAB_HOME
+        }
+        selectedDate = state.getString(STATE_SELECTED_DATE)?.let {
+            runCatching { LocalDate.parse(it) }.getOrNull()
+        } ?: selectedDate
+        weekOffset = state.getInt(STATE_WEEK_OFFSET, 0).coerceIn(-520, 520)
+        selectedSchemeId = state.getString(STATE_SELECTED_SCHEME_ID)?.takeIf { it.isNotBlank() }
+        schemeReturnTab = when (state.getInt(STATE_SCHEME_RETURN_TAB, TAB_HOME)) {
+            TAB_HOME, TAB_CALENDAR, TAB_DAILY -> state.getInt(STATE_SCHEME_RETURN_TAB, TAB_HOME)
+            else -> TAB_HOME
+        }
+        calendarScrollY = state.getInt(STATE_CALENDAR_SCROLL_Y, 0).coerceAtLeast(0)
+        calendarScrollDate = state.getString(STATE_CALENDAR_SCROLL_DATE)
+        collapsedFolderIds.clear()
+        state.getStringArrayList(STATE_COLLAPSED_FOLDER_IDS)
+            ?.filter { it.isNotBlank() }
+            ?.let(collapsedFolderIds::addAll)
+        settingsShowingArchive = state.getBoolean(STATE_SETTINGS_ARCHIVE, false)
+        settingsShowingTiming = state.getBoolean(STATE_SETTINGS_TIMING, false)
+        settingsShowingGoogle = state.getBoolean(STATE_SETTINGS_GOOGLE, false)
+        dailyHistoryDays = state.getInt(STATE_DAILY_HISTORY_DAYS, dailyHistoryDays)
+            .coerceIn(3, 3_650)
+    }
+
+    override fun onSaveInstanceState(outState: Bundle) {
+        outState.putInt(STATE_SELECTED_TAB, selectedTab)
+        outState.putString(STATE_SELECTED_DATE, selectedDate.toString())
+        outState.putInt(STATE_WEEK_OFFSET, weekOffset)
+        outState.putString(STATE_SELECTED_SCHEME_ID, selectedSchemeId)
+        outState.putInt(STATE_SCHEME_RETURN_TAB, schemeReturnTab)
+        outState.putInt(STATE_CALENDAR_SCROLL_Y, calendarScrollY)
+        outState.putString(STATE_CALENDAR_SCROLL_DATE, calendarScrollDate)
+        outState.putStringArrayList(STATE_COLLAPSED_FOLDER_IDS, ArrayList(collapsedFolderIds))
+        outState.putBoolean(STATE_SETTINGS_ARCHIVE, settingsShowingArchive)
+        outState.putBoolean(STATE_SETTINGS_TIMING, settingsShowingTiming)
+        outState.putBoolean(STATE_SETTINGS_GOOGLE, settingsShowingGoogle)
+        outState.putInt(STATE_DAILY_HISTORY_DAYS, dailyHistoryDays)
+        super.onSaveInstanceState(outState)
+    }
+
+    private fun startBridgeForStartup(incomingAuthIntent: Uri?) {
+        if (bridgeStartupPending || ::bridge.isInitialized) return
+        bridgeStartupPending = true
+        bridgeStartupInProgress = true
+        coreExecutor.execute {
+            // UniFFI/JNA registration is native startup work too. Keep locale
+            // initialization beside RustBridge construction so onCreate can
+            // publish the first shell without entering the native library.
+            val result = runCatching {
+                // Activity recreation can publish the replacement before the
+                // previous instance's closeAfter finalizer has cleared the
+                // process-wide bridge. Wait off the UI thread so two native
+                // cores never observe and overwrite the same workspace.
+                awaitPreviousBridgeRelease()
+                setLocale(java.util.Locale.getDefault().toLanguageTag())
+                RustBridge(applicationContext)
+            }
+            runOnUiThread {
+                bridgeStartupPending = false
+                bridgeStartupInProgress = false
+                result.onSuccess { opened ->
+                    // A destroyed Activity can still receive the executor's
+                    // completion after shutdown. Do not publish a bridge that
+                    // no live Activity can own; close it on this path instead.
+                    if (!isLiveActivity()) {
+                        opened.close()
+                        return@onSuccess
+                    }
+                    bridge = opened
+                    // Publish the one live core before any snapshot work.
+                    // BackgroundSyncWorker reuses this handle while the Activity
+                    // is alive instead of opening a second core over the same
+                    // on-disk workspace.
+                    sharedBridge = opened
+                    syncSession = loadSyncSession()
+                    // onNewIntent may have delivered an auth callback while
+                    // native loading was still in flight; preserve that newer
+                    // URI instead of replacing it with the launch-time null.
+                    loadWorkspaceForStartup(pendingStartupAuthIntent ?: incomingAuthIntent)
+                }.onFailure { error ->
+                    if (isUiActive()) {
+                        theme = UiTheme.dark
+                        showFatal(error.message)
+                    }
+                }
+            }
+        }
+    }
+
+    /**
+     * Wait for an older Activity's queued native teardown before opening this
+     * instance's bridge. The old executor owns the close, so waiting here is
+     * safe and keeps the UI shell responsive. A stuck teardown becomes a
+     * visible startup failure instead of silently opening a second core.
+     */
+    private fun awaitPreviousBridgeRelease() {
+        val deadline = System.nanoTime() + 15_000_000_000L
+        while (sharedBridge != null) {
+            if (System.nanoTime() >= deadline) {
+                error("Timed out waiting for the previous KnotQ core to close")
+            }
+            try {
+                Thread.sleep(10)
+            } catch (interrupted: InterruptedException) {
+                Thread.currentThread().interrupt()
+                throw IllegalStateException("Interrupted while waiting for the previous KnotQ core", interrupted)
+            }
+        }
+    }
+
     override fun onStart() {
         super.onStart()
-        isInForeground = true
-        if (!::bridge.isInitialized) return
-        if (BuildConfig.ACCOUNTS_ENABLED) {
-            // Pick up credentials the background worker may have rotated (or a
-            // session it invalidated) while the app was backgrounded.
-            syncSession = loadSyncSession()
-            // Re-check entitlement + subscription lifecycle before polling resumes.
-            refreshSubscriptionStatus()
-            startSyncPolling()
+        activityForeground = true
+        if (!::bridge.isInitialized || !workspaceReady) return
+        if (!workspaceUiPublished) {
+            scheduleWorkspaceUiPublication()
+            return
         }
-        configureGoogleSyncPolling()
+        finishWorkspaceStart()
+    }
+
+    private fun scheduleWorkspaceUiPublication() {
+        if (!workspaceReady || workspaceUiPublished || workspaceRenderPending || !isUiActive()) return
+        workspaceRenderPending = true
+        val runnable = Runnable {
+            workspaceRenderRunnable = null
+            workspaceRenderPending = false
+            if (!isUiActive() || !workspaceReady || workspaceUiPublished) return@Runnable
+            // Select the first onboarding destination before building the real
+            // tree. Otherwise the first-run guide would render Home and then
+            // immediately tear it down to show Schemes, causing an avoidable
+            // flash and another synchronous view-tree build.
+            if (!startupSeededScreenshotFixture) maybeStartOnboarding(renderUi = false)
+            applyTheme()
+            render()
+            workspaceUiPublished = true
+            // Let the first complete workspace frame reach the window before
+            // adding onboarding's software-layer scrim/card and kicking off
+            // notification/sync startup. On a slow renderer, doing all three
+            // in this same turn can leave the window waiting for focus while
+            // Android is still uploading the newly-built view tree.
+            rootFrame.postOnAnimation {
+                if (!isUiActive()) return@postOnAnimation
+                if (onboardingActive) showOnboardingOverlay()
+                finishWorkspaceStart(initialPublication = true)
+            }
+        }
+        workspaceRenderRunnable = runnable
+        // Let the already-visible loading shell receive one complete frame
+        // before replacing its subtree. A fixed quarter-second delay made cold
+        // startup feel sluggish on fast devices without adding protection; the
+        // next-vsync callback preserves the frame boundary without idle time.
+        rootFrame.postOnAnimation(runnable)
+    }
+
+    private fun finishWorkspaceStart(initialPublication: Boolean = false) {
+        if (!workspaceUiPublished || !isUiActive()) return
+        // The startup snapshot was read for the current zone. Treat that zone
+        // as observed before onResume can schedule a duplicate refresh.
+        lastObservedTimeZoneId = ZoneId.systemDefault().id
+        maybeStartOnboarding()
+        if (BuildConfig.ACCOUNTS_ENABLED) {
+            // Loading the local session is cheap, but Firebase/FCM is not. A
+            // local-first user without a sync entitlement has no reason to
+            // initialize the messaging stack during launch.
+            syncSession = loadSyncSession()
+        }
+        if (!startupEffectsApplied) {
+            if (!startupSeededScreenshotFixture && !onboardingActive) {
+                scheduleNotificationPermissionRequest()
+            }
+            rescheduleNotifications()
+            if (BuildConfig.ACCOUNTS_ENABLED) {
+                if (syncSession?.supportsSync == true) registerForPushNotifications()
+                // An auth callback may be the event that creates the session,
+                // so it must still be handled when the pre-launch session was
+                // empty.
+                handleIncomingAuthIntent(pendingStartupAuthIntent)
+                pendingStartupAuthIntent = null
+            }
+            startupEffectsApplied = true
+        }
         // Pick up a core mutation made while backgrounded — notably a "Done" or
         // snooze tapped on a notification, which NotificationReceiver applies in
         // this process without the (stopped) activity noticing.
-        if (!consumeExternalRefresh()) {
+        val externalRefreshConsumed = consumeExternalRefresh()
+        if (shouldRefreshTimeDerivedSnapshot(
+                initialPublication = initialPublication,
+                externalRefreshConsumed = externalRefreshConsumed,
+                editorFocused = hasFocusedEditableField(),
+            )
+        ) {
             // Nothing changed the data, but time passed: the snapshot on screen was
             // built when the app was last foregrounded and the core buckets
             // occurrences against that moment, so returning hours later leaves items
             // that are now overdue sitting under Upcoming. Skipped while an editor
             // holds focus — render() rebuilds the shell and would drop the caret
             // along with any not-yet-flushed typing.
-            if (activeEditor()?.isFocused != true) {
-                loadSnapshot()
-                render()
-            }
+            // The cached tree is already on screen. Let the asynchronous snapshot
+            // completion request the one redraw that reflects any time-based
+            // occurrence changes; scheduling a redraw here too needlessly tears
+            // down and rebuilds the whole home tree.
+            refreshSnapshotAsync()
         }
         // The app may have been backgrounded across midnight; roll the daily/home
         // "today" forward so it isn't stuck on yesterday.
         handleDayRolloverIfNeeded()
+
+        // Render the cached local workspace before starting sync. `syncOnce()`
+        // runs on a worker thread, but the native core is mutex-protected; if it
+        // starts first, the snapshot above would wait behind a large catch-up
+        // pull and make a cold launch look hung (and can trip Android's ANR
+        // watchdog). The cached workspace is already durable, so it is safe to
+        // show it while the worker reconciles remote changes; its completion
+        // callback reloads the snapshot and refreshes the UI.
+        if (BuildConfig.ACCOUNTS_ENABLED) startSyncPolling()
+        configureGoogleSyncPolling()
+    }
+
+    private fun loadWorkspaceForStartup(incomingAuthIntent: Uri?) {
+        pendingStartupAuthIntent = incomingAuthIntent
+        coreExecutor.execute {
+            val result = runCatching {
+                val seededScreenshotFixture = seedScreenshotFixtureIfRequested()
+                // The loaded snapshot below is the one publication boundary;
+                // do not make daily-queue creation expand the entire workspace
+                // once and then immediately expand it again here.
+                ensureTodayDailyQueue(refreshSnapshot = false)
+                val loaded = snapshotFromCore()
+                seededScreenshotFixture to loaded
+            }
+            runOnUiThread {
+                if (!isLiveActivity()) return@runOnUiThread
+                result.onSuccess { (seededScreenshotFixture, loaded) ->
+                    snapshot = loaded
+                    // Search text and transient dialogs are intentionally not
+                    // persisted; restore a stable Home route instead of
+                    // recreating an empty search shell. Likewise, a deleted
+                    // scheme must never leave recreation pointing at a blank
+                    // editor page.
+                    if (selectedTab == TAB_SEARCH) selectedTab = TAB_HOME
+                    val restoredSchemeId = selectedSchemeId
+                    if (selectedTab == TAB_SCHEMES &&
+                        restoredSchemeId != null &&
+                        findScheme(restoredSchemeId) == null
+                    ) {
+                        selectedSchemeId = null
+                        selectedTab = TAB_HOME
+                    }
+                    if (selectedTab != TAB_SETTINGS) {
+                        settingsShowingArchive = false
+                        settingsShowingTiming = false
+                        settingsShowingGoogle = false
+                    }
+                    workspaceReady = true
+                    startupSeededScreenshotFixture = seededScreenshotFixture
+                    // The durable snapshot is still useful when the Activity
+                    // stopped while startup work was running, but rebuilding
+                    // the stopped view tree (or prompting for permission) is
+                    // unnecessary. onStart will publish it when visible.
+                    if (!activityForeground) return@onSuccess
+                    scheduleWorkspaceUiPublication()
+                }.onFailure { error ->
+                    if (isUiActive()) {
+                        theme = UiTheme.dark
+                        showFatal(error.message)
+                    }
+                }
+            }
+        }
     }
 
     // Re-anchor to the current day after a rollover. If the user was parked on
@@ -415,23 +978,51 @@ class MainActivity : Activity() {
             selectedDate = today
             weekOffset = 0
         }
-        ensureTodayDailyQueue()
-        loadSnapshot()
-        rescheduleNotifications()
-        render()
+        mutate(obj("type" to "ensure_daily_queue", "date" to today.toString()))
     }
 
     override fun onResume() {
         super.onResume()
         if (!::bridge.isInitialized) return
+        if (workspaceUiPublished && timeZoneChangedSinceLastResume()) {
+            refreshSnapshotAsync()
+        }
         maybeRequestStoreReview()
     }
 
+    internal fun timeZoneChangedSinceLastResume(): Boolean {
+        val current = ZoneId.systemDefault().id
+        if (current == lastObservedTimeZoneId) return false
+        lastObservedTimeZoneId = current
+        return true
+    }
+
     override fun onStop() {
-        isInForeground = false
+        activityForeground = false
+        cancelContentTransition()
+        pendingContentTransition = null
+        pendingContentTransitionRender = false
+        calendarGestureActive = false
+        renderDeferredWhileCalendarGesture = false
+        suppressEditorBlurCommit = false
+        editorMutationGeneration++
+        if (::rootFrame.isInitialized) {
+            rootFrame.removeCallbacks(renderRequestRunnable)
+            renderRequestPending = false
+        }
+        // Search is view-scoped. Drop a pending debounce when the view leaves
+        // the foreground instead of spending core time on a result nobody can
+        // see; the serial also invalidates an already-running result.
+        searchRequestSerial++
+        searchRequestRunnable?.let(syncPollHandler::removeCallbacks)
+        searchRequestRunnable = null
+        searchLastQuery = null
+        searchLastSnapshot = null
         val flushEditSync = if (BuildConfig.ACCOUNTS_ENABLED) syncEditPending else false
         if (BuildConfig.ACCOUNTS_ENABLED) {
             syncPollHandler.removeCallbacks(syncPollRunnable)
+            syncPollHandler.removeCallbacks(syncInitialTransportRunnable)
+            syncPollHandler.removeCallbacks(syncStatusRunnable)
             stopWsNudge()
             syncPollHandler.removeCallbacks(syncEditRunnable)
             syncEditPending = false
@@ -467,24 +1058,81 @@ class MainActivity : Activity() {
     }
 
     override fun onDestroy() {
+        activityForeground = false
+        activeMonthPickerDialog?.dismiss()
+        activeMonthPickerDialog = null
+        cancelContentTransition()
+        pendingContentTransition = null
+        pendingContentTransitionRender = false
+        calendarGestureActive = false
+        renderDeferredWhileCalendarGesture = false
+        searchRequestSerial++
+        searchRequestRunnable?.let(syncPollHandler::removeCallbacks)
+        searchRequestRunnable = null
+        searchLastQuery = null
+        searchLastSnapshot = null
+        if (::rootFrame.isInitialized) {
+            rootFrame.removeCallbacks(renderRequestRunnable)
+            workspaceRenderRunnable?.let(rootFrame::removeCallbacks)
+            notificationPermissionRunnable?.let(rootFrame::removeCallbacks)
+            notificationPermissionRunnable = null
+            notificationPermissionDeferred = false
+            workspaceRenderRunnable = null
+            workspaceRenderPending = false
+        }
         if (BuildConfig.ACCOUNTS_ENABLED) {
             syncPollHandler.removeCallbacks(syncPollRunnable)
+            syncPollHandler.removeCallbacks(syncInitialTransportRunnable)
+            syncPollHandler.removeCallbacks(syncStatusRunnable)
             syncPollHandler.removeCallbacks(syncEditRunnable)
             syncEditPending = false
             stopWsNudge()
             stopWsSync()
         }
         googleSyncHandler.removeCallbacks(googleSyncRunnable)
+        notifRescheduleHandler.removeCallbacksAndMessages(null)
+        resendCooldownRunnable?.let(resendCooldownHandler::removeCallbacks)
+        resendCooldownRunnable = null
+        editorFlushRunnable?.let(syncPollHandler::removeCallbacks)
+        editorFlushRunnable = null
+        synchronized(this) {
+            imageAttachExecutor?.shutdownNow()
+            imageAttachExecutor = null
+        }
         if (BuildConfig.ACCOUNTS_ENABLED) {
             billingClient?.endConnection()
             billingClient = null
         }
-        sharedBridge = null
-        if (liveActivity?.get() === this) {
-            liveActivity = null
+        // A replacement Activity may already be live. Only the current
+        // instance may clear the process-wide startup guard; otherwise an old
+        // recreation can make a worker open a second core during the new
+        // instance's startup window.
+        if (liveActivity.isCurrent(this)) {
+            bridgeStartupInProgress = false
         }
         if (::bridge.isInitialized) {
-            bridge.close()
+            // Native requests may already be queued (notably ws_stop and a
+            // final edit flush). Close the bridge only after that FIFO work has
+            // finished; closing it inline races in-flight JNA calls during fast
+            // Activity recreation. Keep the static bridge/live-instance markers
+            // until the finalizer runs: a WorkManager or notification callback
+            // must see the closing core and queue/retry, never open a second
+            // MobileCore over the same on-disk workspace.
+            val closingBridge = bridge
+            coreExecutor.closeAfter {
+                try {
+                    closingBridge.close()
+                } finally {
+                    if (sharedBridge === closingBridge) sharedBridge = null
+                    liveActivity.clearIfCurrent(this)
+                }
+            }
+        } else {
+            if (liveActivity.isCurrent(this)) {
+                sharedBridge = null
+                liveActivity.clearIfCurrent(this)
+            }
+            coreExecutor.close()
         }
         super.onDestroy()
     }
@@ -493,7 +1141,11 @@ class MainActivity : Activity() {
         super.onNewIntent(intent)
         setIntent(intent)
         if (BuildConfig.ACCOUNTS_ENABLED) {
-            handleIncomingAuthIntent(intent?.data)
+            if (::bridge.isInitialized) {
+                handleIncomingAuthIntent(intent?.data)
+            } else {
+                pendingStartupAuthIntent = intent?.data
+            }
         }
     }
 
@@ -511,7 +1163,7 @@ class MainActivity : Activity() {
         runCatching {
             manager.requestReviewFlow().addOnCompleteListener { request ->
                 if (!request.isSuccessful) return@addOnCompleteListener
-                if (!isInForeground || isFinishing || isDestroyed) return@addOnCompleteListener
+                if (!isUiActive()) return@addOnCompleteListener
                 manager.launchReviewFlow(this, request.result)
             }
         }
@@ -539,11 +1191,40 @@ class MainActivity : Activity() {
 
     @Suppress("DEPRECATION", "OVERRIDE_DEPRECATION")
     override fun onBackPressed() {
-        if (selectedTab == TAB_SETTINGS && (settingsShowingArchive || settingsShowingTiming || settingsShowingGoogle)) {
-            settingsShowingArchive = false
-            settingsShowingTiming = false
-            settingsShowingGoogle = false
+        if (selectedTab == TAB_SETTINGS) {
+            if (settingsShowingArchive || settingsShowingTiming || settingsShowingGoogle) {
+                settingsShowingArchive = false
+                settingsShowingTiming = false
+                settingsShowingGoogle = false
+            } else {
+                // Settings is a pushed mobile route, not a second Activity.
+                // System Back must return to the stable Home shell instead of
+                // finishing the Activity (especially in the wide navigator,
+                // where Settings is opened from the side rail).
+                selectedTab = TAB_HOME
+                selectedSchemeId = null
+            }
+            queueContentTransition(ContentTransitionDirection.BACKWARD)
             render()
+            return
+        }
+        if (selectedTab == TAB_SCHEMES && selectedSchemeId != null) {
+            val schemeId = selectedSchemeId
+            activeEditor()?.let { editor ->
+                if (schemeId != null) {
+                    // A no-op Back still commits through the serial core path,
+                    // but it does not need a second render. Compare against the
+                    // snapshot currently on screen so repeated open/back taps
+                    // cannot publish late no-op frames after a later render.
+                    val (_, nextLines) = buildSchemeItemsPayload(schemeId, editor)
+                    val visibleLines = findScheme(schemeId)?.let(::documentLines)
+                    val destinationNeedsRefresh = visibleLines == null || visibleLines != nextLines
+                    commitSchemeDocument(schemeId, editor, rerender = false) {
+                        if (destinationNeedsRefresh) requestRenderAfterContentTransition()
+                    }
+                }
+            }
+            exitSchemeEditor()
             return
         }
         if (selectedTab == TAB_SEARCH) {
@@ -565,6 +1246,8 @@ class MainActivity : Activity() {
     }
 
     internal fun buildShell() {
+        renderedTitleBarSignature = null
+        renderedDockSignature = null
         shell = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setBackgroundColor(theme.bgApp)
@@ -574,6 +1257,12 @@ class MainActivity : Activity() {
             gravity = Gravity.CENTER_VERTICAL
             setPadding(dp(12), 0, dp(10), 0)
             setBackgroundColor(theme.bgToolbar)
+            // Keep the legacy host around for compatibility with the render
+            // state/tests, but never put a desktop toolbar above the content.
+            // The mobile shell uses in-content actions and the iOS-style
+            // navigator/dock instead; hiding it here also prevents a one-frame
+            // toolbar flash while the workspace is loading or rotating.
+            visibility = View.GONE
         }
         content = FrameLayout(this).apply {
             setBackgroundColor(theme.bgApp)
@@ -584,11 +1273,15 @@ class MainActivity : Activity() {
             setPadding(dp(6), dp(5), dp(6), dp(5))
         }
 
-        shell.addView(titleBar, LinearLayout.LayoutParams(-1, dp(38)))
+        // The legacy title bar is intentionally not attached at all. Keeping a
+        // GONE toolbar in the shell would normally cost little, but an attached
+        // chrome host can still participate in visibility/layout callbacks
+        // during rotation and is an unnecessary place for a stale control to
+        // flash. The mobile shell owns its actions in content and the dock.
         shell.addView(content, LinearLayout.LayoutParams(-1, 0, 1f))
         // Host the shell inside a root frame so the onboarding overlay can sit on
         // top of (and survive) `render()`, which only rebuilds the shell's children.
-        rootFrame = FrameLayout(this).apply {
+        rootFrame = LayoutTransactionFrameLayout(this).apply {
             setBackgroundColor(theme.bgApp)
         }
         rootFrame.addView(shell, FrameLayout.LayoutParams(-1, -1))
@@ -599,6 +1292,37 @@ class MainActivity : Activity() {
 
     internal fun render() {
         if (!::content.isInitialized) return
+        if (!::rootFrame.isInitialized) {
+            renderingMainTree = true
+            try {
+                renderNow()
+            } finally {
+                renderingMainTree = false
+            }
+            return
+        }
+        // A render replaces several sibling subtrees. Suppress layout while the
+        // replacement is assembled so Android cannot measure/draw an intermediate
+        // state (which otherwise presents as a one-frame blank or flicker on
+        // slower devices). The final requestLayout publishes one coherent tree.
+        setRootLayoutSuppressed(true)
+        val layoutChanged = try {
+            renderingMainTree = true
+            renderNow()
+        } finally {
+            renderingMainTree = false
+            setRootLayoutSuppressed(false)
+        }
+        if (layoutChanged) rootFrame.requestLayout()
+    }
+
+    private fun renderNow(): Boolean {
+        if (!::content.isInitialized) return false
+        if (::rootFrame.isInitialized) {
+            rootFrame.removeCallbacks(renderRequestRunnable)
+            renderRequestPending = false
+        }
+        renderDeferredWhileEditing = false
         if (lastRenderedTab != TAB_DAILY && selectedTab == TAB_DAILY) {
             pendingDailyAutoFocusDate = selectedDate.toString()
         }
@@ -606,64 +1330,364 @@ class MainActivity : Activity() {
         // The whole view tree (including any floating inline cell editor) is
         // rebuilt below; drop the stale reference without re-committing.
         activeCellEdit = null
+        val previousTheme = if (::theme.isInitialized) theme else null
         applyTheme()
-        rootFrame.setBackgroundColor(theme.bgApp)
-        shell.setBackgroundColor(theme.bgApp)
+        val themeChanged = previousTheme != theme
+        if (themeChanged) {
+            rootFrame.setBackgroundColor(theme.bgApp)
+            shell.setBackgroundColor(theme.bgApp)
+            titleBar.setBackgroundColor(theme.bgToolbar)
+            content.setBackgroundColor(theme.bgApp)
+        }
         applySafeAreaPadding()
-        titleBar.setBackgroundColor(theme.bgToolbar)
-        content.setBackgroundColor(theme.bgApp)
 
-        renderTitleBar()
-        currentFocus?.clearFocus()
-        content.clearFocus()
-        content.removeAllViews()
-        editorSchemeIds.clear()
-        editorHosts.clear()
-        lastActiveEditor = null
         val wide = isWideLayout()
-        updateChromeVisibility()
-        val view = if (wide) renderWideShell() else renderPhoneMain()
-        content.addView(view, FrameLayout.LayoutParams(-1, -1))
-        renderDock()
-        if (shouldShowPhoneQuickActions()) {
-            content.addView(homeFloatingActions(), FrameLayout.LayoutParams(-2, dp(58), Gravity.BOTTOM or Gravity.RIGHT).apply {
-                setMargins(0, 0, dp(22), dp(83))
+        // Both phone and wide layouts use the same mobile chrome. In particular,
+        // do not resurrect the old desktop toolbar after a rotation; rebuilding
+        // hidden children would also create avoidable measure/draw work.
+        if (titleBar.visibility != View.GONE) titleBar.visibility = View.GONE
+        if (titleBar.childCount != 0) titleBar.removeAllViews()
+        renderedTitleBarSignature = null
+        val showPhoneDock = shouldShowPhoneDock()
+        val showPhoneQuickActions = shouldShowPhoneQuickActions()
+        val routeScope = contentRenderRouteScope(selectedTab)
+        val contentState = ContentRenderState(
+            selectedTab = selectedTab,
+            selectedSchemeId = selectedSchemeId,
+            selectedDate = selectedDate,
+            weekOffset = weekOffset,
+            wide = wide,
+            theme = theme,
+            settingsShowingArchive = routeScope.settings && settingsShowingArchive,
+            settingsShowingTiming = routeScope.settings && settingsShowingTiming,
+            settingsShowingGoogle = routeScope.settings && settingsShowingGoogle,
+            // These pending values are one-shot route inputs. Ignoring them on
+            // unrelated routes prevents a background preparation step from
+            // rebuilding the visible Home/Calendar tree.
+            dailyHistoryDays = if (routeScope.settings || routeScope.daily) dailyHistoryDays else 0,
+            // Keep the actual immutable set in the signature instead of only
+            // its hash. A hash collision must never leave a stale navigator
+            // visible after a folder is expanded/collapsed.
+            collapsedFolderIds = collapsedFolderIds.toSet(),
+            pendingDailyAnchorDate = pendingDailyAnchorDate.takeIf { routeScope.daily },
+            pendingDailyAutoFocusDate = pendingDailyAutoFocusDate.takeIf { routeScope.daily },
+            pendingTitleFocusSchemeId = pendingTitleFocusSchemeId.takeIf { routeScope.schemes },
+            keyboardActive = keyboardActive,
+            showPhoneDock = showPhoneDock,
+            showPhoneQuickActions = showPhoneQuickActions,
+            // Account/sync/Google status is visible only under Settings. Keep
+            // stable neutral values elsewhere so a status poll cannot detach
+            // the active editor, calendar, or search tree.
+            settingsAccountEmail = if (routeScope.settings) syncSession?.email.orEmpty() else "",
+            settingsAccountSupportsSync = if (routeScope.settings) syncSession?.supportsSync else null,
+            settingsSyncOffline = routeScope.settings && syncOffline,
+            settingsSyncInProgress = routeScope.settings && syncInProgress,
+            settingsSubscriptionCancelled = routeScope.settings && syncSubscriptionCancelled,
+            settingsEmailVerified = if (routeScope.settings) syncEmailVerified else null,
+            settingsResendInProgress = routeScope.settings && resendVerificationInProgress,
+            settingsResendCooldown = if (routeScope.settings) resendVerificationCooldown else 0,
+            settingsPurchaseInProgress = routeScope.settings && purchaseInProgress,
+            settingsGoogleAuthInProgress = routeScope.settings && googleAuthInProgress,
+            settingsGoogleSyncInProgress = routeScope.settings && googleSyncInProgress,
+            settingsGoogleCalendarStatus = if (routeScope.settings) googleCalendarStatus else null,
+        )
+        // Search owns its query/result subtree and updates it through its own
+        // debounce. Do not replace that tree merely because a background sync
+        // published a new workspace snapshot; Settings and the other routes
+        // still rebuild when their snapshot-backed content changes.
+        val rebuildContent = shouldRebuildMainContent(
+            selectedTab = selectedTab,
+            snapshotChanged = renderedContentSnapshot !== snapshot,
+            renderStateChanged = renderedContentState != contentState,
+        )
+        val transitionDirection = contentTransitionForRebuild(rebuildContent, pendingContentTransition)
+        // Direction is a one-shot input even when this render does not need to
+        // replace the tree. Otherwise a no-op status/search render can leave a
+        // stale direction that animates a later unrelated rebuild.
+        pendingContentTransition = null
+
+        if (rebuildContent) {
+            val previousMainView = activeTransitionIncomingView ?: content.getChildAt(0)
+            cancelContentTransition()
+            currentFocus?.clearFocus()
+            content.clearFocus()
+            content.removeAllViews()
+            editorSchemeIds.clear()
+            editorHosts.clear()
+            lastActiveEditor = null
+            val view = if (wide) renderWideShell() else renderPhoneMain()
+            content.addView(view, FrameLayout.LayoutParams(-1, -1))
+            startContentTransitionIfNeeded(previousMainView, view, transitionDirection)
+            val dockSignature = DockRenderSignature(selectedTab, wide, theme)
+            if (renderedDockSignature != dockSignature) {
+                renderDock()
+                renderedDockSignature = dockSignature
+            }
+            if (showPhoneQuickActions) {
+                content.addView(homeFloatingActions(), FrameLayout.LayoutParams(-2, dp(58), Gravity.BOTTOM or Gravity.END).apply {
+                    setMargins(0, 0, dp(22), dp(83))
+                })
+            }
+            if (showPhoneDock) {
+                content.addView(dock, FrameLayout.LayoutParams(-2, dp(58), Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL).apply {
+                    setMargins(0, 0, 0, dp(6))
+                })
+            }
+            renderedContentSnapshot = snapshot
+            renderedContentState = contentState
+        }
+        if (notificationPermissionDeferred && canPresentNotificationPermission()) {
+            notificationPermissionDeferred = false
+            scheduleNotificationPermissionRequest()
+        }
+        return rebuildContent || updateChromeVisibility()
+    }
+
+    private fun cancelContentTransition() {
+        val incomingView = activeTransitionIncomingView
+        val outgoingView = activeTransitionOutgoingView
+        activeContentTransition?.cancel()
+        incomingView?.translationX = 0f
+        outgoingView?.translationX = 0f
+        if (outgoingView?.parent === content) content.removeView(outgoingView)
+        activeContentTransition = null
+        activeTransitionIncomingView = null
+        activeTransitionOutgoingView = null
+        if (pendingContentTransitionRender && isUiActive()) {
+            pendingContentTransitionRender = false
+            rootFrame.postOnAnimation {
+                if (isUiActive()) requestRender()
+            }
+        }
+    }
+
+    internal fun queueContentTransition(direction: ContentTransitionDirection) {
+        pendingContentTransition = direction
+    }
+
+    private fun startContentTransitionIfNeeded(
+        previousView: View?,
+        incomingView: View,
+        direction: ContentTransitionDirection?,
+    ) {
+        if (direction == null || previousView == null || previousView === incomingView) return
+        val width = content.width
+        val duration = animationDuration(this, 190L)
+        if (width <= 0 || duration == 0L) return
+
+        // Keep the old page above the new one while it slides away. The old
+        // page moves only a quarter-width (iOS-style parallax), while the new
+        // page makes the full quick slide. Dock/floating actions are added
+        // afterward and remain visually stable during the transition.
+        val sign = if (direction == ContentTransitionDirection.FORWARD) 1f else -1f
+        val outgoingTarget = -sign * width * 0.24f
+        incomingView.translationX = sign * width.toFloat()
+        previousView.translationX = 0f
+        content.addView(previousView, FrameLayout.LayoutParams(-1, -1))
+
+        val animator = AnimatorSet().apply {
+            playTogether(
+                ObjectAnimator.ofFloat(previousView, View.TRANSLATION_X, 0f, outgoingTarget),
+                ObjectAnimator.ofFloat(incomingView, View.TRANSLATION_X, sign * width.toFloat(), 0f),
+            )
+            this.duration = duration
+            interpolator = PathInterpolator(0.18f, 0.82f, 0.24f, 1f)
+            addListener(object : AnimatorListenerAdapter() {
+                private var cancelled = false
+
+                override fun onAnimationCancel(animation: Animator) {
+                    cancelled = true
+                }
+
+                override fun onAnimationEnd(animation: Animator) {
+                    if (activeContentTransition !== animation) return
+                    val refreshAfterTransition = !cancelled && pendingContentTransitionRender
+                    pendingContentTransitionRender = false
+                    activeContentTransition = null
+                    activeTransitionIncomingView = null
+                    activeTransitionOutgoingView = null
+                    incomingView.translationX = 0f
+                    previousView.translationX = 0f
+                    if (!cancelled && previousView.parent === content) content.removeView(previousView)
+                    if (
+                        !cancelled &&
+                        notificationPermissionDeferred &&
+                        canPresentNotificationPermission()
+                    ) {
+                        notificationPermissionDeferred = false
+                        scheduleNotificationPermissionRequest()
+                    }
+                    if (refreshAfterTransition && isUiActive()) {
+                        rootFrame.postOnAnimation {
+                            if (isUiActive()) requestRender()
+                        }
+                    }
+                }
             })
         }
-        if (shouldShowPhoneDock()) {
-            content.addView(dock, FrameLayout.LayoutParams(-2, dp(58), Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL).apply {
-                setMargins(0, 0, 0, dp(6))
-            })
+        activeContentTransition = animator
+        activeTransitionIncomingView = incomingView
+        activeTransitionOutgoingView = previousView
+        animator.start()
+    }
+
+    /**
+     * Requests a snapshot-backed rebuild without interrupting an active page
+     * transition. This is used by the editor's asynchronous Back save.
+     */
+    internal fun requestRenderAfterContentTransition() {
+        if (!isUiActive()) return
+        if (activeContentTransition != null) {
+            pendingContentTransitionRender = true
+        } else {
+            requestRender()
         }
-        updateChromeVisibility()
+    }
+
+    /**
+     * Shows one stable frame while the first native snapshot is expanding.
+     * Rendering an empty Home tree here made larger workspaces flash from
+     * "nothing" to their real content; a static shell keeps the transition
+     * coherent without introducing a spinner animation.
+     */
+    internal fun renderStartupLoading() {
+        if (!::content.isInitialized || !::titleBar.isInitialized) return
+        val activity = this
+        renderedTitleBarSignature = null
+        renderedDockSignature = null
+        renderedContentSnapshot = null
+        renderedContentState = null
+        titleBar.removeAllViews()
+        content.removeAllViews()
+        content.addView(LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = Gravity.CENTER
+            setPadding(dp(24), dp(24), dp(24), dp(24))
+            addView(brandMark(52), LinearLayout.LayoutParams(dp(52), dp(52)).apply {
+                setMargins(0, 0, 0, dp(18))
+            })
+            addView(text(L10n.t(activity, "mobile.workspace.loading"), theme.textMuted, 15f, false).apply {
+                gravity = Gravity.CENTER
+            })
+        }, FrameLayout.LayoutParams(-1, -1))
+    }
+
+    internal fun scheduleNotificationPermissionRequest() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) return
+        if (!::rootFrame.isInitialized || notificationPermissionRunnable != null) return
+        // A permission sheet is full-window system UI. Never place it over a
+        // settings page, scheme editor, keyboard, or an active route slide;
+        // defer until the user is back on the stable Home route so it cannot
+        // look like the page disappeared or the transition flickered.
+        if (!canPresentNotificationPermission()) {
+            notificationPermissionDeferred = true
+            return
+        }
+        val request = Runnable {
+            notificationPermissionRunnable = null
+            if (!canPresentNotificationPermission()) {
+                notificationPermissionDeferred = true
+                return@Runnable
+            }
+            notificationPermissionDeferred = false
+            MobileNotificationScheduler.requestPermission(this)
+        }
+        notificationPermissionRunnable = request
+        rootFrame.postDelayed(request, notificationPermissionDelayMs)
+    }
+
+    private fun canPresentNotificationPermission(): Boolean = shouldPresentNotificationPermission(
+        uiActive = isUiActive(),
+        onboardingActive = onboardingActive,
+        workspaceUiPublished = workspaceUiPublished,
+        selectedTab = selectedTab,
+        selectedSchemeId = selectedSchemeId,
+        contentTransitionActive = activeContentTransition != null,
+        editableFieldFocused = hasFocusedEditableField(),
+    )
+
+    internal fun requestRender() {
+        if (!isUiActive()) return
+        // Startup intentionally publishes the cached workspace through the
+        // delayed one-shot above. Background/status callbacks can arrive while
+        // the loading shell is still visible; they must not pull the expensive
+        // full-tree render back into that first focus transition.
+        if (!workspaceUiPublished) return
+        // A background status/sync update must never steal the editor focus or
+        // keyboard. The focused editor is refreshed in place by the merge path;
+        // defer incidental chrome changes until the user leaves it.
+        if (hasFocusedEditableField()) {
+            renderDeferredWhileEditing = true
+            return
+        }
+        // A calendar swipe owns the timeline until its snap commits. A
+        // snapshot callback may arrive in the middle of a rapid second swipe;
+        // rebuilding the tree here would detach the timeline and cancel that
+        // swipe before it reaches its adjacent day.
+        if (calendarGestureActive) {
+            renderDeferredWhileCalendarGesture = true
+            return
+        }
+        if (activeContentTransition != null) {
+            pendingContentTransitionRender = true
+            return
+        }
+        renderDeferredWhileCalendarGesture = false
+        if (renderRequestPending) return
+        renderRequestPending = true
+        rootFrame.postOnAnimation(renderRequestRunnable)
+    }
+
+    internal fun beginCalendarGesture() {
+        calendarGestureActive = true
+    }
+
+    internal fun endCalendarGesture(flushDeferredRender: Boolean = false) {
+        calendarGestureActive = false
+        if (flushDeferredRender && renderDeferredWhileCalendarGesture) {
+            // Cancellation does not start a new snapshot refresh. Flush any
+            // status redraw that arrived during the gesture once the timeline
+            // is stable again.
+            requestRender()
+        }
+    }
+
+    internal fun flushDeferredRenderAfterEditorBlur() {
+        if (hasFocusedEditableField()) return
+        val shouldRefreshExternalState = externalRefreshPending
+        if (!renderDeferredWhileEditing && !shouldRefreshExternalState) return
+        renderDeferredWhileEditing = false
+        if (shouldRefreshExternalState) {
+            externalRefreshPending = false
+            coreExecutor.execute {
+                val result = runCatching { snapshotFromCore() }
+                runOnUiThread {
+                    if (!isUiActive()) return@runOnUiThread
+                    result.onSuccess { refreshed ->
+                        snapshot = refreshed
+                        configureGoogleSyncPolling()
+                        rescheduleNotifications()
+                        requestRender()
+                    }.onFailure {
+                        // Leave the flag set so onStart or a later blur can retry.
+                        externalRefreshPending = true
+                    }
+                }
+            }
+            return
+        }
+        requestRender()
     }
 
     internal fun renderAfterEditorMutation() {
+        val generation = ++editorMutationGeneration
         suppressEditorBlurCommit = true
         render()
-        rootFrame.post { suppressEditorBlurCommit = false }
-    }
-
-    internal fun renderTitleBar() {
-        titleBar.removeAllViews()
-        titleBar.addView(
-            if (selectedTab == TAB_HOME) brandMark(20) else colorSquare(titleColor(), 18),
-            LinearLayout.LayoutParams(dp(if (selectedTab == TAB_HOME) 20 else 18), dp(if (selectedTab == TAB_HOME) 20 else 18))
-        )
-        titleBar.addView(text(titleText(), theme.textPrimary, 14f, true).apply {
-            gravity = Gravity.CENTER
-            maxLines = 1
-        }, LinearLayout.LayoutParams(0, -1, 1f))
-
-        titleBar.addView(iconActionChip(GLYPH_SEARCH, "Search") {
-            selectedTab = TAB_SEARCH
-            selectedSchemeId = null
-            render()
-        }, marginRight(dp(6), -2, dp(28)))
-        titleBar.addView(iconActionChip(GLYPH_CLOUD, syncSession?.email ?: "Sign in") {
-            showSyncAccountDialog()
-        }, marginRight(dp(6), dp(104), dp(28)))
-        titleBar.addView(chip(GLYPH_ADD) { showNewMenu() }, LinearLayout.LayoutParams(dp(32), dp(28)))
+        rootFrame.post {
+            if (generation == editorMutationGeneration) {
+                suppressEditorBlurCommit = false
+            }
+        }
     }
 
     internal fun renderDock() {
@@ -688,7 +1712,7 @@ class MainActivity : Activity() {
                 if (index == TAB_CALENDAR && selectedDate != LocalDate.now()) {
                     selectedDate = LocalDate.now()
                     weekOffset = 0
-                    loadSnapshot()
+                    refreshSnapshotAsync()
                 }
                 render()
             }, LinearLayout.LayoutParams(dp(ICON_DOCK_BUTTON_WIDTH_DP), dp(ICON_DOCK_BUTTON_HEIGHT_DP)))
@@ -715,6 +1739,9 @@ class MainActivity : Activity() {
                 safeAreaBottom = nextBottom
                 applySafeAreaPadding()
             }
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                updateKeyboardVisibility(insets.isVisible(android.view.WindowInsets.Type.ime()))
+            }
             insets
         }
         rootFrame.requestApplyInsets()
@@ -723,6 +1750,16 @@ class MainActivity : Activity() {
 
     internal fun applySafeAreaPadding() {
         if (!::shell.isInitialized) return
+        // `render()` runs for snapshot/status changes that do not affect the
+        // window insets. Avoid calling setPadding with the same values: Android
+        // treats it as a layout-affecting mutation and can schedule an extra
+        // measure/draw pass in the middle of a large tree rebuild.
+        if (
+            shell.paddingLeft == 0 &&
+            shell.paddingTop == safeAreaTop &&
+            shell.paddingRight == 0 &&
+            shell.paddingBottom == safeAreaBottom
+        ) return
         shell.setPadding(0, safeAreaTop, 0, safeAreaBottom)
     }
 
@@ -751,10 +1788,15 @@ class MainActivity : Activity() {
         dismissKeyboard()
         selectedTab = TAB_HOME
         selectedSchemeId = null
+        queueContentTransition(ContentTransitionDirection.BACKWARD)
         render()
     }
 
     internal fun installKeyboardVisibilityWatcher() {
+        // API 30+ reports IME visibility through WindowInsets. Avoid a global
+        // layout listener there: it allocates a Rect and runs for every measure
+        // pass, including the large tree rebuilds that follow a sync refresh.
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) return
         shell.viewTreeObserver.addOnGlobalLayoutListener {
             if (!::shell.isInitialized) return@addOnGlobalLayoutListener
             val frame = Rect()
@@ -762,18 +1804,49 @@ class MainActivity : Activity() {
             val height = shell.rootView.height
             if (height <= 0) return@addOnGlobalLayoutListener
             val hidden = height - frame.bottom
-            val next = hidden > height * 0.15f
-            if (keyboardActive != next) {
-                keyboardActive = next
-                updateChromeVisibility()
-            }
+            updateKeyboardVisibility(hidden > height * 0.15f)
         }
     }
 
-    internal fun updateChromeVisibility() {
-        if (!::titleBar.isInitialized || !::dock.isInitialized) return
-        titleBar.visibility = if (isWideLayout()) View.VISIBLE else View.GONE
-        dock.visibility = if (shouldShowPhoneDock()) View.VISIBLE else View.GONE
+    private fun updateKeyboardVisibility(next: Boolean) {
+        if (keyboardActive == next) return
+        keyboardActive = next
+        updateChromeVisibility()
+    }
+
+    internal fun updateChromeVisibility(): Boolean {
+        if (!::titleBar.isInitialized || !::dock.isInitialized) return false
+        val titleVisibility = View.GONE
+        val dockVisibility = if (shouldShowPhoneDock()) View.VISIBLE else View.GONE
+        val ownLayoutTransaction =
+            ::rootFrame.isInitialized &&
+                !renderingMainTree
+        if (ownLayoutTransaction) setRootLayoutSuppressed(true)
+        var changed = false
+        try {
+            if (titleBar.visibility != titleVisibility) {
+                titleBar.visibility = titleVisibility
+                changed = true
+            }
+            if (dock.visibility != dockVisibility) {
+                dock.visibility = dockVisibility
+                changed = true
+            }
+        } finally {
+            if (ownLayoutTransaction) {
+                setRootLayoutSuppressed(false)
+                if (changed) rootFrame.requestLayout()
+            }
+        }
+        return changed
+    }
+
+    private fun setRootLayoutSuppressed(suppressed: Boolean) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            rootFrame.suppressLayout(suppressed)
+        } else {
+            (rootFrame as? LayoutTransactionFrameLayout)?.setKnotQLayoutSuppressed(suppressed)
+        }
     }
 
     internal fun isWideLayout(): Boolean =
@@ -815,6 +1888,8 @@ class MainActivity : Activity() {
         private val visibleDates: Set<String>
     ) : View(context) {
         private val paint = Paint(Paint.ANTI_ALIAS_FLAG)
+        private val connectorRect = RectF()
+        private val circleRect = RectF()
 
         override fun onDraw(canvas: Canvas) {
             super.onDraw(canvas)
@@ -843,9 +1918,9 @@ class MainActivity : Activity() {
                 if (!visibleDates.contains(date.toString())) return@forEachIndexed
                 val circleSize = pillHeight
                 val left = index * cellWidth + (cellWidth - circleSize) / 2f
-                val rect = RectF(left, pillTop, left + circleSize, pillTop + circleSize)
+                circleRect.set(left, pillTop, left + circleSize, pillTop + circleSize)
                 paint.color = if (date == LocalDate.now()) calendarDayHighlightColor() else calendarWeekSecondaryHighlightColor()
-                canvas.drawOval(rect, paint)
+                canvas.drawOval(circleRect, paint)
             }
         }
 
@@ -862,12 +1937,12 @@ class MainActivity : Activity() {
             paint.color = calendarWeekConnectorColor()
             val x = start * cellWidth + cellWidth / 2f
             val connectorWidth = (end - start) * cellWidth
-            listOf(
-                pillTop + pillHeight * 0.29f,
-                pillTop + pillHeight * 0.71f - barHeight
-            ).forEach { y ->
-                canvas.drawRoundRect(RectF(x, y, x + connectorWidth, y + barHeight), barHeight / 2f, barHeight / 2f, paint)
-            }
+            val upperY = pillTop + pillHeight * 0.29f
+            val lowerY = pillTop + pillHeight * 0.71f - barHeight
+            connectorRect.set(x, upperY, x + connectorWidth, upperY + barHeight)
+            canvas.drawRoundRect(connectorRect, barHeight / 2f, barHeight / 2f, paint)
+            connectorRect.set(x, lowerY, x + connectorWidth, lowerY + barHeight)
+            canvas.drawRoundRect(connectorRect, barHeight / 2f, barHeight / 2f, paint)
         }
     }
 
@@ -875,6 +1950,14 @@ class MainActivity : Activity() {
     /// plus N day columns (2 on phone), with events drawn at their actual times
     /// and overlapping events split into side-by-side sub-columns. Tap an event to
     /// edit it; long-press to jump to its scheme.
+    private data class CalendarSlot(
+        val occ: JSONObject,
+        val kind: String,
+        val startMin: Float,
+        val endMin: Float,
+        val shortEvent: Boolean,
+    )
+
     internal inner class CalendarTimelineView(context: Context) : View(context) {
         // One JSONObject per visible day column (date + occurrences); `columns` is
         // the slot count used for column widths even if fewer days are available.
@@ -905,14 +1988,49 @@ class MainActivity : Activity() {
         private var swipeAnimator: ValueAnimator? = null
         private var velocityTracker: VelocityTracker? = null
         private val touchSlop = ViewConfiguration.get(context).scaledTouchSlop
+
+        override fun performClick(): Boolean {
+            super.performClick()
+            return true
+        }
         // Viewport (scroll offset + visible height) reported by the enclosing
         // ScrollView so the sticky off-screen-event pills can track the screen.
         private var viewportTop = 0
         private var viewportHeight = 0
-        private val stickyHits = ArrayList<Pair<RectF, JSONObject>>()
+        // Sticky pills are redrawn on every scroll/animation frame. Keep their
+        // hit-test data in reusable parallel lists instead of allocating a
+        // Pair for every visible pill on every frame.
+        private val stickyHitRects = ArrayList<RectF>(18)
+        private val stickyHitOccurrences = ArrayList<JSONObject>(18)
+        private val stickyRectPool = ArrayList<RectF>(18)
+        private var stickyRectPoolIndex = 0
+        private val stickyTopCandidates = ArrayList<Laid>(3)
+        private val stickyBottomCandidates = ArrayList<Laid>(3)
+        // Built once alongside [laid]. Sticky-indicator frames can then inspect
+        // only the events in the current column instead of rescanning every
+        // event once per day on every scroll/snap frame.
+        private var laidByObjectDay: List<List<Laid>> = emptyList()
+        private var dayDates: List<LocalDate?> = emptyList()
+        private var hourLabels: Array<String> = emptyArray()
+        private var calendarZone: ZoneId = ZoneId.systemDefault()
+        private var calendarZoneId: String = calendarZone.id
+        // One short-lived clock sample keeps all time-dependent paint decisions
+        // coherent during a swipe without repeating wall-clock/time-zone
+        // lookups on every display frame.
+        private var frameNow: Instant = Instant.now()
+        private var frameToday: LocalDate = LocalDate.now(calendarZone)
+        private var lastFrameClockUptimeMs = Long.MIN_VALUE
+        private var lastZoneCheckUptimeMs = Long.MIN_VALUE
+        private var layoutDirty = true
         // Event drags pick up on a faster long-press (0.22s, matching iOS) than
         // the empty-space create draft (the detector's default long-press).
         private var pendingDragRunnable: Runnable? = null
+
+        // Device-side motion tests use this read-only checkpoint to ensure a
+        // committed page reaches the exact zero-offset frame after its new
+        // snapshot is published, rather than snapping back early.
+        internal val pageOffsetX: Float
+            get() = swipeOffsetX
 
         private val hourPx = dp(44)
         private val gutterPx = dp(48)
@@ -920,10 +2038,26 @@ class MainActivity : Activity() {
         private val bottomPad = dp(88)
         private val hoursInDay = 24
 
+        private fun refreshCalendarZoneIfNeeded(nowUptimeMs: Long) {
+            if (lastZoneCheckUptimeMs != Long.MIN_VALUE && nowUptimeMs - lastZoneCheckUptimeMs < 1_000L) return
+            lastZoneCheckUptimeMs = nowUptimeMs
+            val currentId = ZoneId.systemDefault().id
+            if (currentId == calendarZoneId) return
+            calendarZoneId = currentId
+            calendarZone = ZoneId.of(currentId)
+            hourLabels = Array(hoursInDay) { hourLabel(it) }
+            // Laid entries contain both zone-dependent y positions and cached
+            // labels. Rebuild them before the next draw rather than showing a
+            // mixed old/new timezone frame.
+            layoutDirty = true
+        }
+
         private val gridPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             style = Paint.Style.STROKE
             strokeWidth = max(1f, 0.6f * resources.displayMetrics.density)
         }
+        private val horizontalGridPath = Path()
+        private var horizontalGridPathWidth = -1
         private val fillPaint = Paint(Paint.ANTI_ALIAS_FLAG)
         private val borderPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE }
         private val pillLinePaint = Paint(Paint.ANTI_ALIAS_FLAG)
@@ -954,8 +2088,73 @@ class MainActivity : Activity() {
             val isReminder: Boolean,
             val isAssignment: Boolean,
             val hideTime: Boolean,
-            val dayIndex: Int
-        )
+            val dayIndex: Int,
+            // These values do not change while a laid-out occurrence is being
+            // scrolled or swiped. Keeping them here avoids JSON reads,
+            // timestamp parsing, and cache-key construction on every onDraw.
+            val title: String = occ.optString("title").ifEmpty {
+                occ.optString("kind").replaceFirstChar(Char::titlecase)
+            },
+            val timeLabel: String = MobileDateFormatting.compactOccurrenceLabel(occ, timeFormat24(), calendarZone),
+            val compact: Boolean = MobileDateFormatting.isCompactEvent(occ),
+            val done: Boolean = occ.optBoolean("done"),
+            val itemTextColor: Int = calendarItemTextColor(occ),
+            val colorIndex: Int = occ.optInt("color_index"),
+            val isDaily: Boolean = occ.optString("scheme_name") == "Daily",
+            val startInstant: Instant? = MobileDateFormatting.parseInstant(
+                occ.optionalString("start") ?: occ.optionalString("end")
+            ),
+            val endInstant: Instant? = MobileDateFormatting.parseInstant(occ.optionalString("end")),
+        ) {
+            // Ellipsizing measures glyphs and may allocate a new CharSequence.
+            // Cache the result for the current laid-out width so a calendar
+            // swipe repaints pixels without repeating text layout every frame.
+            private var cachedEventWidth = Float.NaN
+            private var cachedEventTitle = ""
+            private var cachedEventTime = ""
+            private var cachedStickyWidth = Float.NaN
+            private var cachedStickyTitle = ""
+
+            fun eventTitleForWidth(width: Float): String {
+                ensureEventText(width)
+                return cachedEventTitle
+            }
+
+            fun eventTimeForWidth(width: Float): String {
+                ensureEventText(width)
+                return cachedEventTime
+            }
+
+            fun stickyTitleForWidth(width: Float): String {
+                if (!cachedStickyWidth.isFinite() || abs(cachedStickyWidth - width) > 0.5f) {
+                    cachedStickyWidth = width
+                    cachedStickyTitle = TextUtils.ellipsize(
+                        title,
+                        stickyTitlePaint,
+                        width,
+                        TextUtils.TruncateAt.END,
+                    ).toString()
+                }
+                return cachedStickyTitle
+            }
+
+            private fun ensureEventText(width: Float) {
+                if (cachedEventWidth.isFinite() && abs(cachedEventWidth - width) <= 0.5f) return
+                cachedEventWidth = width
+                cachedEventTitle = TextUtils.ellipsize(
+                    title,
+                    titlePaint,
+                    width,
+                    TextUtils.TruncateAt.END,
+                ).toString()
+                cachedEventTime = TextUtils.ellipsize(
+                    timeLabel,
+                    timePaint,
+                    width,
+                    TextUtils.TruncateAt.END,
+                ).toString()
+            }
+        }
 
         private var laid: List<Laid> = emptyList()
         private var dragMode = CALENDAR_INTERACTION_NONE
@@ -963,12 +2162,28 @@ class MainActivity : Activity() {
         private var dragTargetDay = -1
         private var dragTargetMinute = 0f
 
+        override fun onDetachedFromWindow() {
+            // `render()` replaces the timeline view. Do not let a cancelled
+            // screen keep invalidating itself or finish a swipe against the
+            // newly-rendered screen after it has been detached.
+            swipeAnimator?.cancel()
+            swipeAnimator = null
+            endCalendarGesture(flushDeferredRender = false)
+            pendingDragRunnable?.let(::removeCallbacks)
+            pendingDragRunnable = null
+            velocityTracker?.recycle()
+            velocityTracker = null
+            super.onDetachedFromWindow()
+        }
+
         private val gestureDetector = GestureDetector(context, object : GestureDetector.SimpleOnGestureListener() {
             override fun onDown(e: MotionEvent): Boolean = true
             override fun onSingleTapUp(e: MotionEvent): Boolean {
-                stickyHits.lastOrNull { it.first.contains(e.x, e.y) }?.let { (_, occ) ->
-                    showEventEditorDialog(occ)
-                    return true
+                for (index in stickyHitRects.lastIndex downTo 0) {
+                    if (stickyHitRects[index].contains(e.x, e.y)) {
+                        showEventEditorDialog(stickyHitOccurrences[index])
+                        return true
+                    }
                 }
                 val hit = hitTest(e.x, e.y)
                 if (hit != null) {
@@ -995,17 +2210,29 @@ class MainActivity : Activity() {
             }
         })
 
+        private fun stickyHitContains(x: Float, y: Float): Boolean {
+            for (index in stickyHitRects.lastIndex downTo 0) {
+                if (stickyHitRects[index].contains(x, y)) return true
+            }
+            return false
+        }
+
         init {
             isClickable = true
         }
 
         fun configure(days: List<JSONObject>, columns: Int, leadingColumns: Int = 0) {
             this.dayObjects = days
+            this.dayDates = days.map { day ->
+                runCatching { LocalDate.parse(day.optString("date")) }.getOrNull()
+            }
+            this.hourLabels = Array(hoursInDay) { hourLabel(it) }
             this.columns = max(1, columns)
             this.leadingColumns = leadingColumns.coerceIn(0, max(0, days.size - 1))
             this.swipeOffsetX = 0f
             this.swipingDays = false
             this.laid = emptyList()
+            this.layoutDirty = true
             requestLayout()
             if (width > 0) relayout()
             invalidate()
@@ -1028,20 +2255,14 @@ class MainActivity : Activity() {
 
         override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
             super.onSizeChanged(w, h, oldw, oldh)
+            layoutDirty = true
             relayout()
         }
 
         private fun minuteOfDay(occ: JSONObject, key: String): Float? {
             val instant = MobileDateFormatting.parseInstant(occ.optionalString(key)) ?: return null
-            val local = instant.atZone(ZoneId.systemDefault()).toLocalTime()
+            val local = instant.atZone(calendarZone).toLocalTime()
             return (local.hour * 60 + local.minute).toFloat()
-        }
-
-        private fun isShortEvent(occ: JSONObject): Boolean {
-            if (occ.optString("kind") != "event") return false
-            val s = MobileDateFormatting.parseInstant(occ.optionalString("start")) ?: return false
-            val e = MobileDateFormatting.parseInstant(occ.optionalString("end")) ?: return false
-            return e.epochSecond - s.epochSecond <= 30 * 60
         }
 
         private fun dayDate(dayIndex: Int): LocalDate? {
@@ -1091,6 +2312,23 @@ class MainActivity : Activity() {
             val clamped = minute.coerceIn(0f, ((hoursInDay * 60) - 1).toFloat())
             val total = clamped.toInt().coerceIn(0, (hoursInDay * 60) - 1)
             return date.atTime(total / 60, total % 60)
+        }
+
+        private fun draggedTimeLabel(laid: Laid): String? {
+            val time = activeDateTime(dragTargetDay, dragTargetMinute) ?: return null
+            val kind = laid.occ.optString("kind")
+            val start = when (kind) {
+                "event", "reminder" -> MobileDateFormatting.iso(time.toLocalDate(), time.hour, time.minute, calendarZone)
+                else -> null
+            }
+            val end = when (kind) {
+                "event" -> activeDateTime(dragTargetDay, dragTargetMinute + dragDuration)?.let {
+                    MobileDateFormatting.iso(it.toLocalDate(), it.hour, it.minute, calendarZone)
+                }
+                "assignment" -> MobileDateFormatting.iso(time.toLocalDate(), time.hour, time.minute, calendarZone)
+                else -> null
+            }
+            return MobileDateFormatting.compactOccurrenceLabel(kind, start, end, timeFormat24(), calendarZone)
         }
 
         private fun clearCreatePreview() {
@@ -1195,15 +2433,15 @@ class MainActivity : Activity() {
                 return
             }
             val start = when (kind) {
-                "event", "reminder" -> MobileDateFormatting.iso(targetTime.toLocalDate(), targetTime.hour, targetTime.minute)
+                "event", "reminder" -> MobileDateFormatting.iso(targetTime.toLocalDate(), targetTime.hour, targetTime.minute, calendarZone)
                 else -> null
             }
             val end = when (kind) {
                 "event" -> {
                     val endTime = activeDateTime(targetDay, dragTargetMinute + dragDuration)
-                    endTime?.let { MobileDateFormatting.iso(it.toLocalDate(), it.hour, it.minute) }
+                    endTime?.let { MobileDateFormatting.iso(it.toLocalDate(), it.hour, it.minute, calendarZone) }
                 }
-                "assignment" -> MobileDateFormatting.iso(targetTime.toLocalDate(), targetTime.hour, targetTime.minute)
+                "assignment" -> MobileDateFormatting.iso(targetTime.toLocalDate(), targetTime.hour, targetTime.minute, calendarZone)
                 else -> null
             }
             val notificationOffset = if (laid.occ.isNull("notification_offset_secs")) null else laid.occ.optInt("notification_offset_secs")
@@ -1343,34 +2581,7 @@ class MainActivity : Activity() {
             for (dayIndex in dayObjects.indices) {
                 val occsArray = dayObjects[dayIndex].optJSONArray("occurrences") ?: continue
 
-                data class Slot(val occ: JSONObject, val startMin: Float, val endMin: Float)
-                data class PendingSlot(val slot: Slot, val lane: Int)
-                data class PlacedSlot(val slot: Slot, val lane: Int, val laneSpan: Int, val laneCount: Int)
-
-                fun slotsOverlap(a: Slot, b: Slot): Boolean =
-                    a.startMin < b.endMin && b.startMin < a.endMin
-
-                fun flushComponent(component: ArrayList<PendingSlot>, placed: ArrayList<PlacedSlot>) {
-                    if (component.isEmpty()) return
-                    val laneCount = component.maxOf { it.lane } + 1
-                    component.forEach { pending ->
-                        var laneSpan = 1
-                        if (pending.lane + 1 < laneCount) {
-                            for (lane in (pending.lane + 1) until laneCount) {
-                                if (component.any { other ->
-                                        other.lane == lane && slotsOverlap(pending.slot, other.slot)
-                                    }) {
-                                    break
-                                }
-                                laneSpan += 1
-                            }
-                        }
-                        placed.add(PlacedSlot(pending.slot, pending.lane, laneSpan, laneCount))
-                    }
-                    component.clear()
-                }
-
-                val slots = ArrayList<Slot>()
+                val slots = ArrayList<CalendarSlot>()
                 occsArray.forEachObject { occ ->
                     val kind = occ.optString("kind")
                     if (kind == "procedure") return@forEachObject
@@ -1381,46 +2592,32 @@ class MainActivity : Activity() {
                         // time, mirroring iOS/desktop.
                         val dueMin = (minuteOfDay(occ, "end") ?: minuteOfDay(occ, "start") ?: return@forEachObject)
                             .coerceIn(0f, 1440f)
-                        slots.add(Slot(occ, max(0f, dueMin - minDur), dueMin))
+                        slots.add(CalendarSlot(occ, kind, max(0f, dueMin - minDur), dueMin, false))
                         return@forEachObject
                     }
                     val rawStart = minuteOfDay(occ, "start") ?: minuteOfDay(occ, "end") ?: return@forEachObject
                     val startMin = rawStart.coerceIn(0f, 1440f)
                     val rawEnd = minuteOfDay(occ, "end")?.coerceIn(0f, 1440f) ?: (startMin + minDur)
-                    slots.add(Slot(occ, startMin, max(startMin + minDur, rawEnd)))
-                }
-                slots.sortWith(compareBy<Slot> { it.startMin }.thenByDescending { it.endMin })
-
-                val placed = ArrayList<PlacedSlot>()
-                val component = ArrayList<PendingSlot>()
-                var componentEnd: Float? = null
-                val active = ArrayList<Pair<Float, Int>>()
-
-                slots.forEach { slot ->
-                    val currentEnd = componentEnd
-                    if (currentEnd != null && slot.startMin >= currentEnd) {
-                        flushComponent(component, placed)
-                        active.clear()
-                        componentEnd = null
+                    val shortEvent = if (kind == "event") {
+                        val start = MobileDateFormatting.parseInstant(occ.optionalString("start"))
+                        val end = MobileDateFormatting.parseInstant(occ.optionalString("end"))
+                        start != null && end != null && end.epochSecond - start.epochSecond <= 30 * 60
+                    } else {
+                        false
                     }
-
-                    active.removeAll { it.first <= slot.startMin }
-
-                    var lane = 0
-                    while (active.any { it.second == lane }) {
-                        lane += 1
-                    }
-                    active.add(slot.endMin to lane)
-                    componentEnd = max(componentEnd ?: slot.endMin, slot.endMin)
-                    component.add(PendingSlot(slot, lane))
+                    slots.add(CalendarSlot(occ, kind, startMin, max(startMin + minDur, rawEnd), shortEvent))
                 }
-
-                flushComponent(component, placed)
+                slots.sortWith(compareBy<CalendarSlot> { it.startMin }.thenByDescending { it.endMin })
 
                 val columnX = gutterPx + (dayIndex - leadingColumns) * colWidth
-                placed.forEach { placement ->
-                    val slot = placement.slot
-                    val kind = slot.occ.optString("kind")
+                val placements = layoutCalendarIntervals(
+                    slots.mapIndexed { index, slot ->
+                        CalendarLayoutInterval(index, slot.startMin, slot.endMin)
+                    },
+                )
+                placements.forEach { placement ->
+                    val slot = slots[placement.key]
+                    val kind = slot.kind
                     val subWidth = colWidth.toFloat() / max(1, placement.laneCount)
                     val minHeight = if (kind == "event") dp(20).toFloat() else dp(34).toFloat()
                     val height = max(minHeight, (slot.endMin - slot.startMin) / 60f * hourPx - 2f)
@@ -1439,17 +2636,39 @@ class MainActivity : Activity() {
                         x + max(dp(8).toFloat(), subWidth * placement.laneSpan - 2f),
                         y + height
                     )
-                    out.add(Laid(slot.occ, rect, kind == "reminder", kind == "assignment", isShortEvent(slot.occ), dayIndex - leadingColumns))
+                    out.add(Laid(slot.occ, rect, kind == "reminder", kind == "assignment", slot.shortEvent, dayIndex - leadingColumns))
                 }
             }
             laid = out
+            val groupedByDay = Array(dayObjects.size) { ArrayList<Laid>() }
+            out.forEach { event ->
+                val objectDay = event.dayIndex + leadingColumns
+                if (objectDay in groupedByDay.indices) groupedByDay[objectDay].add(event)
+            }
+            laidByObjectDay = groupedByDay.asList()
+            layoutDirty = false
         }
 
         override fun onDraw(canvas: Canvas) {
             if (width <= 0) return
-            if (laid.isEmpty() && dayObjects.isNotEmpty()) relayout()
+            val nowUptimeMs = SystemClock.uptimeMillis()
+            refreshCalendarZoneIfNeeded(nowUptimeMs)
+            // The now-line and past shade only need sub-second freshness. Do
+            // not allocate a new Instant and zone conversion on every display
+            // frame while a page is being dragged; reuse one coherent sample
+            // for up to 250ms instead.
+            if (lastFrameClockUptimeMs == Long.MIN_VALUE || nowUptimeMs - lastFrameClockUptimeMs >= 250L) {
+                lastFrameClockUptimeMs = nowUptimeMs
+                frameNow = Instant.now()
+                frameToday = frameNow.atZone(calendarZone).toLocalDate()
+            }
+            if (layoutDirty) relayout()
             drawPastShade(canvas)
             drawGrid(canvas)
+            // Paint pinned off-screen indicators before the event layer. If a
+            // visible event occupies the indicator lane, its time/title must
+            // remain readable instead of being covered by the pill.
+            drawStickyIndicators(canvas)
             val dayCanvas = canvas.save()
             canvas.clipRect(gutterPx.toFloat(), 0f, width.toFloat(), height.toFloat())
             canvas.translate(swipeOffsetX, 0f)
@@ -1457,35 +2676,29 @@ class MainActivity : Activity() {
             // copy is drawn — not the original.
             val dragActive = dragMode == CALENDAR_INTERACTION_DRAG || dragHeldForDialog
             laid.forEach {
-                if (!dragActive || it !== dragLaid) drawEvent(canvas, it)
+                if ((!dragActive || it !== dragLaid) && isTimelineRectVisible(it.rect)) {
+                    drawEvent(canvas, it)
+                }
             }
             // The create draft stays visible after the touch ends, while its
             // editor dialog is open (cleared via the dialog's dismiss callback).
             draftRect?.let { drawDraftBlock(canvas, it) }
             if (dragActive) {
                 dragLaid?.let { laid ->
-                    val kind = laid.occ.optString("kind")
-                    val moving = JSONObject(laid.occ.toString()).apply {
-                        activeDateTime(dragTargetDay, dragTargetMinute)?.let { time ->
-                            when (kind) {
-                                "event", "reminder" -> put("start", MobileDateFormatting.iso(time.toLocalDate(), time.hour, time.minute))
-                            }
-                            when (kind) {
-                                "event" -> {
-                                    activeDateTime(dragTargetDay, dragTargetMinute + dragDuration)?.let { end ->
-                                        put("end", MobileDateFormatting.iso(end.toLocalDate(), end.hour, end.minute))
-                                    }
-                                }
-                                "assignment" -> put("end", MobileDateFormatting.iso(time.toLocalDate(), time.hour, time.minute))
-                            }
-                        }
-                    }
-                    drawEvent(canvas, Laid(moving, dragRect, kind == "reminder", kind == "assignment", laid.hideTime, dragTargetDay))
+                    drawEvent(canvas, laid, draggedTimeLabel(laid), dragRect)
                 }
             }
             drawNowLine(canvas)
             canvas.restoreToCount(dayCanvas)
-            drawStickyIndicators(canvas)
+        }
+
+        private fun isTimelineRectVisible(rect: RectF): Boolean {
+            return calendarRectIntersectsViewport(
+                rectTop = rect.top,
+                rectBottom = rect.bottom,
+                viewportTop = viewportTop,
+                viewportHeight = viewportHeight,
+            )
         }
 
         /// Tints the already-elapsed part of each day in the calendar blue, like
@@ -1493,17 +2706,17 @@ class MainActivity : Activity() {
         private fun drawPastShade(canvas: Canvas) {
             if (dayObjects.isEmpty()) return
             val colWidth = max(1, (width - gutterPx) / columns)
-            val today = LocalDate.now()
+            val today = frameToday
             val saved = canvas.save()
             canvas.clipRect(gutterPx.toFloat(), 0f, width.toFloat(), height.toFloat())
             canvas.translate(swipeOffsetX, 0f)
             fillPaint.color = adjustAlpha(calendarDayHighlightColor(), if (theme.isDark) 0.11f else 0.13f)
             for (objectIndex in dayObjects.indices) {
-                val date = runCatching { LocalDate.parse(dayObjects[objectIndex].optString("date")) }.getOrNull() ?: continue
+                val date = dayDates.getOrNull(objectIndex) ?: continue
                 val shadeBottom = when {
                     date.isBefore(today) -> (topOffset + hoursInDay * hourPx).toFloat()
                     date == today -> {
-                        val now = LocalTime.now()
+                        val now = frameNow.atZone(calendarZone).toLocalTime()
                         topOffset + (now.hour * 60 + now.minute) / 60f * hourPx
                     }
                     else -> continue
@@ -1530,7 +2743,11 @@ class MainActivity : Activity() {
             timePaint.color = textColor
             timePaint.alpha = 255
             val timeLabel = activeDateTime(dragTargetDay, dragTargetMinute)?.let { time ->
-                MobileDateFormatting.time(MobileDateFormatting.iso(time.toLocalDate(), time.hour, time.minute), timeFormat24())
+                MobileDateFormatting.time(
+                    MobileDateFormatting.iso(time.toLocalDate(), time.hour, time.minute, calendarZone),
+                    timeFormat24(),
+                    calendarZone,
+                )
             }.orEmpty()
             val time = TextUtils.ellipsize(timeLabel, timePaint, availW, TextUtils.TruncateAt.END)
             canvas.drawText(time, 0, time.length, cx, rect.top + dp(3) - timePaint.ascent(), timePaint)
@@ -1543,7 +2760,9 @@ class MainActivity : Activity() {
         /// Stacked "more events" pills pinned to the top/bottom of the viewport
         /// for events scrolled out of view, fading in with distance like iOS.
         private fun drawStickyIndicators(canvas: Canvas) {
-            stickyHits.clear()
+            stickyHitRects.clear()
+            stickyHitOccurrences.clear()
+            stickyRectPoolIndex = 0
             if (viewportHeight <= 0 || dayObjects.isEmpty() || dragMode != CALENDAR_INTERACTION_NONE) return
             val colWidth = dayColumnWidth()
             val pillH = dp(26).toFloat()
@@ -1564,31 +2783,75 @@ class MainActivity : Activity() {
                 val visibleWidth = min(width.toFloat(), columnLeft + colWidth) - max(gutterPx.toFloat(), columnLeft)
                 if (visibleWidth <= 0f) continue
                 val horizontalAlpha = (visibleWidth / min(colWidth, fadeDistance)).coerceIn(0f, 1f)
-                val dayEvents = laid.filter { it.dayIndex == visIndex }
-                val topCandidates = dayEvents
-                    .filter { it.rect.top < visibleMinY }
-                    .sortedWith(compareByDescending<Laid> { it.rect.top }.thenBy { it.rect.left })
-                    .take(stackDepth)
-                    .reversed()
-                val bottomCandidates = dayEvents
-                    .filter { it.rect.top > visibleMaxY }
-                    .sortedWith(compareBy<Laid> { it.rect.top }.thenBy { it.rect.left })
-                    .take(stackDepth)
-                    .reversed()
-                topCandidates.forEachIndexed { index, candidate ->
-                    val alpha = ((visibleMinY - candidate.rect.top) / fadeDistance).coerceIn(0f, 1f) * horizontalAlpha
-                    drawStickyPill(canvas, candidate.occ, columnLeft, colWidth, topBaseY + index * (pillH + spacing), pillH, alpha)
+                stickyTopCandidates.clear()
+                stickyBottomCandidates.clear()
+                val dayLaid = laidByObjectDay.getOrNull(objectIndex).orEmpty()
+                dayLaid.forEach { candidate ->
+                    if (candidate.rect.top < visibleMinY) {
+                        insertStickyTop(candidate, stackDepth)
+                    } else if (candidate.rect.top > visibleMaxY) {
+                        insertStickyBottom(candidate, stackDepth)
+                    }
                 }
-                bottomCandidates.forEachIndexed { index, candidate ->
+                var topDisplayed = 0
+                for (index in stickyTopCandidates.lastIndex downTo 0) {
+                    val candidate = stickyTopCandidates[index]
+                    val alpha = ((visibleMinY - candidate.rect.top) / fadeDistance).coerceIn(0f, 1f) * horizontalAlpha
+                    val pillY = topBaseY + topDisplayed * (pillH + spacing)
+                    if (stickyLaneIsClear(dayLaid, pillY, pillH)) {
+                        drawStickyPill(canvas, candidate, columnLeft, colWidth, pillY, pillH, alpha)
+                        topDisplayed++
+                    }
+                }
+                var bottomDisplayed = 0
+                for (index in stickyBottomCandidates.lastIndex downTo 0) {
+                    val candidate = stickyBottomCandidates[index]
                     val alpha = ((candidate.rect.top - visibleMaxY) / fadeDistance).coerceIn(0f, 1f) * horizontalAlpha
-                    drawStickyPill(canvas, candidate.occ, columnLeft, colWidth, max(topBaseY, bottomBaseY - index * (pillH + spacing)), pillH, alpha)
+                    val pillY = max(topBaseY, bottomBaseY - bottomDisplayed * (pillH + spacing))
+                    if (stickyLaneIsClear(dayLaid, pillY, pillH)) {
+                        drawStickyPill(canvas, candidate, columnLeft, colWidth, pillY, pillH, alpha)
+                        bottomDisplayed++
+                    }
                 }
             }
         }
 
+        private fun stickyLaneIsClear(dayLaid: List<Laid>, top: Float, height: Float): Boolean =
+            dayLaid.none { candidate ->
+                candidate.rect.bottom > top && candidate.rect.top < top + height
+            }
+
+        private fun insertStickyTop(candidate: Laid, limit: Int) {
+            var index = 0
+            while (index < stickyTopCandidates.size) {
+                val existing = stickyTopCandidates[index]
+                if (existing.rect.top < candidate.rect.top ||
+                    (existing.rect.top == candidate.rect.top && existing.rect.left > candidate.rect.left)
+                ) break
+                index++
+            }
+            if (index >= limit && stickyTopCandidates.size >= limit) return
+            stickyTopCandidates.add(index.coerceAtMost(stickyTopCandidates.size), candidate)
+            if (stickyTopCandidates.size > limit) stickyTopCandidates.removeAt(limit)
+        }
+
+        private fun insertStickyBottom(candidate: Laid, limit: Int) {
+            var index = 0
+            while (index < stickyBottomCandidates.size) {
+                val existing = stickyBottomCandidates[index]
+                if (existing.rect.top > candidate.rect.top ||
+                    (existing.rect.top == candidate.rect.top && existing.rect.left > candidate.rect.left)
+                ) break
+                index++
+            }
+            if (index >= limit && stickyBottomCandidates.size >= limit) return
+            stickyBottomCandidates.add(index.coerceAtMost(stickyBottomCandidates.size), candidate)
+            if (stickyBottomCandidates.size > limit) stickyBottomCandidates.removeAt(limit)
+        }
+
         private fun drawStickyPill(
             canvas: Canvas,
-            occ: JSONObject,
+            event: Laid,
             columnLeft: Float,
             colWidth: Float,
             y: Float,
@@ -1600,7 +2863,13 @@ class MainActivity : Activity() {
             val minX = gutterPx + dp(7).toFloat()
             val maxX = max(minX, width - pillW - dp(7))
             val x = (columnLeft + dp(7)).coerceIn(minX, maxX)
-            val rect = RectF(x, y, x + pillW, y + pillH)
+            val rect = if (stickyRectPoolIndex < stickyRectPool.size) {
+                stickyRectPool[stickyRectPoolIndex]
+            } else {
+                RectF().also(stickyRectPool::add)
+            }
+            stickyRectPoolIndex++
+            rect.set(x, y, x + pillW, y + pillH)
             val alpha255 = (alpha * 255).roundToInt().coerceIn(0, 255)
             val radius = pillH / 2f
             fillPaint.color = if (theme.isDark) adjustAlpha(rgb(0x333333), 0.92f) else adjustAlpha(theme.bgApp, 0.86f)
@@ -1610,30 +2879,51 @@ class MainActivity : Activity() {
             borderPaint.alpha = (Color.alpha(borderPaint.color) * alpha).roundToInt().coerceIn(0, 255)
             borderPaint.strokeWidth = max(1f, 0.75f * resources.displayMetrics.density)
             canvas.drawRoundRect(rect, radius, radius, borderPaint)
-            fillPaint.color = if (occ.optString("scheme_name") == "Daily") dailyAccent() else schemeColor(occ.optInt("color_index"))
+            fillPaint.color = if (event.isDaily) dailyAccent() else schemeColor(event.colorIndex)
             fillPaint.alpha = alpha255
             canvas.drawCircle(rect.left + dp(9) + dp(7) / 2f, rect.centerY(), dp(7) / 2f, fillPaint)
             stickyTitlePaint.color = theme.textPrimary
             stickyTitlePaint.alpha = alpha255
-            val title = occ.optString("title").trim().ifEmpty { occ.optString("kind").replaceFirstChar(Char::titlecase) }
             val availW = max(0f, pillW - dp(30))
-            val label = TextUtils.ellipsize(title, stickyTitlePaint, availW, TextUtils.TruncateAt.END)
+            val label = event.stickyTitleForWidth(availW)
             val baseline = rect.centerY() - (stickyTitlePaint.ascent() + stickyTitlePaint.descent()) / 2f
             canvas.drawText(label, 0, label.length, rect.left + dp(22), baseline, stickyTitlePaint)
-            stickyHits.add(rect to occ)
+            stickyHitRects.add(rect)
+            stickyHitOccurrences.add(event.occ)
         }
 
         private fun drawGrid(canvas: Canvas) {
+            if (horizontalGridPathWidth != width) {
+                horizontalGridPath.reset()
+                for (hour in 0..hoursInDay) {
+                    val y = (topOffset + hour * hourPx).toFloat()
+                    horizontalGridPath.moveTo(gutterPx.toFloat(), y)
+                    horizontalGridPath.lineTo(width.toFloat(), y)
+                }
+                horizontalGridPathWidth = width
+            }
             val colWidth = max(1, (width - gutterPx) / columns)
             gridPaint.color = theme.dividerSoft
             gutterPaint.color = theme.textMuted
             val gridBottom = (topOffset + hoursInDay * hourPx).toFloat()
-            for (hour in 0..hoursInDay) {
+            // A vertical ScrollView clips the child in content coordinates.
+            // Avoid replaying off-screen labels on every scroll frame; the
+            // fallback draws the full day before the first viewport callback.
+            val visibleTop = if (viewportHeight > 0) viewportTop.toFloat() else 0f
+            val visibleBottom = if (viewportHeight > 0) {
+                min(gridBottom, (viewportTop + viewportHeight).toFloat())
+            } else {
+                gridBottom
+            }
+            val firstHour = ((visibleTop - topOffset) / hourPx).toInt().coerceIn(0, hoursInDay)
+            val lastHour = (((visibleBottom - topOffset) / hourPx).toInt() + 1)
+                .coerceIn(firstHour, hoursInDay)
+            canvas.drawPath(horizontalGridPath, gridPaint)
+            for (hour in firstHour..lastHour) {
                 val y = (topOffset + hour * hourPx).toFloat()
-                canvas.drawLine(gutterPx.toFloat(), y, width.toFloat(), y, gridPaint)
                 // The very bottom of the timeline is the next midnight (12 AM).
                 val baseline = y - (gutterPaint.ascent() + gutterPaint.descent()) / 2f
-                canvas.drawText(hourLabel(hour % hoursInDay), (gutterPx - dp(6)).toFloat(), baseline, gutterPaint)
+                canvas.drawText(hourLabels[hour % hoursInDay], (gutterPx - dp(6)).toFloat(), baseline, gutterPaint)
             }
             val saved = canvas.save()
             canvas.clipRect(gutterPx.toFloat(), topOffset.toFloat(), width.toFloat(), gridBottom)
@@ -1655,25 +2945,31 @@ class MainActivity : Activity() {
             }
         }
 
-        private fun drawEvent(canvas: Canvas, e: Laid) {
+        private fun drawEvent(
+            canvas: Canvas,
+            e: Laid,
+            timeLabelOverride: String? = null,
+            rectOverride: RectF? = null,
+        ) {
             val occ = e.occ
+            val rect = rectOverride ?: e.rect
             val isPill = e.isReminder || e.isAssignment
-            val done = occ.optBoolean("done")
+            val done = e.done
             val fillAlpha = if (done) 115 else 255
             val radius = if (isPill) 0f else dp(3).toFloat()
 
             fillPaint.color = eventBg()
             fillPaint.alpha = fillAlpha
-            canvas.drawRoundRect(e.rect, radius, radius, fillPaint)
+            canvas.drawRoundRect(rect, radius, radius, fillPaint)
 
             if (isPill) {
                 pillLinePaint.color = eventBorder()
                 pillLinePaint.alpha = fillAlpha
                 val sw = calendarPillStrokeWidth().toFloat()
                 if (e.isReminder) {
-                    canvas.drawRect(e.rect.left, e.rect.top, e.rect.right, e.rect.top + sw, pillLinePaint)
+                    canvas.drawRect(rect.left, rect.top, rect.right, rect.top + sw, pillLinePaint)
                 } else {
-                    canvas.drawRect(e.rect.left, e.rect.bottom - sw, e.rect.right, e.rect.bottom, pillLinePaint)
+                    canvas.drawRect(rect.left, rect.bottom - sw, rect.right, rect.bottom, pillLinePaint)
                 }
             } else {
                 borderPaint.color = eventBorder()
@@ -1681,50 +2977,58 @@ class MainActivity : Activity() {
                 borderPaint.strokeWidth = calendarEventBorderWidth().toFloat()
                 val inset = borderPaint.strokeWidth / 2f
                 canvas.drawRoundRect(
-                    e.rect.left + inset, e.rect.top + inset, e.rect.right - inset, e.rect.bottom - inset,
+                    rect.left + inset, rect.top + inset, rect.right - inset, rect.bottom - inset,
                     radius, radius, borderPaint
                 )
             }
 
             val saved = canvas.save()
-            canvas.clipRect(e.rect)
+            canvas.clipRect(rect)
             val padX = dp(4).toFloat()
-            val availW = max(0f, e.rect.width() - padX * 2)
-            val cx = e.rect.centerX()
-            val title = occ.optString("title").ifEmpty { occ.optString("kind").replaceFirstChar(Char::titlecase) }
-            val timeLabel = MobileDateFormatting.compactOccurrenceLabel(occ, timeFormat24())
-            val showTime = !e.hideTime && timeLabel.isNotEmpty() && !MobileDateFormatting.isCompactEvent(occ)
-            titlePaint.color = calendarItemTextColor(occ)
+            val availW = max(0f, rect.width() - padX * 2)
+            val cx = rect.centerX()
+            val timeLabel = timeLabelOverride ?: e.timeLabel
+            val showTime = !e.hideTime && timeLabel.isNotEmpty() && !e.compact
+            titlePaint.color = e.itemTextColor
             titlePaint.alpha = if (done) 200 else 255
+            val cachedTitle = if (timeLabelOverride == null) e.eventTitleForWidth(availW) else null
             if (showTime) {
-                timePaint.color = calendarTimeColor(occ)
+                timePaint.color = calendarTimeColor(e.done, e.startInstant, e.endInstant, frameNow, calendarZone)
                 timePaint.alpha = if (done) 150 else 255
-                val timeTop = e.rect.top + dp(if (e.isReminder) 5 else 3)
-                val time = TextUtils.ellipsize(timeLabel, timePaint, availW, TextUtils.TruncateAt.END)
+                val timeTop = rect.top + dp(if (e.isReminder) 5 else 3)
+                val time = timeLabelOverride ?: e.eventTimeForWidth(availW)
                 canvas.drawText(time, 0, time.length, cx, timeTop - timePaint.ascent(), timePaint)
                 val titleTop = timeTop + dp(12)
-                val name = TextUtils.ellipsize(title, titlePaint, availW, TextUtils.TruncateAt.END)
+                val name = cachedTitle ?: TextUtils.ellipsize(e.title, titlePaint, availW, TextUtils.TruncateAt.END).toString()
                 canvas.drawText(name, 0, name.length, cx, titleTop - titlePaint.ascent(), titlePaint)
             } else {
-                val name = TextUtils.ellipsize(title, titlePaint, availW, TextUtils.TruncateAt.END)
-                val baseline = e.rect.centerY() - (titlePaint.ascent() + titlePaint.descent()) / 2f
+                val name = cachedTitle ?: TextUtils.ellipsize(e.title, titlePaint, availW, TextUtils.TruncateAt.END).toString()
+                val baseline = rect.centerY() - (titlePaint.ascent() + titlePaint.descent()) / 2f
                 canvas.drawText(name, 0, name.length, cx, baseline, titlePaint)
             }
             canvas.restoreToCount(saved)
         }
 
         private fun drawNowLine(canvas: Canvas) {
-            val todayKey = LocalDate.now().toString()
-            val dayIndex = dayObjects.indexOfFirst { it.optString("date") == todayKey }
+            val dayIndex = dayDates.indexOfFirst { it == frameToday }
             if (dayIndex < 0) return
             val colWidth = max(1, (width - gutterPx) / columns)
-            val now = LocalTime.now()
+            val now = frameNow.atZone(calendarZone).toLocalTime()
             val y = topOffset + (now.hour * 60 + now.minute) / 60f * hourPx
             val x0 = (gutterPx + (dayIndex - leadingColumns) * colWidth).toFloat()
             nowPaint.color = theme.danger
             nowPaint.style = Paint.Style.STROKE
             nowPaint.strokeWidth = max(1f, 1.5f * resources.displayMetrics.density)
+            // The grid, past shade, events, and sticky indicators all follow
+            // the interactive page offset. Keep the now-line in that same
+            // coordinate space so it cannot float in place during a swipe.
+            // The caller has already translated the event layer by
+            // [swipeOffsetX]; translating again here would make the line move
+            // twice as far as the events during a page gesture.
+            val saved = canvas.save()
+            canvas.clipRect(gutterPx.toFloat(), 0f, width.toFloat(), height.toFloat())
             canvas.drawLine(x0, y, x0 + colWidth, y, nowPaint)
+            canvas.restoreToCount(saved)
         }
 
         private fun hitTest(x: Float, y: Float): JSONObject? =
@@ -1746,6 +3050,7 @@ class MainActivity : Activity() {
             val dy = event.y - touchStartY
             if (!swipingDays && abs(dx) > touchSlop * 2 && abs(dx) > abs(dy) * 1.18f) {
                 swipingDays = true
+                beginCalendarGesture()
                 parent?.requestDisallowInterceptTouchEvent(true)
             }
             if (!swipingDays) return false
@@ -1757,27 +3062,25 @@ class MainActivity : Activity() {
 
         private fun finishDaySwipe() {
             val colWidth = dayColumnWidth()
-            // iOS commit rule: project the gesture 0.18s ahead by velocity (only
-            // when that grows the travel) and page when the projection clears the
-            // threshold, or when the raw drag passed 42% of a column.
             velocityTracker?.computeCurrentVelocity(1000)
             val vx = velocityTracker?.xVelocity ?: 0f
             velocityTracker?.recycle()
             velocityTracker = null
-            val dx = swipeOffsetX
-            val projectedRaw = dx + vx * 0.18f
-            val projected = if (abs(projectedRaw) > abs(dx)) projectedRaw else dx
-            val threshold = max(dp(48).toFloat(), min(width * 0.15f, colWidth * 0.68f))
-            val shouldShift = abs(projected) > threshold || abs(dx) > colWidth * 0.42f
-            val dayDelta = when {
-                shouldShift && projected < 0 -> 1L
-                shouldShift && projected > 0 -> -1L
-                else -> 0L
-            }
+            // iOS commit rule: project the gesture 0.18s ahead by velocity (only
+            // when that grows the travel) and page when the projection clears the
+            // threshold, or when the raw drag passed 42% of a column.
+            val dayDelta = calendarDaySwipeDelta(
+                offsetPx = swipeOffsetX,
+                velocityPxPerSecond = vx,
+                columnWidthPx = colWidth,
+                viewportWidthPx = width.toFloat(),
+                minimumThresholdPx = dp(48).toFloat(),
+            )
             if (dayDelta == 0L) {
                 animateDaySwipe(0f) {
                     swipingDays = false
                     parent?.requestDisallowInterceptTouchEvent(false)
+                    endCalendarGesture(flushDeferredRender = true)
                 }
                 return
             }
@@ -1787,19 +3090,57 @@ class MainActivity : Activity() {
                 selectedDate = nextDate
                 weekOffset = 0
                 calendarScrollDate = nextDate.toString()
-                swipeOffsetX = 0f
                 swipingDays = false
                 parent?.requestDisallowInterceptTouchEvent(false)
-                loadSnapshot()
-                render()
+                // Keep the canvas parked on the fully travelled page until the
+                // authoritative next-day snapshot is ready. Resetting the
+                // offset here made the old day visibly jump back while the
+                // async core read was still in flight; iOS keeps the page at
+                // its settled edge until the destination is mounted.
+                refreshSnapshotAsync(
+                    renderAfter = false,
+                    onSuccess = {
+                        if (!isAttachedToWindow) return@refreshSnapshotAsync
+                        swipeOffsetX = 0f
+                        endCalendarGesture(flushDeferredRender = false)
+                        requestRender()
+                    },
+                    onFailure = {
+                        // A failed refresh must still release the gesture and
+                        // restore the current page instead of leaving a blank
+                        // edge parked on screen forever.
+                        swipeOffsetX = 0f
+                        endCalendarGesture(flushDeferredRender = false)
+                        requestRender()
+                    },
+                )
             }
         }
 
         private fun animateDaySwipe(target: Float, onEnd: () -> Unit) {
             swipeAnimator?.cancel()
+            val distance = abs(target - swipeOffsetX)
+            val baseDuration = if (target == 0f) 165L else 205L
+            val duration = animationDuration(
+                context,
+                snappingAnimationDurationMs(baseDuration, distance, dayColumnWidth()),
+            )
+            if (duration == 0L) {
+                // Do not start a zero-duration ValueAnimator: Android can still
+                // schedule an intermediate frame, which flashes the old page
+                // when reduced-motion is enabled.
+                swipeAnimator = null
+                swipeOffsetX = target
+                invalidate()
+                onEnd()
+                return
+            }
             val animator = ValueAnimator.ofFloat(swipeOffsetX, target).apply {
-                duration = 220L
-                interpolator = DecelerateInterpolator(1.6f)
+                this.duration = duration
+                // A fast ease-out gives the release a crisp iOS-like settle
+                // without the late-frame braking that made short swipes feel
+                // sticky or jagged.
+                interpolator = PathInterpolator(0.18f, 0.82f, 0.24f, 1f)
                 addUpdateListener { valueAnimator ->
                     swipeOffsetX = valueAnimator.animatedValue as Float
                     invalidate()
@@ -1829,9 +3170,23 @@ class MainActivity : Activity() {
         }
 
         override fun onTouchEvent(event: MotionEvent): Boolean {
+            // A release starts a short page-settle animation. Do not let a
+            // second pointer sequence cancel that animation and reset the
+            // offset to zero mid-frame: doing so produces a visible jump (and
+            // can commit the opposite day before the first page is published).
+            // The settle lasts at most a couple hundred milliseconds, so
+            // briefly ignoring the new sequence is both safer and closer to
+            // iOS paging behavior than accepting a gesture against stale data.
+            if (swipeAnimator != null) return true
+
+            // After a committed page reaches its edge, keep that edge parked
+            // until the destination snapshot has been installed. A new touch
+            // during this short handoff must not run ACTION_DOWN below and
+            // reset the offset to zero against the old day's canvas.
+            if (calendarGestureActive && !swipingDays) return true
+
             when (event.actionMasked) {
                 MotionEvent.ACTION_DOWN -> {
-                    swipeAnimator?.cancel()
                     velocityTracker?.recycle()
                     velocityTracker = VelocityTracker.obtain()
                     velocityTracker?.addMovement(event)
@@ -1844,9 +3199,7 @@ class MainActivity : Activity() {
                     cancelPendingDragPickup()
                     val downX = event.x
                     val downY = event.y
-                    if (dragMode == CALENDAR_INTERACTION_NONE &&
-                        stickyHits.none { it.first.contains(downX, downY) }
-                    ) {
+                    if (dragMode == CALENDAR_INTERACTION_NONE && !stickyHitContains(downX, downY)) {
                         hitTest(downX, downY)?.takeIf { !it.optBoolean("is_read_only", false) }?.let { hit ->
                             val runnable = Runnable {
                                 pendingDragRunnable = null
@@ -1872,6 +3225,7 @@ class MainActivity : Activity() {
                 }
                 MotionEvent.ACTION_UP -> {
                     cancelPendingDragPickup()
+                    if (!swipingDays) performClick()
                     if (swipingDays) {
                         finishDaySwipe()
                         return true
@@ -1887,6 +3241,7 @@ class MainActivity : Activity() {
                         animateDaySwipe(0f) {
                             swipingDays = false
                             parent?.requestDisallowInterceptTouchEvent(false)
+                            endCalendarGesture(flushDeferredRender = true)
                         }
                         return true
                     }
@@ -1915,7 +3270,11 @@ class MainActivity : Activity() {
     /// between rows (or highlights a folder to drop inside), release commits
     /// the move. Releasing a lifted row without dragging opens its actions.
     internal inner class NavigatorPanel(context: Context) : FrameLayout(context) {
-        private val list = LinearLayout(context).apply {
+        // Incremental navigator batches can add dozens of rows while this
+        // panel is already attached during a scroll. Use the same transaction
+        // aware container as the other high-churn lists so one batch produces
+        // one measure/layout publication instead of one per row.
+        private val list = LayoutTransactionLinearLayout(context).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(0, dp(2), 0, dp(2))
         }
@@ -1934,6 +3293,19 @@ class MainActivity : Activity() {
             )
         }
         private val rowMetas = ArrayList<Pair<View, NavRowMeta>>()
+        // Keep both metadata traversal and View inflation bounded. The previous
+        // implementation flattened every visible node before showing the first
+        // row, which still froze pathological workspaces even though Views were
+        // created in batches. This stack is expanded only as rows approach the
+        // viewport tail.
+        private val pendingFrames = ArrayDeque<NavigatorTraversalFrame>()
+        private var traversalComplete = false
+        private var buildGeneration = 0L
+        private var buildContinuation: Runnable? = null
+        private var hostScrollView: ScrollView? = null
+        private val hostScrollListener = android.view.ViewTreeObserver.OnScrollChangedListener {
+            maybeAppendRowsNearViewport()
+        }
         private val touchSlop = ViewConfiguration.get(context).scaledTouchSlop
         private var downX = 0f
         private var downY = 0f
@@ -1945,6 +3317,11 @@ class MainActivity : Activity() {
         private var liftRunnable: Runnable? = null
         private var disallowingParentIntercept = false
 
+        override fun performClick(): Boolean {
+            super.performClick()
+            return true
+        }
+
         init {
             addView(list, LayoutParams(-1, -2))
             addView(folderHighlight, LayoutParams(0, 0))
@@ -1952,38 +3329,131 @@ class MainActivity : Activity() {
             buildRows()
         }
 
+        override fun onAttachedToWindow() {
+            super.onAttachedToWindow()
+            var ancestor = parent
+            while (ancestor != null && ancestor !is ScrollView) ancestor = ancestor.parent
+            hostScrollView = ancestor as? ScrollView
+            hostScrollView?.viewTreeObserver?.addOnScrollChangedListener(hostScrollListener)
+        }
+
+        override fun onDetachedFromWindow() {
+            // A full render replaces this panel. Clear its long-press callback
+            // and any transient drag transforms before the old rows disappear;
+            // otherwise a delayed lift can mutate a stale row or flash above the
+            // next screen.
+            buildGeneration++
+            buildContinuation?.let(::removeCallbacks)
+            buildContinuation = null
+            hostScrollView?.viewTreeObserver?.removeOnScrollChangedListener(hostScrollListener)
+            hostScrollView = null
+            if (dragging) finishDrag(commit = false) else cancelLift(releaseParentIntercept = false)
+            super.onDetachedFromWindow()
+        }
+
         private fun buildRows() {
+            buildGeneration++
+            buildContinuation?.let(::removeCallbacks)
+            buildContinuation = null
             list.removeAllViews()
             rowMetas.clear()
+            pendingFrames.clear()
+            traversalComplete = false
             val root = snapshot.optJSONObject("root")
             val rootId = root?.optString("id").orEmpty()
-            fun append(nodes: JSONArray?, parentId: String, depth: Int) {
-                nodes?.forEachIndexedObject { index, node ->
+            val roots = root?.optJSONArray("children")
+            if (roots == null || roots.length() == 0) {
+                traversalComplete = true
+                addEmptyStateIfNeeded()
+                return
+            }
+            // Keep one cursor for the root array instead of pushing every root
+            // sibling into a stack. Expanded folders add one more frame per
+            // nesting level, so memory stays O(depth), even for huge sibling
+            // lists.
+            pendingFrames.addLast(NavigatorTraversalFrame(roots, rootId, 0))
+            appendRowBatch(NAVIGATOR_INITIAL_BATCH)
+            maybeAppendRowsNearViewport()
+        }
+
+        private fun addEmptyStateIfNeeded() {
+            if (list.childCount != 0) return
+            list.addView(text("No schemes yet", theme.textMuted, 14f, false).apply {
+                setPadding(dp(10), dp(8), dp(10), dp(8))
+            }, LinearLayout.LayoutParams(-1, dp(36)))
+        }
+
+        /** True while unseen visible nodes remain in the incremental traversal. */
+        internal fun hasPendingRows(): Boolean = pendingFrames.isNotEmpty()
+
+        private fun appendRowBatch(batchSize: Int) {
+            var appended = 0
+            list.batchLayoutChanges {
+                while (appended < batchSize && pendingFrames.isNotEmpty()) {
+                    val frame = pendingFrames.last()
+                    if (frame.nextIndex >= frame.children.length()) {
+                        pendingFrames.removeLast()
+                        continue
+                    }
+                    val siblingIndex = frame.nextIndex++
+                    val node = frame.children.optJSONObject(siblingIndex) ?: continue
                     val kind = node.optString("kind")
                     val id = node.optString("id")
                     val meta = NavRowMeta(
                         node = node,
                         id = id,
                         kind = kind,
-                        parentId = parentId,
-                        siblingIndex = index,
-                        depth = depth,
-                        childCount = node.optJSONArray("children")?.length() ?: 0
+                        parentId = frame.parentId,
+                        siblingIndex = siblingIndex,
+                        depth = frame.depth,
+                        childCount = node.optJSONArray("children")?.length() ?: 0,
                     )
                     val row = navigatorRow(meta)
                     rowMetas.add(row to meta)
                     list.addView(row, LinearLayout.LayoutParams(-1, rowHeight))
+                    appended++
                     if (kind == "folder" && !collapsedFolderIds.contains(id)) {
-                        append(node.optJSONArray("children"), id, depth + 1)
+                        node.optJSONArray("children")?.let { children ->
+                            if (children.length() > 0) {
+                                pendingFrames.addLast(NavigatorTraversalFrame(children, id, frame.depth + 1))
+                            }
+                        }
                     }
                 }
             }
-            append(root?.optJSONArray("children"), rootId, 0)
-            if (rowMetas.isEmpty()) {
-                list.addView(text("No schemes yet", theme.textMuted, 14f, false).apply {
-                    setPadding(dp(10), dp(8), dp(10), dp(8))
-                }, LinearLayout.LayoutParams(-1, dp(36)))
+            traversalComplete = pendingFrames.isEmpty()
+            if (traversalComplete && rowMetas.isEmpty()) addEmptyStateIfNeeded()
+        }
+
+        private fun maybeAppendRowsNearViewport() {
+            val scroll = hostScrollView ?: return
+            if (buildContinuation != null || traversalComplete) return
+            if (!isAttachedToWindow || list.height <= 0 || scroll.height <= 0) return
+            // The initial batch is intentionally larger than the phone's
+            // capped viewport. Only materialize the next batch when the user
+            // actually reaches the currently-built tail; an untouched screen
+            // therefore never spends frames inflating off-screen rows.
+            // Use window coordinates because NavigatorPanel can live directly
+            // inside the page ScrollView (wide Home) or inside its own nested
+            // side-rail ScrollView. Comparing local `bottom` to scrollY in the
+            // former case would mix coordinate spaces and either starve or
+            // eagerly drain the continuation batches.
+            val listLocation = IntArray(2)
+            val scrollLocation = IntArray(2)
+            list.getLocationOnScreen(listLocation)
+            scroll.getLocationOnScreen(scrollLocation)
+            val listBottom = listLocation[1] + list.height
+            val viewportBottom = scrollLocation[1] + scroll.height
+            if (viewportBottom < listBottom - rowHeight * 6) return
+            val generation = buildGeneration
+            val continuation = Runnable {
+                buildContinuation = null
+                if (generation != buildGeneration || !isAttachedToWindow) return@Runnable
+                appendRowBatch(NAVIGATOR_CONTINUATION_BATCH)
+                maybeAppendRowsNearViewport()
             }
+            buildContinuation = continuation
+            postOnAnimation(continuation)
         }
 
         private fun navigatorRow(meta: NavRowMeta): View {
@@ -2093,7 +3563,14 @@ class MainActivity : Activity() {
             pendingPlacement = null
             setParentInterceptDisallowed(true)
             row.elevation = dp(8).toFloat()
-            row.animate().scaleX(0.97f).scaleY(0.97f).alpha(0.85f).setDuration(120).start()
+            val duration = animationDuration(context, 120L)
+            if (duration == 0L) {
+                row.scaleX = 0.97f
+                row.scaleY = 0.97f
+                row.alpha = 0.85f
+            } else {
+                row.animate().scaleX(0.97f).scaleY(0.97f).alpha(0.85f).setDuration(duration).start()
+            }
             performHapticFeedback(android.view.HapticFeedbackConstants.LONG_PRESS)
             updateDropTarget(downY)
         }
@@ -2115,6 +3592,7 @@ class MainActivity : Activity() {
             when (event.actionMasked) {
                 MotionEvent.ACTION_MOVE -> handleDragMove(event)
                 MotionEvent.ACTION_UP -> {
+                    performClick()
                     // The release point decides the drop even when no
                     // intermediate move event was delivered.
                     if (abs(event.y - downY) > touchSlop) {
@@ -2165,8 +3643,8 @@ class MainActivity : Activity() {
             pendingPlacement = raw?.let { adjustPlacement(meta, it.folderId, it.position) }
             if (pendingPlacement == null) {
                 hideIndicators()
-            } else {
-                showIndicator(raw!!)
+            } else if (raw != null) {
+                showIndicator(raw)
             }
         }
 
@@ -2235,10 +3713,18 @@ class MainActivity : Activity() {
         }
 
         private fun jsonNodeContains(node: JSONObject, id: String): Boolean {
+            val pending = ArrayDeque<JSONObject>()
             val children = node.optJSONArray("children") ?: return false
-            for (index in 0 until children.length()) {
-                val child = children.optJSONObject(index) ?: continue
-                if (child.optString("id") == id || jsonNodeContains(child, id)) return true
+            for (index in children.length() - 1 downTo 0) {
+                children.optJSONObject(index)?.let(pending::addLast)
+            }
+            while (pending.isNotEmpty()) {
+                val current = pending.removeLast()
+                if (current.optString("id") == id) return true
+                val nested = current.optJSONArray("children") ?: continue
+                for (index in nested.length() - 1 downTo 0) {
+                    nested.optJSONObject(index)?.let(pending::addLast)
+                }
             }
             return false
         }
@@ -2333,13 +3819,13 @@ class MainActivity : Activity() {
             try {
                 MobileNotificationScheduler.reschedule(
                     this,
-                    bridge.requestArray(obj("type" to "pending_notifications"))
+                    coreExecutor.call { bridge.requestArray(obj("type" to "pending_notifications")) }
                 )
                 // Also clear banners for events that ended or occurrences completed,
                 // which reschedule() leaves in the tray once they've already fired.
                 MobileNotificationScheduler.clearStale(
                     this,
-                    bridge.requestArray(obj("type" to "delivered_notifications_to_clear"))
+                    coreExecutor.call { bridge.requestArray(obj("type" to "delivered_notifications_to_clear")) }
                 )
             } catch (error: RuntimeException) {
                 failure = error
@@ -2347,6 +3833,7 @@ class MainActivity : Activity() {
             val error = failure
             runOnUiThread {
                 notifRescheduleRunning = false
+                if (!isUiActive()) return@runOnUiThread
                 if (error != null) showError("Notifications unavailable", error.message)
             }
         }.start()
@@ -2361,18 +3848,36 @@ class MainActivity : Activity() {
         // FCM push registration only exists to drive cross-device sync, which is
         // compiled out of release builds.
         if (!BuildConfig.ACCOUNTS_ENABLED) return
-        runCatching {
-            com.google.firebase.messaging.FirebaseMessaging.getInstance().token
-                .addOnSuccessListener { token ->
-                    if (token.isNullOrBlank()) return@addOnSuccessListener
-                    PushRegistration.store(this, token)
-                    if (::bridge.isInitialized) PushRegistration.apply(bridge, token)
-                }
-        }
+        // FirebaseApp initialization is deliberately off the UI thread. The
+        // first workspace frame is already visible by the time this is called,
+        // but provider startup can still load Play-services classes and disk
+        // state on a cold process.
+        Thread {
+            if (!KnotQFirebase.initialize(applicationContext)) return@Thread
+            runCatching {
+                com.google.firebase.messaging.FirebaseMessaging.getInstance().token
+                    .addOnSuccessListener { token ->
+                        if (token.isNullOrBlank()) return@addOnSuccessListener
+                        if (!isUiActive()) return@addOnSuccessListener
+                        PushRegistration.store(this, token)
+                        if (::bridge.isInitialized) {
+                            // Firebase delivers this callback on the main thread
+                            // by default. Token registration touches the native
+                            // core and can wait on disk/sync work, so never call
+                            // it inline or a foreground refresh can block the UI.
+                            runCatching {
+                                PushRegistration.dispatch(coreExecutor) {
+                                    PushRegistration.apply(bridge, token)
+                                }
+                            }
+                        }
+                    }
+            }
+        }.start()
     }
 
     internal fun showOnboardingOverlay() {
-        if (!onboardingActive || !::rootFrame.isInitialized) return
+        if (!onboardingActive || !isUiActive()) return
         removeOnboardingOverlay()
         val overlay = if (onboardingPhase == ONBOARDING_ACCOUNT) buildAccountOverlay() else buildGuideOverlay()
         rootFrame.addView(overlay, FrameLayout.LayoutParams(-1, -1))

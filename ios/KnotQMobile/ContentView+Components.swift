@@ -85,6 +85,15 @@ private let onboardingSteps: [OnboardingStep] = [
     )
 ]
 
+/// Bindings can briefly outlive the view that owns them during a scene restore
+/// or an interrupted tour transition. Keep every array access in the overlay
+/// within the step list rather than allowing a stale negative/out-of-range value
+/// to become a UI crash.
+func clampedOnboardingStep(_ step: Int, count: Int) -> Int {
+    guard count > 0 else { return 0 }
+    return max(0, min(step, count - 1))
+}
+
 // MARK: - Spotlight overlay
 
 struct OnboardingOverlay: View {
@@ -137,13 +146,18 @@ struct OnboardingOverlay: View {
         .ignoresSafeArea()
         .task(id: currentStep) {
             targetGaveUpOnStep = nil
-            try? await Task.sleep(for: Self.targetWait)
+            do {
+                try await Task.sleep(for: Self.targetWait)
+            } catch {
+                return
+            }
+            guard !Task.isCancelled else { return }
             targetGaveUpOnStep = currentStep
         }
     }
 
     private var currentStep: Int {
-        min(step, onboardingSteps.count - 1)
+        clampedOnboardingStep(step, count: onboardingSteps.count)
     }
 
     private func placementIsKnown(_ current: OnboardingStep, targetRect: CGRect?) -> Bool {
@@ -211,13 +225,13 @@ struct OnboardingOverlay: View {
     }
 
     private func tooltipCard(_ current: OnboardingStep) -> some View {
-        let isLast = step >= onboardingSteps.count - 1
+        let isLast = currentStep >= onboardingSteps.count - 1
         return VStack(alignment: .leading, spacing: 12) {
             HStack(spacing: 6) {
                 ForEach(onboardingSteps.indices, id: \.self) { index in
                     Capsule()
-                        .fill(index == step ? theme.accent : theme.borderOverlay.opacity(0.5))
-                        .frame(width: index == step ? 22 : 6, height: 6)
+                        .fill(index == currentStep ? theme.accent : theme.borderOverlay.opacity(0.5))
+                        .frame(width: index == currentStep ? 22 : 6, height: 6)
                 }
             }
 
@@ -233,7 +247,7 @@ struct OnboardingOverlay: View {
             }
 
             HStack(spacing: 10) {
-                if step > 0 {
+                if currentStep > 0 {
                     Button {
                         goBack()
                     } label: {
@@ -275,11 +289,11 @@ struct OnboardingOverlay: View {
     }
 
     private func advance() {
-        if step >= onboardingSteps.count - 1 {
+        if currentStep >= onboardingSteps.count - 1 {
             finishTutorial()
             return
         }
-        let next = step + 1
+        let next = currentStep + 1
         onFocus(onboardingSteps[next].focusPane)
         withAnimation(.snappy(duration: 0.22)) {
             step = next
@@ -287,8 +301,8 @@ struct OnboardingOverlay: View {
     }
 
     private func goBack() {
-        guard step > 0 else { return }
-        let previous = step - 1
+        guard currentStep > 0 else { return }
+        let previous = currentStep - 1
         onFocus(onboardingSteps[previous].focusPane)
         withAnimation(.snappy(duration: 0.22)) {
             step = previous

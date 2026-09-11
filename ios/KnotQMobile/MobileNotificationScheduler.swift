@@ -1,4 +1,5 @@
 import Foundation
+import os
 import UIKit
 @preconcurrency import UserNotifications
 
@@ -6,6 +7,7 @@ final class MobileNotificationScheduler: NSObject, UNUserNotificationCenterDeleg
     @MainActor static let shared = MobileNotificationScheduler()
 
     private static let categoryID = "knotq-reminder"
+    private static let log = Logger(subsystem: "com.enigmadux.knotq", category: "notifications")
     static let actionMarkDone = "knotq.mark_done"
     static let actionSnooze10Minutes = "knotq.snooze.10m"
     static let actionSnooze1Hour = "knotq.snooze.1h"
@@ -25,7 +27,6 @@ final class MobileNotificationScheduler: NSObject, UNUserNotificationCenterDeleg
     @MainActor weak var model: AppModel?
 
     private let center = UNUserNotificationCenter.current()
-    private let iso = ISO8601DateFormatter()
 
     /// Coalesce a burst of reschedule requests (sync pulls, rapid edits) before
     /// touching the OS notification center again, so we don't constantly re-arm
@@ -44,7 +45,6 @@ final class MobileNotificationScheduler: NSObject, UNUserNotificationCenterDeleg
 
     private override init() {
         super.init()
-        iso.formatOptions = [.withInternetDateTime]
     }
 
     /// Actions that arrived before `configure(model:)` wired up the app model.
@@ -123,7 +123,11 @@ final class MobileNotificationScheduler: NSObject, UNUserNotificationCenterDeleg
         #endif
         center.getNotificationSettings { [center] settings in
             guard settings.authorizationStatus == .notDetermined else { return }
-            center.requestAuthorization(options: [.alert, .badge, .sound]) { _, _ in }
+            center.requestAuthorization(options: [.alert, .badge, .sound]) { _, error in
+                if let error {
+                    Self.log.error("notification authorization failed: \(String(describing: error), privacy: .public)")
+                }
+            }
         }
     }
 
@@ -224,7 +228,16 @@ final class MobileNotificationScheduler: NSObject, UNUserNotificationCenterDeleg
             .filter { $0.hasPrefix("knotq-") }
 
         for request in desiredByID.values.sorted(by: { $0.fireAt < $1.fireAt }) {
-            try? await center.add(request.notificationRequest)
+            do {
+                try await center.add(request.notificationRequest)
+            } catch {
+                // Keep reconciling the rest of the bounded desired set. A single
+                // invalid/over-quota request must not strand every other reminder,
+                // but it must be observable for support and telemetry.
+                Self.log.error(
+                    "notification scheduling failed for id \(request.id, privacy: .private): \(String(describing: error), privacy: .public)"
+                )
+            }
         }
 
         let stale = previouslyPending.filter { desiredByID[$0] == nil }
@@ -253,7 +266,7 @@ final class MobileNotificationScheduler: NSObject, UNUserNotificationCenterDeleg
             let info = delivered.request.content.userInfo
             guard (info["kind"] as? String) == "event" else { return nil }
             guard let endRaw = info["end_at"] as? String, !endRaw.isEmpty,
-                  let end = iso.date(from: endRaw)
+                  let end = MobileDate.parseDateTime(endRaw)
             else { return nil }
             return end <= now ? id : nil
         }
@@ -277,11 +290,15 @@ final class MobileNotificationScheduler: NSObject, UNUserNotificationCenterDeleg
     /// Set the app icon badge to the current overdue count. `0` clears it.
     @MainActor
     func updateBadgeCount(_ count: Int) {
-        center.setBadgeCount(max(0, count)) { _ in }
+        center.setBadgeCount(max(0, count)) { error in
+            if let error {
+                Self.log.error("notification badge update failed: \(String(describing: error), privacy: .public)")
+            }
+        }
     }
 
     private func notificationRequest(_ request: MobileNotificationRequest) -> PendingMobileNotification? {
-        guard let fireAt = iso.date(from: request.fireAt) else { return nil }
+        guard let fireAt = MobileDate.parseDateTime(request.fireAt) else { return nil }
         guard fireAt > Date() else { return nil }
         let interval = max(1, fireAt.timeIntervalSinceNow)
         let content = UNMutableNotificationContent()

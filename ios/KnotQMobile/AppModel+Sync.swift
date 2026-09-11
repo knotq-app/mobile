@@ -10,8 +10,14 @@ extension AppModel {
     /// Hand the Rust core a push token (e.g. an FCM token from Firebase) so the
     /// next sync registers this device for silent background wake-ups.
     func setPushToken(_ token: String, environment: String = "production") {
+        let normalized = token.trimmingCharacters(in: .whitespacesAndNewlines)
+        if normalized.isEmpty {
+            PushTokenStore.remove()
+        } else {
+            _ = PushTokenStore.save(.init(token: normalized, environment: environment))
+        }
         guard let bridge else { return }
-        bridge.enqueue({ try $0.setPushRegistration(token: token, environment: environment) }) { [weak self] result in
+        bridge.enqueue({ try $0.setPushRegistration(token: normalized, environment: environment) }) { [weak self] result in
             guard let self, case .success = result else { return }
             if self.syncSession?.supportsSync == true {
                 Task { await self.runBackgroundSync() }
@@ -40,6 +46,7 @@ extension AppModel {
     @discardableResult
     func runBackgroundSync(preferLiveSocket: Bool = false) async -> Bool {
         guard !syncInProgress, let session = syncSession, session.supportsSync else { return false }
+        let sessionGeneration = syncSessionGeneration.value
         syncInProgress = true
         defer { syncInProgress = false }
         // Background resyncs normally ride plain HTTP. The socket should already be
@@ -57,6 +64,7 @@ extension AppModel {
             stopWsSync()
         }
         guard await refreshSyncSessionIfNeeded() == .ready else { return false }
+        guard syncSessionGeneration.matches(sessionGeneration) else { return false }
 
         // One reactive auth retry. The proactive refresh above only fires when our
         // local expiry check says the token is near expiry; if the backend rejects
@@ -67,15 +75,23 @@ extension AppModel {
         // forced refresh so a genuinely dead session can't loop.
         var triedAuthRefresh = false
         while true {
-            guard let bridge, let current = syncSession else { return false }
+            guard syncSessionGeneration.matches(sessionGeneration),
+                  let bridge,
+                  let current = syncSession,
+                  current.supportsSync else { return false }
             let apiBase = current.apiBase
             let bearerToken = current.bearerToken
             do {
                 let result = try await bridge.perform { b in
-                    let changed = try b.syncOnce(apiBase: apiBase, bearerToken: bearerToken)
+                    let changed = try b.syncOnce(
+                        apiBase: apiBase,
+                        bearerToken: bearerToken,
+                        accountUserID: current.userId
+                    )
                     let notice = try b.takeSyncNotice()
                     return (changed, notice)
                 }
+                guard syncSessionGeneration.matches(sessionGeneration) else { return false }
                 if result.0 {
                     // Await the snapshot install AND the notification re-arm
                     // before returning: the background-task completion handler
@@ -88,17 +104,20 @@ extension AppModel {
                     // self-heals a schedule lost by an earlier interrupted run.
                     await rearmNotificationsNow()
                 }
+                guard syncSessionGeneration.matches(sessionGeneration) else { return false }
                 if let notice = result.1 {
                     errorMessage = notice
                 }
                 syncOffline = false
                 return result.0
             } catch {
+                guard syncSessionGeneration.matches(sessionGeneration) else { return false }
                 // A terminal refresh failure signs out inside refreshSyncSessionIfNeeded;
                 // a transient one returns non-.ready, so we fall through and bail.
                 if !triedAuthRefresh,
                    Self.isAuthRejection(error),
                    await refreshSyncSessionIfNeeded(force: true) == .ready {
+                    guard syncSessionGeneration.matches(sessionGeneration) else { return false }
                     triedAuthRefresh = true
                     let hadWs = await isWsConnected()
                     // If this ran while the foreground socket was up, rebuild it
@@ -141,26 +160,44 @@ extension AppModel {
         // out — two simultaneous refreshes would replay the same (single-use)
         // refresh token and trip the server's reuse detection, revoking the session.
         guard !syncInProgress, syncSession != nil else { return }
+        let sessionGeneration = syncSessionGeneration.value
         syncInProgress = true
         defer { syncInProgress = false }
 
         // Refresh the short-lived access token if it's near expiry (persisting the
         // rotated credentials), or bail out if the session is gone.
-        guard await refreshSyncSessionIfNeeded() == .ready else { return }
+        // A foreground pull should not pay a refresh round-trip for a token that
+        // is still usable. If it expires during the pull, the bounded 401 retry
+        // below refreshes it once. This removes the common startup auth stall
+        // while retaining correctness at the expiry boundary.
+        guard await refreshSyncSessionIfNeeded(minimumValidity: 15) == .ready else { return }
+        guard syncSessionGeneration.matches(sessionGeneration) else { return }
 
         var triedAuthRefresh = false
         while true {
-            guard let bridge, let session = syncSession, session.supportsSync else { return }
+            guard syncSessionGeneration.matches(sessionGeneration),
+                  let bridge,
+                  let session = syncSession,
+                  session.supportsSync else { return }
             do {
                 let apiBase = session.apiBase
                 let bearerToken = session.bearerToken
                 let result = try await bridge.perform { b in
                     let changed = try force
-                        ? b.forceSyncOnce(apiBase: apiBase, bearerToken: bearerToken)
-                        : b.syncOnce(apiBase: apiBase, bearerToken: bearerToken)
+                        ? b.forceSyncOnce(
+                            apiBase: apiBase,
+                            bearerToken: bearerToken,
+                            accountUserID: session.userId
+                        )
+                        : b.syncOnce(
+                            apiBase: apiBase,
+                            bearerToken: bearerToken,
+                            accountUserID: session.userId
+                        )
                     let notice = try b.takeSyncNotice()
                     return (changed, notice)
                 }
+                guard syncSessionGeneration.matches(sessionGeneration) else { return }
                 if result.0 {
                     refresh()
                 }
@@ -168,9 +205,11 @@ extension AppModel {
                 errorMessage = result.1
                 return
             } catch {
+                guard syncSessionGeneration.matches(sessionGeneration) else { return }
                 if !triedAuthRefresh, Self.isAuthRejection(error) {
                     switch await refreshSyncSessionIfNeeded(force: true) {
                     case .ready:
+                        guard syncSessionGeneration.matches(sessionGeneration) else { return }
                         triedAuthRefresh = true
                         // Rebuild the socket: the current connection was authenticated
                         // with the token the backend just rejected.
@@ -299,19 +338,31 @@ extension AppModel {
     /// rotated credentials immediately. `.sessionDead` is only returned when the
     /// auth endpoint rejects the refresh token; transient failures leave the account
     /// signed in and mark sync offline.
-    func refreshSyncSessionIfNeeded(force: Bool = false) async -> SyncSessionRefreshResult {
+    func refreshSyncSessionIfNeeded(
+        force: Bool = false,
+        minimumValidity: TimeInterval = 120
+    ) async -> SyncSessionRefreshResult {
         guard let session = syncSession else { return .sessionDead }
+        let sessionGeneration = syncSessionGeneration.value
+        guard Self.isSecureSyncApiBase(session.apiBase) else {
+            errorMessage = L10n.t("sync.error.api_url_https_required")
+            return .deferred
+        }
         guard !session.refreshToken.isEmpty else {
             syncOffline = true
             return .deferred
         }
-        guard (force || Self.tokenNeedsRefresh(session.expiresAt)),
+        guard (force || Self.tokenNeedsRefresh(session.expiresAt, minimumValidity: minimumValidity)),
               let url = URL(string: "\(session.apiBase)/v1/auth/refresh")
         else {
             return .ready
         }
         do {
             var request = URLRequest(url: url)
+            // A foreground sync must not sit behind URLSession's several-minute
+            // default timeout when the auth service is unreachable. The sync
+            // retry loop will try again on the next tick.
+            request.timeoutInterval = 5
             request.httpMethod = "POST"
             request.setValue("application/json", forHTTPHeaderField: "Content-Type")
             request.httpBody = try JSONSerialization.data(withJSONObject: ["refresh_token": session.refreshToken])
@@ -322,12 +373,12 @@ extension AppModel {
             // server has already advanced the generation) is exactly what looks like
             // refresh-token reuse on the next launch and signs the user out.
             let (data, response) = try await withBackgroundAssertion("knotq.auth.refresh") {
-                try await URLSession.shared.data(for: request)
+                try await MobileHTTPResponseLimits.data(for: request)
             }
-            guard let http = response as? HTTPURLResponse else {
-                syncOffline = true
-                return .deferred
-            }
+            let http = response
+            // Do not let a refresh response from a previous login sign out or
+            // overwrite a newer session installed while the request was away.
+            guard syncSessionGeneration.matches(sessionGeneration) else { return .deferred }
             if Self.isTerminalRefreshError(http, data) {
                 // The auth API explicitly rejected this refresh credential.
                 signOutSync()
@@ -403,7 +454,10 @@ extension AppModel {
 
     /// True when the access token expires within the skew window (or is
     /// unparseable, in which case we refresh defensively).
-    static func tokenNeedsRefresh(_ expiresAt: String) -> Bool {
+    static func tokenNeedsRefresh(
+        _ expiresAt: String,
+        minimumValidity: TimeInterval = 120
+    ) -> Bool {
         let withFraction = ISO8601DateFormatter()
         withFraction.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
         let plain = ISO8601DateFormatter()
@@ -411,7 +465,7 @@ extension AppModel {
         guard let expiry = withFraction.date(from: expiresAt) ?? plain.date(from: expiresAt) else {
             return true
         }
-        return expiry.timeIntervalSinceNow <= 120
+        return expiry.timeIntervalSinceNow <= minimumValidity
     }
 
     static func isLikelyNetworkError(_ error: Error) -> Bool {
@@ -475,6 +529,11 @@ extension AppModel {
         let today = Self.dateOnly(selectedDate)
         let week = weekOffset
         let history = dailyHistoryDays
+        let query = RefreshQuery(
+            dateKey: today,
+            weekOffset: week,
+            dailyHistoryDays: history
+        )
         bridge.enqueue({ b in
             let started = CFAbsoluteTimeGetCurrent()
             try action(b)
@@ -499,11 +558,27 @@ extension AppModel {
             }
             switch result {
             case .success(let (snapshot, pending, staleNotificationIds)):
-                self.apply(
-                    snapshot: snapshot,
-                    pendingNotifications: pending,
-                    staleNotificationIds: staleNotificationIds
+                let currentQuery = RefreshQuery(
+                    dateKey: Self.dateOnly(self.selectedDate),
+                    weekOffset: self.weekOffset,
+                    dailyHistoryDays: self.dailyHistoryDays
                 )
+                if currentQuery == query {
+                    self.apply(
+                        snapshot: snapshot,
+                        pendingNotifications: pending,
+                        staleNotificationIds: staleNotificationIds
+                    )
+                } else {
+                    self.reconcileNotifications(
+                        pendingNotifications: pending,
+                        staleNotificationIds: staleNotificationIds
+                    )
+                    // A selection change normally already requests this read;
+                    // request again so a direct property change or a completion
+                    // race cannot leave the newly selected view stale.
+                    self.refresh()
+                }
                 self.errorMessage = nil
                 if self.syncSession != nil {
                     self.scheduleEditSync()
@@ -585,13 +660,24 @@ extension AppModel {
     /// Reconcile immediately whenever iOS returns the app to the foreground.
     /// Silent pushes are best-effort, and a socket retained across suspension can
     /// briefly look connected even though it can no longer receive `changed`
-    /// nudges. Refresh the entitlement first, rebuild the transport, then perform
-    /// an explicit pull so merely opening KnotQ is always enough to converge.
+    /// nudges. An already-entitled session does not need a status request before
+    /// its pull: Rust's canonical workspace lookup and the sync response are the
+    /// correctness path. Refresh entitlement after the pull so foreground resume
+    /// does not serialize an auxiliary request ahead of convergence.
     func resumeForegroundSync() async {
-        await refreshSubscriptionStatus()
+        let needsEntitlementDiscovery = syncSession?.supportsSync != true
+        if needsEntitlementDiscovery {
+            await refreshSubscriptionStatus()
+        }
         stopWsSync()
-        startWsSync()
         await syncOnce()
+        startWsSync()
+        if !needsEntitlementDiscovery {
+            // Sync just refreshed the bearer when it was near expiry. Read the
+            // auxiliary lifecycle state with that bearer instead of rotating the
+            // single-use refresh token a second time during startup/resume.
+            Task { await self.refreshAccountStatus() }
+        }
     }
 
     /// Open the persistent sync WebSocket for the current session (online, poll-free
@@ -633,14 +719,32 @@ extension AppModel {
     func startSyncPolling() {
         syncPollTask?.cancel()
         guard syncSession != nil else { return }
-        // Online, poll-free sync: pull/push ride a persistent socket.
-        startWsSync()
         syncPollTask = Task { [weak self] in
-            // Pick up an entitlement change (a subscription bought on another device
-            // or the web) on launch/sign-in before the first sync, so it shows up
-            // without waiting for the access token to expire.
-            await self?.refreshSubscriptionStatus()
-            await self?.syncOnce()
+            guard let self else { return }
+            // An entitled account needs no auxiliary status request before its
+            // first sync: Rust already performs the authoritative account-status
+            // lookup to obtain the canonical workspace id. Doing the Swift
+            // status lookup first created two serial status requests plus the
+            // pull on every cold launch. Free/unknown accounts still check first
+            // so a newly granted entitlement can enable sync immediately.
+            let needsEntitlementDiscovery = self.syncSession?.supportsSync != true
+            if needsEntitlementDiscovery {
+                await self.refreshSubscriptionStatus()
+            }
+            guard !Task.isCancelled else { return }
+            await self.syncOnce()
+            guard !Task.isCancelled else { return }
+            if !needsEntitlementDiscovery {
+                // Keep subscription lifecycle UI fresh, but take this auxiliary
+                // read off the initial Resyncing critical path. Sync already
+                // handled any needed bearer refresh above.
+                Task { await self.refreshAccountStatus() }
+            }
+            // Establish the persistent transport only after the first sync has
+            // completed. Starting it before the initial HTTP fallback races its
+            // connection callback with that sync and used to schedule a second
+            // full account-status + pull cycle on every cold launch.
+            self.startWsSync()
             // Foreground sync is socket-driven: NO periodic network poll while the
             // socket is up. The 1 s tick is a cheap LOCAL flag read — a network sync
             // fires only when a peer's push arrives as a `changed` nudge (or a
@@ -649,8 +753,15 @@ extension AppModel {
             // blocks WS), so such a device still converges.
             var secondsSinceFallbackPoll = 0
             while !Task.isCancelled {
-                try? await Task.sleep(nanoseconds: 1_000_000_000)
-                guard let self else { break }
+                do {
+                    try await Task.sleep(nanoseconds: 1_000_000_000)
+                } catch {
+                    // Cancellation is the normal shutdown path (sign-out or
+                    // replacement by a newly installed session). Never run a
+                    // stale poll after the task has been cancelled.
+                    return
+                }
+                guard !Task.isCancelled else { return }
                 if await self.wsPendingChanged() {
                     secondsSinceFallbackPoll = 0
                     await self.syncOnce()
@@ -684,10 +795,16 @@ extension AppModel {
         }
         guard googleSyncTask == nil else { return }
         googleSyncTask = Task { [weak self] in
-            await self?.syncGoogleCalendars(silent: true)
+            guard let self else { return }
+            await self.syncGoogleCalendars(silent: true)
             while !Task.isCancelled {
-                try? await Task.sleep(nanoseconds: Self.foregroundGoogleSyncIntervalNanos)
-                await self?.syncGoogleCalendars(silent: true)
+                do {
+                    try await Task.sleep(nanoseconds: Self.foregroundGoogleSyncIntervalNanos)
+                } catch {
+                    return
+                }
+                guard !Task.isCancelled else { return }
+                await self.syncGoogleCalendars(silent: true)
             }
         }
     }
@@ -704,13 +821,39 @@ extension AppModel {
     }
 
     func saveSyncSession(_ session: LocalSyncSession) {
-        if let data = try? JSONEncoder().encode(session) {
-            UserDefaults.standard.set(data, forKey: syncSessionKey)
+        guard let data = try? JSONEncoder().encode(session) else {
+            errorMessage = "Could not save your sync session securely."
+            return
         }
+        guard SyncSessionStore.save(data, key: syncSessionKey) else {
+            // Do not put a freshly issued access/refresh token back into
+            // UserDefaults when the protected store is unavailable. The current
+            // in-memory session remains usable and the error is actionable.
+            errorMessage = "Could not save your sync session securely."
+            return
+        }
+        // Remove the pre-Keychain copy only after the protected write succeeds.
+        UserDefaults.standard.removeObject(forKey: syncSessionKey)
     }
 
     static func loadSyncSession(key: String) -> LocalSyncSession? {
-        guard let data = UserDefaults.standard.data(forKey: key) else { return nil }
-        return try? JSONDecoder().decode(LocalSyncSession.self, from: data)
+        if let data = SyncSessionStore.load(key: key),
+           let session = try? JSONDecoder().decode(LocalSyncSession.self, from: data),
+           Self.isSecureSyncApiBase(session.apiBase) {
+            return session
+        }
+
+        // One-time migration for builds that stored credentials in the plist.
+        // Keep the legacy value if Keychain is temporarily unavailable so an
+        // existing user is not signed out or forced through auth again.
+        guard let legacyData = UserDefaults.standard.data(forKey: key),
+              let session = try? JSONDecoder().decode(LocalSyncSession.self, from: legacyData),
+              Self.isSecureSyncApiBase(session.apiBase) else {
+            return nil
+        }
+        if SyncSessionStore.save(legacyData, key: key) {
+            UserDefaults.standard.removeObject(forKey: key)
+        }
+        return session
     }
 }

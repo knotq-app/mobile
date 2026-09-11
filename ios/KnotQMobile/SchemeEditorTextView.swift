@@ -133,7 +133,22 @@ final class EditorTextView: UITextView {
 
     private let inlineTitleView = EditorInlineTitleView()
     let editorLayoutManager: EditorLayoutManager
-    var imageCache: [String: UIImage] = [:]
+    /// Per-editor thumbnail cache. Image blocks are painted from `drawRect`, so
+    /// retaining full camera-resolution UIImages here could both decode on the
+    /// main thread and keep hundreds of megabytes alive while scrolling. The
+    /// renderer keys by display size and lets NSCache evict under pressure.
+    let imageCache: NSCache<NSString, UIImage> = {
+        let cache = NSCache<NSString, UIImage>()
+        cache.countLimit = 32
+        cache.totalCostLimit = 48 * 1024 * 1024
+        return cache
+    }()
+    /// ImageIO work is never allowed to run from the draw callback. The cache
+    /// is thread-safe, but the in-flight set still needs a lock because a
+    /// document can paint the same block more than once before its thumbnail
+    /// reaches the cache.
+    let imageLoadsLock = NSLock()
+    var imageLoadsInFlight = Set<String>()
     var renderedTableCellHits: [EditorTableCellHitRect] = []
     /// The in-place table cell editor, present only while a cell is being edited.
     var activeCellEditor: EditorTableCellEditor?
@@ -538,32 +553,57 @@ final class EditorTextView: UITextView {
         return extractEdits(from: textStorage)
     }
 
-    /// The caret's line identity: the item id of the paragraph containing the
-    /// caret plus the caret's offset within that paragraph. Lets a full reload
-    /// re-anchor the caret by line, where the absolute offset goes stale the
-    /// moment a change inserts or removes characters above the caret.
-    func caretContext() -> (itemID: String?, offsetInLine: Int) {
+    /// Captures the caret's stable line identity, its UTF-16 offset, and the
+    /// old line text. A full reload can then re-anchor by line and adapt the
+    /// offset when a remote edit inserts or removes text within that line.
+    func caretContext(at location: Int? = nil) -> EditorCaretContext {
         let ns = textStorage.string as NSString
-        guard ns.length > 0 else { return (nil, 0) }
-        let caret = clampedCaret(selectedRange.location, in: textStorage)
+        guard ns.length > 0 else {
+            return EditorCaretContext(itemID: nil, lineIndex: 0, offsetInLine: 0, lineText: "")
+        }
+        let caret = clampedCaret(location ?? selectedRange.location, in: textStorage)
         let paragraph = ns.paragraphRange(for: NSRange(location: min(caret, ns.length - 1), length: 0))
-        return (
-            lineMeta(at: paragraph.location, in: textStorage).itemID,
-            max(0, caret - paragraph.location)
+        let paragraphs = paragraphRanges(in: ns)
+        let lineIndex = paragraphs.firstIndex(where: { $0.fullRange == paragraph }) ?? 0
+        return EditorCaretContext(
+            itemID: lineMeta(at: paragraph.location, in: textStorage).itemID,
+            lineIndex: lineIndex,
+            offsetInLine: max(0, caret - paragraph.location),
+            lineText: bodyText(paragraphRange: paragraph, in: textStorage)
         )
     }
 
     /// Best-effort inverse of `caretContext` against the current (freshly
     /// loaded) document. nil when no line carries `itemID` anymore.
-    func caretLocation(forItemID itemID: String, offsetInLine: Int) -> Int? {
-        let ns = textStorage.string as NSString
-        for paragraph in paragraphRanges(in: ns) {
-            guard lineMeta(at: paragraph.fullRange.location, in: textStorage).itemID == itemID else {
-                continue
+    func caretLocation(for context: EditorCaretContext) -> Int? {
+        let paragraphs = paragraphRanges(in: textStorage.string as NSString)
+        let paragraph: EditorParagraphRange?
+        if let itemID = context.itemID {
+            paragraph = paragraphs.first {
+                lineMeta(at: $0.fullRange.location, in: textStorage).itemID == itemID
             }
-            return paragraph.fullRange.location + min(offsetInLine, paragraph.lineRange.length)
+        } else {
+            let matching = paragraphs.enumerated()
+                .filter { bodyText(paragraphRange: $0.element.fullRange, in: textStorage) == context.lineText }
+                .min { abs($0.offset - context.lineIndex) < abs($1.offset - context.lineIndex) }
+            if let matching {
+                paragraph = matching.element
+            } else if paragraphs.indices.contains(context.lineIndex) {
+                paragraph = paragraphs[context.lineIndex]
+            } else {
+                paragraph = nil
+            }
         }
-        return nil
+        guard let paragraph else { return nil }
+
+        let newLineText = bodyText(paragraphRange: paragraph.fullRange, in: textStorage)
+        let adaptedOffset = adaptedEditorTextOffset(
+            from: context.lineText,
+            to: newLineText,
+            offset: context.offsetInLine
+        )
+        let maxCaret = max(0, paragraph.lineRange.length - 1)
+        return paragraph.fullRange.location + min(adaptedOffset, maxCaret)
     }
 
     /// Lift the caret clear of an arriving keyboard *while the keyboard is

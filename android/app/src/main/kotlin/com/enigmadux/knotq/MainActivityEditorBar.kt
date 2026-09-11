@@ -173,7 +173,7 @@ internal fun currentEditorLineEdit(
             }
             var downX = 0f
             var downY = 0f
-            setOnTouchListener { _, event ->
+            setOnTouchListener { view, event ->
                 when (event.actionMasked) {
                     MotionEvent.ACTION_DOWN -> {
                         downX = event.rawX
@@ -185,6 +185,7 @@ internal fun currentEditorLineEdit(
                         if (dy > dp(22) && dy > abs(dx) * 1.25f) {
                             dismissKeyboard()
                         }
+                        if (event.actionMasked == MotionEvent.ACTION_UP) view.performClick()
                     }
                 }
                 false
@@ -273,7 +274,7 @@ internal fun currentEditorLineEdit(
                 gravity = Gravity.CENTER_VERTICAL
                 setPadding(dp(7), dp(5), dp(7), dp(5))
                 addView(formatIconButton(R.drawable.ic_knotq_keyboard_down_24, "Done editing cell") {
-                    commitActiveCellEdit(rerender = true)
+                    commitActiveCellEdit()
                     dismissKeyboard()
                 })
                 addView(formatDivider())
@@ -308,6 +309,9 @@ internal fun currentEditorLineEdit(
         if (focused != null && editorSchemeIds.containsKey(focused)) return focused
         return lastActiveEditor?.takeIf { editorSchemeIds.containsKey(it) && it.isAttachedToWindow }
     }
+
+    internal fun MainActivity.hasFocusedEditableField(): Boolean =
+        (currentFocus as? EditText)?.let { it.isFocused && it.isAttachedToWindow } == true
 
     internal fun MainActivity.focusEditorForTyping(editor: EditText) {
         if (!editor.isAttachedToWindow) return
@@ -466,17 +470,16 @@ internal fun currentEditorLineEdit(
     }
 
     internal fun MainActivity.openDateForEditorLine(schemeId: String, editor: EditText) {
-        commitSchemeDocument(schemeId, editor, rerender = false)
         val line = currentLineIndex(editor)
-        val item = findScheme(schemeId)?.optJSONArray("items")?.optJSONObject(line) ?: return
-        showDateKindDialog(schemeId, item.optString("id"))
+        commitSchemeDocument(schemeId, editor, rerender = false) {
+            findScheme(schemeId)?.optJSONArray("items")?.optJSONObject(line)?.optString("id")?.takeIf { it.isNotBlank() }
+                ?.let { showDateKindDialog(schemeId, it) }
+        }
     }
 
     internal fun MainActivity.insertTableFromEditor(schemeId: String, editor: EditText) {
         val line = currentLineIndex(editor)
-        commitSchemeDocument(schemeId, editor, rerender = false)
-        val scheme = findScheme(schemeId) ?: return
-        val items = scheme.optJSONArray("items") ?: JSONArray()
+        val (items, _) = buildSchemeItemsPayload(schemeId, editor)
         val tableItemId = UUID.randomUUID().toString()
         val table = freshTableJson()
         val content = JSONArray().put(obj("kind" to "table", "table" to table))
@@ -502,14 +505,12 @@ internal fun currentEditorLineEdit(
         if (!inserted) {
             array.put(blockItemEdit(tableItemId, 0, JSONArray(), content))
         }
-        try {
-            bridge.request(obj("type" to "replace_scheme_items", "scheme_id" to schemeId, "items" to array))
-            loadSnapshot()
-            renderAfterEditorMutation()
+        mutate(
+            obj("type" to "replace_scheme_items", "scheme_id" to schemeId, "items" to array),
+            renderAfter = false,
+        ) {
+            refreshEditorAfterSnapshot(schemeId)
             focusInsertedTableCell(schemeId, tableItemId, insertedIndex)
-            requestSyncSoon()
-        } catch (error: RuntimeException) {
-            toast(error.message)
         }
     }
 
@@ -556,8 +557,10 @@ internal fun currentEditorLineEdit(
             }
         }
         editor.post {
+            if (!isUiActive() || !editor.isAttachedToWindow) return@post
             editor.invalidate()
             editor.post {
+                if (!isUiActive() || !editor.isAttachedToWindow) return@post
                 val rect = editor.cellRectFor(lineIndex, 0, 0, 0) ?: return@post
                 beginInlineCellEdit(
                     schemeId,
@@ -578,18 +581,19 @@ internal fun currentEditorLineEdit(
     /// Commits the document so the caret's line has a real item, then opens the
     /// system photo chooser; the pick lands in `onActivityResult`.
     internal fun MainActivity.startImageAttach(schemeId: String, editor: EditText) {
-        commitSchemeDocument(schemeId, editor, rerender = false)
         val line = currentLineIndex(editor)
-        findScheme(schemeId)?.optJSONArray("items")?.optJSONObject(line) ?: return
-        pendingImageAttach = schemeId to line
-        val intent = Intent(Intent.ACTION_GET_CONTENT).apply {
-            type = "image/*"
-            addCategory(Intent.CATEGORY_OPENABLE)
-        }
-        try {
-            startActivityForResult(Intent.createChooser(intent, "Attach image"), REQUEST_ATTACH_IMAGE)
-        } catch (error: ActivityNotFoundException) {
-            pendingImageAttach = null
-            toast("No image picker available")
+        commitSchemeDocument(schemeId, editor, rerender = false) {
+            if (findScheme(schemeId)?.optJSONArray("items")?.optJSONObject(line) == null) return@commitSchemeDocument
+            pendingImageAttach = schemeId to line
+            val intent = Intent(Intent.ACTION_GET_CONTENT).apply {
+                type = "image/*"
+                addCategory(Intent.CATEGORY_OPENABLE)
+            }
+            try {
+                startActivityForResult(Intent.createChooser(intent, "Attach image"), REQUEST_ATTACH_IMAGE)
+            } catch (error: ActivityNotFoundException) {
+                pendingImageAttach = null
+                toast("No image picker available")
+            }
         }
     }

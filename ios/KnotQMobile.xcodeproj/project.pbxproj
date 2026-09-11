@@ -37,6 +37,11 @@
 		01000000000000000000001B /* SchemeWriteFlightTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 020000000000000000000031 /* SchemeWriteFlightTests.swift */; };
 		010000000000000000000071 /* ScheduleTargetTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 020000000000000000000071 /* ScheduleTargetTests.swift */; };
 		010000000000000000000072 /* RefreshFlightGateTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 020000000000000000000072 /* RefreshFlightGateTests.swift */; };
+		010000000000000000000074 /* SyncSessionStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 020000000000000000000074 /* SyncSessionStore.swift */; };
+		010000000000000000000075 /* SyncSessionStoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 020000000000000000000075 /* SyncSessionStoreTests.swift */; };
+		010000000000000000000076 /* PushTokenStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 020000000000000000000076 /* PushTokenStore.swift */; };
+		010000000000000000000077 /* SchemeEditorController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 020000000000000000000077 /* SchemeEditorController.swift */; };
+		010000000000000000000078 /* SchemeEditorNavigation.swift in Sources */ = {isa = PBXBuildFile; fileRef = 020000000000000000000078 /* SchemeEditorNavigation.swift */; };
 		01000000000000000000001C /* CoreTiming.swift in Sources */ = {isa = PBXBuildFile; fileRef = 020000000000000000000032 /* CoreTiming.swift */; };
 		01000000000000000000001D /* ContentView+Components.swift in Sources */ = {isa = PBXBuildFile; fileRef = 02000000000000000000001D /* ContentView+Components.swift */; };
 		01000000000000000000001E /* SchemeEditorView+Components.swift in Sources */ = {isa = PBXBuildFile; fileRef = 02000000000000000000001E /* SchemeEditorView+Components.swift */; };
@@ -50,6 +55,7 @@
 		010000000000000000000026 /* DayTimelineUIKitView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 020000000000000000000026 /* DayTimelineUIKitView.swift */; };
 		010000000000000000000027 /* ArchiveAndSettingsComponents.swift in Sources */ = {isa = PBXBuildFile; fileRef = 020000000000000000000027 /* ArchiveAndSettingsComponents.swift */; };
 		010000000000000000000028 /* DailyAndSearchComponents.swift in Sources */ = {isa = PBXBuildFile; fileRef = 020000000000000000000028 /* DailyAndSearchComponents.swift */; };
+		010000000000000000000073 /* DailyItemRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 020000000000000000000073 /* DailyItemRow.swift */; };
 		010000000000000000000029 /* MobileDockAndMisc.swift in Sources */ = {isa = PBXBuildFile; fileRef = 020000000000000000000029 /* MobileDockAndMisc.swift */; };
 		01000000000000000000002A /* SchemeEditorChrome.swift in Sources */ = {isa = PBXBuildFile; fileRef = 02000000000000000000002A /* SchemeEditorChrome.swift */; };
 		01000000000000000000002B /* SchemeEditorTextInput.swift in Sources */ = {isa = PBXBuildFile; fileRef = 02000000000000000000002B /* SchemeEditorTextInput.swift */; };
@@ -172,6 +178,7 @@
 		020000000000000000000026 /* DayTimelineUIKitView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DayTimelineUIKitView.swift; sourceTree = "<group>"; };
 		020000000000000000000027 /* ArchiveAndSettingsComponents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ArchiveAndSettingsComponents.swift; sourceTree = "<group>"; };
 		020000000000000000000028 /* DailyAndSearchComponents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DailyAndSearchComponents.swift; sourceTree = "<group>"; };
+		020000000000000000000073 /* DailyItemRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DailyItemRow.swift; sourceTree = "<group>"; };
 		020000000000000000000029 /* MobileDockAndMisc.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MobileDockAndMisc.swift; sourceTree = "<group>"; };
 		02000000000000000000002A /* SchemeEditorChrome.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SchemeEditorChrome.swift; sourceTree = "<group>"; };
 		02000000000000000000002B /* SchemeEditorTextInput.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SchemeEditorTextInput.swift; sourceTree = "<group>"; };
@@ -184,6 +191,11 @@
 		020000000000000000000031 /* SchemeWriteFlightTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SchemeWriteFlightTests.swift; sourceTree = "<group>"; };
 		020000000000000000000071 /* ScheduleTargetTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScheduleTargetTests.swift; sourceTree = "<group>"; };
 		020000000000000000000072 /* RefreshFlightGateTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RefreshFlightGateTests.swift; sourceTree = "<group>"; };
+		020000000000000000000074 /* SyncSessionStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SyncSessionStore.swift; sourceTree = "<group>"; };
+		020000000000000000000075 /* SyncSessionStoreTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SyncSessionStoreTests.swift; sourceTree = "<group>"; };
+		020000000000000000000076 /* PushTokenStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PushTokenStore.swift; sourceTree = "<group>"; };
+		020000000000000000000077 /* SchemeEditorController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SchemeEditorController.swift; sourceTree = "<group>"; };
+		020000000000000000000078 /* SchemeEditorNavigation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SchemeEditorNavigation.swift; sourceTree = "<group>"; };
 		020000000000000000000032 /* CoreTiming.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CoreTiming.swift; sourceTree = "<group>"; };
 		020000000000000000000033 /* MobileDate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MobileDate.swift; sourceTree = "<group>"; };
 		020000000000000000000034 /* ScheduleFormComponents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScheduleFormComponents.swift; sourceTree = "<group>"; };
@@ -296,6 +308,11 @@
 				020000000000000000000026 /* DayTimelineUIKitView.swift */,
 				020000000000000000000027 /* ArchiveAndSettingsComponents.swift */,
 				020000000000000000000028 /* DailyAndSearchComponents.swift */,
+				020000000000000000000073 /* DailyItemRow.swift */,
+				020000000000000000000074 /* SyncSessionStore.swift */,
+				020000000000000000000076 /* PushTokenStore.swift */,
+				020000000000000000000077 /* SchemeEditorController.swift */,
+				020000000000000000000078 /* SchemeEditorNavigation.swift */,
 				020000000000000000000029 /* MobileDockAndMisc.swift */,
 				02000000000000000000002A /* SchemeEditorChrome.swift */,
 				02000000000000000000002B /* SchemeEditorTextInput.swift */,
@@ -377,6 +394,7 @@
 				020000000000000000000031 /* SchemeWriteFlightTests.swift */,
 				020000000000000000000071 /* ScheduleTargetTests.swift */,
 				020000000000000000000072 /* RefreshFlightGateTests.swift */,
+				020000000000000000000075 /* SyncSessionStoreTests.swift */,
 				02000000000000000000006B /* RemoteMergeTests.swift */,
 				02000000000000000000005C /* MarkerConcealmentTests+Reveal.swift */,
 				02000000000000000000005D /* MarkerConcealmentTests+TableCrash.swift */,
@@ -628,7 +646,10 @@
 				010000000000000000000026 /* DayTimelineUIKitView.swift in Sources */,
 				010000000000000000000027 /* ArchiveAndSettingsComponents.swift in Sources */,
 				010000000000000000000028 /* DailyAndSearchComponents.swift in Sources */,
+				010000000000000000000073 /* DailyItemRow.swift in Sources */,
 				010000000000000000000029 /* MobileDockAndMisc.swift in Sources */,
+				010000000000000000000077 /* SchemeEditorController.swift in Sources */,
+				010000000000000000000078 /* SchemeEditorNavigation.swift in Sources */,
 				01000000000000000000002A /* SchemeEditorChrome.swift in Sources */,
 				01000000000000000000002B /* SchemeEditorTextInput.swift in Sources */,
 				01000000000000000000002C /* SchemeEditorTextView.swift in Sources */,
@@ -660,6 +681,8 @@
 				010000000000000000000058 /* AppModel+SettingsGoogle.swift in Sources */,
 				010000000000000000000059 /* AppModel+SyncAuth.swift in Sources */,
 				01000000000000000000005A /* AppModel+Sync.swift in Sources */,
+				010000000000000000000074 /* SyncSessionStore.swift in Sources */,
+				010000000000000000000076 /* PushTokenStore.swift in Sources */,
 				01000000000000000000005B /* AppModel+Fixtures.swift in Sources */,
 				010000000000000000000050 /* SchemeEditorLayoutManager.swift in Sources */,
 				010000000000000000000051 /* SchemeEditorBlockAttachment.swift in Sources */,
@@ -690,6 +713,7 @@
 				01000000000000000000001B /* SchemeWriteFlightTests.swift in Sources */,
 				010000000000000000000071 /* ScheduleTargetTests.swift in Sources */,
 				010000000000000000000072 /* RefreshFlightGateTests.swift in Sources */,
+				010000000000000000000075 /* SyncSessionStoreTests.swift in Sources */,
 				01000000000000000000006B /* RemoteMergeTests.swift in Sources */,
 				01000000000000000000005C /* MarkerConcealmentTests+Reveal.swift in Sources */,
 				01000000000000000000005D /* MarkerConcealmentTests+TableCrash.swift in Sources */,
@@ -846,7 +870,7 @@
 				CODE_SIGN_ENTITLEMENTS = KnotQMobile/KnotQMobile.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 7;
+			CURRENT_PROJECT_VERSION = 9;
 				DEVELOPMENT_ASSET_PATHS = "";
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = KnotQMobile/Info.plist;
@@ -861,7 +885,7 @@
 					"$(inherited)",
 					"$(TARGET_TEMP_DIR)/rust",
 				);
-				MARKETING_VERSION = 1.2.3;
+			MARKETING_VERSION = 1.2.4;
 				OTHER_LDFLAGS = (
 					"$(inherited)",
 					"-lknotq_mobile_core",
@@ -883,7 +907,7 @@
 				CODE_SIGN_ENTITLEMENTS = KnotQMobile/KnotQMobile.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 7;
+			CURRENT_PROJECT_VERSION = 9;
 				DEVELOPMENT_ASSET_PATHS = "";
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = KnotQMobile/Info.plist;
@@ -898,7 +922,7 @@
 					"$(inherited)",
 					"$(TARGET_TEMP_DIR)/rust",
 				);
-				MARKETING_VERSION = 1.2.3;
+			MARKETING_VERSION = 1.2.4;
 				OTHER_LDFLAGS = (
 					"$(inherited)",
 					"-lknotq_mobile_core",
@@ -919,7 +943,7 @@
 				CODE_SIGN_ENTITLEMENTS = KnotQUpcomingWidget/KnotQUpcomingWidget.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 7;
+				CURRENT_PROJECT_VERSION = 9;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = KnotQUpcomingWidget/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
@@ -928,7 +952,7 @@
 					"@executable_path/Frameworks",
 					"@executable_path/../../Frameworks",
 				);
-				MARKETING_VERSION = 1.2.3;
+				MARKETING_VERSION = 1.2.4;
 				PRODUCT_BUNDLE_IDENTIFIER = "com.enigmadux.knotq.upcoming-widget";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SKIP_INSTALL = YES;
@@ -945,7 +969,7 @@
 				CODE_SIGN_ENTITLEMENTS = KnotQUpcomingWidget/KnotQUpcomingWidget.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 7;
+				CURRENT_PROJECT_VERSION = 9;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = KnotQUpcomingWidget/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
@@ -954,7 +978,7 @@
 					"@executable_path/Frameworks",
 					"@executable_path/../../Frameworks",
 				);
-				MARKETING_VERSION = 1.2.3;
+				MARKETING_VERSION = 1.2.4;
 				PRODUCT_BUNDLE_IDENTIFIER = "com.enigmadux.knotq.upcoming-widget";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SKIP_INSTALL = YES;

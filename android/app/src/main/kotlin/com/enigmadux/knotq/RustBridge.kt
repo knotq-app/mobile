@@ -215,7 +215,11 @@ internal class RustBridge(context: Context) : AutoCloseable {
                 )
             )
             "sync_once" -> {
-                val changed = core.syncOnce(body.getString("api_base"), body.getString("bearer_token"))
+                val changed = core.syncOnce(
+                    body.getString("api_base"),
+                    body.getString("bearer_token"),
+                    body.getString("account_user_id")
+                )
                 val notice = core.takeSyncNotice()
                 val response = JSONObject().put("changed", changed)
                 if (notice != null) {
@@ -224,7 +228,11 @@ internal class RustBridge(context: Context) : AutoCloseable {
                 return response
             }
             "force_sync_once" -> {
-                val changed = core.forceSyncOnce(body.getString("api_base"), body.getString("bearer_token"))
+                val changed = core.forceSyncOnce(
+                    body.getString("api_base"),
+                    body.getString("bearer_token"),
+                    body.getString("account_user_id")
+                )
                 val notice = core.takeSyncNotice()
                 val response = JSONObject().put("changed", changed)
                 if (notice != null) {

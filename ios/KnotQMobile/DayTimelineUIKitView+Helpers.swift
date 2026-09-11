@@ -65,27 +65,19 @@ extension DayTimelineUIKitView {
     }
 
     func monthTitle(for date: Date) -> String {
-        let formatter = DateFormatter()
-        formatter.dateFormat = "MMMM yyyy"
-        return formatter.string(from: date)
+        MobileDate.format(date, dateFormat: "MMMM yyyy")
     }
 
     func weekdayInitial(_ date: Date) -> String {
-        let formatter = DateFormatter()
-        formatter.dateFormat = "EEEEE"
-        return formatter.string(from: date).uppercased()
+        MobileDate.format(date, dateFormat: "EEEEE").uppercased()
     }
 
     func weekdayShort(_ date: Date) -> String {
-        let formatter = DateFormatter()
-        formatter.dateFormat = "EEE"
-        return formatter.string(from: date).uppercased()
+        MobileDate.format(date, dateFormat: "EEE").uppercased()
     }
 
     func dayNumber(_ date: Date) -> String {
-        let formatter = DateFormatter()
-        formatter.dateFormat = "d"
-        return formatter.string(from: date)
+        MobileDate.format(date, dateFormat: "d")
     }
 
     func hourLabel(_ hour: Int) -> String {

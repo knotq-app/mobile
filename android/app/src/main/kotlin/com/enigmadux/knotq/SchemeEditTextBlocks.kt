@@ -37,9 +37,24 @@ import android.view.inputmethod.BaseInputConnection
 import android.widget.EditText
 import android.widget.LinearLayout
 import org.json.JSONObject
+import java.util.concurrent.RejectedExecutionException
 import kotlin.math.max
 import kotlin.math.min
+import kotlin.math.ceil
 import kotlin.math.roundToInt
+
+internal data class EditorTableLayoutKey(
+    val value: String,
+    val width: Int,
+    val color: Int,
+    val typeface: Typeface?,
+    val styled: Boolean,
+)
+
+internal data class EditorTableMetrics(
+    val width: Int,
+    val rowHeights: List<Float>,
+)
 
     /// Draws this line's image/table blocks in document order, stacked from
     /// `yStart`. Records table cell + control hit rects for touch handling.
@@ -47,6 +62,7 @@ import kotlin.math.roundToInt
         if (blocks.isEmpty()) return
         val left = totalPaddingLeft + prefixWidth.toFloat()
         val maxWidth = editorImageMaxWidth(prefixWidth)
+        val visibleBottom = (rootView?.height ?: resources.displayMetrics.heightPixels).coerceAtLeast(1).toFloat()
         var y = yStart.toFloat()
         var drewImage = false
         var tableIndex = 0
@@ -58,7 +74,9 @@ import kotlin.math.roundToInt
                     if (size.first <= 0f || size.second <= 0f) return@forEach
                     y += if (drewImage) dp(EDITOR_IMAGE_STACK_GAP_DP) else dp(EDITOR_IMAGE_TOP_GAP_DP)
                     val rect = RectF(left, y, left + size.first, y + size.second)
-                    drawImageMedia(canvas, block.media, rect)
+                    if (rect.bottom >= 0f && rect.top <= visibleBottom) {
+                        drawImageMedia(canvas, block.media, rect)
+                    }
                     y += size.second
                     drewImage = true
                 }
@@ -83,14 +101,17 @@ import kotlin.math.roundToInt
         val headerHeight = dp(EDITOR_TABLE_HEADER_HEIGHT_DP).toFloat()
         val rowHeights = tableRowHeights(table, colWidth)
         val gridRight = left + colWidth * columnCount
+        val visibleBottom = (rootView?.height ?: resources.displayMetrics.heightPixels).coerceAtLeast(1).toFloat()
 
         // The grid box: a rounded, filled, outlined panel, then clipped so the
         // header tint and inner rules stay inside the corners (mirrors iOS
         // `drawTable`: buttonBg fill, divider border, bgModal header).
         val gridBottom = top + headerHeight + rowHeights.sum()
-        val tablePath = Path().apply {
-            addRoundRect(RectF(left, top, gridRight, gridBottom), dp(6f), dp(6f), Path.Direction.CW)
-        }
+        if (gridBottom < 0f || top > visibleBottom) return gridBottom
+        val tablePath = tablePathScratch
+        tablePath.rewind()
+        tableHeaderRectScratch.set(left, top, gridRight, gridBottom)
+        tablePath.addRoundRect(tableHeaderRectScratch, dp(6f), dp(6f), Path.Direction.CW)
         canvas.save()
         chromePaint.style = Paint.Style.FILL
         chromePaint.color = editorTheme.buttonBg
@@ -103,26 +124,29 @@ import kotlin.math.roundToInt
 
         // Header row.
         var y = top
-        val headerRect = RectF(left, y, gridRight, y + headerHeight)
+        val headerRect = tableHeaderRectScratch
+        headerRect.set(left, y, gridRight, y + headerHeight)
         chromePaint.style = Paint.Style.FILL
         chromePaint.color = editorTheme.bgModal
         canvas.drawRect(headerRect, chromePaint)
         val headerTextColor = if (editorTheme.isDark) editorTheme.textSoft else editorTheme.textDim
-        for (col in 0 until columnCount) {
-            val name = table.columns.getOrNull(col)?.name.orEmpty()
-            if (!isActiveTableEdit(lineIndex, tableIndex, row = -1, column = col)) {
-                drawTableText(canvas, name, left + col * colWidth, y, colWidth, headerHeight, headerTextColor, bold = true)
-            }
-            tableCellHits.add(
-                TableCellHit(
-                    lineIndex = lineIndex,
-                    tableIndex = tableIndex,
-                    row = -1,
-                    column = col,
-                    text = name.ifEmpty { "Column ${col + 1}" },
-                    rect = RectF(left + col * colWidth, y, left + (col + 1) * colWidth, y + headerHeight)
+        if (y + headerHeight >= 0f && y <= visibleBottom) {
+            for (col in 0 until columnCount) {
+                val name = table.columns.getOrNull(col)?.name.orEmpty()
+                if (!isActiveTableEdit(lineIndex, tableIndex, row = -1, column = col)) {
+                    drawTableText(canvas, name, left + col * colWidth, y, colWidth, headerHeight, headerTextColor, bold = true)
+                }
+                tableCellHits.add(
+                    TableCellHit(
+                        lineIndex = lineIndex,
+                        tableIndex = tableIndex,
+                        row = -1,
+                        column = col,
+                        text = name.ifEmpty { "Column ${col + 1}" },
+                        rect = RectF(left + col * colWidth, y, left + (col + 1) * colWidth, y + headerHeight)
+                    )
                 )
-            )
+            }
         }
         y += headerHeight
 
@@ -130,25 +154,27 @@ import kotlin.math.roundToInt
         table.rows.forEachIndexed { rowIndex, row ->
             val rowTop = y
             val rowHeight = rowHeights.getOrNull(rowIndex) ?: dp(EDITOR_TABLE_ROW_HEIGHT_DP).toFloat()
-            for (col in 0 until columnCount) {
-                val cellLeft = left + col * colWidth
-                val cellRect = RectF(cellLeft, rowTop, cellLeft + colWidth, rowTop + rowHeight)
-                val cell = row.getOrNull(col)
-                if (!isActiveTableEdit(lineIndex, tableIndex, row = rowIndex, column = col)) {
-                    drawTableText(canvas, cell?.display.orEmpty(), cellLeft, rowTop, colWidth, rowHeight, editorTheme.textPrimary, bold = false)
-                }
-                tableCellHits.add(
-                    TableCellHit(
-                        lineIndex = lineIndex,
-                        tableIndex = tableIndex,
-                        row = rowIndex,
-                        column = col,
-                        text = cell?.display.orEmpty(),
-                        rect = RectF(cellRect)
+            if (rowTop + rowHeight >= 0f && rowTop <= visibleBottom) {
+                for (col in 0 until columnCount) {
+                    val cellLeft = left + col * colWidth
+                    val cellRect = RectF(cellLeft, rowTop, cellLeft + colWidth, rowTop + rowHeight)
+                    val cell = row.getOrNull(col)
+                    if (!isActiveTableEdit(lineIndex, tableIndex, row = rowIndex, column = col)) {
+                        drawTableText(canvas, cell?.display.orEmpty(), cellLeft, rowTop, colWidth, rowHeight, editorTheme.textPrimary, bold = false)
+                    }
+                    tableCellHits.add(
+                        TableCellHit(
+                            lineIndex = lineIndex,
+                            tableIndex = tableIndex,
+                            row = rowIndex,
+                            column = col,
+                            text = cell?.display.orEmpty(),
+                            rect = RectF(cellRect)
+                        )
                     )
-                )
-                // Row delete control sits in the left header column on hover-less
-                // mobile we surface it as a tiny "-" at the row's right edge end.
+                    // Row delete control sits in the left header column on hover-less
+                    // mobile we surface it as a tiny "-" at the row's right edge end.
+                }
             }
             y += rowHeight
         }
@@ -162,10 +188,14 @@ import kotlin.math.roundToInt
             canvas.drawLine(x, top, x, gridBottom, chromePaint)
         }
         var lineY = top + headerHeight
-        canvas.drawLine(left, lineY, gridRight, lineY, chromePaint)
+        if (lineY >= 0f && lineY <= visibleBottom) {
+            canvas.drawLine(left, lineY, gridRight, lineY, chromePaint)
+        }
         rowHeights.forEach { rowHeight ->
             lineY += rowHeight
-            canvas.drawLine(left, lineY, gridRight, lineY, chromePaint)
+            if (lineY >= 0f && lineY <= visibleBottom) {
+                canvas.drawLine(left, lineY, gridRight, lineY, chromePaint)
+            }
         }
 
         canvas.restore()
@@ -183,7 +213,13 @@ import kotlin.math.roundToInt
         val pad = dp(EDITOR_TABLE_CELL_PAD_DP).toFloat()
         val paint = tableTextPaint(color, bold)
         val content = tableTextMarkdownSpannable(value, bold)
-        val layout = tableTextLayout(content, paint, (cellWidth - pad * 2).roundToInt().coerceAtLeast(1))
+        val layout = tableTextLayout(
+            content = content,
+            paint = paint,
+            width = (cellWidth - pad * 2).roundToInt().coerceAtLeast(1),
+            cacheValue = value,
+            styled = !bold,
+        )
         canvas.save()
         canvas.clipRect(left, top, left + cellWidth, top + cellHeight)
         canvas.translate(left + pad, top + pad)
@@ -229,7 +265,9 @@ import kotlin.math.roundToInt
             canvas.drawBitmap(
                 bitmap,
                 null,
-                Rect(rect.left.roundToInt(), rect.top.roundToInt(), rect.right.roundToInt(), rect.bottom.roundToInt()),
+                imageBitmapRectScratch.apply {
+                    set(rect.left.roundToInt(), rect.top.roundToInt(), rect.right.roundToInt(), rect.bottom.roundToInt())
+                },
                 chromePaint
             )
             canvas.restore()
@@ -239,17 +277,23 @@ import kotlin.math.roundToInt
     }
 
     internal fun SchemeEditText.drawImageFallback(canvas: Canvas, rect: RectF) {
-        val inner = RectF(rect.left + 1f, rect.top + 1f, rect.right - 1f, rect.bottom - 1f)
+        val inner = imageFallbackRectScratch
+        inner.set(rect.left + 1f, rect.top + 1f, rect.right - 1f, rect.bottom - 1f)
         chromePaint.style = Paint.Style.FILL
         chromePaint.color = editorTheme.bgModal
         canvas.drawRect(inner, chromePaint)
         chromePaint.color = adjustColor(editorTheme.accent, 0.16f)
         canvas.drawCircle(inner.right - inner.width() * 0.23f, inner.top + inner.height() * 0.20f, inner.width() * 0.08f, chromePaint)
         chromePaint.color = editorTheme.divider
-        canvas.drawRoundRect(RectF(inner.left + inner.width() * 0.07f, inner.top + inner.height() * 0.16f, inner.left + inner.width() * 0.47f, inner.top + inner.height() * 0.23f), dp(4f), dp(4f), chromePaint)
-        canvas.drawRoundRect(RectF(inner.left + inner.width() * 0.07f, inner.top + inner.height() * 0.32f, inner.left + inner.width() * 0.69f, inner.top + inner.height() * 0.37f), dp(4f), dp(4f), chromePaint)
-        canvas.drawRoundRect(RectF(inner.left + inner.width() * 0.07f, inner.top + inner.height() * 0.45f, inner.left + inner.width() * 0.57f, inner.top + inner.height() * 0.50f), dp(4f), dp(4f), chromePaint)
-        canvas.drawRoundRect(RectF(inner.left + inner.width() * 0.07f, inner.bottom - inner.height() * 0.29f, inner.left + inner.width() * 0.77f, inner.bottom - inner.height() * 0.16f), dp(6f), dp(6f), chromePaint)
+        inner.set(inner.left + inner.width() * 0.07f, inner.top + inner.height() * 0.16f, inner.left + inner.width() * 0.47f, inner.top + inner.height() * 0.23f)
+        canvas.drawRoundRect(inner, dp(4f), dp(4f), chromePaint)
+        inner.set(rect.left + 1f + (rect.width() - 2f) * 0.07f, rect.top + 1f + (rect.height() - 2f) * 0.32f, rect.left + 1f + (rect.width() - 2f) * 0.69f, rect.top + 1f + (rect.height() - 2f) * 0.37f)
+        canvas.drawRoundRect(inner, dp(4f), dp(4f), chromePaint)
+        inner.set(rect.left + 1f + (rect.width() - 2f) * 0.07f, rect.top + 1f + (rect.height() - 2f) * 0.45f, rect.left + 1f + (rect.width() - 2f) * 0.57f, rect.top + 1f + (rect.height() - 2f) * 0.50f)
+        canvas.drawRoundRect(inner, dp(4f), dp(4f), chromePaint)
+        inner.set(rect.left + 1f + (rect.width() - 2f) * 0.07f, rect.bottom - 1f - (rect.height() - 2f) * 0.29f, rect.left + 1f + (rect.width() - 2f) * 0.77f, rect.bottom - 1f - (rect.height() - 2f) * 0.16f)
+        canvas.drawRoundRect(inner, dp(6f), dp(6f), chromePaint)
+        inner.set(rect.left + 1f, rect.top + 1f, rect.right - 1f, rect.bottom - 1f)
         chromePaint.color = editorTheme.textPrimary
         chromePaint.typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
         chromePaint.textSize = max(dp(11f), inner.height() * 0.07f)
@@ -258,11 +302,58 @@ import kotlin.math.roundToInt
     }
 
     internal fun SchemeEditText.bitmapForPath(path: String): Bitmap? {
-        if (imageCache.containsKey(path)) return imageCache[path]
-        val decoded = BitmapFactory.decodeFile(path)
-        imageCache[path] = decoded
-        return decoded
+        synchronized(imageCache) {
+            if (imageCache.containsKey(path)) return imageCache[path]
+            if (!imageLoadPending.add(path)) return null
+        }
+        try {
+            imageLoader().execute {
+                val decoded = runCatching { decodeEditorBitmap(path) }.getOrNull()
+                val publish = {
+                    val attached = isAttachedToWindow
+                    synchronized(imageCache) {
+                        if (attached) imageCache[path] = decoded
+                        imageLoadPending.remove(path)
+                    }
+                    // A failed decode leaves the already-painted placeholder
+                    // unchanged. Do not schedule another full editor draw for
+                    // missing/corrupt media; successful decodes alone need a
+                    // frame to replace the placeholder with pixels.
+                    if (attached && decoded != null) invalidate()
+                }
+                if (!post(publish)) {
+                    // The editor was detached between the worker check and
+                    // posting. Clear the pending marker so a future editor can
+                    // request the path again without retaining the old view.
+                    synchronized(imageCache) { imageLoadPending.remove(path) }
+                }
+            }
+        } catch (_: RejectedExecutionException) {
+            synchronized(imageCache) { imageLoadPending.remove(path) }
+        }
+        return null
     }
+
+    private fun SchemeEditText.decodeEditorBitmap(path: String): Bitmap? {
+        val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        BitmapFactory.decodeFile(path, bounds)
+        if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return null
+        val options = BitmapFactory.Options().apply {
+            inSampleSize = editorBitmapSampleSize(bounds.outWidth, bounds.outHeight)
+            inPreferredConfig = Bitmap.Config.ARGB_8888
+        }
+        return BitmapFactory.decodeFile(path, options)
+    }
+
+internal fun editorBitmapSampleSize(width: Int, height: Int, maxDimension: Int = 2048): Int {
+    if (width <= 0 || height <= 0 || maxDimension <= 0) return 1
+    var sample = 1
+    while (width / sample > maxDimension || height / sample > maxDimension) {
+        if (sample > Int.MAX_VALUE / 2) return sample
+        sample *= 2
+    }
+    return sample
+}
 
     internal fun SchemeEditText.extraHeightFor(adornment: EditorLineAdornment?, blocks: List<EditorBlock>, prefixWidth: Int, collapseText: Boolean): Int {
         var extra = if (adornment?.annotation == null) 0 else dp(EDITOR_ANNOTATION_HEIGHT_DP)
@@ -303,21 +394,42 @@ import kotlin.math.roundToInt
     }
 
     internal fun SchemeEditText.tableRowHeights(table: EditorTable, columnWidth: Float): List<Float> {
+        val width = columnWidth.roundToInt().coerceAtLeast(1)
+        tableMetricsCache[table]?.takeIf { it.width == width }?.let { return it.rowHeights }
         val minHeight = dp(EDITOR_TABLE_ROW_HEIGHT_DP).toFloat()
         val pad = dp(EDITOR_TABLE_CELL_PAD_DP).toFloat()
-        val textWidth = (columnWidth - pad * 2).roundToInt().coerceAtLeast(1)
+        val textWidth = (width.toFloat() - pad * 2).roundToInt().coerceAtLeast(1)
         val paint = tableTextPaint(editorTheme.textPrimary, bold = false)
-        return table.rows.map { row ->
+        val lineHeight = paint.fontMetricsInt.run { bottom - top }.coerceAtLeast(1)
+        val largeTable = table.rows.sumOf { it.size } > 256
+        val rowHeights = table.rows.map { row ->
             var height = minHeight
             row.forEach { cell ->
-                // Use raw display text for height calculation (called from the
-                // applyPrefixSpans path which runs on every keystroke); markdown
-                // delimiters are short and don't meaningfully affect line wrapping.
-                val layout = tableTextLayout(cell.display, paint, textWidth)
-                height = max(height, layout.height + pad * 2)
+                // Large tables are also measured from applyPrefixSpans on the
+                // UI thread. Creating thousands of StaticLayouts before the
+                // first frame turns a dense table into a visible navigation
+                // hitch. A conservative paint-width estimate is sufficient for
+                // row geometry; visible cells still use the exact cached
+                // StaticLayout when they are painted.
+                val lines = if (largeTable) {
+                    cell.display.split('\n').sumOf { segment ->
+                        max(1, ceil(paint.measureText(segment) / textWidth).toInt())
+                    }
+                } else {
+                    tableTextLayout(
+                        content = cell.display,
+                        paint = paint,
+                        width = textWidth,
+                        cacheValue = cell.display,
+                        styled = false,
+                    ).height / lineHeight
+                }
+                height = max(height, lines * lineHeight + pad * 2)
             }
             height
         }
+        tableMetricsCache[table] = EditorTableMetrics(width, rowHeights)
+        return rowHeights
     }
 
     internal fun SchemeEditText.tableTextPaint(color: Int, bold: Boolean): TextPaint =
@@ -327,12 +439,31 @@ import kotlin.math.roundToInt
             typeface = if (bold) Typeface.create("sans-serif-medium", Typeface.NORMAL) else Typeface.DEFAULT
         }
 
-    internal fun SchemeEditText.tableTextLayout(content: CharSequence, paint: TextPaint, width: Int): StaticLayout =
-        StaticLayout.Builder.obtain(content, 0, content.length, paint, width)
+    internal fun SchemeEditText.tableTextLayout(
+        content: CharSequence,
+        paint: TextPaint,
+        width: Int,
+        cacheValue: String = content.toString(),
+        styled: Boolean = content is Spannable,
+    ): StaticLayout {
+        val key = EditorTableLayoutKey(
+            value = cacheValue,
+            width = width,
+            color = paint.color,
+            typeface = paint.typeface,
+            styled = styled,
+        )
+        synchronized(tableLayoutCache) {
+            tableLayoutCache[key]?.let { return it }
+        }
+        val layout = StaticLayout.Builder.obtain(content, 0, content.length, paint, width)
             .setAlignment(Layout.Alignment.ALIGN_NORMAL)
             .setLineSpacing(0f, 1f)
             .setIncludePad(false)
             .build()
+        synchronized(tableLayoutCache) { tableLayoutCache[key] = layout }
+        return layout
+    }
 
     // Renders `value` with inline markdown (bold, italic, highlight, strike)
     // stripped of delimiter tokens — matching iOS cell rendering. Headers
@@ -406,4 +537,3 @@ import kotlin.math.roundToInt
 
     internal fun SchemeEditText.annotationGuideX(markerRect: RectF): Float =
         markerRect.left - dp((EDITOR_ANNOTATION_BAR_GAP_DP + EDITOR_INDENT_GUIDE_X_SHIFT_DP).toFloat())
-

@@ -17,6 +17,10 @@ extension AppModel {
     func beginBrowserSignIn(mode: SyncAuthMode) async {
         guard !syncAuthInProgress else { return }
         let apiBase = normalizedApiBase(syncSession?.apiBase ?? Self.defaultSyncApiBase)
+        guard !apiBase.isEmpty else {
+            errorMessage = L10n.t("sync.error.api_url_https_required")
+            return
+        }
         let state = Self.randomURLToken(24)
         // PKCE: the verifier never leaves the device; only its challenge rides the
         // URL, so an intercepted code is useless without this app.
@@ -84,10 +88,7 @@ extension AppModel {
             "code": code,
             "code_verifier": codeVerifier
         ])
-        let (data, response) = try await URLSession.shared.data(for: request)
-        guard let http = response as? HTTPURLResponse else {
-            throw SyncAuthError.message("Sync backend returned an invalid response.")
-        }
+        let (data, http) = try await MobileHTTPResponseLimits.data(for: request)
         guard (200..<300).contains(http.statusCode) else {
             let body = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
             throw SyncAuthError.message(Self.authorizeErrorMessage(body?["code"] as? String))
@@ -139,6 +140,11 @@ extension AppModel {
     }
 
     func installSyncSession(_ payload: SyncLoginResponse, apiBase: String) {
+        guard Self.isSecureSyncApiBase(apiBase) else {
+            errorMessage = L10n.t("sync.error.api_url_https_required")
+            return
+        }
+        syncSessionGeneration.advance()
         let session = LocalSyncSession(
             apiBase: apiBase,
             userId: payload.userId,
@@ -157,6 +163,7 @@ extension AppModel {
     }
 
     func signOutSync() {
+        syncSessionGeneration.advance()
         syncSession = nil
         syncOffline = false
         subscriptionCancelled = false
@@ -171,6 +178,9 @@ extension AppModel {
         syncPollTask = nil
         stopWsSync()
         BackgroundSyncCoordinator.shared.scheduleIfEligible(backgroundRefreshEligible)
+        SyncSessionStore.remove(key: syncSessionKey)
+        // Also clear the legacy location left by versions before Keychain
+        // storage, including sessions that could not be migrated while locked.
         UserDefaults.standard.removeObject(forKey: syncSessionKey)
     }
 
@@ -216,10 +226,7 @@ extension AppModel {
             request.setValue("application/json", forHTTPHeaderField: "Content-Type")
             request.setValue("Bearer \(session.bearerToken)", forHTTPHeaderField: "Authorization")
             request.httpBody = try JSONSerialization.data(withJSONObject: [:] as [String: Any])
-            let (data, response) = try await URLSession.shared.data(for: request)
-            guard let http = response as? HTTPURLResponse else {
-                throw SyncAuthError.message("Sync backend returned an invalid response.")
-            }
+            let (data, http) = try await MobileHTTPResponseLimits.data(for: request)
             guard (200..<300).contains(http.statusCode) else {
                 let body = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
                 let code = body?["code"] as? String
@@ -273,10 +280,7 @@ extension AppModel {
                 "confirm_email": confirmEmail.trimmingCharacters(in: .whitespacesAndNewlines),
                 "password": password,
             ])
-            let (data, response) = try await URLSession.shared.data(for: request)
-            guard let http = response as? HTTPURLResponse else {
-                throw SyncAuthError.message("Sync backend returned an invalid response.")
-            }
+            let (data, http) = try await MobileHTTPResponseLimits.data(for: request)
             guard (200..<300).contains(http.statusCode) else {
                 let body = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
                 let code = body?["code"] as? String
@@ -314,10 +318,7 @@ extension AppModel {
                 "challenge_id": challengeId,
                 "code": code.trimmingCharacters(in: .whitespacesAndNewlines),
             ])
-            let (data, response) = try await URLSession.shared.data(for: request)
-            guard let http = response as? HTTPURLResponse else {
-                throw SyncAuthError.message("Sync backend returned an invalid response.")
-            }
+            let (data, http) = try await MobileHTTPResponseLimits.data(for: request)
             guard (200..<300).contains(http.statusCode) else {
                 let body = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
                 let code = body?["code"] as? String
@@ -365,10 +366,7 @@ extension AppModel {
             request.setValue("application/json", forHTTPHeaderField: "Content-Type")
             request.setValue("Bearer \(session.bearerToken)", forHTTPHeaderField: "Authorization")
             request.httpBody = try JSONSerialization.data(withJSONObject: [:] as [String: Any])
-            let (data, response) = try await URLSession.shared.data(for: request)
-            guard let http = response as? HTTPURLResponse else {
-                throw SyncAuthError.message("Sync backend returned an invalid response.")
-            }
+            let (data, http) = try await MobileHTTPResponseLimits.data(for: request)
             guard (200..<300).contains(http.statusCode) else {
                 let body = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
                 let code = body?["code"] as? String
@@ -409,22 +407,38 @@ extension AppModel {
             syncOffline = false
             return
         }
+        let sessionGeneration = syncSessionGeneration.value
         do {
             var request = URLRequest(url: url)
+            // Account status is auxiliary metadata; it must not hold startup or
+            // settings indefinitely when the backend is slow.
+            request.timeoutInterval = 5
             request.httpMethod = "GET"
             request.setValue("Bearer \(session.bearerToken)", forHTTPHeaderField: "Authorization")
-            let (data, response) = try await URLSession.shared.data(for: request)
-            guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
+            let (data, http) = try await MobileHTTPResponseLimits.data(for: request)
+            guard (200..<300).contains(http.statusCode) else {
                 return
             }
             let status = try JSONDecoder().decode(AccountStatusPayload.self, from: data)
+            // A status response for a signed-out or replaced session must not
+            // repopulate the subscription card for the next account.
+            guard syncSessionGeneration.matches(sessionGeneration) else { return }
             syncOffline = false
             subscriptionProvider = status.subscriptionProvider
             emailVerified = status.emailVerified
             subscriptionCancelled =
                 status.supportsSync && (status.subscriptionState?.lowercased() == "cancelled")
+            // Status is the authoritative entitlement snapshot. Keep the cached
+            // session aligned so a grant/revocation is reflected before the Rust
+            // sync guard runs, without requiring a forced refresh-token rotation.
+            if var session = syncSession, session.supportsSync != status.supportsSync {
+                session.supportsSync = status.supportsSync
+                syncSession = session
+                saveSyncSession(session)
+            }
         } catch {
             // Leave the last known state; the user can retry from Settings.
+            guard syncSessionGeneration.matches(sessionGeneration) else { return }
             if Self.isLikelyNetworkError(error) {
                 syncOffline = true
             }
@@ -448,10 +462,7 @@ extension AppModel {
             request.httpMethod = "POST"
             request.setValue("application/json", forHTTPHeaderField: "Content-Type")
             request.setValue("Bearer \(session.bearerToken)", forHTTPHeaderField: "Authorization")
-            let (_, response) = try await URLSession.shared.data(for: request)
-            guard let http = response as? HTTPURLResponse else {
-                throw SyncAuthError.message("Could not reach the sync service.")
-            }
+            let (_, http) = try await MobileHTTPResponseLimits.data(for: request)
             if http.statusCode == 429 {
                 throw SyncAuthError.message("You've requested this recently — wait a minute, then try again.")
             }
@@ -482,26 +493,25 @@ extension AppModel {
     /// Re-check the sync entitlement and subscription lifecycle from the backend.
     /// Called when the app is (re)opened so a subscription bought (or changed) while
     /// it was closed — the common "subscribe, reopen the app, see it" flow — shows up
-    /// without waiting for the access token to expire. The forced refresh runs first
-    /// and rotates the session; the status read then uses the fresh token, so the two
-    /// never replay the single-use refresh token concurrently.
+    /// without waiting for the access token to expire. The access token is refreshed
+    /// only when needed; the status read itself is authoritative for the entitlement.
     func refreshSubscriptionStatus() async {
         guard syncSession != nil else { return }
-        // Pick up an entitlement change first; this rotates the session so the status
-        // read below uses the fresh token. Run it best-effort: even when the forced
-        // refresh defers on a transient hiccup (which marks `syncOffline`), still read
-        // the authoritative account status so a reachable backend clears the stale flag
-        // instead of leaving the card stuck on "Offline" after sign-in. The status read
-        // is a bearer-token GET, so it never replays the single-use refresh token.
-        await refreshEntitlement()
+        // Refresh only when the access token actually needs it. Forcing a rotating
+        // refresh-token request on every launch added a network round-trip before the
+        // real sync, and `refreshEntitlement()` also schedules a sync as a side effect.
+        // The account-status response below is authoritative for supportsSync, so it
+        // still picks up a subscription bought on another device without paying that
+        // latency on every startup.
+        _ = await refreshSyncSessionIfNeeded()
         await refreshAccountStatus()
     }
 
     // MARK: - Subscriptions (StoreKit)
 
-    // Retained for the eventual StoreKit rollout. This interim build deliberately
-    // does not compile the purchase path; enable the Xcode compilation condition
-    // `IN_APP_PURCHASES_ENABLED` once App Store approval is in place.
+    // StoreKit is separately gated from the accounts build so an accounts-only
+    // binary can still ship while the subscription product is awaiting approval.
+    // The App Store build enables `IN_APP_PURCHASES_ENABLED` in the Xcode target.
     #if IN_APP_PURCHASES_ENABLED
     func startTransactionListener() {
         transactionListener = Task { [weak self] in
@@ -592,8 +602,15 @@ extension AppModel {
 
     func handle(transactionResult: VerificationResult<StoreKit.Transaction>) async {
         guard case .verified(let transaction) = transactionResult else { return }
+        // A transaction update can be the first delivery after the app was
+        // terminated during checkout. Verify it directly instead of waiting for
+        // App Store Server Notifications to grant the backend entitlement.
+        if transaction.productType == .autoRenewable {
+            await verifyApplePurchase(jws: transactionResult.jwsRepresentation)
+        } else {
+            await refreshEntitlement()
+        }
         await transaction.finish()
-        await refreshEntitlement()
     }
     #endif
 
@@ -639,8 +656,8 @@ extension AppModel {
             request.setValue("application/json", forHTTPHeaderField: "Content-Type")
             request.setValue("Bearer \(session.bearerToken)", forHTTPHeaderField: "Authorization")
             request.httpBody = try JSONSerialization.data(withJSONObject: ["signed_transaction": jws])
-            let (data, response) = try await URLSession.shared.data(for: request)
-            guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
+            let (data, http) = try await MobileHTTPResponseLimits.data(for: request)
+            guard (200..<300).contains(http.statusCode) else {
                 return
             }
             let payload = try JSONDecoder().decode(SyncLoginResponse.self, from: data)

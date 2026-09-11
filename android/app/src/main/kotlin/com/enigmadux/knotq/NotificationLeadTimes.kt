@@ -35,6 +35,16 @@ private val occurrenceNotificationOptions: List<NotificationLeadTimeOption> = li
     NotificationLeadTimeOption("1 day before", 24 * 60 * 60),
 )
 
+// These labels are used while occurrence rows are rebuilt. Keep the lookup
+// allocation-free on the render path, and preserve the first label when the
+// event/assignment lists intentionally share an offset.
+private val notificationLabelByOffset: Map<Int, String> = linkedMapOf<Int, String>().apply {
+    (occurrenceNotificationOptions + eventDefaultNotificationOptions + assignmentDefaultNotificationOptions)
+        .forEach { option ->
+            if (!containsKey(option.offsetSecs)) this[option.offsetSecs] = option.label
+        }
+}
+
 internal fun notificationLeadTimeLabel(offsetSecs: Int, eventDefault: Boolean? = null): String {
     if (offsetSecs == 0) {
         return when (eventDefault) {
@@ -43,31 +53,27 @@ internal fun notificationLeadTimeLabel(offsetSecs: Int, eventDefault: Boolean? =
             null -> "At time"
         }
     }
-    (
-        occurrenceNotificationOptions +
-            eventDefaultNotificationOptions +
-            assignmentDefaultNotificationOptions
-        ).firstOrNull { it.offsetSecs == offsetSecs }?.let { return it.label }
+    notificationLabelByOffset[offsetSecs]?.let { return it }
     // Desktop `format_lead_time` fallback: decomposed duration + before/after.
     val suffix = if (offsetSecs > 0) "before" else "after"
-    return "${formatLeadDuration(kotlin.math.abs(offsetSecs))} $suffix"
+    return "${formatLeadDuration(kotlin.math.abs(offsetSecs.toLong()))} $suffix"
 }
 
-private fun formatLeadDuration(seconds: Int): String {
-    val days = seconds / 86_400
-    if (days > 0 && seconds % 86_400 == 0) return pluralUnit(days, "day")
-    val hours = seconds / 3_600
-    if (hours > 0 && seconds % 3_600 == 0) return pluralUnit(hours, "hour")
-    val minutes = seconds / 60
+private fun formatLeadDuration(seconds: Long): String {
+    val days = seconds / 86_400L
+    if (days > 0 && seconds % 86_400L == 0L) return pluralUnit(days, "day")
+    val hours = seconds / 3_600L
+    if (hours > 0 && seconds % 3_600L == 0L) return pluralUnit(hours, "hour")
+    val minutes = seconds / 60L
     if (minutes > 0) return pluralUnit(minutes, "minute")
     return pluralUnit(seconds, "second")
 }
 
-private fun pluralUnit(count: Int, unit: String): String =
-    if (count == 1) "1 $unit" else "$count ${unit}s"
+private fun pluralUnit(count: Long, unit: String): String =
+    if (count == 1L) "1 $unit" else "$count ${unit}s"
 
 internal fun occurrenceNotificationOptionsIncluding(offsetSecs: Int): List<NotificationLeadTimeOption> {
-    if (occurrenceNotificationOptions.any { it.offsetSecs == offsetSecs }) {
+    if (notificationLabelByOffset.containsKey(offsetSecs)) {
         return occurrenceNotificationOptions
     }
     return (occurrenceNotificationOptions + NotificationLeadTimeOption(notificationLeadTimeLabel(offsetSecs), offsetSecs))

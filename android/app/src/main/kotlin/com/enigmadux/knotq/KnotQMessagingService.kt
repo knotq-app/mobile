@@ -16,14 +16,35 @@ import org.json.JSONObject
 /// sync worker rather than touching a core directly.
 class KnotQMessagingService : FirebaseMessagingService() {
 
+    override fun onCreate() {
+        super.onCreate()
+        // Removing FirebaseInitProvider keeps ordinary app launch local-first;
+        // a service launch is the explicit boundary where FCM is actually
+        // needed.
+        KnotQFirebase.initialize(applicationContext)
+    }
+
     /// Fired when FCM issues or rotates this device's token. Persist it and, if
     /// the app is alive, hand it to the live core immediately; otherwise the
     /// queued sync (and `MainActivity` on next launch) picks it up from prefs.
     override fun onNewToken(token: String) {
         // Accounts/sync (and thus FCM-driven sync) are compiled out of release builds.
         if (!BuildConfig.ACCOUNTS_ENABLED) return
+        if (!KnotQFirebase.initialize(applicationContext)) return
         PushRegistration.store(applicationContext, token)
-        MainActivity.sharedBridge?.let { PushRegistration.apply(it, token) }
+        MainActivity.sharedBridge?.let { bridge ->
+            val activity = MainActivity.liveActivity.current()
+            if (activity != null) {
+                // FCM callbacks can arrive while onStop is flushing a pending
+                // edit. Queue token registration with the same native boundary
+                // instead of racing the live bridge from the service thread.
+                runCatching {
+                    activity.coreExecutor.execute { PushRegistration.apply(bridge, token) }
+                }
+            } else {
+                PushRegistration.apply(bridge, token)
+            }
+        }
         enqueueOneTimeSync(applicationContext)
     }
 
@@ -76,5 +97,15 @@ internal object PushRegistration {
                     .put("environment", ENVIRONMENT)
             )
         }
+    }
+
+    /**
+     * Queue registration on the same FIFO boundary as all other foreground
+     * native work. Keeping this tiny dispatcher separate makes it difficult to
+     * accidentally reintroduce a direct main-thread bridge call when Firebase
+     * changes callback scheduling.
+     */
+    internal fun dispatch(executor: SerialCoreExecutor, apply: () -> Unit) {
+        executor.execute(apply)
     }
 }

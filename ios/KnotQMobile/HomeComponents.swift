@@ -320,6 +320,14 @@ struct HomeNavigationPane: View {
     @State private var searchQuery = ""
     @FocusState private var searchFocused: Bool
 
+    // Keep route changes on a single, short ease-out curve. The system
+    // NavigationStack still owns the actual push/pop (including the interactive
+    // edge swipe), but an explicit transaction prevents a search/keyboard state
+    // update from supplying a competing spring or implicit fade.
+    private var routeAnimation: Animation {
+        .timingCurve(0.22, 0.82, 0.24, 1.0, duration: 0.28)
+    }
+
     var body: some View {
         NavigationStack(path: $path) {
             VStack(spacing: 12) {
@@ -482,24 +490,41 @@ struct HomeNavigationPane: View {
 
     private func openSchemeInStack(_ id: String) {
         closeHomeSearch()
-        onPrepareEditorKeyboard(theme) { path.append(.scheme(id)) }
+        onPrepareEditorKeyboard(theme) { pushHomeRoute(.scheme(id)) }
     }
 
     private func openDailyInStack() {
         closeHomeSearch()
         onPrepareDaily()
-        onPrepareEditorKeyboard(theme) { path.append(.daily) }
+        onPrepareEditorKeyboard(theme) { pushHomeRoute(.daily) }
     }
 
     private func closeHomeSearch() {
-        searchQuery = ""
-        model.search("")
-        searchFocused = false
+        var transaction = Transaction()
+        transaction.animation = nil
+        withTransaction(transaction) {
+            searchQuery = ""
+            model.search("")
+            searchFocused = false
+        }
+    }
+
+    private func pushHomeRoute(_ route: HomeRoute) {
+        guard path.last != route else { return }
+        var transaction = Transaction()
+        transaction.animation = routeAnimation
+        let _: Void = withTransaction(transaction) {
+            path.append(route)
+        }
     }
 
     private func popHomeRoute() {
         guard !path.isEmpty else { return }
-        path.removeLast()
+        var transaction = Transaction()
+        transaction.animation = routeAnimation
+        let _: Void = withTransaction(transaction) {
+            path.removeLast()
+        }
     }
 
     private func openSearchHit(_ hit: MobileSearchHit) {

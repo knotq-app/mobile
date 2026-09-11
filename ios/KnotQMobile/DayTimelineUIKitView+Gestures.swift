@@ -233,11 +233,7 @@ extension DayTimelineUIKitView {
 
     func draftTime(_ draft: DayTimelineCreateDraft) -> String {
         guard let date = createDate(for: draft) else { return "" }
-        let formatter = DateFormatter()
-        formatter.calendar = Calendar(identifier: .gregorian)
-        formatter.locale = Locale(identifier: "en_US_POSIX")
-        formatter.dateFormat = timeFormat == "twenty_four_hour" ? "HH:mm" : "h:mm a"
-        return formatter.string(from: date)
+        return MobileDate.formatTime(date, timeFormat: timeFormat)
     }
 
     func currentGeometry() -> DayTimelineGeometry {

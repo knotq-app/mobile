@@ -69,6 +69,15 @@ final class RefreshFlightGateTests: XCTestCase {
         XCTAssertFalse(gate.isInFlight)
     }
 
+    func testRefreshQueryRejectsASelectionThatChangedWhileReading() {
+        let query = RefreshQuery(dateKey: "2026-09-10", weekOffset: 0, dailyHistoryDays: 3)
+
+        XCTAssertTrue(query.matches(dateKey: "2026-09-10", weekOffset: 0, dailyHistoryDays: 3))
+        XCTAssertFalse(query.matches(dateKey: "2026-09-11", weekOffset: 0, dailyHistoryDays: 3))
+        XCTAssertFalse(query.matches(dateKey: "2026-09-10", weekOffset: 1, dailyHistoryDays: 3))
+        XCTAssertFalse(query.matches(dateKey: "2026-09-10", weekOffset: 0, dailyHistoryDays: 34))
+    }
+
     func testNewBurstDuringFollowUpGetsAnotherFollowUp() {
         var gate = RefreshFlightGate()
         XCTAssertTrue(gate.request())
@@ -95,6 +104,24 @@ final class RefreshFlightGateTests: XCTestCase {
         XCTAssertFalse(gate.finish())
         XCTAssertTrue(gate.request())
         XCTAssertTrue(gate.isInFlight)
+    }
+
+    func testSessionGenerationInvalidatesCapturedWorkAfterAdvance() {
+        var generation = SyncSessionGeneration()
+        let captured = generation.value
+
+        XCTAssertTrue(generation.matches(captured))
+        generation.advance()
+        XCTAssertFalse(generation.matches(captured))
+        XCTAssertTrue(generation.matches(generation.value))
+    }
+
+    func testSessionGenerationAdvancesWithoutTrapping() {
+        var generation = SyncSessionGeneration()
+        for _ in 0..<3 {
+            generation.advance()
+        }
+        XCTAssertEqual(generation.value, 3)
     }
 
     func testIdenticalWidgetPayloadDoesNotRepublishForNewTimestamp() {
@@ -131,5 +158,12 @@ final class RefreshFlightGateTests: XCTestCase {
                 next: widgetSnapshot(title: "New")
             )
         )
+    }
+
+    func testMissingOrEmptyWidgetStateDoesNotInventItems() throws {
+        XCTAssertTrue(KnotQWidgetSnapshotStore.decode(nil).items.isEmpty)
+
+        let emptyData = try JSONEncoder().encode(KnotQWidgetSnapshot.empty)
+        XCTAssertTrue(KnotQWidgetSnapshotStore.decode(emptyData).items.isEmpty)
     }
 }

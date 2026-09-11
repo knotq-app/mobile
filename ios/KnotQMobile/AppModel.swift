@@ -101,6 +101,9 @@ final class AppModel: ObservableObject {
     var googleOAuthSession: WebAuthenticationSessionCoordinator?
     var browserSignInSession: WebAuthenticationSessionCoordinator?
     var transactionListener: Task<Void, Never>?
+    /// Changes whenever a different login session is installed or the current
+    /// session is signed out. Async account work checks it after network waits.
+    var syncSessionGeneration = SyncSessionGeneration()
     var dailyHistoryDays = AppModel.initialDailyHistoryDays(for: Date())
     var pendingDailyHistoryLoadAnchorDate: String?
     // Calendar day the model is currently anchored to. Used to notice a midnight
@@ -138,6 +141,14 @@ final class AppModel: ObservableObject {
         // queue; ContentView renders its visible loading state until it publishes
         // the resulting snapshot.
         refresh()
+        #if ACCOUNTS_ENABLED
+        // Firebase may have delivered the token before AppModel's bridge existed.
+        // Replay the protected copy after the bridge is ready so registration is
+        // eventually applied even when callback ordering is unfavorable.
+        if let registration = PushTokenStore.load() {
+            setPushToken(registration.token, environment: registration.environment)
+        }
+        #endif
         CoreTiming.launch("AppModel.init done", since: CoreTiming.sinceProcessStart())
         #if ACCOUNTS_ENABLED
         startSyncPolling()
@@ -190,6 +201,11 @@ final class AppModel: ObservableObject {
         let today = Self.dateOnly(selectedDate)
         let week = weekOffset
         let history = dailyHistoryDays
+        let query = RefreshQuery(
+            dateKey: today,
+            weekOffset: week,
+            dailyHistoryDays: history
+        )
         let loadAnchorDate = pendingDailyHistoryLoadAnchorDate
         let isDailyHistoryLoad = loadAnchorDate != nil
         pendingDailyHistoryLoadAnchorDate = nil
@@ -220,11 +236,27 @@ final class AppModel: ObservableObject {
             if shouldApplyResult {
                 switch result {
                 case .success(let (snapshot, pending, staleNotificationIds)):
-                    self.apply(
-                        snapshot: snapshot,
-                        pendingNotifications: pending,
-                        staleNotificationIds: staleNotificationIds
+                    let currentQuery = RefreshQuery(
+                        dateKey: Self.dateOnly(self.selectedDate),
+                        weekOffset: self.weekOffset,
+                        dailyHistoryDays: self.dailyHistoryDays
                     )
+                    if currentQuery == query {
+                        self.apply(
+                            snapshot: snapshot,
+                            pendingNotifications: pending,
+                            staleNotificationIds: staleNotificationIds
+                        )
+                    } else {
+                        // The core read is still authoritative for notification
+                        // state, but its view was requested for a selection the
+                        // user has already left. The queued follow-up owns the
+                        // next snapshot publication.
+                        self.reconcileNotifications(
+                            pendingNotifications: pending,
+                            staleNotificationIds: staleNotificationIds
+                        )
+                    }
                     if isDailyHistoryLoad {
                         self.dailyHistoryLoadAnchorDate = loadAnchorDate
                     }
@@ -306,11 +338,24 @@ final class AppModel: ObservableObject {
             configureGoogleSyncPolling(accountCount: snapshot.settings.googleAccountCount)
             BackgroundSyncCoordinator.shared.scheduleIfEligible(backgroundRefreshEligible)
         }
-        MobileNotificationScheduler.shared.reschedule(pendingNotifications)
-        MobileNotificationScheduler.shared.clearDelivered(staleNotificationIds)
+        reconcileNotifications(
+            pendingNotifications: pendingNotifications,
+            staleNotificationIds: staleNotificationIds
+        )
         if firstSnapshot {
             CoreTiming.launch("first apply done", since: CoreTiming.sinceProcessStart())
         }
+    }
+
+    /// Notification state belongs to the durable core, not to the currently
+    /// selected day. A stale view query may therefore skip snapshot publication
+    /// while still applying the completed read's reminder reconciliation.
+    func reconcileNotifications(
+        pendingNotifications: [MobileNotificationRequest],
+        staleNotificationIds: [String]
+    ) {
+        MobileNotificationScheduler.shared.reschedule(pendingNotifications)
+        MobileNotificationScheduler.shared.clearDelivered(staleNotificationIds)
     }
 
     /// Kept separate from `apply` so the equality gate is pinned by unit tests.
@@ -371,13 +416,19 @@ final class AppModel: ObservableObject {
                 try b.deliveredNotificationsToClear()
             )
         }) else { return }
-        snapshot = result.0
-        KnotQWidgetSnapshotStore.publish(snapshot: result.0)
+        // Background wakes commonly find no visible change (for example a
+        // notification re-arm after a time-zone transition). Avoid publishing an
+        // equal value because that wakes the entire SwiftUI tree, while still
+        // re-arming notifications and clearing stale delivered banners below.
+        if Self.shouldPublishSnapshot(current: snapshot, next: result.0) {
+            snapshot = result.0
+            KnotQWidgetSnapshotStore.publish(snapshot: result.0)
+            MobileNotificationScheduler.shared.updateBadgeCount(Self.overdueBadgeCount(for: result.0))
+            configureGoogleSyncPolling(accountCount: result.0.settings.googleAccountCount)
+            BackgroundSyncCoordinator.shared.scheduleIfEligible(backgroundRefreshEligible)
+        }
         await MobileNotificationScheduler.shared.rescheduleNow(result.1)
         MobileNotificationScheduler.shared.clearDelivered(result.2)
-        MobileNotificationScheduler.shared.updateBadgeCount(Self.overdueBadgeCount(for: result.0))
-        configureGoogleSyncPolling(accountCount: result.0.settings.googleAccountCount)
-        BackgroundSyncCoordinator.shared.scheduleIfEligible(backgroundRefreshEligible)
     }
 
     /// Re-arm the OS notification schedule from the core's current (on-disk)

@@ -507,7 +507,7 @@ struct MonthGridView: View {
 
     @ViewBuilder
     private func dayBackground(isToday: Bool, isSelected: Bool) -> some View {
-        let dayHighlight = calendarDayHighlightColor(dark: theme.isDark)
+        let dayHighlight = theme.accent
         if isToday || isSelected {
             Circle().fill(dayHighlight)
         }

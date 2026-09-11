@@ -137,6 +137,12 @@ import kotlin.math.roundToInt
             setPadding(dp(8), dp(10), dp(8), dp(8))
             background = rounded(theme.bgSidebar, dp(10), theme.borderOverlay)
         }
+        // Search used to live in the desktop title bar. Keep it in the mobile
+        // navigator so removing that chrome does not strand the feature, and
+        // make it a stable first-class target for touch and accessibility.
+        panel.addView(homeSearchEntry(), LinearLayout.LayoutParams(-1, dp(36)).apply {
+            setMargins(0, 0, 0, dp(8))
+        })
         panel.addView(navSpecial(L10n.t(this, "mobile.nav.home"), theme.accent, selectedTab == TAB_HOME) {
             selectedTab = TAB_HOME
             selectedSchemeId = null
@@ -156,9 +162,22 @@ import kotlin.math.roundToInt
             setMargins(dp(3), dp(7), dp(3), dp(8))
         })
 
-        val tree = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
-        snapshot.optJSONObject("root")?.optJSONArray("children")?.forEachObject { addNode(tree, it, 0) }
-        panel.addView(scroll(tree), LinearLayout.LayoutParams(-1, 0, 1f))
+        val rootNode = snapshot.optJSONObject("root")
+        val navigatorBody: View = if (shouldUseLazyNavigator(rootNode, collapsedFolderIds)) {
+            // The side rail has its own viewport, so the same scroll-driven
+            // navigator used by phone Home can stay lazy without nesting it in
+            // the main content scroll view.
+            ScrollView(this).apply {
+                isVerticalScrollBarEnabled = false
+                overScrollMode = View.OVER_SCROLL_NEVER
+                addView(this@renderNavigator.NavigatorPanel(this@renderNavigator), FrameLayout.LayoutParams(-1, -2))
+            }
+        } else {
+            val tree = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+            rootNode?.optJSONArray("children")?.forEachObject { addNode(tree, it, 0) }
+            scroll(tree)
+        }
+        panel.addView(navigatorBody, LinearLayout.LayoutParams(-1, 0, 1f))
         panel.addView(LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
@@ -166,7 +185,19 @@ import kotlin.math.roundToInt
             addView(chip(GLYPH_SETTINGS) {
                 selectedTab = TAB_SETTINGS
                 selectedSchemeId = null
+                // Settings subpages are pushed routes. Re-entering Settings
+                // from the navigator must always land on its root, even when
+                // the user previously left through Home or another tab.
+                settingsShowingArchive = false
+                settingsShowingTiming = false
+                settingsShowingGoogle = false
                 render()
+            }.apply {
+                // The wide layout intentionally keeps this as a quiet icon-only
+                // control, but it still needs an explicit accessible name now
+                // that the old toolbar is gone.
+                contentDescription = L10n.t(this@renderNavigator, "menu.settings")
+                isFocusable = true
             }, LinearLayout.LayoutParams(dp(33), dp(30)).apply { setMargins(dp(6), 0, 0, 0) })
         })
         return panel
@@ -191,14 +222,22 @@ import kotlin.math.roundToInt
         addOccurrenceSection(body, L10n.t(this, "event.date.today"), L10n.t(this, "upcoming.empty.none_today"), todayOccurrences())
 
         body.addView(sectionHeader(L10n.t(this, "onboarding.step.schemes.title")))
-        val tree = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(0, dp(2), 0, dp(2))
+        val rootNode = snapshot.optJSONObject("root")
+        val tree: View = if (shouldUseLazyNavigator(rootNode, collapsedFolderIds)) {
+            // Wide Home lives inside the page ScrollView rather than the side
+            // rail's own viewport. NavigatorPanel understands that ancestor
+            // scroll geometry and only materializes rows near the visible tail.
+            NavigatorPanel(this)
+        } else {
+            LinearLayout(this).apply {
+                orientation = LinearLayout.VERTICAL
+                setPadding(0, dp(2), 0, dp(2))
+                rootNode?.optJSONArray("children")?.forEachObject {
+                    addNode(this, it, 0, spacious = true)
+                }
+            }
         }
-        snapshot.optJSONObject("root")?.optJSONArray("children")?.forEachObject {
-            addNode(tree, it, 0, spacious = true)
-        }
-        if (tree.childCount == 0) {
+        if (tree is LinearLayout && tree.childCount == 0) {
             tree.addView(text(L10n.t(this, "mobile.home.no_schemes"), theme.textMuted, 13f, false).apply {
                 setPadding(dp(8), dp(6), dp(8), dp(10))
             })
@@ -214,7 +253,7 @@ import kotlin.math.roundToInt
                 visibleUpcomingOccurrences()
             )
         }
-        root.addView(scroll(body), LinearLayout.LayoutParams(-1, 0, 1f))
+        root.addView(rememberHomeScroll(scroll(body)), LinearLayout.LayoutParams(-1, 0, 1f))
         return root
     }
 
@@ -235,8 +274,37 @@ import kotlin.math.roundToInt
             L10n.t(this, "mobile.home.nothing_scheduled"),
             visibleUpcomingOccurrences()
         )
-        root.addView(scroll(body), LinearLayout.LayoutParams(-1, 0, 1f))
+        root.addView(rememberHomeScroll(scroll(body)), LinearLayout.LayoutParams(-1, 0, 1f))
         return root
+    }
+
+    /**
+     * Full renders are still used for snapshot changes, but Home should not
+     * visibly jump to the top when one arrives. Restore before the first draw
+     * so there is no intermediate frame at scrollY=0.
+     */
+    private fun MainActivity.rememberHomeScroll(scrollView: ScrollView): ScrollView {
+        scrollView.setOnScrollChangeListener { _, scrollY, _, _, _ ->
+            homeScrollY = scrollY
+        }
+        scrollView.viewTreeObserver.addOnPreDrawListener(
+            object : android.view.ViewTreeObserver.OnPreDrawListener {
+                override fun onPreDraw(): Boolean {
+                    if (scrollView.height == 0 || scrollView.childCount == 0) return true
+                    scrollView.scrollTo(
+                        0,
+                        restoredScrollOffset(
+                            homeScrollY,
+                            scrollView.getChildAt(0).height,
+                            scrollView.height,
+                        ),
+                    )
+                    scrollView.viewTreeObserver.removeOnPreDrawListener(this)
+                    return true
+                }
+            },
+        )
+        return scrollView
     }
 
     internal fun MainActivity.visibleUpcomingOccurrences(): JSONArray {
@@ -272,11 +340,17 @@ import kotlin.math.roundToInt
             gravity = Gravity.CENTER_VERTICAL
             setPadding(dp(12), 0, dp(12), 0)
             background = rounded(theme.bgModal, dp(8), theme.borderOverlay)
+            // The whole pill is the tappable search control on phones. Keep
+            // one accessible target after removing the desktop Search chip;
+            // exposing only the decorative icon made automation and screen
+            // readers miss the action.
+            contentDescription = L10n.t(this@homeSearchEntry, "mobile.a11y.search")
             addView(text(L10n.t(this@homeSearchEntry, "search.placeholder"), theme.textMuted, 14f, false), LinearLayout.LayoutParams(0, -1, 1f))
-            addView(iconImage(R.drawable.ic_knotq_search_24, theme.textMuted, L10n.t(this@homeSearchEntry, "mobile.a11y.search")), LinearLayout.LayoutParams(dp(28), dp(ICON_SEARCH_VECTOR_SIZE_DP)))
+            addView(iconImage(R.drawable.ic_knotq_search_24, theme.textMuted), LinearLayout.LayoutParams(dp(28), dp(ICON_SEARCH_VECTOR_SIZE_DP)))
             setOnClickListener {
                 selectedTab = TAB_SEARCH
                 selectedSchemeId = null
+                queueContentTransition(ContentTransitionDirection.FORWARD)
                 render()
             }
         }
@@ -505,9 +579,72 @@ import kotlin.math.roundToInt
             }
             return root
         }
-        schemes.forEachObject { scheme ->
-            root.addView(archivedSchemeRow(scheme, compact), LinearLayout.LayoutParams(-1, if (compact) dp(22) else dp(40)))
+        val rowHeight = dp(if (compact) 22 else 40)
+        val archiveList = LayoutTransactionLinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
         }
+        val archiveScroll = object : ScrollView(this) {
+            private var nextIndex = 0
+            private var continuationPosted = false
+            private var continuation: Runnable? = null
+
+            init {
+                tag = ARCHIVE_VIEWPORT_TAG
+                isVerticalScrollBarEnabled = false
+                overScrollMode = View.OVER_SCROLL_NEVER
+                addView(archiveList, FrameLayout.LayoutParams(-1, -2))
+                appendBatch(ARCHIVE_INITIAL_BATCH)
+            }
+
+            override fun onScrollChanged(left: Int, top: Int, oldLeft: Int, oldTop: Int) {
+                super.onScrollChanged(left, top, oldLeft, oldTop)
+                maybeAppendRows(top)
+            }
+
+            private fun appendBatch(batchSize: Int) {
+                val end = min(schemes.length(), nextIndex + batchSize)
+                if (end <= nextIndex) return
+                archiveList.batchLayoutChanges {
+                    while (nextIndex < end) {
+                        val scheme = schemes.optJSONObject(nextIndex++) ?: continue
+                        archiveList.addView(
+                            archivedSchemeRow(scheme, compact),
+                            LinearLayout.LayoutParams(-1, rowHeight),
+                        )
+                    }
+                }
+            }
+
+            private fun maybeAppendRows(scrollY: Int) {
+                if (nextIndex >= schemes.length() || continuationPosted || height <= 0) return
+                if (scrollY + height < archiveList.height - rowHeight * 3) return
+                continuationPosted = true
+                val task = Runnable {
+                    continuation = null
+                    continuationPosted = false
+                    if (!isAttachedToWindow) return@Runnable
+                    appendBatch(ARCHIVE_CONTINUATION_BATCH)
+                    maybeAppendRows(scrollY)
+                }
+                continuation = task
+                postOnAnimation(task)
+            }
+
+            override fun onDetachedFromWindow() {
+                continuation?.let(::removeCallbacks)
+                continuation = null
+                continuationPosted = false
+                super.onDetachedFromWindow()
+            }
+        }
+        val archiveViewportHeight = max(
+            dp(120),
+            min(dp(260), (resources.displayMetrics.heightPixels * 0.28f).roundToInt()),
+        )
+        root.addView(
+            archiveScroll,
+            LinearLayout.LayoutParams(-1, archiveViewportHeight),
+        )
         return root
     }
 

@@ -134,7 +134,17 @@ impl SyncTransport for FallbackTransport<'_> {
                     Err(WsRequestError::Server { status, code }) => {
                         return Err(ws_server_pull_error(status, code))
                     }
-                    Err(_) => { /* transport hiccup → HTTP fallback this run */ }
+                    Err(_) => {
+                        // A suspended mobile process can retain a socket that
+                        // still reports connected but no longer delivers replies.
+                        // Stop it on the first transport failure so the owner can
+                        // replace it on the next sync; HTTP remains the correctness
+                        // fallback for this run.
+                        if cfg!(debug_assertions) {
+                            eprintln!("sync: websocket pull failed; falling back to HTTP");
+                        }
+                        ws.shutdown();
+                    }
                 }
             }
         }
@@ -149,7 +159,12 @@ impl SyncTransport for FallbackTransport<'_> {
                     Err(WsRequestError::Server { status, code }) => {
                         return Err(ws_server_push_error(status, code))
                     }
-                    Err(_) => { /* transport hiccup → HTTP fallback this run */ }
+                    Err(_) => {
+                        if cfg!(debug_assertions) {
+                            eprintln!("sync: websocket push failed; falling back to HTTP");
+                        }
+                        ws.shutdown();
+                    }
                 }
             }
         }
@@ -195,8 +210,14 @@ impl MobileCoreInner {
         if self.ws_api_base.as_deref() != Some(api_base) {
             self.stop_ws_sync();
         }
-        if self.ws_client.is_some() {
-            return;
+        if let Some(client) = self.ws_client.as_ref() {
+            if !client.is_stopped() {
+                return;
+            }
+            // A request timeout shuts down the old supervisor. Do not leave that
+            // stopped client in the slot, or every later sync would silently use
+            // HTTP forever until the app was backgrounded and foregrounded again.
+            self.stop_ws_sync();
         }
         let token_holder = Arc::clone(&self.ws_token);
         let token_provider: TokenProvider = Arc::new(move || {
@@ -208,13 +229,23 @@ impl MobileCoreInner {
         });
         let ws_changed = Arc::clone(&self.ws_changed);
         let ws_changed_on_connect = Arc::clone(&self.ws_changed);
+        // The first connection is established immediately after the caller has
+        // completed a foreground/startup pull. Treating that connection itself as
+        // a missed-change signal schedules a duplicate full sync. Reconnects on
+        // this same client still set the flag so they perform a catch-up pull.
+        let suppress_initial_connect = Arc::new(std::sync::atomic::AtomicBool::new(true));
+        let suppress_initial_connect_callback = Arc::clone(&suppress_initial_connect);
         let callbacks = WsCallbacks {
             on_changed: Box::new(move || ws_changed.store(true, Ordering::SeqCst)),
             on_presence: Box::new(|_event| {}),
             // (Re)connected: flag a catch-up so the next nudge tick syncs — this
             // reconciles any `changed` missed while the socket was down without
             // foreground polling.
-            on_connect: Box::new(move || ws_changed_on_connect.store(true, Ordering::SeqCst)),
+            on_connect: Box::new(move || {
+                if !suppress_initial_connect_callback.swap(false, Ordering::SeqCst) {
+                    ws_changed_on_connect.store(true, Ordering::SeqCst);
+                }
+            }),
         };
         let factory = Box::new(TgFactory {
             ws_url: ws_url_from_api_base(api_base),
@@ -222,7 +253,7 @@ impl MobileCoreInner {
         });
         self.ws_client = Some(Arc::new(WsClient::start(
             factory,
-            WsConfig::default(),
+            mobile_ws_config(),
             callbacks,
         )));
         self.ws_api_base = Some(api_base.to_string());
@@ -240,6 +271,19 @@ impl MobileCoreInner {
         self.ws_client
             .as_ref()
             .is_some_and(|client| client.is_connected())
+    }
+}
+
+/// Mobile sockets are a latency optimization, not the durable transport. A
+/// socket can survive suspension at the OS/HTTP layer while no longer being able
+/// to deliver a reply, so the desktop-oriented 30s request timeout is too costly
+/// on a foreground mobile sync. Five seconds leaves room for a real network
+/// round-trip while bounding the stale-socket penalty; the request then falls
+/// back to the authoritative HTTP path and the socket is replaced next cycle.
+fn mobile_ws_config() -> WsConfig {
+    WsConfig {
+        request_timeout: Duration::from_secs(5),
+        ..WsConfig::default()
     }
 }
 
@@ -271,5 +315,14 @@ mod tests {
 
         assert!(err.downcast_ref::<SyncPushRejected>().is_none());
         assert!(format!("{err:#}").contains("client_protocol_outdated"));
+    }
+
+    #[test]
+    fn mobile_websocket_timeout_is_bounded() {
+        assert_eq!(mobile_ws_config().request_timeout, Duration::from_secs(5));
+        assert_eq!(
+            mobile_ws_config().keepalive_interval,
+            Duration::from_secs(8)
+        );
     }
 }

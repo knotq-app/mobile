@@ -208,6 +208,7 @@ extension MarkerConcealmentTests {
         let fixture = makeWiredEditorView()
         let view = fixture.0
         let coordinator = fixture.1
+        _ = coordinator
         window.addSubview(view)
         window.makeKeyAndVisible()
         view.loadItems(

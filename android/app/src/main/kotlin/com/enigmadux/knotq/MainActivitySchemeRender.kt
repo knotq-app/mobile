@@ -54,7 +54,9 @@ import androidx.work.NetworkType
 import androidx.work.PeriodicWorkRequest
 import androidx.work.WorkManager
 import android.widget.ArrayAdapter
+import android.widget.AbsListView
 import android.widget.AdapterView
+import android.widget.BaseAdapter
 import android.widget.CheckBox
 import android.widget.DatePicker
 import android.widget.EditText
@@ -62,6 +64,7 @@ import android.widget.FrameLayout
 import android.widget.HorizontalScrollView
 import android.widget.ImageView
 import android.widget.LinearLayout
+import android.widget.ListView
 import android.widget.ScrollView
 import android.widget.Spinner
 import android.widget.Switch
@@ -99,6 +102,26 @@ import kotlin.math.abs
 import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.roundToInt
+
+private val searchBlockPrefix = Regex("^(?:#{1,6}\\s+|[-*+]\\s+|\\[[ xX]\\]\\s+)")
+private val searchInlineMarker = Regex("(?:\\*\\*|__|==|~~)")
+
+/**
+ * Search indexes the source document, so a hit can contain the Markdown that
+ * is intentionally stored on disk. Search is a preview, not an editor: strip
+ * block/inline syntax at this boundary so users never see delimiters as if
+ * they were literal content. Keep malformed tokens harmless and preserve the
+ * actual words for ranking/context.
+ */
+internal fun searchPreviewText(raw: String): String =
+    raw.lineSequence()
+        .map { line ->
+            line.trim()
+                .replace(searchBlockPrefix, "")
+                .replace(searchInlineMarker, "")
+        }
+        .filter(String::isNotBlank)
+        .joinToString(" ")
 
     internal fun MainActivity.renderSchemeEditor(scheme: JSONObject): LinearLayout {
         val schemeId = scheme.optString("id")
@@ -146,6 +169,7 @@ import kotlin.math.roundToInt
         }, LinearLayout.LayoutParams(-1, dp(44)))
 
         editor = SchemeEditText(this).apply {
+            deferInitialStyling = true
             setText(renderDocument(originalLines))
             placeCursorAtDocumentEnd(this)
             tag = originalLines
@@ -178,7 +202,10 @@ import kotlin.math.roundToInt
             overScrollMode = View.OVER_SCROLL_NEVER
             background = null
             setOnFocusChangeListener { _, hasFocus ->
-                if (readOnly) return@setOnFocusChangeListener
+                if (readOnly) {
+                    if (!hasFocus) flushDeferredRenderAfterEditorBlur()
+                    return@setOnFocusChangeListener
+                }
                 if (hasFocus) {
                     lastActiveEditor = this
                     hidePhoneDockForEditing()
@@ -188,9 +215,12 @@ import kotlin.math.roundToInt
                     showPhoneDockAfterEditing()
                     if (!suppressEditorBlurCommit) {
                         commitSchemeDocument(schemeId, this, rerender = false)
+                    } else {
+                        flushDeferredRenderAfterEditorBlur()
                     }
                 }
             }
+            finishInitialStyling()
         }
         // The editor lives inside a host FrameLayout so the inline table-cell
         // editor can float a real EditField over the tapped cell, on top of the
@@ -209,12 +239,27 @@ import kotlin.math.roundToInt
         }
         val editorScroll = scroll(editorBody)
         root.addView(editorScroll, LinearLayout.LayoutParams(-1, 0, 1f))
-        editorScroll.post {
-            placeCursorAtDocumentEnd(editor)
-            // Plain scroll — fullScroll(FOCUS_DOWN) would transfer focus to the
-            // editor, and its later blur-commit made the title untappable.
-            editorScroll.scrollTo(0, max(0, editorBody.bottom - editorScroll.height))
-        }
+        // Restore the document position before the first transition frame is
+        // drawn. A posted scroll can run after the incoming page has already
+        // started sliding, which produces a visible one-frame jump from the
+        // top of a long scheme to its end. Pre-draw keeps the editor's scroll,
+        // caret, and page translation coherent from the first pixel.
+        editorScroll.viewTreeObserver.addOnPreDrawListener(
+            object : android.view.ViewTreeObserver.OnPreDrawListener {
+                override fun onPreDraw(): Boolean {
+                    editorScroll.viewTreeObserver.removeOnPreDrawListener(this)
+                    if (!isUiActive() || !editorScroll.isAttachedToWindow || !editor.isAttachedToWindow) {
+                        return true
+                    }
+                    placeCursorAtDocumentEnd(editor)
+                    // Plain scroll — fullScroll(FOCUS_DOWN) would transfer focus
+                    // to the editor, and its later blur-commit made the title
+                    // untappable.
+                    editorScroll.scrollTo(0, max(0, editorBody.bottom - editorScroll.height))
+                    return true
+                }
+            }
+        )
         if (readOnly) {
             root.addView(text(L10n.t(this, "mobile.scheme.read_only_notice"), theme.textMuted, 12f, false).apply {
                 gravity = Gravity.CENTER
@@ -291,15 +336,18 @@ import kotlin.math.roundToInt
             } else {
                 showPhoneDockAfterEditing()
                 commitTitle()
+                flushDeferredRenderAfterEditorBlur()
             }
         }
         refreshError()
         if (pendingTitleFocusSchemeId == schemeId && !scheme.optBoolean("is_read_only", false)) {
             pendingTitleFocusSchemeId = null
             input.post {
+                if (!isUiActive() || !input.isAttachedToWindow) return@post
                 input.requestFocus()
                 input.selectAll()
                 input.post {
+                    if (!isUiActive() || !input.isAttachedToWindow) return@post
                     (getSystemService(Context.INPUT_METHOD_SERVICE) as? InputMethodManager)
                         ?.showSoftInput(input, InputMethodManager.SHOW_IMPLICIT)
                 }
@@ -334,77 +382,114 @@ import kotlin.math.roundToInt
 
         // iOS DailyFeedPane: a bottom-pinned feed of day sections — each one a
         // scheme editor with the date as its inline title — loading more
-        // history as you scroll up.
-        val list = MaxWidthLinearLayout(this, dp(760)).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(dp(10), dp(2), dp(10), dp(14))
-            setBackgroundColor(theme.bgApp)
-        }
+        // history as you scroll up. A ListView is intentional here: the history
+        // window can reach ten years, and a ScrollView would retain every full
+        // SchemeEditText/editor tree after enough upward paging.
         val days = dailyEntries()
         val selectedKey = selectedDate.toString()
         val todayKey = LocalDate.now().toString()
         val yesterdayKey = LocalDate.now().minusDays(1).toString()
         // Desktop/iOS feed rules: every day renders with its title, but empty
         // days only earn a section when they're today, yesterday, or selected.
-        val dayViews = LinkedHashMap<String, View>()
-        if (days.isEmpty()) {
-            list.addView(emptyState(L10n.t(this, "mobile.daily.not_ready_title"), L10n.t(this, "mobile.daily.not_ready_detail")))
-        } else {
-            days.forEach { day ->
-                val date = day.optString("date")
-                val keepWhenEmpty = date == selectedKey || date == todayKey || date == yesterdayKey
-                if (!keepWhenEmpty && isDailyEntryEmpty(day)) return@forEach
-                val view = dailyDayEditor(day)
-                dayViews[date] = view
-                list.addView(view, LinearLayout.LayoutParams(-1, -2).apply {
-                    setMargins(0, 0, 0, dp(6))
-                })
+        val feedDays = ArrayList<JSONObject>()
+        days.forEach { day ->
+            val date = day.optString("date")
+            val keepWhenEmpty = date == selectedKey || date == todayKey || date == yesterdayKey
+            if (keepWhenEmpty || !isDailyEntryEmpty(day)) feedDays.add(day)
+        }
+
+        val dailyList = ListView(this).apply {
+            tag = DAILY_VIEWPORT_TAG
+            divider = null
+            dividerHeight = 0
+            isVerticalScrollBarEnabled = false
+            overScrollMode = View.OVER_SCROLL_NEVER
+            setBackgroundColor(theme.bgApp)
+            setPadding(dp(10), dp(2), dp(10), dp(14))
+            clipToPadding = false
+        }
+        val dailyAdapter = object : BaseAdapter() {
+            override fun getCount(): Int = feedDays.size
+            override fun getItem(position: Int): JSONObject = feedDays[position]
+            override fun getItemId(position: Int): Long = position.toLong()
+            override fun getView(position: Int, recycled: View?, parent: ViewGroup): View {
+                // Editors own focus, image workers, and table hit regions, so a
+                // recycled editor cannot safely be rebound in place. ListView
+                // still virtualizes the expensive day sections; detached rows
+                // release their editor resources through onDetachedFromWindow.
+                return LinearLayout(this@renderDaily).apply {
+                    orientation = LinearLayout.VERTICAL
+                    setPadding(0, 0, 0, dp(6))
+                    addView(dailyDayEditor(feedDays[position]), LinearLayout.LayoutParams(-1, -2))
+                }
             }
         }
-        val scrollView = scroll(list)
-        var lastObservedScrollY = -1
-        scrollView.viewTreeObserver.addOnScrollChangedListener {
-            val y = scrollView.scrollY
-            // Crossing into the top band while scrolling up loads an older page
-            // (a real upward scroll, so short content can't auto-chain loads).
-            if (lastObservedScrollY > dp(48) && y <= dp(48) && y < lastObservedScrollY) {
-                dayViews.keys.firstOrNull()?.let { loadOlderDailyEntries(it) }
+        dailyList.adapter = dailyAdapter
+        var lastFirstVisible = -1
+        dailyList.setOnScrollListener(object : AbsListView.OnScrollListener {
+            override fun onScrollStateChanged(view: AbsListView?, scrollState: Int) = Unit
+
+            override fun onScroll(view: AbsListView?, firstVisibleItem: Int, visibleItemCount: Int, totalItemCount: Int) {
+                val firstDate = feedDays.getOrNull(firstVisibleItem)?.optString("date")
+                if (firstDate != null) {
+                    dailyFirstVisibleDate = firstDate
+                    dailyFirstVisibleTop = dailyList.getChildAt(0)?.top ?: dailyFirstVisibleTop
+                }
+                // A real upward crossing into the first row loads an older
+                // page. Initial layout also reports firstVisibleItem=0, but
+                // lastFirstVisible prevents that from auto-chaining requests.
+                if (firstVisibleItem == 0 && lastFirstVisible > 0) {
+                    feedDays.firstOrNull()?.optString("date")?.let(::loadOlderDailyEntries)
+                }
+                lastFirstVisible = firstVisibleItem
             }
-            lastObservedScrollY = y
-            dailyScrollY = y
+        })
+        val list = MaxWidthLinearLayout(this, dp(760)).apply {
+            orientation = LinearLayout.VERTICAL
+            setBackgroundColor(theme.bgApp)
+            if (feedDays.isEmpty()) {
+                addView(emptyState(L10n.t(this@renderDaily, "mobile.daily.not_ready_title"), L10n.t(this@renderDaily, "mobile.daily.not_ready_detail")))
+            } else {
+                addView(dailyList, LinearLayout.LayoutParams(-1, -1))
+            }
         }
         val resetScroll = dailyScrollDate != selectedKey
         dailyScrollDate = selectedKey
-        // Position the scroll BEFORE the first frame is painted (a one-shot
-        // pre-draw pass) rather than in post{} which runs after a draw at
-        // scrollY=0 — that post-draw correction is what made history loads visibly
-        // jump. Views are already laid out by pre-draw, so child tops are valid.
+        // Position the virtualized feed BEFORE the first frame is painted. A
+        // date/top anchor is stable across history prepends, unlike a raw pixel
+        // offset whose meaning changes when ListView recycles rows.
         val anchorDate = pendingDailyAnchorDate
         pendingDailyAnchorDate = null
-        scrollView.viewTreeObserver.addOnPreDrawListener(
+        dailyList.viewTreeObserver.addOnPreDrawListener(
             object : android.view.ViewTreeObserver.OnPreDrawListener {
                 override fun onPreDraw(): Boolean {
-                    scrollView.viewTreeObserver.removeOnPreDrawListener(this)
+                    dailyList.viewTreeObserver.removeOnPreDrawListener(this)
+                    if (feedDays.isEmpty()) return true
                     when {
-                        // After a history load, keep the previously-oldest day in
-                        // place instead of yanking back to the selected day.
-                        anchorDate != null && dayViews[anchorDate] != null ->
-                            scrollView.scrollTo(0, max(0, (dayViews[anchorDate]?.top ?: 0) - dp(4)))
+                        anchorDate != null -> {
+                            val anchorIndex = feedDays.indexOfFirst { it.optString("date") == anchorDate }
+                            if (anchorIndex >= 0) dailyList.setSelectionFromTop(anchorIndex, dp(4))
+                        }
                         resetScroll -> {
-                            val target = dayViews[selectedKey]
-                            if (target != null && target.bottom > scrollView.height) {
-                                scrollView.scrollTo(0, max(0, target.bottom - scrollView.height + dp(8)))
-                            } else if (target == null) {
-                                scrollView.fullScroll(View.FOCUS_DOWN)
+                            val targetIndex = feedDays.indexOfFirst { it.optString("date") == selectedKey }
+                            dailyList.setSelection(if (targetIndex >= 0) targetIndex else feedDays.lastIndex)
+                        }
+                        else -> {
+                            val restoreIndex = dailyFirstVisibleDate?.let { date ->
+                                feedDays.indexOfFirst { it.optString("date") == date }
+                            } ?: -1
+                            if (restoreIndex >= 0) {
+                                dailyList.setSelectionFromTop(restoreIndex, dailyFirstVisibleTop)
+                            } else {
+                                dailyList.setSelection(feedDays.lastIndex)
                             }
                         }
-                        else -> scrollView.scrollTo(0, dailyScrollY)
                     }
                     return true
                 }
             }
         )
-        root.addView(scrollView, LinearLayout.LayoutParams(-1, 0, 1f))
+        root.addView(list, LinearLayout.LayoutParams(-1, 0, 1f))
         root.addView(editorFormatBar(), LinearLayout.LayoutParams(-1, dp(38)))
         return root
     }
@@ -454,6 +539,7 @@ import kotlin.math.roundToInt
                 setPadding(dp(14), 0, dp(14), 0)
             }, LinearLayout.LayoutParams(-1, dp(44)))
             val editor = SchemeEditText(this@dailyDayEditor).apply {
+                deferInitialStyling = true
                 setText(renderDocument(originalLines))
                 placeCursorAtDocumentEnd(this)
                 tag = originalLines
@@ -494,9 +580,12 @@ import kotlin.math.roundToInt
                         showPhoneDockAfterEditing()
                         if (!suppressEditorBlurCommit) {
                             commitSchemeDocument(schemeId, this, rerender = false)
+                        } else {
+                            flushDeferredRenderAfterEditorBlur()
                         }
                     }
                 }
+                finishInitialStyling()
             }
             if (!selected) {
                 // Unselected days select on tap (like iOS); editing starts once
@@ -507,14 +596,15 @@ import kotlin.math.roundToInt
                     runCatching { LocalDate.parse(date) }.getOrNull()?.let {
                         selectedDate = it
                         pendingDailyAutoFocusDate = date
-                        loadSnapshot()
-                        render()
+                        requestRender()
+                        refreshSnapshotAsync()
                     }
                 }
                 setOnClickListener(select)
                 editor.setOnClickListener(select)
             } else {
                 editor.post {
+                    if (!isUiActive() || !editor.isAttachedToWindow) return@post
                     placeCursorAtDocumentEnd(editor)
                     if (pendingDailyAutoFocusDate == date) {
                         pendingDailyAutoFocusDate = null
@@ -540,7 +630,7 @@ import kotlin.math.roundToInt
             background = rounded(theme.bgModal, dp(7), theme.borderOverlay)
             setPadding(dp(12), 0, dp(12), 0)
         }
-        val results = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        val results = LayoutTransactionLinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         // The search field and its way out share one row. The exit is not
         // conditional on layout: a wide layout used to have no explicit way back
         // at all, leaving system back as the only exit, and it matches the "x"
@@ -578,40 +668,94 @@ import kotlin.math.roundToInt
                 false
             }
         }
-        query.setOnFocusChangeListener { _, hasFocus -> if (!hasFocus) searchNow() }
+        query.setOnFocusChangeListener { _, hasFocus ->
+            if (!hasFocus) {
+                searchNow()
+                flushDeferredRenderAfterEditorBlur()
+            }
+        }
         searchNow()
         return root
     }
 
     internal fun MainActivity.renderSearchResults(results: LinearLayout, query: String) {
-        results.removeAllViews()
-        if (query.isBlank()) {
-            // Same prompt as iOS shows the moment its field takes focus.
-            results.addView(emptyState(L10n.t(this, "mobile.search.screen_title"), L10n.t(this, "mobile.search.empty_subtitle")))
+        val normalizedQuery = query.trim()
+        if (normalizedQuery.isNotBlank() &&
+            isDuplicateSearchRequest(searchLastQuery, searchLastSnapshot, normalizedQuery, snapshot)
+        ) {
             return
         }
-        try {
-            val hits = bridge.requestArray(obj("type" to "search", "query" to query))
+        val serial = ++searchRequestSerial
+        searchRequestRunnable?.let(syncPollHandler::removeCallbacks)
+        if (normalizedQuery.isBlank()) {
+            searchLastQuery = null
+            searchLastSnapshot = null
+            results.batchLayoutChanges {
+                results.removeAllViews()
+                // Same prompt as iOS shows the moment its field takes focus.
+                results.addView(emptyState(L10n.t(this, "mobile.search.screen_title"), L10n.t(this, "mobile.search.empty_subtitle")))
+            }
+            return
+        }
+        searchLastQuery = normalizedQuery
+        searchLastSnapshot = snapshot
+        // Preserve the current rows while the new query is pending. This avoids
+        // a blank/rebuild flash on every keystroke; the first query gets a small
+        // local placeholder instead.
+        if (results.childCount == 0) {
+            results.addView(emptyState(L10n.t(this, "mobile.search.screen_title"), L10n.t(this, "mobile.search.searching")))
+        }
+        val request = Runnable {
+            runCatching {
+                coreExecutor.execute {
+                    val response = runCatching { bridge.requestArray(obj("type" to "search", "query" to normalizedQuery)) }
+                    runOnUiThread {
+                        if (serial != searchRequestSerial || !results.isAttachedToWindow || !isUiActive()) return@runOnUiThread
+                        response.onSuccess { hits -> renderSearchHitRows(results, normalizedQuery, hits) }
+                            .onFailure { error ->
+                                searchLastQuery = null
+                                searchLastSnapshot = null
+                                showError(L10n.t(this, "mobile.editor.could_not_save_edits"), error.message)
+                            }
+                    }
+                }
+            }.onFailure { error ->
+                if (serial == searchRequestSerial && isUiActive()) {
+                    searchLastQuery = null
+                    searchLastSnapshot = null
+                    showError(L10n.t(this, "mobile.editor.could_not_save_edits"), error.message)
+                }
+            }
+        }
+        searchRequestRunnable = request
+        // Keep the debounce on the Activity-owned handler so onDestroy can
+        // cancel it even after the search view has been detached.
+        syncPollHandler.postDelayed(request, 120L)
+    }
+
+    private fun MainActivity.renderSearchHitRows(results: LinearLayout, query: String, hits: JSONArray) {
+        results.batchLayoutChanges {
+            results.removeAllViews()
             if (hits.length() == 0) {
                 results.addView(emptyState(L10n.t(this, "search.no_results"), L10n.t(this, "mobile.search.no_results_detail", mapOf("query" to query))))
-                return
+                return@batchLayoutChanges
             }
             hits.forEachIndexedObject { idx, hit ->
                 val row = LinearLayout(this).apply {
                     orientation = LinearLayout.HORIZONTAL
                     background = rounded(if (idx % 2 == 1) theme.rowAlt else Color.TRANSPARENT, dp(3))
-                    addView(View(this@renderSearchResults).apply { setBackgroundColor(schemeColor(hit.optInt("color_index"))) }, LinearLayout.LayoutParams(dp(2), -1).apply {
+                    addView(View(this@renderSearchHitRows).apply { setBackgroundColor(schemeColor(hit.optInt("color_index"))) }, LinearLayout.LayoutParams(dp(2), -1).apply {
                         setMargins(dp(4), dp(8), dp(6), dp(8))
                     })
-                    addView(LinearLayout(this@renderSearchResults).apply {
+                    addView(LinearLayout(this@renderSearchHitRows).apply {
                         orientation = LinearLayout.VERTICAL
                         setPadding(0, dp(7), dp(8), dp(7))
-                        addView(LinearLayout(this@renderSearchResults).apply {
+                        addView(LinearLayout(this@renderSearchHitRows).apply {
                             orientation = LinearLayout.HORIZONTAL
                             addView(text(hit.optString("scheme_name").ifEmpty { hit.optString("target_kind") }, schemeColor(hit.optInt("color_index")), 11f, true), LinearLayout.LayoutParams(0, -2, 1f))
                             addView(text(hit.optString("detail"), theme.textSoft, 10f, true))
                         })
-                        addView(text(hit.optString("title"), theme.textPrimary, 14f, false))
+                        addView(text(searchPreviewText(hit.optString("title")), theme.textPrimary, 14f, false))
                     }, LinearLayout.LayoutParams(0, -2, 1f))
                     hit.optString("scheme_id").takeIf { it.isNotEmpty() }?.let { schemeId ->
                         setOnClickListener { openScheme(schemeId) }
@@ -619,8 +763,6 @@ import kotlin.math.roundToInt
                 }
                 results.addView(row, rowParams())
             }
-        } catch (error: RuntimeException) {
-            showError(L10n.t(this, "mobile.editor.could_not_save_edits"), error.message)
         }
     }
 
@@ -651,6 +793,10 @@ import kotlin.math.roundToInt
                 override fun onNothingSelected(parent: AdapterView<*>?) = Unit
                 override fun onItemSelected(parent: AdapterView<*>?, view: View?, position: Int, id: Long) {
                     if (first) { first = false; return }
+                    getSharedPreferences("knotq", Context.MODE_PRIVATE)
+                        .edit()
+                        .putString(THEME_MODE_PREF, themeOptions[position])
+                        .apply()
                     mutate(obj("type" to "set_theme_mode", "theme_mode" to themeOptions[position]))
                 }
             }
@@ -670,6 +816,7 @@ import kotlin.math.roundToInt
         root.addView(settingsGroup(
             settingsLinkRow(L10n.t(this, "settings.timing.title")) {
                 settingsShowingTiming = true
+                queueContentTransition(ContentTransitionDirection.FORWARD)
                 render()
             }
         ))
@@ -684,6 +831,7 @@ import kotlin.math.roundToInt
                     L10n.t(this, "mobile.settings.google_accounts_connected", mapOf("count" to googleAccountCount.toString()))
                 ) {
                     settingsShowingGoogle = true
+                    queueContentTransition(ContentTransitionDirection.FORWARD)
                     render()
                 }
             ))
@@ -717,6 +865,7 @@ import kotlin.math.roundToInt
         root.addView(settingsGroup(
             settingsLinkRow(L10n.t(this, "mobile.settings.archived_items"), schemes.length().toString()) {
                 settingsShowingArchive = true
+                queueContentTransition(ContentTransitionDirection.FORWARD)
                 render()
             }
         ))
@@ -773,6 +922,7 @@ import kotlin.math.roundToInt
             background = underline(theme.bgApp)
             addView(iconChipImage(R.drawable.ic_knotq_chevron_left_24, L10n.t(this@renderTimingSettingsPage, "common.back"), iconSize = 20) {
                 settingsShowingTiming = false
+                queueContentTransition(ContentTransitionDirection.BACKWARD)
                 render()
             })
             addView(text(L10n.t(this@renderTimingSettingsPage, "settings.timing.title"), theme.textPrimary, 16f, true).apply {
@@ -908,7 +1058,7 @@ import kotlin.math.roundToInt
                 addView(LinearLayout(this@syncSettingsCard).apply {
                     orientation = LinearLayout.HORIZONTAL
                     gravity = Gravity.TOP
-                    addView(brandMark(34), LinearLayout.LayoutParams(dp(34), dp(34)).apply {
+                    addView(syncBrandMark(34), LinearLayout.LayoutParams(dp(34), dp(34)).apply {
                         setMargins(0, dp(2), dp(9), 0)
                     })
                     addView(LinearLayout(this@syncSettingsCard).apply {
@@ -968,7 +1118,7 @@ import kotlin.math.roundToInt
                 orientation = LinearLayout.HORIZONTAL
                 gravity = Gravity.TOP
                 // iOS card header: brand logo beside the title.
-                addView(brandMark(34), LinearLayout.LayoutParams(dp(34), dp(34)).apply {
+                addView(syncBrandMark(34), LinearLayout.LayoutParams(dp(34), dp(34)).apply {
                     setMargins(0, dp(2), dp(9), 0)
                 })
                 addView(LinearLayout(this@syncSettingsCard).apply {
@@ -1047,37 +1197,55 @@ import kotlin.math.roundToInt
     }
 
     internal fun MainActivity.addNode(parent: LinearLayout, node: JSONObject, depth: Int, spacious: Boolean = false) {
-        val kind = node.optString("kind")
-        if (kind == "folder") {
-            parent.addView(folderRow(node, depth, spacious), if (spacious) LinearLayout.LayoutParams(-1, dp(30)) else rowParams())
-            node.optJSONArray("children")?.forEachObject { addNode(parent, it, depth + 1, spacious) }
-            return
-        }
-        val selected = selectedSchemeId == node.optString("id")
-        val rowHeight = if (spacious) dp(30) else dp(22)
-        val slot = if (spacious) 18 else 16
-        val row = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-            setPadding(dp((if (spacious) 8 else 6) + depth * if (spacious) 10 else 8), 0, dp(7), 0)
-            background = rounded(if (selected) theme.rowSelected else Color.TRANSPARENT, dp(4))
-            // Same fixed leading slot as folder rows so squares and folder
-            // icons share a center axis.
-            addView(FrameLayout(this@addNode).apply {
-                addView(View(this@addNode).apply {
-                    background = rounded(schemeColor(node.optInt("color_index")), dp(3))
-                }, FrameLayout.LayoutParams(dp(if (spacious) 10 else 9), dp(if (spacious) 10 else 9), Gravity.CENTER))
-            }, LinearLayout.LayoutParams(dp(slot), dp(slot)))
-            addView(text(node.optString("name"), if (selected) theme.textPrimary else theme.textDim, if (spacious) 13f else 12f, false).apply { maxLines = 1 }, LinearLayout.LayoutParams(0, -1, 1f).apply {
-                setMargins(dp(if (spacious) 7 else 5), 0, dp(4), 0)
-            })
-            setOnClickListener { openScheme(node.optString("id")) }
-            setOnLongClickListener {
-                showSchemeActions(node)
-                true
+        val visible = flattenVisibleTree(
+            roots = listOf(node),
+            collapsedIds = collapsedFolderIds,
+            idOf = { it.optString("id") },
+            isFolder = { it.optString("kind") == "folder" },
+            childrenOf = { child ->
+                val children = child.optJSONArray("children") ?: return@flattenVisibleTree emptyList()
+                buildList(children.length()) {
+                    for (index in 0 until children.length()) {
+                        children.optJSONObject(index)?.let(::add)
+                    }
+                }
+            },
+        )
+        visible.forEach { (visibleNode, relativeDepth) ->
+            val visibleDepth = depth + relativeDepth
+            if (visibleNode.optString("kind") == "folder") {
+                parent.addView(
+                    folderRow(visibleNode, visibleDepth, spacious),
+                    if (spacious) LinearLayout.LayoutParams(-1, dp(30)) else rowParams(),
+                )
+                return@forEach
             }
+            val selected = selectedSchemeId == visibleNode.optString("id")
+            val rowHeight = if (spacious) dp(30) else dp(22)
+            val slot = if (spacious) 18 else 16
+            val row = LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+                setPadding(dp((if (spacious) 8 else 6) + visibleDepth * if (spacious) 10 else 8), 0, dp(7), 0)
+                background = rounded(if (selected) theme.rowSelected else Color.TRANSPARENT, dp(4))
+                // Same fixed leading slot as folder rows so squares and folder
+                // icons share a center axis.
+                addView(FrameLayout(this@addNode).apply {
+                    addView(View(this@addNode).apply {
+                        background = rounded(schemeColor(visibleNode.optInt("color_index")), dp(3))
+                    }, FrameLayout.LayoutParams(dp(if (spacious) 10 else 9), dp(if (spacious) 10 else 9), Gravity.CENTER))
+                }, LinearLayout.LayoutParams(dp(slot), dp(slot)))
+                addView(text(visibleNode.optString("name"), if (selected) theme.textPrimary else theme.textDim, if (spacious) 13f else 12f, false).apply { maxLines = 1 }, LinearLayout.LayoutParams(0, -1, 1f).apply {
+                    setMargins(dp(if (spacious) 7 else 5), 0, dp(4), 0)
+                })
+                setOnClickListener { openScheme(visibleNode.optString("id")) }
+                setOnLongClickListener {
+                    showSchemeActions(visibleNode)
+                    true
+                }
+            }
+            parent.addView(row, LinearLayout.LayoutParams(-1, rowHeight))
         }
-        parent.addView(row, LinearLayout.LayoutParams(-1, rowHeight))
     }
 
     internal fun MainActivity.folderRow(node: JSONObject, depth: Int, spacious: Boolean = false): View {
@@ -1097,6 +1265,13 @@ import kotlin.math.roundToInt
             }, LinearLayout.LayoutParams(0, -1, 1f).apply {
                 setMargins(dp(if (spacious) 7 else 5), 0, 0, 0)
             })
+            setOnClickListener {
+                val id = node.optString("id")
+                if (id.isNotBlank()) {
+                    if (!collapsedFolderIds.add(id)) collapsedFolderIds.remove(id)
+                    render()
+                }
+            }
             setOnLongClickListener {
                 showFolderActions(node)
                 true
@@ -1127,6 +1302,7 @@ import kotlin.math.roundToInt
                         if (!hasFocus && text.toString() != item.optString("text")) {
                             mutate(obj("type" to "update_item_text", "scheme_id" to schemeId, "item_id" to item.optString("id"), "text" to text.toString().trim()))
                         }
+                        if (!hasFocus) flushDeferredRenderAfterEditorBlur()
                     }
                 }
                 addView(input, LinearLayout.LayoutParams(-1, -2))

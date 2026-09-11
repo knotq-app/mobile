@@ -443,10 +443,10 @@ interface MobileCore {
   boolean apply_notification_action(string action_id, string scheme_id, string item_id, string occurrence_json, string trigger_at);
 
   [Throws=MobileError]
-  boolean sync_once(string api_base, string bearer_token);
+  boolean sync_once(string api_base, string bearer_token, string account_user_id);
 
   [Throws=MobileError]
-  boolean force_sync_once(string api_base, string bearer_token);
+  boolean force_sync_once(string api_base, string bearer_token, string account_user_id);
 
   [Throws=MobileError]
   string? take_sync_notice();

@@ -14,6 +14,7 @@ struct KnotQMobileApp: App {
         return true
     }()
     @StateObject private var model = AppModel.shared
+    @State private var hasHandledInitialActivation = false
     @Environment(\.scenePhase) private var scenePhase
 
     var body: some Scene {
@@ -31,6 +32,8 @@ struct KnotQMobileApp: App {
                 .onChange(of: scenePhase) { _, phase in
                     switch phase {
                     case .active:
+                        let isInitialActivation = !hasHandledInitialActivation
+                        hasHandledInitialActivation = true
                         // Advance the daily/home "today" if the day rolled over while
                         // the app was backgrounded, so it isn't stuck on yesterday.
                         model.handleDayRolloverIfNeeded()
@@ -49,7 +52,14 @@ struct KnotQMobileApp: App {
                         // the access token to expire. Cold launch and sign-in are covered
                         // by startSyncPolling's own refresh.
                         #if ACCOUNTS_ENABLED
-                        Task { await model.resumeForegroundSync() }
+                        // startSyncPolling() already performs the initial entitlement
+                        // refresh and sync from AppModel.init. Do not immediately run a
+                        // second status refresh + pull when SwiftUI reports the first
+                        // scene activation; that duplicate was adding several seconds to
+                        // cold launch and could queue behind the first Rust sync.
+                        if !isInitialActivation {
+                            Task { await model.resumeForegroundSync() }
+                        }
                         #endif
                         MobileReviewPrompt.maybeRequestReview()
                     case .inactive:

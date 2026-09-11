@@ -12,6 +12,8 @@ From this repo:
 
 ```sh
 cargo test -p knotq-mobile-core --features accounts
+# The production mobile WebSocket path against a local Wrangler worker.
+./.github/scripts/run-mobile-ws-integration.sh
 # the disk-backed two-device fuzz + lazy-daily lifecycle fuzz + recovery tests
 KNOTQ_FUZZ_SEEDS=1 KNOTQ_FUZZ_STEPS=1024 \
   cargo test -p knotq-mobile-core --features accounts \

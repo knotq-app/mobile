@@ -112,6 +112,9 @@ internal data class ChromeDrawLine(
     val heading: Boolean,
     val extraHeight: Int,
     val collapseText: Boolean,
+    // Computed while the cached chrome list is built. Keeping it here avoids
+    // walking all preceding lines for every numbered line during onDraw.
+    val numberedOrdinal: Int = 1,
 )
 
 internal data class ChromeLine(
@@ -138,6 +141,32 @@ internal fun parseChromeLine(raw: String): ChromeLine {
         rest.startsWith("- ") || rest.startsWith("* ") -> ChromeLine("bullet", indent, false)
         numberedPrefix.find(rest) != null -> ChromeLine("numbered", indent, false)
         else -> ChromeLine("blank", indent, false)
+    }
+}
+
+/**
+ * Incremental form of the editor's numbered-sibling rule. A deeper line is
+ * transparent, while a same-level non-numbered line or a shallower line ends
+ * the run. The editor keeps one tracker per cached chrome build instead of
+ * rescanning all preceding lines during every draw.
+ */
+internal class ChromeOrdinalTracker {
+    private val lastRelevantIndent = IntArray(9) { -1 }
+    private val lastOrdinal = IntArray(9)
+
+    fun next(line: ChromeLine): Int {
+        val indent = line.indent.coerceIn(0, 8)
+        val numbered = line.marker == "numbered"
+        val ordinal = if (numbered && lastRelevantIndent[indent] == indent && lastOrdinal[indent] > 0) {
+            lastOrdinal[indent] + 1
+        } else {
+            1
+        }
+        for (level in indent..8) {
+            lastRelevantIndent[level] = indent
+            lastOrdinal[level] = if (level == indent && numbered) ordinal else 0
+        }
+        return ordinal
     }
 }
 
@@ -406,4 +435,3 @@ internal fun pinBlockIdsToBlockLines(
         }
     }
 }
-

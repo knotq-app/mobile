@@ -19,10 +19,38 @@ if [[ -z "${NDK:-}" || ! -d "$NDK" ]]; then
   exit 1
 fi
 
-if [[ -d "$NDK/toolchains/llvm/prebuilt/darwin-arm64" ]]; then
-  HOST_TAG="darwin-arm64"
-else
-  HOST_TAG="darwin-x86_64"
+# Android CI runs on Linux while local development is commonly macOS. Resolve
+# the NDK host directory from the platform and verify it exists instead of
+# silently selecting a Darwin toolchain on Ubuntu.
+case "$(uname -s)" in
+  Darwin)
+    case "$(uname -m)" in
+      arm64) HOST_CANDIDATES=("darwin-arm64" "darwin-x86_64") ;;
+      *) HOST_CANDIDATES=("darwin-x86_64" "darwin-arm64") ;;
+    esac
+    ;;
+  Linux)
+    case "$(uname -m)" in
+      aarch64|arm64) HOST_CANDIDATES=("linux-aarch64" "linux-x86_64") ;;
+      *) HOST_CANDIDATES=("linux-x86_64" "linux-aarch64") ;;
+    esac
+    ;;
+  *)
+    echo "Unsupported host platform for Android NDK: $(uname -s) $(uname -m)" >&2
+    exit 1
+    ;;
+esac
+
+HOST_TAG=""
+for CANDIDATE in "${HOST_CANDIDATES[@]}"; do
+  if [[ -d "$NDK/toolchains/llvm/prebuilt/$CANDIDATE" ]]; then
+    HOST_TAG="$CANDIDATE"
+    break
+  fi
+done
+if [[ -z "$HOST_TAG" ]]; then
+  echo "Android NDK LLVM toolchain not found under $NDK/toolchains/llvm/prebuilt" >&2
+  exit 1
 fi
 
 TOOLCHAIN="$NDK/toolchains/llvm/prebuilt/$HOST_TAG/bin"
@@ -70,8 +98,47 @@ cargo run --manifest-path "$MOBILE_ROOT/Cargo.toml" -p knotq-mobile-core --featu
   --out-dir "$KOTLIN_DIR" \
   --no-format
 
-ABIS=("arm64-v8a" "armeabi-v7a" "x86" "x86_64")
-TARGETS=("aarch64-linux-android" "armv7-linux-androideabi" "i686-linux-android" "x86_64-linux-android")
+# UniFFI currently emits trailing spaces on a few generated declarations. Keep
+# generated sources reproducible across macOS/Linux so a successful build does
+# not dirty the worktree or hide a real generated API change in whitespace.
+find "$KOTLIN_DIR" -type f -name 'knotq_mobile_core.kt' -exec perl -pi -e 's/[ \t]+$//' {} +
+
+ALL_ABIS=("arm64-v8a" "armeabi-v7a" "x86" "x86_64")
+ALL_TARGETS=("aarch64-linux-android" "armv7-linux-androideabi" "i686-linux-android" "x86_64-linux-android")
+
+if [[ "$MODE" == "debug" && -n "${KNOTQ_DEBUG_ABIS:-}" ]]; then
+  IFS=',' read -r -a REQUESTED_ABIS <<< "$KNOTQ_DEBUG_ABIS"
+  ABIS=()
+  TARGETS=()
+  for REQUESTED_ABI in "${REQUESTED_ABIS[@]}"; do
+    REQUESTED_ABI="${REQUESTED_ABI//[[:space:]]/}"
+    case "$REQUESTED_ABI" in
+      arm64-v8a)
+        ABIS+=("arm64-v8a")
+        TARGETS+=("aarch64-linux-android")
+        ;;
+      armeabi-v7a)
+        ABIS+=("armeabi-v7a")
+        TARGETS+=("armv7-linux-androideabi")
+        ;;
+      x86)
+        ABIS+=("x86")
+        TARGETS+=("i686-linux-android")
+        ;;
+      x86_64)
+        ABIS+=("x86_64")
+        TARGETS+=("x86_64-linux-android")
+        ;;
+      *)
+        echo "Unknown KNOTQ_DEBUG_ABIS entry: $REQUESTED_ABI" >&2
+        exit 1
+        ;;
+    esac
+  done
+else
+  ABIS=("${ALL_ABIS[@]}")
+  TARGETS=("${ALL_TARGETS[@]}")
+fi
 
 for INDEX in "${!ABIS[@]}"; do
   ABI="${ABIS[$INDEX]}"
@@ -81,9 +148,12 @@ for INDEX in "${!ABIS[@]}"; do
     cargo build --manifest-path "$MOBILE_ROOT/Cargo.toml" -p knotq-mobile-core --target "$TARGET" --release --features accounts
     PROFILE_DIR="release"
   else
-    # Debug/dev builds also include full sign-in/sync behavior.
-    cargo build --manifest-path "$MOBILE_ROOT/Cargo.toml" -p knotq-mobile-core --target "$TARGET" --features accounts
-    PROFILE_DIR="debug"
+    # Android debug builds also include full sign-in/sync behavior. Use a
+    # lightly optimized profile rather than Cargo's unoptimized `dev` profile;
+    # the latter makes emulator install/JNA startup needlessly enormous while
+    # still retaining assertions and useful symbol names.
+    cargo build --manifest-path "$MOBILE_ROOT/Cargo.toml" -p knotq-mobile-core --target "$TARGET" --profile android-debug --features accounts
+    PROFILE_DIR="android-debug"
   fi
   mkdir -p "$ANDROID_DIR/$ABI"
   cp "$MOBILE_ROOT/target/$TARGET/$PROFILE_DIR/libknotq_mobile_core.so" "$ANDROID_DIR/$ABI/"

@@ -4,7 +4,6 @@ import android.content.Context
 import android.content.SharedPreferences
 import androidx.work.ExistingWorkPolicy
 import androidx.work.OneTimeWorkRequest
-import androidx.work.WorkManager
 import androidx.work.Worker
 import androidx.work.WorkerParameters
 import com.enigmadux.knotq.ffi.MobileException
@@ -30,7 +29,7 @@ internal class BackgroundSyncWorker(
     override fun doWork(): Result {
         // Accounts/sync are compiled out of release builds — no background sync.
         if (!BuildConfig.ACCOUNTS_ENABLED) return Result.success()
-        if (MainActivity.isInForeground) return Result.success()
+        if (MainActivity.hasForegroundActivity() || MainActivity.hasBridgeStartupInProgress()) return Result.success()
         val prefs = applicationContext.getSharedPreferences("knotq", Context.MODE_PRIVATE)
         val raw = prefs.getString(SYNC_SESSION_PREF, null) ?: return Result.success()
         val session = runCatching { JSONObject(raw) }.getOrNull() ?: return Result.success()
@@ -38,7 +37,9 @@ internal class BackgroundSyncWorker(
         val refreshToken = session.optString("refresh_token")
         if (refreshToken.isEmpty()) return Result.success()
         val apiBase = session.optString("api_base").trim().trimEnd('/')
-        if (apiBase.isEmpty()) return Result.success()
+        if (!isSecureSyncApiBase(apiBase)) return Result.success()
+        val accountUserId = session.optString("user_id")
+        if (accountUserId.isEmpty()) return Result.success()
 
         var bearerToken = session.optString("bearer_token")
         if (tokenNeedsRefresh(session.optString("expires_at"))) {
@@ -62,12 +63,30 @@ internal class BackgroundSyncWorker(
         }
 
         val shared = MainActivity.sharedBridge
+        // A replacement Activity may already be published while the old one
+        // is still draining its closeAfter queue. Do not pair that old bridge
+        // with the replacement's executor, and do not open a temporary core
+        // while the old handle is still process-wide.
+        if (shared != null && MainActivity.sharedBridgeOwner() == null) return Result.retry()
         val bridge = shared ?: runCatching { RustBridge(applicationContext) }.getOrNull() ?: return Result.retry()
+        // If the Activity owns this bridge, use its queue even while stopped.
+        // onStop may still be flushing a pending edit, and calling the shared
+        // bridge directly from WorkManager can otherwise interleave a pull,
+        // notification read, or token registration with that teardown.
+        val liveActivity = MainActivity.sharedBridgeOwner()
+        fun <T> coreCall(block: () -> T): T =
+            if (shared === bridge && liveActivity != null) {
+                liveActivity.coreExecutor.call(block)
+            } else {
+                block()
+            }
         return try {
             // Re-apply the FCM token so a device that registered (or rotated its
             // token) while backgrounded gets registered with the backend on this
             // sync. Idempotent — the core dedupes by token.
-            PushRegistration.stored(applicationContext)?.let { PushRegistration.apply(bridge, it) }
+            PushRegistration.stored(applicationContext)?.let { token ->
+                coreCall { PushRegistration.apply(bridge, token) }
+            }
             // One reactive auth retry. The proactive refresh above only fires when our
             // local expiry check says the token is near expiry; if the backend refuses
             // the bearer anyway (clock skew, an early server-side revoke, or a missed
@@ -78,17 +97,20 @@ internal class BackgroundSyncWorker(
             // A background run is usually here because a peer pushed (FCM wake /
             // onStop flush) — flag it so the core's idle-sync coalescer can't
             // skip the pull as "synced moments ago".
-            runCatching { bridge.request(JSONObject().put("type", "note_remote_changed")) }
+            runCatching { coreCall { bridge.request(JSONObject().put("type", "note_remote_changed")) } }
             var triedAuthRefresh = false
             var pulledRemoteChange = false
             while (true) {
                 try {
-                    pulledRemoteChange = bridge.request(
-                        JSONObject()
-                            .put("type", "sync_once")
-                            .put("api_base", apiBase)
-                            .put("bearer_token", bearerToken)
-                    ).optBoolean("changed", false)
+                    pulledRemoteChange = coreCall {
+                        bridge.request(
+                            JSONObject()
+                                .put("type", "sync_once")
+                                .put("api_base", apiBase)
+                                .put("bearer_token", bearerToken)
+                                .put("account_user_id", accountUserId)
+                        ).optBoolean("changed", false)
+                    }
                     break
                 } catch (error: MobileException) {
                     if (triedAuthRefresh || !isAuthRejection(error)) return Result.retry()
@@ -113,7 +135,7 @@ internal class BackgroundSyncWorker(
             runCatching {
                 MobileNotificationScheduler.reschedule(
                     applicationContext,
-                    bridge.requestArray(JSONObject().put("type", "pending_notifications"))
+                    coreCall { bridge.requestArray(JSONObject().put("type", "pending_notifications")) }
                 )
                 // And tear down banners for events that have since ended or
                 // occurrences a peer completed (e.g. "mark done" on a desktop):
@@ -121,7 +143,7 @@ internal class BackgroundSyncWorker(
                 // stale banner lingers in the tray until the app is next opened.
                 MobileNotificationScheduler.clearStale(
                     applicationContext,
-                    bridge.requestArray(JSONObject().put("type", "delivered_notifications_to_clear"))
+                    coreCall { bridge.requestArray(JSONObject().put("type", "delivered_notifications_to_clear")) }
                 )
             }
             if (pulledRemoteChange) {
@@ -192,7 +214,7 @@ internal class BackgroundSyncWorker(
                 isTerminalRefreshErrorCode(refreshApiErrorCode(connection)) -> RefreshOutcome.SessionDead
                 status !in 200..299 -> RefreshOutcome.Transient
                 else -> {
-                    val raw = connection.inputStream.bufferedReader().use { it.readText() }
+                    val raw = connection.inputStream.use { it.readUtf8Capped() }
                     RefreshOutcome.Rotated(JSONObject(raw))
                 }
             }
@@ -215,7 +237,6 @@ internal fun enqueueOneTimeSync(context: Context) {
     if (!BuildConfig.ACCOUNTS_ENABLED) return
     runCatching {
         val request = OneTimeWorkRequest.Builder(BackgroundSyncWorker::class.java).build()
-        WorkManager.getInstance(context)
-            .enqueueUniqueWork("knotq-push-sync", ExistingWorkPolicy.KEEP, request)
+        KnotQWorkManager.enqueueUnique(context, "knotq-push-sync", ExistingWorkPolicy.KEEP, request)
     }
 }

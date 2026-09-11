@@ -9,10 +9,15 @@ impl MobileCoreInner {
         week_offset: i32,
         daily_history_days: i64,
     ) -> Result<MobileSnapshot> {
+        // Derive every time-sensitive section from one instant. Apart from
+        // avoiding repeated clock reads on the snapshot hot path, this keeps an
+        // event that ends at a boundary from being considered overdue by one
+        // section and still upcoming by another.
+        let now = Utc::now();
         // Mark elapsed event occurrences complete before reading, mirroring the
         // desktop's background sweep. Uses the real current instant (not `today`)
         // and is best-effort: a transient save failure must not block rendering.
-        if let Err(error) = self.complete_past_events(Utc::now()) {
+        if let Err(error) = self.complete_past_events(now) {
             eprintln!("knotq: deferring past-event completion: {error:#}");
         }
         let daily_start = today - Duration::days(daily_history_days);
@@ -69,10 +74,9 @@ impl MobileCoreInner {
             .collect();
 
         self.ensure_indexed_workspace();
-        let indexed = self
-            .indexed_workspace
-            .as_ref()
-            .expect("index cache was just initialized");
+        let Some(indexed) = self.indexed_workspace.as_ref() else {
+            return Err(anyhow!("index cache could not be initialized"));
+        };
         let range = knotq_date_util::DateRange {
             start: local_midnight_utc(query_start)?,
             end: local_midnight_utc(week_end)?,
@@ -86,7 +90,7 @@ impl MobileCoreInner {
         let days = mobile_calendar_days(week_start, 8, occurrences);
         let upcoming = mobile_upcoming(
             indexed,
-            Utc::now(),
+            now,
             self.settings.upcoming_display,
             MOBILE_UPCOMING_QUERY_LIMIT,
         )
@@ -94,7 +98,6 @@ impl MobileCoreInner {
         .map(|context| MobileOccurrence::from_context(&self.workspace, context))
         .collect();
         let retained = &self.retained_completed;
-        let now = Utc::now();
         let overdue = indexed
             .calendar_query()
             .overdue_retaining(now, |event| {
@@ -168,10 +171,9 @@ impl MobileCoreInner {
         self.load_daily_queue_calendar_range(grid_start, grid_end)?;
 
         self.ensure_indexed_workspace();
-        let indexed = self
-            .indexed_workspace
-            .as_ref()
-            .expect("index cache was just initialized");
+        let Some(indexed) = self.indexed_workspace.as_ref() else {
+            return Err(anyhow!("index cache could not be initialized"));
+        };
         let range = knotq_date_util::DateRange {
             start: local_midnight_utc(grid_start)?,
             end: local_midnight_utc(grid_end)?,
@@ -325,10 +327,9 @@ impl MobileCoreInner {
     pub(crate) fn search(&mut self, query: &str) -> Result<Vec<MobileSearchHit>> {
         let time_format = self.settings.time_format;
         self.ensure_indexed_workspace();
-        let indexed = self
-            .indexed_workspace
-            .as_ref()
-            .expect("index cache was just initialized");
+        let Some(indexed) = self.indexed_workspace.as_ref() else {
+            return Err(anyhow!("index cache could not be initialized"));
+        };
         let hits = indexed
             .search_query(
                 time_format,

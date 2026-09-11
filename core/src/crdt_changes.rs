@@ -1,4 +1,5 @@
 use knotq_commands::Command;
+use knotq_model::{Item, Workspace};
 use knotq_sync::WorkspaceCrdtChangeSet;
 
 // Maps a domain command to the set of CRDT documents it touches, so the mobile
@@ -50,6 +51,42 @@ pub(crate) fn mobile_command_requires_background_refresh(command: &Command) -> b
             .any(mobile_command_requires_background_refresh),
         _ => false,
     }
+}
+
+/// Whether applying `command` can change the notification schedule hash. Plain
+/// prose edits to procedure/undated lines do not; avoiding a full schedule
+/// expansion for those edits is important because mobile sync may be triggered
+/// repeatedly while a user is typing. The check is intentionally conservative:
+/// if the old or new item is scheduled, invalidate the cache.
+pub(crate) fn mobile_command_may_change_notification_schedule(
+    workspace: &Workspace,
+    command: &Command,
+) -> bool {
+    if mobile_command_requires_background_refresh(command) {
+        return true;
+    }
+    match command {
+        Command::UpdateItemText { scheme, item, .. } => workspace
+            .scheme(*scheme)
+            .and_then(|scheme| scheme.item(*item))
+            .is_some_and(item_can_be_scheduled),
+        Command::InsertItem { item, .. } => item_can_be_scheduled(item),
+        Command::ReplaceItem { scheme, item } => {
+            let old_can_be_scheduled = workspace
+                .scheme(*scheme)
+                .and_then(|scheme| scheme.item(item.id))
+                .is_some_and(item_can_be_scheduled);
+            old_can_be_scheduled || item_can_be_scheduled(item)
+        }
+        Command::Batch(commands) => commands
+            .iter()
+            .any(|command| mobile_command_may_change_notification_schedule(workspace, command)),
+        _ => false,
+    }
+}
+
+fn item_can_be_scheduled(item: &Item) -> bool {
+    item.kind() != knotq_model::ItemKind::Procedure
 }
 
 fn mobile_collect_crdt_changes(command: &Command, out: &mut WorkspaceCrdtChangeSet) {

@@ -89,6 +89,7 @@ import java.time.ZoneId
 import java.time.format.TextStyle
 import java.io.File
 import java.util.Locale
+import java.util.ArrayDeque
 import java.util.UUID
 import java.util.WeakHashMap
 import java.net.HttpURLConnection
@@ -165,7 +166,7 @@ import kotlin.math.roundToInt
         val currentIndex = findScheme(schemeId)?.optInt("color_index") ?: 0
         lateinit var dialog: AlertDialog
         val order = intArrayOf(0, 1, 5, 2, 3, 4)
-        val grid = LinearLayout(this).apply {
+        val grid = LayoutTransactionLinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             gravity = Gravity.CENTER_HORIZONTAL
             background = rounded(theme.bgModal, dp(14), theme.borderOverlay)
@@ -268,6 +269,7 @@ import kotlin.math.roundToInt
             background = underline(theme.bgApp)
             addView(iconChipImage(R.drawable.ic_knotq_chevron_left_24, L10n.t(this@renderArchivePage, "common.back"), iconSize = 20) {
                 settingsShowingArchive = false
+                queueContentTransition(ContentTransitionDirection.BACKWARD)
                 render()
             })
             addView(text(L10n.t(this@renderArchivePage, "sidebar.context.archive"), theme.textPrimary, 16f, true).apply {
@@ -277,34 +279,112 @@ import kotlin.math.roundToInt
         }, LinearLayout.LayoutParams(-1, dp(44)))
 
         val body = page()
+        var appendArchiveRows: ((Int) -> Unit)? = null
+        var archiveContinuationPosted = false
+        var archiveContinuation: Runnable? = null
         val nodes = snapshot.optJSONArray("archived_nodes") ?: JSONArray()
         if (nodes.length() == 0) {
             body.addView(text(L10n.t(this, "mobile.archive.empty_state"), theme.textMuted, 14f, false).apply {
                 setPadding(dp(2), dp(10), 0, 0)
             })
         } else {
-            fun addRows(array: JSONArray, depth: Int) {
-                array.forEachObject { node ->
-                    body.addView(archiveNodeRow(node, depth), LinearLayout.LayoutParams(-1, dp(40)))
-                    if (node.optString("kind") == "folder") {
-                        node.optJSONArray("children")?.let { addRows(it, depth + 1) }
-                    }
+            val roots = buildList(nodes.length()) {
+                for (index in 0 until nodes.length()) {
+                    nodes.optJSONObject(index)?.let(::add)
                 }
             }
-            addRows(nodes, 0)
-            body.addView(text(L10n.t(this, "archive.empty_confirm_button"), theme.danger, 14f, true).apply {
-                setPadding(dp(2), dp(16), dp(8), dp(10))
-                setOnClickListener {
-                    AlertDialog.Builder(this@renderArchivePage)
-                        .setTitle(L10n.t(this@renderArchivePage, "archive.empty_confirm_title"))
-                        .setMessage(L10n.t(this@renderArchivePage, "mobile.archive.empty_confirm_body"))
-                        .setNegativeButton(L10n.t(this@renderArchivePage, "common.cancel"), null)
-                        .setPositiveButton(L10n.t(this@renderArchivePage, "mobile.archive.delete_all_button")) { _, _ -> mutate(obj("type" to "empty_archive")) }
-                        .show()
+            // Archive data is user-controlled and can be deeply nested after
+            // repeated folder restores. Use the same explicit-stack traversal
+            // as the live navigator so opening Settings cannot overflow the UI
+            // thread's call stack on a damaged/extreme workspace.
+            val flattenedNodes = flattenVisibleTree(
+                roots = roots,
+                collapsedIds = emptySet(),
+                idOf = { it.optString("id") },
+                isFolder = { it.optString("kind") == "folder" },
+                childrenOf = { node ->
+                    val children = node.optJSONArray("children") ?: return@flattenVisibleTree emptyList()
+                    buildList(children.length()) {
+                        for (index in 0 until children.length()) {
+                            children.optJSONObject(index)?.let(::add)
+                        }
+                    }
+                },
+            )
+            var nextIndex = 0
+            var deleteActionAdded = false
+            fun appendDeleteAction() {
+                if (deleteActionAdded) return
+                deleteActionAdded = true
+                body.addView(text(L10n.t(this, "archive.empty_confirm_button"), theme.danger, 14f, true).apply {
+                    setPadding(dp(2), dp(16), dp(8), dp(10))
+                    setOnClickListener {
+                        AlertDialog.Builder(this@renderArchivePage)
+                            .setTitle(L10n.t(this@renderArchivePage, "archive.empty_confirm_title"))
+                            .setMessage(L10n.t(this@renderArchivePage, "mobile.archive.empty_confirm_body"))
+                            .setNegativeButton(L10n.t(this@renderArchivePage, "common.cancel"), null)
+                            .setPositiveButton(L10n.t(this@renderArchivePage, "mobile.archive.delete_all_button")) { _, _ -> mutate(obj("type" to "empty_archive")) }
+                            .show()
+                    }
+                })
+            }
+            fun appendBatch(batchSize: Int) {
+                val end = min(flattenedNodes.size, nextIndex + batchSize)
+                if (end <= nextIndex) return
+                body.batchLayoutChanges {
+                    while (nextIndex < end) {
+                        val (node, depth) = flattenedNodes[nextIndex++]
+                        body.addView(archiveNodeRow(node, depth), LinearLayout.LayoutParams(-1, dp(40)))
+                    }
                 }
-            })
+                if (nextIndex >= flattenedNodes.size) {
+                    appendDeleteAction()
+                    appendArchiveRows = null
+                }
+            }
+            appendArchiveRows = { batchSize -> appendBatch(batchSize) }
+            appendBatch(ARCHIVE_INITIAL_BATCH)
+            if (flattenedNodes.isEmpty()) {
+                appendDeleteAction()
+                appendArchiveRows = null
+            }
         }
-        root.addView(scroll(body), LinearLayout.LayoutParams(-1, 0, 1f))
+        val archiveScroll = object : ScrollView(this) {
+            init {
+                tag = ARCHIVE_VIEWPORT_TAG
+                isVerticalScrollBarEnabled = false
+                overScrollMode = View.OVER_SCROLL_NEVER
+                addView(body, FrameLayout.LayoutParams(-1, -2))
+            }
+
+            override fun onScrollChanged(left: Int, top: Int, oldLeft: Int, oldTop: Int) {
+                super.onScrollChanged(left, top, oldLeft, oldTop)
+                val append = appendArchiveRows ?: return
+                if (archiveContinuationPosted || height <= 0 || body.height <= 0) return
+                if (top + height < body.height - dp(40) * 3) return
+                archiveContinuationPosted = true
+                val task = Runnable {
+                    archiveContinuation = null
+                    archiveContinuationPosted = false
+                    if (!isAttachedToWindow) return@Runnable
+                    append(ARCHIVE_CONTINUATION_BATCH)
+                }
+                archiveContinuation = task
+                postOnAnimation(task)
+            }
+
+            override fun onDetachedFromWindow() {
+                archiveContinuation?.let(::removeCallbacks)
+                archiveContinuation = null
+                archiveContinuationPosted = false
+                super.onDetachedFromWindow()
+            }
+        }
+        val archiveViewportHeight = max(
+            dp(220),
+            min(dp(360), (resources.displayMetrics.heightPixels * 0.45f).roundToInt()),
+        )
+        root.addView(archiveScroll, LinearLayout.LayoutParams(-1, archiveViewportHeight))
         return root
     }
 
@@ -436,6 +516,10 @@ import kotlin.math.roundToInt
     }
 
     internal fun MainActivity.showMonthPickerDialog() {
+        activeMonthPickerDialog?.let { existing ->
+            if (existing.isShowing) return
+            activeMonthPickerDialog = null
+        }
         var displayMonth = selectedDate.withDayOfMonth(1)
         val container = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -445,36 +529,80 @@ import kotlin.math.roundToInt
         val title = text(monthTitle(displayMonth), theme.textPrimary, 20f, true).apply {
             gravity = Gravity.CENTER
         }
-        val grid = LinearLayout(this).apply {
+        // Month navigation replaces the weekday row and six day rows in one
+        // burst. Keep the container transaction-aware on API 26-28 too, where
+        // ViewGroup.suppressLayout is not public; otherwise a picker can flash
+        // its temporary loading layout between remove/add calls.
+        val grid = LayoutTransactionLinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             background = rounded(theme.bgModal, dp(10), theme.borderOverlay)
             setPadding(dp(8), dp(8), dp(8), dp(8))
         }
         lateinit var dialog: AlertDialog
+        var monthRequestSerial = 0L
 
         fun renderMonth() {
+            val requestedMonth = displayMonth
+            val serial = ++monthRequestSerial
             title.text = monthTitle(displayMonth)
-            grid.removeAllViews()
-            grid.addView(monthWeekdayRow(), LinearLayout.LayoutParams(-1, dp(22)))
-            val days = monthDayOccurrences(displayMonth)
-            val first = displayMonth.withDayOfMonth(1)
-            val gridStart = first.minusDays((first.dayOfWeek.value % 7).toLong())
-            for (rowIndex in 0 until 6) {
-                val row = LinearLayout(this).apply {
-                    orientation = LinearLayout.HORIZONTAL
-                    gravity = Gravity.CENTER
+            // Once a month has been loaded, keep that complete grid on screen
+            // while the next request is in flight. Replacing it with a loading
+            // tree on every arrow tap made rapid navigation flash six empty
+            // rows and visibly re-layout the card. The first load still gets a
+            // deterministic placeholder.
+            if (grid.childCount <= 2) {
+                grid.batchLayoutChanges {
+                    grid.removeAllViews()
+                    grid.addView(monthWeekdayRow(), LinearLayout.LayoutParams(-1, dp(22)))
+                    grid.addView(text("Loading…", theme.textMuted, 13f, false).apply {
+                        gravity = Gravity.CENTER
+                        setPadding(0, dp(14), 0, dp(14))
+                    }, LinearLayout.LayoutParams(-1, dp(52 * 6)))
                 }
-                for (columnIndex in 0 until 7) {
-                    val date = gridStart.plusDays((rowIndex * 7 + columnIndex).toLong())
-                    row.addView(monthDayCell(date, displayMonth, days[date.toString()] ?: JSONArray()) {
-                        selectedDate = date
-                        weekOffset = 0
-                        loadSnapshot()
-                        render()
-                        dialog.dismiss()
-                    }, LinearLayout.LayoutParams(0, dp(52), 1f))
+            }
+            coreExecutor.execute {
+                val result = runCatching {
+                    val byDate = LinkedHashMap<String, JSONArray>()
+                    bridge.requestArray(obj("type" to "month_days", "year" to requestedMonth.year, "month" to requestedMonth.monthValue))
+                        .forEachObject { day ->
+                            byDate[day.optString("date")] = day.optJSONArray("occurrences") ?: JSONArray()
+                        }
+                    byDate
                 }
-                grid.addView(row, LinearLayout.LayoutParams(-1, dp(52)))
+                runOnUiThread {
+                    if (serial != monthRequestSerial || requestedMonth != displayMonth || !isUiActive()) return@runOnUiThread
+                    result.onSuccess { days ->
+                        grid.batchLayoutChanges {
+                            if (grid.childCount > 1) grid.removeViews(1, grid.childCount - 1)
+                            val first = requestedMonth.withDayOfMonth(1)
+                            val gridStart = first.minusDays((first.dayOfWeek.value % 7).toLong())
+                            for (rowIndex in 0 until 6) {
+                                val row = LinearLayout(this).apply {
+                                    orientation = LinearLayout.HORIZONTAL
+                                    gravity = Gravity.CENTER
+                                }
+                                for (columnIndex in 0 until 7) {
+                                    val date = gridStart.plusDays((rowIndex * 7 + columnIndex).toLong())
+                                    row.addView(monthDayCell(date, requestedMonth, days[date.toString()] ?: JSONArray()) {
+                                        selectedDate = date
+                                        weekOffset = 0
+                                        refreshSnapshotAsync()
+                                        dialog.dismiss()
+                                    }, LinearLayout.LayoutParams(0, dp(52), 1f))
+                                }
+                                grid.addView(row, LinearLayout.LayoutParams(-1, dp(52)))
+                            }
+                        }
+                    }.onFailure { error ->
+                        grid.batchLayoutChanges {
+                            if (grid.childCount > 1) grid.removeViews(1, grid.childCount - 1)
+                            grid.addView(text(error.message ?: "Could not load calendar", theme.textMuted, 13f, false).apply {
+                                gravity = Gravity.CENTER
+                                setPadding(0, dp(14), 0, dp(14))
+                            }, LinearLayout.LayoutParams(-1, dp(52 * 6)))
+                        }
+                    }
+                }
             }
         }
 
@@ -498,6 +626,14 @@ import kotlin.math.roundToInt
         dialog = AlertDialog.Builder(this)
             .setView(container)
             .create()
+        activeMonthPickerDialog = dialog
+        dialog.setOnDismissListener {
+            // A month query can finish after the card is dismissed. Invalidate
+            // its serial before releasing the active-dialog reference so the
+            // callback cannot rebuild a detached picker tree.
+            monthRequestSerial++
+            if (activeMonthPickerDialog === dialog) activeMonthPickerDialog = null
+        }
         renderMonth()
         dialog.show()
         // Card-style chrome (rounded, no button bar) — dismiss by tapping a
@@ -566,32 +702,21 @@ import kotlin.math.roundToInt
             else -> theme.textMuted
         }
 
-    internal fun MainActivity.monthDayOccurrences(month: LocalDate): Map<String, JSONArray> {
-        return runCatching {
-            val byDate = LinkedHashMap<String, JSONArray>()
-            bridge.requestArray(obj("type" to "month_days", "year" to month.year, "month" to month.monthValue))
-                .forEachObject { day ->
-                    byDate[day.optString("date")] = day.optJSONArray("occurrences") ?: JSONArray()
-                }
-            byDate
-        }.getOrElse { error ->
-            showError(L10n.t(this, "menu.calendar"), error.message)
-            emptyMap()
-        }
-    }
-
     internal fun MainActivity.openScheme(id: String) {
         // Remember where the editor was opened from so the back button returns
         // there (Home on phone), rather than the otherwise-unreachable lists page.
         if (selectedTab != TAB_SCHEMES) schemeReturnTab = selectedTab
         selectedTab = TAB_SCHEMES
         selectedSchemeId = id
+        queueContentTransition(ContentTransitionDirection.FORWARD)
         render()
     }
 
     internal fun MainActivity.exitSchemeEditor() {
+        currentFocus?.clearFocus()
         selectedSchemeId = null
         selectedTab = if (schemeReturnTab == TAB_SCHEMES) TAB_HOME else schemeReturnTab
+        queueContentTransition(ContentTransitionDirection.BACKWARD)
         render()
     }
 
@@ -609,16 +734,14 @@ import kotlin.math.roundToInt
         mutate(obj("type" to "ensure_daily_queue", "date" to selectedDate.toString()))
     }
 
-    internal fun MainActivity.ensureTodayDailyQueue() {
+    internal fun MainActivity.ensureTodayDailyQueue(refreshSnapshot: Boolean = true) {
         val today = LocalDate.now().toString()
-        val existing = snapshot.optJSONArray("daily")
-        if (existing != null) {
-            for (index in 0 until existing.length()) {
-                if (existing.optJSONObject(index)?.optString("date") == today) return
-            }
-        }
+        if (snapshotContainsDailyQueue(snapshot, today)) return
         bridge.request(obj("type" to "ensure_daily_queue", "date" to today))
-        loadSnapshot()
+        // Cold startup immediately reads the authoritative snapshot after this
+        // call. Avoid expanding the whole calendar twice in that path, while
+        // preserving the refresh for the older interactive/helper callers.
+        if (refreshSnapshot) loadSnapshot()
     }
 
     internal fun MainActivity.mutate(
@@ -644,11 +767,12 @@ import kotlin.math.roundToInt
                 ))
             }
             runOnUiThread {
+                if (!isUiActive()) return@runOnUiThread
                 result.onSuccess { snap ->
                     snapshot = snap
                     configureGoogleSyncPolling()
                     rescheduleNotifications()
-                    if (renderAfter) render()
+                    if (renderAfter) requestRender()
                     onSuccess?.invoke(snap)
                     requestSyncSoon()
                 }.onFailure { error ->
@@ -723,12 +847,46 @@ import kotlin.math.roundToInt
     /// The core half of [loadSnapshot], split out so a worker thread that is
     /// already holding a background task can fetch the snapshot itself instead of
     /// making the main thread wait on the core's lock.
-    internal fun MainActivity.snapshotFromCore(): JSONObject = bridge.request(obj(
+    internal fun MainActivity.snapshotFromCore(
+        today: String = selectedDate.toString(),
+        weekOffsetValue: Int = weekOffset,
+        dailyHistoryDaysValue: Int = dailyHistoryDays,
+    ): JSONObject = bridge.request(obj(
         "type" to "snapshot",
-        "today" to selectedDate.toString(),
-        "week_offset" to weekOffset,
-        "daily_history_days" to dailyHistoryDays
+        "today" to today,
+        "week_offset" to weekOffsetValue,
+        "daily_history_days" to dailyHistoryDaysValue
     ))
+
+    /// Refreshes the UI snapshot without making navigation wait on the core
+    /// mutex. Calls are serialized with writes and sync through coreExecutor.
+    internal fun MainActivity.refreshSnapshotAsync(
+        renderAfter: Boolean = true,
+        onSuccess: (() -> Unit)? = null,
+        onFailure: ((Throwable) -> Unit)? = null,
+    ) {
+        val requestToken = snapshotRefreshGate.begin()
+        val today = selectedDate.toString()
+        val week = weekOffset
+        val history = dailyHistoryDays
+        coreExecutor.execute {
+            val result = runCatching { snapshotFromCore(today, week, history) }
+            runOnUiThread {
+                if (!isUiActive()) return@runOnUiThread
+                if (!snapshotRefreshGate.isCurrent(requestToken)) return@runOnUiThread
+                result.onSuccess { refreshed ->
+                    snapshot = refreshed
+                    configureGoogleSyncPolling()
+                    rescheduleNotifications()
+                    if (renderAfter) requestRender()
+                    onSuccess?.invoke()
+                }.onFailure { error ->
+                    onFailure?.invoke(error)
+                        ?: showError(L10n.t(this, "mobile.errors.could_not_save_title"), error.message)
+                }
+            }
+        }
+    }
 
     /// Mirrors iOS `loadOlderDailyEntries`: extend the daily history window by a
     /// month when the feed is scrolled to its oldest entry.
@@ -738,15 +896,24 @@ import kotlin.math.roundToInt
         dailyHistoryLoadTriggerDate = oldestDate
         dailyHistoryDays = min(dailyHistoryDays + 31, 3650)
         pendingDailyAnchorDate = oldestDate
-        loadSnapshot()
-        render()
+        refreshSnapshotAsync()
     }
 
 
     internal fun MainActivity.applyTheme() {
-        val mode = snapshot.optJSONObject("settings")?.optString("theme_mode", "system") ?: "system"
+        val settings = snapshot.optJSONObject("settings")
+        val themePrefs = getSharedPreferences("knotq", Context.MODE_PRIVATE)
+        val storedMode = themePrefs.getString(THEME_MODE_PREF, null)
+        val mode = resolveStartupThemeMode(
+            hasLoadedSettings = settings != null,
+            loadedMode = settings?.optString("theme_mode"),
+            storedMode = storedMode,
+        )
+        if (settings != null && storedMode != mode) {
+            themePrefs.edit().putString(THEME_MODE_PREF, mode).apply()
+        }
         val darkSystem = (resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK) == Configuration.UI_MODE_NIGHT_YES
-        theme = when (mode) {
+        val nextTheme = when (mode) {
             "light" -> UiTheme.light
             "rose_pine_moon" -> UiTheme.moonlit
             "catppuccin_mocha" -> UiTheme.espresso
@@ -757,14 +924,51 @@ import kotlin.math.roundToInt
             "system" -> if (darkSystem) UiTheme.dark else UiTheme.light
             else -> UiTheme.dark
         }
-        applySystemBarColors()
+        theme = nextTheme
+        if (lastSystemBarTheme != nextTheme) {
+            applySystemBarColors()
+            lastSystemBarTheme = nextTheme
+        }
     }
+
+internal fun resolveStartupThemeMode(
+    hasLoadedSettings: Boolean,
+    loadedMode: String?,
+    storedMode: String?,
+): String = if (hasLoadedSettings) {
+    loadedMode?.takeIf { it.isNotEmpty() } ?: "system"
+} else {
+    storedMode?.takeIf { it.isNotEmpty() } ?: "system"
+}
 
     @Suppress("DEPRECATION")
     internal fun MainActivity.applySystemBarColors() {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.VANILLA_ICE_CREAM) {
-            window.statusBarColor = theme.bgToolbar
-            window.navigationBarColor = theme.bgSidebar
+        // Cover the pre-content window frame too. Without this, Android can
+        // expose the platform's default black window background for a frame
+        // before the async native startup shell is drawn.
+        window.setBackgroundDrawable(ColorDrawable(theme.bgApp))
+        // Android 15/36 may ignore opaque bar colors because of enforced
+        // edge-to-edge, but it still honors the icon appearance flags. Without
+        // these flags the light theme renders white status icons on a white bar.
+        window.statusBarColor = theme.bgToolbar
+        window.navigationBarColor = theme.bgSidebar
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            val lightBars = if (theme.isDark) 0 else {
+                android.view.WindowInsetsController.APPEARANCE_LIGHT_STATUS_BARS or
+                    android.view.WindowInsetsController.APPEARANCE_LIGHT_NAVIGATION_BARS
+            }
+            val barMask = android.view.WindowInsetsController.APPEARANCE_LIGHT_STATUS_BARS or
+                android.view.WindowInsetsController.APPEARANCE_LIGHT_NAVIGATION_BARS
+            // `applyTheme()` also runs before setContentView during cold start;
+            // read the decor view explicitly so Android creates it before the
+            // API-30 controller lookup rather than dereferencing a null view.
+            window.decorView.windowInsetsController?.setSystemBarsAppearance(lightBars, barMask)
+        } else {
+            var flags = window.decorView.systemUiVisibility
+            val lightBarFlags = android.view.View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR or
+                android.view.View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR
+            flags = if (theme.isDark) flags and lightBarFlags.inv() else flags or lightBarFlags
+            window.decorView.systemUiVisibility = flags
         }
     }
 
@@ -844,14 +1048,20 @@ import kotlin.math.roundToInt
     }
 
     internal fun MainActivity.parentFolderIdForScheme(schemeId: String, node: JSONObject): String? {
-        val children = node.optJSONArray("children") ?: return null
-        for (index in 0 until children.length()) {
-            val child = children.optJSONObject(index) ?: continue
-            if (child.optString("kind") == "scheme" && child.optString("id") == schemeId) {
-                return node.optString("id")
+        val pending = ArrayDeque<JSONObject>()
+        pending.addLast(node)
+        while (pending.isNotEmpty()) {
+            val current = pending.removeLast()
+            val children = current.optJSONArray("children") ?: continue
+            for (index in 0 until children.length()) {
+                val child = children.optJSONObject(index) ?: continue
+                if (child.optString("kind") == "scheme" && child.optString("id") == schemeId) {
+                    return current.optString("id")
+                }
             }
-            if (child.optString("kind") == "folder") {
-                parentFolderIdForScheme(schemeId, child)?.let { return it }
+            for (index in children.length() - 1 downTo 0) {
+                val child = children.optJSONObject(index) ?: continue
+                if (child.optString("kind") == "folder") pending.addLast(child)
             }
         }
         return null
@@ -863,33 +1073,38 @@ import kotlin.math.roundToInt
     }
 
     internal fun MainActivity.parentFolderIdForNode(nodeId: String, node: JSONObject): String? {
-        val children = node.optJSONArray("children") ?: return null
-        for (index in 0 until children.length()) {
-            val child = children.optJSONObject(index) ?: continue
-            if (child.optString("id") == nodeId) {
-                return node.optString("id")
+        val pending = ArrayDeque<JSONObject>()
+        pending.addLast(node)
+        while (pending.isNotEmpty()) {
+            val current = pending.removeLast()
+            val children = current.optJSONArray("children") ?: continue
+            for (index in 0 until children.length()) {
+                val child = children.optJSONObject(index) ?: continue
+                if (child.optString("id") == nodeId) {
+                    return current.optString("id")
+                }
             }
-            if (child.optString("kind") == "folder") {
-                parentFolderIdForNode(nodeId, child)?.let { return it }
+            for (index in children.length() - 1 downTo 0) {
+                val child = children.optJSONObject(index) ?: continue
+                if (child.optString("kind") == "folder") pending.addLast(child)
             }
         }
         return null
     }
 
     internal fun MainActivity.moveNavigatorNode(kind: String, nodeId: String, delta: Int) {
-        when (applyNodeMove(kind, nodeId, delta)) {
-            true -> { rescheduleNotifications(); render() }
-            false -> toast(L10n.t(this, "mobile.common.already_there_toast"))
-        }
+        val body = nodeMoveBody(kind, nodeId, delta)
+            ?: return toast(L10n.t(this, "mobile.common.already_there_toast"))
+        mutate(body)
     }
 
-    // Shifts a node one slot within its parent; returns false at a boundary. Applies
-    // the change and reloads the snapshot but does NOT re-render, so callers (e.g. the
-    // reorder sheet) can apply several moves and refresh their own UI cheaply.
-    internal fun MainActivity.applyNodeMove(kind: String, nodeId: String, delta: Int): Boolean {
-        val parentId = parentFolderIdForNode(nodeId) ?: return false
-        val parent = nodeById(parentId, snapshot.optJSONObject("root")) ?: return false
-        val children = parent.optJSONArray("children") ?: return false
+    // Builds a one-slot move after validating the current sibling list. The actual
+    // core mutation is always queued through mutate(), never performed on the UI
+    // thread.
+    internal fun MainActivity.nodeMoveBody(kind: String, nodeId: String, delta: Int): JSONObject? {
+        val parentId = parentFolderIdForNode(nodeId) ?: return null
+        val parent = nodeById(parentId, snapshot.optJSONObject("root")) ?: return null
+        val children = parent.optJSONArray("children") ?: return null
         var index = -1
         for (i in 0 until children.length()) {
             if (children.optJSONObject(i)?.optString("id") == nodeId) {
@@ -897,15 +1112,12 @@ import kotlin.math.roundToInt
                 break
             }
         }
-        if (index < 0) return false
+        if (index < 0) return null
         // move_node removes the node first, so positions index the
         // post-removal sibling list.
         val position = if (delta < 0) index - 1 else index + 1
-        if (position < 0 || position > children.length() - 1) return false
-        bridge.request(obj("type" to "move_node", "kind" to kind, "id" to nodeId, "folder_id" to parentId, "position" to position))
-        loadSnapshot()
-        requestSyncSoon()
-        return true
+        if (position < 0 || position > children.length() - 1) return null
+        return obj("type" to "move_node", "kind" to kind, "id" to nodeId, "folder_id" to parentId, "position" to position)
     }
 
     // A live reorder sheet for a node's siblings: stays open while you nudge items
@@ -914,7 +1126,7 @@ import kotlin.math.roundToInt
     internal fun MainActivity.showReorderDialog(nodeId: String) {
         val parentId = parentFolderIdForNode(nodeId) ?: return toast(L10n.t(this, "mobile.reorder.cannot_reorder_toast"))
         val parentName = nodeById(parentId, snapshot.optJSONObject("root"))?.optString("name")?.takeIf { it.isNotBlank() && parentId != rootFolderId() } ?: L10n.t(this, "mobile.nav.tab_home")
-        val list = LinearLayout(this).apply {
+        val list = LayoutTransactionLinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(12), dp(8), dp(12), dp(8))
         }
@@ -933,37 +1145,45 @@ import kotlin.math.roundToInt
                 layoutParams = LinearLayout.LayoutParams(dp(40), dp(38)).apply { setMargins(dp(6), 0, 0, 0) }
             }
         rebuild = {
-            list.removeAllViews()
-            val children = siblings()
-            val lastIndex = children.length() - 1
-            if (children.length() == 0) {
-                list.addView(text(L10n.t(this, "mobile.reorder.empty"), theme.textMuted, 13f, false))
-            }
-            for (i in 0 until children.length()) {
-                val child = children.optJSONObject(i) ?: continue
-                val childId = child.optString("id")
-                val childKind = child.optString("kind")
-                val isFolder = childKind == "folder"
-                val highlight = childId == nodeId
-                val row = LinearLayout(this).apply {
-                    orientation = LinearLayout.HORIZONTAL
-                    gravity = Gravity.CENTER_VERTICAL
-                    setPadding(dp(8), 0, dp(6), 0)
-                    background = rounded(if (highlight) theme.rowSelected else Color.TRANSPARENT, dp(8))
-                    if (isFolder) {
-                        addView(inlineIcon(R.drawable.ic_knotq_folder_24, theme.textMuted, widthDp = 18, iconSize = 15))
-                    } else {
-                        addView(colorSquare(schemeColor(child.optInt("color_index")), 10), LinearLayout.LayoutParams(dp(10), dp(10)).apply { setMargins(dp(4), 0, dp(4), 0) })
-                    }
-                    addView(text(child.optString("name").ifEmpty { child.optString("display_name") }, theme.textPrimary, 14f, highlight || isFolder).apply { maxLines = 1; ellipsize = TextUtils.TruncateAt.END }, LinearLayout.LayoutParams(0, -1, 1f).apply { setMargins(dp(6), 0, 0, 0) })
-                    addView(moveButton(R.drawable.ic_knotq_chevron_up_24, L10n.t(this@showReorderDialog, "mobile.reorder.move_up"), i > 0) {
-                        if (applyNodeMove(childKind, childId, -1)) { changed = true; rebuild() }
-                    })
-                    addView(moveButton(R.drawable.ic_knotq_chevron_down_24, L10n.t(this@showReorderDialog, "mobile.reorder.move_down"), i < lastIndex) {
-                        if (applyNodeMove(childKind, childId, 1)) { changed = true; rebuild() }
-                    })
+            list.batchLayoutChanges {
+                list.removeAllViews()
+                val children = siblings()
+                val lastIndex = children.length() - 1
+                if (children.length() == 0) {
+                    list.addView(text(L10n.t(this, "mobile.reorder.empty"), theme.textMuted, 13f, false))
                 }
-                list.addView(row, LinearLayout.LayoutParams(-1, dp(46)))
+                for (i in 0 until children.length()) {
+                    val child = children.optJSONObject(i) ?: continue
+                    val childId = child.optString("id")
+                    val childKind = child.optString("kind")
+                    val isFolder = childKind == "folder"
+                    val highlight = childId == nodeId
+                    val row = LinearLayout(this).apply {
+                        orientation = LinearLayout.HORIZONTAL
+                        gravity = Gravity.CENTER_VERTICAL
+                        setPadding(dp(8), 0, dp(6), 0)
+                        background = rounded(if (highlight) theme.rowSelected else Color.TRANSPARENT, dp(8))
+                        if (isFolder) {
+                            addView(inlineIcon(R.drawable.ic_knotq_folder_24, theme.textMuted, widthDp = 18, iconSize = 15))
+                        } else {
+                            addView(colorSquare(schemeColor(child.optInt("color_index")), 10), LinearLayout.LayoutParams(dp(10), dp(10)).apply { setMargins(dp(4), 0, dp(4), 0) })
+                        }
+                        addView(text(child.optString("name").ifEmpty { child.optString("display_name") }, theme.textPrimary, 14f, highlight || isFolder).apply { maxLines = 1; ellipsize = TextUtils.TruncateAt.END }, LinearLayout.LayoutParams(0, -1, 1f).apply { setMargins(dp(6), 0, 0, 0) })
+                        addView(moveButton(R.drawable.ic_knotq_chevron_up_24, L10n.t(this@showReorderDialog, "mobile.reorder.move_up"), i > 0) {
+                            nodeMoveBody(childKind, childId, -1)?.let { body ->
+                                changed = true
+                                mutate(body, renderAfter = false) { rebuild() }
+                            }
+                        })
+                        addView(moveButton(R.drawable.ic_knotq_chevron_down_24, L10n.t(this@showReorderDialog, "mobile.reorder.move_down"), i < lastIndex) {
+                            nodeMoveBody(childKind, childId, 1)?.let { body ->
+                                changed = true
+                                mutate(body, renderAfter = false) { rebuild() }
+                            }
+                        })
+                    }
+                    list.addView(row, LinearLayout.LayoutParams(-1, dp(46)))
+                }
             }
         }
         rebuild()
@@ -996,10 +1216,19 @@ import kotlin.math.roundToInt
     }
 
     internal fun MainActivity.collectFolderDestinations(nodes: JSONArray?, depth: Int, excludedFolderId: String?, destinations: MutableList<FolderDestination>) {
-        nodes?.forEachObject { node ->
-            if (node.optString("kind") == "folder" && node.optString("id") != excludedFolderId) {
-                destinations.add(FolderDestination(node.optString("id"), node.optString("name"), depth))
-                collectFolderDestinations(node.optJSONArray("children"), depth + 1, excludedFolderId, destinations)
+        val pending = ArrayDeque<Pair<JSONObject, Int>>()
+        if (nodes != null) {
+            for (index in nodes.length() - 1 downTo 0) {
+                nodes.optJSONObject(index)?.let { pending.addLast(it to depth) }
+            }
+        }
+        while (pending.isNotEmpty()) {
+            val (node, nodeDepth) = pending.removeLast()
+            if (node.optString("kind") != "folder" || node.optString("id") == excludedFolderId) continue
+            destinations.add(FolderDestination(node.optString("id"), node.optString("name"), nodeDepth))
+            val children = node.optJSONArray("children") ?: continue
+            for (index in children.length() - 1 downTo 0) {
+                children.optJSONObject(index)?.let { pending.addLast(it to (nodeDepth + 1)) }
             }
         }
     }
@@ -1014,10 +1243,15 @@ import kotlin.math.roundToInt
 
     internal fun MainActivity.nodeById(id: String?, node: JSONObject?): JSONObject? {
         if (id == null || node == null) return null
-        if (node.optString("id") == id) return node
-        val children = node.optJSONArray("children") ?: return null
-        for (index in 0 until children.length()) {
-            nodeById(id, children.optJSONObject(index))?.let { return it }
+        val pending = ArrayDeque<JSONObject>()
+        pending.addLast(node)
+        while (pending.isNotEmpty()) {
+            val current = pending.removeLast()
+            if (current.optString("id") == id) return current
+            val children = current.optJSONArray("children") ?: continue
+            for (index in children.length() - 1 downTo 0) {
+                children.optJSONObject(index)?.let(pending::addLast)
+            }
         }
         return null
     }

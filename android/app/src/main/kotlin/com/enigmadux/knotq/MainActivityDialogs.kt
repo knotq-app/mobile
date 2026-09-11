@@ -134,7 +134,14 @@ import kotlin.math.roundToInt
             .setPositiveButton(if (editing) L10n.t(this, "common.save") else L10n.t(this, "common.add")) { _, _ ->
                 val selectedMarker = markerValues.getOrElse(marker.selectedItemPosition) { markerValues[0] }
                 if (item != null) {
-                    mutate(obj("type" to "update_item_text", "scheme_id" to schemeId, "item_id" to item.optString("id"), "text" to text.text.toString().trim()))
+                    // Text and marker are separate core commands, but they are
+                    // one user-visible save. Avoid publishing an intermediate
+                    // snapshot/render after the first command; the second
+                    // mutation is FIFO behind it and paints the final state once.
+                    mutate(
+                        obj("type" to "update_item_text", "scheme_id" to schemeId, "item_id" to item.optString("id"), "text" to text.text.toString().trim()),
+                        renderAfter = false,
+                    )
                     mutate(obj("type" to "set_item_marker", "scheme_id" to schemeId, "item_id" to item.optString("id"), "marker" to selectedMarker))
                 } else {
                     mutate(obj("type" to "add_item", "scheme_id" to schemeId, "text" to text.text.toString().trim(), "marker" to selectedMarker))
@@ -463,11 +470,21 @@ import kotlin.math.roundToInt
             }
             val activeKind = selectedKind()
             val startValue = when (activeKind) {
-                "event", "reminder" -> MobileDateFormatting.iso(selectedLocalDate, startTime.hour, startTime.minute)
+                "event", "reminder" -> MobileDateFormatting.isoPreservingInstantWhenWallTimeUnchanged(
+                    occurrence?.optionalString("start"),
+                    selectedLocalDate,
+                    startTime.hour,
+                    startTime.minute,
+                )
                 else -> null
             }
             val endValue = when (activeKind) {
-                "event", "assignment" -> MobileDateFormatting.iso(selectedLocalDate, endTime.hour, endTime.minute)
+                "event", "assignment" -> MobileDateFormatting.isoPreservingInstantWhenWallTimeUnchanged(
+                    occurrence?.optionalString("end"),
+                    selectedLocalDate,
+                    endTime.hour,
+                    endTime.minute,
+                )
                 else -> null
             }
             val rrule = if (activeKind == "task") null else MobileRecurrence.rruleForRepeat(repeatValues[repeat.selectedItemPosition.coerceIn(0, repeatValues.lastIndex)], selectedLocalDate, selectedWeekdays)
@@ -495,34 +512,16 @@ import kotlin.math.roundToInt
                 }
             } else {
                 val schemeId = schemeIds.getOrNull(scheme.selectedItemPosition)
-                val newId = createCalendarItemReturningID(
+                createCalendarItemAsync(
                     kind = activeKind,
                     text = titleInput.text.toString().trim(),
                     date = selectedLocalDate,
                     start = startValue,
                     end = endValue,
-                    schemeId = schemeId
+                    schemeId = schemeId,
+                    rrule = rrule,
+                    notificationOffsetSecs = notificationOffset,
                 )
-                val resolvedScheme = schemeId ?: todayDailySchemeId()
-                if (newId != null && resolvedScheme != null) {
-                    if (rrule != null) {
-                        bridge.request(obj("type" to "set_item_recurrence", "scheme_id" to resolvedScheme, "item_id" to newId, "rrule" to rrule))
-                    }
-                    if (activeKind != "task") {
-                        bridge.request(
-                            obj(
-                                "type" to "set_occurrence_notification_offset",
-                                "scheme_id" to resolvedScheme,
-                                "item_id" to newId,
-                                "occurrence_json" to null,
-                                "offset_secs" to notificationOffset
-                            )
-                        )
-                    }
-                    loadSnapshot()
-                    rescheduleNotifications()
-                    render()
-                }
             }
             dialog.dismiss()
         }
@@ -564,8 +563,10 @@ import kotlin.math.roundToInt
         // an unwanted keyboard pop.
         if (!editing && !readOnly) {
             titleInput.post {
+                if (!isUiActive() || !titleInput.isAttachedToWindow || !dialog.isShowing) return@post
                 titleInput.requestFocus()
                 titleInput.post {
+                    if (!isUiActive() || !titleInput.isAttachedToWindow || !dialog.isShowing) return@post
                     (getSystemService(Context.INPUT_METHOD_SERVICE) as? InputMethodManager)
                         ?.showSoftInput(titleInput, InputMethodManager.SHOW_IMPLICIT)
                 }
@@ -651,36 +652,96 @@ import kotlin.math.roundToInt
             .show()
     }
 
-    internal fun MainActivity.createCalendarItemReturningID(
+    internal fun MainActivity.createCalendarItemAsync(
         kind: String,
         text: String,
         date: LocalDate,
         start: String?,
         end: String?,
-        schemeId: String?
-    ): String? {
-        val targetId = if (schemeId != null) {
-            schemeId
-        } else {
-            bridge.request(obj("type" to "ensure_daily_queue", "date" to LocalDate.now().toString()))
-            loadSnapshot()
-            todayDailySchemeId() ?: return null
+        schemeId: String?,
+        rrule: String?,
+        notificationOffsetSecs: Int?,
+    ) {
+        val today = selectedDate.toString()
+        val week = weekOffset
+        val history = dailyHistoryDays
+        coreExecutor.execute {
+            val result = runCatching {
+                fun itemIds(snap: JSONObject, target: String): Set<String> {
+                    val schemes = snap.optJSONArray("schemes") ?: return emptySet()
+                    for (index in 0 until schemes.length()) {
+                        val candidate = schemes.optJSONObject(index) ?: continue
+                        if (candidate.optString("id") != target) continue
+                        val ids = mutableSetOf<String>()
+                        candidate.optJSONArray("items")?.forEachObject { item -> ids.add(item.optString("id")) }
+                        return ids
+                    }
+                    return emptySet()
+                }
+
+                fun dailySchemeId(snap: JSONObject): String? {
+                    val daily = snap.optJSONArray("daily") ?: return null
+                    for (index in 0 until daily.length()) {
+                        val entry = daily.optJSONObject(index) ?: continue
+                        if (entry.optString("date") == LocalDate.now().toString()) {
+                            return entry.optJSONObject("scheme")?.optString("id")?.takeIf { it.isNotBlank() }
+                        }
+                    }
+                    return null
+                }
+
+                var current = snapshotFromCore(today, week, history)
+                var targetId = schemeId
+                if (targetId == null) {
+                    bridge.request(obj("type" to "ensure_daily_queue", "date" to LocalDate.now().toString()))
+                    current = snapshotFromCore(today, week, history)
+                    targetId = dailySchemeId(current)
+                }
+                val resolvedTarget = targetId ?: throw IllegalStateException("Daily queue is not ready")
+                val before = itemIds(current, resolvedTarget)
+                bridge.request(
+                    obj(
+                        "type" to "add_calendar_item",
+                        "scheme_id" to resolvedTarget,
+                        "kind" to kind,
+                        "text" to text,
+                        "date" to date.toString(),
+                        "start" to start,
+                        "end" to end
+                    )
+                )
+                val newSnapshotBeforeOptions = snapshotFromCore(today, week, history)
+                val newId = itemIds(newSnapshotBeforeOptions, resolvedTarget).firstOrNull { !before.contains(it) }
+                    ?: throw IllegalStateException("Could not find the new calendar item")
+                if (rrule != null) {
+                    bridge.request(obj("type" to "set_item_recurrence", "scheme_id" to resolvedTarget, "item_id" to newId, "rrule" to rrule))
+                }
+                if (kind != "task") {
+                    bridge.request(
+                        obj(
+                            "type" to "set_occurrence_notification_offset",
+                            "scheme_id" to resolvedTarget,
+                            "item_id" to newId,
+                            "occurrence_json" to null,
+                            "offset_secs" to notificationOffsetSecs
+                        )
+                    )
+                }
+                newId to snapshotFromCore(today, week, history)
+            }
+            runOnUiThread {
+                if (!isUiActive()) return@runOnUiThread
+                result.onSuccess { (_, refreshed) ->
+                    snapshot = refreshed
+                    configureGoogleSyncPolling()
+                    rescheduleNotifications()
+                    requestSyncSoon()
+                    requestRender()
+                }.onFailure { error ->
+                    showError(L10n.t(this, "mobile.errors.could_not_save_title"), error.message)
+                }
+            }
         }
-        val before = schemeItemIds(targetId)
-        bridge.request(
-            obj(
-                "type" to "add_calendar_item",
-                "scheme_id" to targetId,
-                "kind" to kind,
-                "text" to text,
-                "date" to date.toString(),
-                "start" to start,
-                "end" to end
-            )
-        )
-        loadSnapshot()
-        requestSyncSoon()
-        return schemeItemIds(targetId).firstOrNull { !before.contains(it) }
     }
 
     internal fun MainActivity.schemeItemIds(schemeId: String): Set<String> {
@@ -770,7 +831,8 @@ import kotlin.math.roundToInt
 
     internal fun MainActivity.showItemDateDialog(schemeId: String, itemId: String, kind: String) {
         val form = page(compact = true)
-        val initial = MobileDateFormatting.localDateTime(findItem(schemeId, itemId)?.optionalString(kind))
+        val existingRaw = findItem(schemeId, itemId)?.optionalString(kind)
+        val initial = MobileDateFormatting.localDateTime(existingRaw)
         val pickerCtx = inlinePickerContext()
         val date = DatePicker(pickerCtx).apply {
             val local = initial?.toLocalDate() ?: selectedDate
@@ -794,7 +856,18 @@ import kotlin.math.roundToInt
             .setView(form)
             .setPositiveButton(L10n.t(this, "common.save")) { _, _ ->
                 val localDate = LocalDate.of(date.year, date.month + 1, date.dayOfMonth)
-                mutate(obj("type" to "set_item_date", "scheme_id" to schemeId, "item_id" to itemId, "kind" to kind, "date" to MobileDateFormatting.iso(localDate, time.hour, time.minute)))
+                mutate(obj(
+                    "type" to "set_item_date",
+                    "scheme_id" to schemeId,
+                    "item_id" to itemId,
+                    "kind" to kind,
+                    "date" to MobileDateFormatting.isoPreservingInstantWhenWallTimeUnchanged(
+                        existingRaw,
+                        localDate,
+                        time.hour,
+                        time.minute,
+                    ),
+                ))
             }
             .setNegativeButton(L10n.t(this, "common.cancel"), null)
             .show()

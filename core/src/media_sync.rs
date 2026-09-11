@@ -56,10 +56,27 @@ fn parse_image_format(raw: &str) -> Option<ImageAssetFormat> {
     }
 }
 
+#[derive(Clone)]
 pub(crate) struct MobileSyncHttpClient {
     pub(crate) api_base: String,
     pub(crate) bearer_token: String,
+    /// Reuse one connection pool for the account-status request, paged pulls,
+    /// pushes, and media calls in a process. Constructing top-level ureq
+    /// requests for every page prevents TLS/HTTP connection reuse.
+    pub(crate) agent: ureq::Agent,
 }
+
+// CRDT sync is a foreground correctness path, not a media transfer. A stale
+// mobile socket already costs the bounded WS request timeout before falling back
+// here, so do not add the desktop-sized 30s HTTP wait on top of it. Large media
+// transfers intentionally keep their separate 30s timeout below.
+const MOBILE_SYNC_REQUEST_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(8);
+// The backend caps one pull's raw CRDT payload at 8 MiB; base64 and JSON
+// framing put the valid wire response below this ceiling with room for head
+// metadata. Keep a client-side bound too, because the configured API endpoint
+// is still an untrusted HTTP peer from the native process's perspective.
+const MAX_SYNC_JSON_RESPONSE_BYTES: usize = 16 * 1024 * 1024;
+const MAX_SYNC_ERROR_RESPONSE_BYTES: usize = 16 * 1024;
 
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 struct MobileSyncMediaAsset {
@@ -122,6 +139,23 @@ pub(crate) fn mobile_notification_schedule_snapshot(
 }
 
 impl MobileSyncHttpClient {
+    pub(crate) fn with_agent(api_base: String, bearer_token: String, agent: ureq::Agent) -> Self {
+        Self {
+            api_base,
+            bearer_token,
+            agent,
+        }
+    }
+
+    #[cfg(test)]
+    fn new_for_test(api_base: &str, bearer_token: &str) -> Self {
+        Self::with_agent(
+            api_base.to_string(),
+            bearer_token.to_string(),
+            ureq::Agent::new(),
+        )
+    }
+
     pub(crate) fn account_status(&self) -> Result<AccountStatusResponse> {
         let url = format!("{}/v1/auth/account/status", self.api_base);
         self.get_json(&url)
@@ -137,7 +171,7 @@ impl MobileSyncHttpClient {
 
     fn upload_media_asset(&self, media: MobileSyncMediaAsset, bytes: &[u8]) -> Result<()> {
         let url = self.media_url(media);
-        self.authorized(ureq::put(&url))
+        self.authorized(self.agent.put(&url))
             .set("content-type", mobile_media_content_type(media.format))
             .send_bytes(bytes)
             .map_err(mobile_sync_http_error)?;
@@ -146,13 +180,15 @@ impl MobileSyncHttpClient {
 
     fn download_media_asset(&self, media: MobileSyncMediaAsset) -> Result<Option<Vec<u8>>> {
         let url = self.media_url(media);
-        let response = match self.authorized(ureq::get(&url)).call() {
+        let response = match self.authorized(self.agent.get(&url)).call() {
             Ok(response) => response,
             Err(ureq::Error::Status(404, response)) => {
-                let code = response
-                    .into_json::<ErrorResponse>()
-                    .map(|error| error.code)
-                    .unwrap_or_else(|_| "404".to_string());
+                let code = read_bounded_json::<ErrorResponse>(
+                    response.into_reader(),
+                    MAX_SYNC_ERROR_RESPONSE_BYTES,
+                )
+                .map(|error| error.code)
+                .unwrap_or_else(|_| "404".to_string());
                 if code == "not_found" {
                     return Ok(None);
                 }
@@ -187,10 +223,11 @@ impl MobileSyncHttpClient {
     }
 
     fn get_json<T: serde::de::DeserializeOwned>(&self, url: &str) -> Result<T> {
-        self.authorized(ureq::get(url))
+        let response = self
+            .authorized_sync(self.agent.get(url))
             .call()
-            .map_err(mobile_sync_http_error)?
-            .into_json()
+            .map_err(mobile_sync_http_error)?;
+        read_bounded_json(response.into_reader(), MAX_SYNC_JSON_RESPONSE_BYTES)
             .with_context(|| format!("parse sync response from {url}"))
     }
 
@@ -199,16 +236,23 @@ impl MobileSyncHttpClient {
         T: serde::Serialize,
         R: serde::de::DeserializeOwned,
     {
-        self.authorized(ureq::post(url))
+        let response = self
+            .authorized_sync(self.agent.post(url))
             .send_json(serde_json::to_value(body)?)
-            .map_err(mobile_sync_http_error)?
-            .into_json()
+            .map_err(mobile_sync_http_error)?;
+        read_bounded_json(response.into_reader(), MAX_SYNC_JSON_RESPONSE_BYTES)
             .with_context(|| format!("parse sync response from {url}"))
     }
 
     fn authorized(&self, request: ureq::Request) -> ureq::Request {
         request
             .timeout(std::time::Duration::from_secs(30))
+            .set("authorization", &format!("Bearer {}", self.bearer_token))
+    }
+
+    fn authorized_sync(&self, request: ureq::Request) -> ureq::Request {
+        request
+            .timeout(MOBILE_SYNC_REQUEST_TIMEOUT)
             .set("authorization", &format!("Bearer {}", self.bearer_token))
     }
 }
@@ -226,10 +270,11 @@ impl SyncTransport for MobileSyncHttpClient {
         // epoch-stale re-pull can react — the plain string this used to return
         // silently disabled both on the HTTP fallback path. Auth rejections keep
         // the exact "unauthorized" message the shells' retry matches on.
-        self.authorized(ureq::post(&url))
+        let response = self
+            .authorized_sync(self.agent.post(&url))
             .send_json(serde_json::to_value(request)?)
-            .map_err(mobile_sync_push_http_error)?
-            .into_json()
+            .map_err(mobile_sync_push_http_error)?;
+        read_bounded_json(response.into_reader(), MAX_SYNC_JSON_RESPONSE_BYTES)
             .with_context(|| format!("parse sync response from {url}"))
     }
 }
@@ -237,10 +282,12 @@ impl SyncTransport for MobileSyncHttpClient {
 fn mobile_sync_push_http_error(error: ureq::Error) -> anyhow::Error {
     match error {
         ureq::Error::Status(status, response) => {
-            let code = response
-                .into_json::<knotq_sync::ErrorResponse>()
-                .map(|error| error.code)
-                .unwrap_or_else(|_| status.to_string());
+            let code = read_bounded_json::<knotq_sync::ErrorResponse>(
+                response.into_reader(),
+                MAX_SYNC_ERROR_RESPONSE_BYTES,
+            )
+            .map(|error| error.code)
+            .unwrap_or_else(|_| status.to_string());
             if status == 401 || code == "unauthorized" {
                 return anyhow!("sync backend rejected request: {code}");
             }
@@ -295,12 +342,22 @@ mod push_http_error_tests {
 }
 
 fn mobile_workspace_media_assets(workspace: &Workspace) -> Vec<MobileSyncMediaAsset> {
+    mobile_workspace_media_assets_for_documents(workspace, None)
+}
+
+fn mobile_workspace_media_assets_for_documents(
+    workspace: &Workspace,
+    documents: Option<&HashSet<DocumentId>>,
+) -> Vec<MobileSyncMediaAsset> {
     let mut seen = HashSet::new();
     let mut assets = Vec::new();
     for scheme in workspace.iter_schemes() {
         let Some(meta) = workspace.scheme_sync.get(&scheme.id) else {
             continue;
         };
+        if documents.is_some_and(|documents| !documents.contains(&meta.id)) {
+            continue;
+        }
         for item in &scheme.items {
             for media in mobile_item_image_assets(item) {
                 let media = MobileSyncMediaAsset {
@@ -337,14 +394,15 @@ fn mobile_collect_item_image_assets(item: &Item, images: &mut Vec<ImageInline>) 
     }
 }
 
-pub(crate) fn mobile_upload_local_media_assets(
+pub(crate) fn mobile_upload_local_media_assets_for_documents(
     client: &MobileSyncHttpClient,
     local_state: &mut knotq_sync::LocalSyncState,
     workspace: &Workspace,
     image_assets_dir: &Path,
     remote_latest: &HashMap<DocumentId, u64>,
+    documents: Option<&HashSet<DocumentId>>,
 ) -> Result<()> {
-    for media in mobile_workspace_media_assets(workspace) {
+    for media in mobile_workspace_media_assets_for_documents(workspace, documents) {
         let path = mobile_image_asset_path(image_assets_dir, media.asset, media.format);
         let Ok(metadata) = fs::metadata(&path) else {
             continue;
@@ -498,14 +556,33 @@ fn mobile_media_sha256(bytes: &[u8]) -> String {
 fn mobile_sync_http_error(error: ureq::Error) -> anyhow::Error {
     match error {
         ureq::Error::Status(status, response) => {
-            let code = response
-                .into_json::<knotq_sync::ErrorResponse>()
-                .map(|error| error.code)
-                .unwrap_or_else(|_| status.to_string());
+            let code = read_bounded_json::<knotq_sync::ErrorResponse>(
+                response.into_reader(),
+                MAX_SYNC_ERROR_RESPONSE_BYTES,
+            )
+            .map(|error| error.code)
+            .unwrap_or_else(|_| status.to_string());
             anyhow!("sync backend rejected request: {code}")
         }
         error => anyhow!("sync backend request failed: {error}"),
     }
+}
+
+fn read_bounded_json<T: serde::de::DeserializeOwned>(
+    reader: impl Read,
+    max_bytes: usize,
+) -> Result<T> {
+    let mut reader = reader.take((max_bytes + 1) as u64);
+    let mut bytes = Vec::with_capacity(max_bytes.min(64 * 1024));
+    reader
+        .read_to_end(&mut bytes)
+        .context("read bounded JSON response")?;
+    if bytes.len() > max_bytes {
+        return Err(anyhow!(
+            "JSON response exceeds the {max_bytes} byte client limit"
+        ));
+    }
+    serde_json::from_slice(&bytes).context("decode bounded JSON response")
 }
 
 pub(crate) fn normalize_sync_api_base(raw: &str) -> Result<String> {
@@ -523,30 +600,57 @@ pub(crate) fn normalize_sync_api_base(raw: &str) -> Result<String> {
 }
 
 fn mobile_is_secure_api_base(url: &str) -> bool {
-    if let Some(host) = url.strip_prefix("https://") {
-        return !host.is_empty();
+    if url.chars().any(char::is_control) || url.contains(['?', '#', '@']) {
+        return false;
     }
-    if let Some(rest) = url.strip_prefix("http://") {
-        let host = rest
-            .split(['/', ':'])
+
+    let (scheme, rest) = if let Some(rest) = url.strip_prefix("https://") {
+        ("https", rest)
+    } else if let Some(rest) = url.strip_prefix("http://") {
+        ("http", rest)
+    } else {
+        return false;
+    };
+
+    // Only inspect the authority. Paths are supported for self-hosted/proxy
+    // deployments, but an empty authority (for example `https:///path`) is not
+    // an API host and must not reach the transport with a bearer token.
+    let authority = rest.split('/').next().unwrap_or("");
+    if authority.is_empty() {
+        return false;
+    }
+    let host = if authority.starts_with('[') {
+        authority
+            .split(']')
             .next()
             .unwrap_or("")
-            .to_ascii_lowercase();
-        return matches!(host.as_str(), "127.0.0.1" | "localhost" | "[::1]" | "::1");
+            .trim_start_matches('[')
+    } else {
+        authority.split(':').next().unwrap_or("")
     }
-    false
+    .to_ascii_lowercase();
+    if host.is_empty() {
+        return false;
+    }
+
+    if scheme == "https" {
+        return true;
+    }
+    matches!(host.as_str(), "127.0.0.1" | "localhost" | "::1")
 }
 
 #[cfg(test)]
 mod sync_api_base_tests {
     use super::{
         mobile_download_missing_media_assets, mobile_image_asset_path,
-        mobile_media_asset_needs_download, mobile_upload_local_media_assets,
-        mobile_workspace_media_assets, normalize_sync_api_base, MobileSyncHttpClient,
-        MAX_SYNC_MEDIA_BYTES,
+        mobile_media_asset_needs_download, mobile_upload_local_media_assets_for_documents,
+        mobile_workspace_media_assets, normalize_sync_api_base, read_bounded_json,
+        MobileSyncHttpClient, MAX_SYNC_MEDIA_BYTES,
     };
-    use knotq_model::{ImageAssetFormat, ImageInline, Item, Scheme, Table, Workspace};
-    use std::{fs, path::PathBuf};
+    use knotq_model::{
+        ImageAssetFormat, ImageInline, Item, Scheme, SyncDocumentKind, Table, Workspace,
+    };
+    use std::{collections::HashSet, fs, io::Cursor, path::PathBuf};
 
     #[test]
     fn https_is_accepted_http_loopback_only() {
@@ -559,6 +663,42 @@ mod sync_api_base_tests {
         assert!(normalize_sync_api_base("http://127.0.0.1.evil.com").is_err());
         assert!(normalize_sync_api_base("http://sync.example.com").is_err());
         assert!(normalize_sync_api_base("").is_err());
+    }
+
+    #[test]
+    fn api_base_rejects_ambiguous_or_credentialed_urls() {
+        for value in [
+            "https:///sync",
+            "https://user:password@sync.example.com",
+            "https://sync.example.com?redirect=evil",
+            "https://sync.example.com#fragment",
+            "https://sync.example.com\u{0000}",
+            "http://localhost.evil.com:8787",
+        ] {
+            assert!(
+                normalize_sync_api_base(value).is_err(),
+                "must reject unsafe API base: {value:?}"
+            );
+        }
+        assert_eq!(
+            normalize_sync_api_base("https://sync.example.com/v1").unwrap(),
+            "https://sync.example.com/v1"
+        );
+        assert!(normalize_sync_api_base("http://[::1]:8787").is_ok());
+    }
+
+    #[test]
+    fn bounded_json_reader_enforces_response_limit() {
+        let payload = br#"{"ok":true}"#;
+        let parsed: serde_json::Value =
+            read_bounded_json(Cursor::new(payload), payload.len()).unwrap();
+        assert_eq!(parsed["ok"], true);
+
+        let mut oversized = payload.to_vec();
+        oversized.push(b' ');
+        let error = read_bounded_json::<serde_json::Value>(Cursor::new(oversized), payload.len())
+            .unwrap_err();
+        assert!(error.to_string().contains("exceeds"));
     }
 
     #[test]
@@ -637,6 +777,30 @@ mod sync_api_base_tests {
         assert_eq!(media[0].format, ImageAssetFormat::Png);
     }
 
+    #[test]
+    fn media_asset_filter_scopes_upload_discovery_to_changed_documents() {
+        let (workspace, asset) = single_image_workspace();
+        let document = workspace
+            .scheme_sync
+            .values()
+            .find(|meta| meta.kind == SyncDocumentKind::Scheme)
+            .expect("scheme sync binding")
+            .id;
+        let unrelated = knotq_model::DocumentId::new();
+
+        assert!(super::mobile_workspace_media_assets_for_documents(
+            &workspace,
+            Some(&HashSet::from([unrelated]))
+        )
+        .is_empty());
+        let filtered = super::mobile_workspace_media_assets_for_documents(
+            &workspace,
+            Some(&HashSet::from([document])),
+        );
+        assert_eq!(filtered.len(), 1);
+        assert_eq!(filtered[0].asset, asset);
+    }
+
     fn single_image_workspace() -> (Workspace, uuid::Uuid) {
         let mut workspace = Workspace::new();
         let mut scheme = Scheme::new("Images", 0);
@@ -658,10 +822,7 @@ mod sync_api_base_tests {
     /// Nothing listens on port 1, so any request fails fast with a connection
     /// refusal — a deterministic stand-in for a server/transport failure.
     fn unreachable_media_client() -> MobileSyncHttpClient {
-        MobileSyncHttpClient {
-            api_base: "http://127.0.0.1:1".to_string(),
-            bearer_token: "test".to_string(),
-        }
+        MobileSyncHttpClient::new_for_test("http://127.0.0.1:1", "test")
     }
 
     #[test]
@@ -675,12 +836,13 @@ mod sync_api_base_tests {
         fs::write(&path, vec![0u8; MAX_SYNC_MEDIA_BYTES + 1]).unwrap();
 
         let mut local_state = knotq_sync::LocalSyncState::default();
-        let result = mobile_upload_local_media_assets(
+        let result = mobile_upload_local_media_assets_for_documents(
             &unreachable_media_client(),
             &mut local_state,
             &workspace,
             &dir,
             &std::collections::HashMap::new(),
+            None,
         );
         assert!(
             result.is_ok(),
@@ -699,12 +861,13 @@ mod sync_api_base_tests {
         fs::write(&path, [1u8, 2, 3, 4]).unwrap();
 
         let mut local_state = knotq_sync::LocalSyncState::default();
-        let result = mobile_upload_local_media_assets(
+        let result = mobile_upload_local_media_assets_for_documents(
             &unreachable_media_client(),
             &mut local_state,
             &workspace,
             &dir,
             &std::collections::HashMap::new(),
+            None,
         );
         assert!(
             result.is_ok(),

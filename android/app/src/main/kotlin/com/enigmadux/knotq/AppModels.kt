@@ -3,13 +3,46 @@ package com.enigmadux.knotq
 import android.view.View
 import android.widget.TextView
 import java.net.HttpURLConnection
+import java.io.InputStream
+import java.net.URI
 import org.json.JSONObject
 
 // Small value types + onboarding step data shared across the MainActivity
 // extension files, extracted from MainActivity. All internal (same module).
 
+internal const val MAX_HTTP_RESPONSE_BYTES = 1L * 1024L * 1024L
+
+/** Read a small JSON/control-plane response without allowing an untrusted peer to OOM the app. */
+internal fun InputStream.readUtf8Capped(maxBytes: Long = MAX_HTTP_RESPONSE_BYTES): String =
+    readBytesCapped(maxBytes).toString(Charsets.UTF_8)
+
+/**
+ * Sync credentials must never be sent to a plaintext or ambiguous endpoint.
+ * Plain HTTP remains available only for local loopback workers used by tests.
+ */
+internal fun isSecureSyncApiBase(raw: String): Boolean {
+    val normalized = raw.trim().trimEnd('/')
+    if (normalized.isEmpty()) return false
+    val uri = runCatching { URI(normalized) }.getOrNull() ?: return false
+    if (uri.userInfo != null || uri.query != null || uri.fragment != null) return false
+    val host = uri.host?.lowercase() ?: return false
+    return when (uri.scheme?.lowercase()) {
+        "https" -> true
+        "http" -> host.trim('[', ']') in setOf("127.0.0.1", "localhost", "::1")
+        else -> false
+    }
+}
+
+internal fun MainActivity.validatedSyncApiBase(raw: String): String {
+    val normalized = normalizeApiBase(raw)
+    if (!isSecureSyncApiBase(normalized)) {
+        throw IllegalArgumentException(L10n.t(this, "sync.error.api_url_https_required"))
+    }
+    return normalized
+}
+
 internal fun refreshApiErrorCode(connection: HttpURLConnection): String {
-    val raw = connection.errorStream?.bufferedReader()?.use { it.readText() }.orEmpty()
+    val raw = connection.errorStream?.use { it.readUtf8Capped() }.orEmpty()
     return runCatching { JSONObject(raw).optString("code") }.getOrDefault("")
 }
 
@@ -60,6 +93,16 @@ internal val ONBOARDING_STEPS = listOf(
         ringsContent = true
     )
 )
+
+/**
+ * Restored UI state can outlive a tutorial revision. Keep all consumers on a
+ * valid step rather than allowing an old negative or too-large index to crash
+ * the overlay while the activity is being recreated.
+ */
+internal fun clampedOnboardingStep(step: Int, stepCount: Int): Int {
+    if (stepCount <= 0) return 0
+    return step.coerceIn(0, stepCount - 1)
+}
 
 internal data class SyncSession(
     val apiBase: String,

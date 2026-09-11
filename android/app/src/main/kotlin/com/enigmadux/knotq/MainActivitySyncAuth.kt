@@ -190,7 +190,12 @@ internal fun MainActivity.showSyncAccountDialog() {
 
 internal fun MainActivity.beginBrowserSyncAuth(createAccount: Boolean) {
     if (syncAuthInProgress) return
-    val apiBase = normalizeApiBase(syncSession?.apiBase ?: defaultSyncApiBase())
+    val apiBase = runCatching {
+        validatedSyncApiBase(syncSession?.apiBase ?: defaultSyncApiBase())
+    }.getOrElse {
+        showError(L10n.t(this, "mobile.sync.sign_in_failed_title"), it.message)
+        return
+    }
     val state = randomUrlToken(24)
     val verifier = pkceVerifier()
     val challenge = pkceChallenge(verifier)
@@ -276,6 +281,7 @@ internal fun MainActivity.handleSyncBrowserCallback(uri: Uri?): Boolean {
         }
         runOnUiThread {
             syncAuthInProgress = false
+            if (!isUiActive()) return@runOnUiThread
             result.onSuccess { session ->
                 syncLoginChallenge = null
                 installSyncSession(session)
@@ -335,7 +341,10 @@ internal fun MainActivity.base64UrlNoPad(bytes: ByteArray): String =
 
 internal fun MainActivity.signInToSync(apiBaseRaw: String, emailRaw: String, password: String) {
     if (syncAuthInProgress) return
-    val apiBase = normalizeApiBase(apiBaseRaw)
+    val apiBase = runCatching { validatedSyncApiBase(apiBaseRaw) }.getOrElse {
+        showError(L10n.t(this, "mobile.sync.sign_in_failed_title"), it.message)
+        return
+    }
     val email = emailRaw.trim()
     if (apiBase.isEmpty() || email.isEmpty() || password.isEmpty()) {
         showError(L10n.t(this, "mobile.sync.sign_in_failed_title"), L10n.t(this, "mobile.sync.enter_credentials_prompt"))
@@ -346,6 +355,7 @@ internal fun MainActivity.signInToSync(apiBaseRaw: String, emailRaw: String, pas
         val result = runCatching { requestSyncLoginStart(apiBase, email, password) }
         runOnUiThread {
             syncAuthInProgress = false
+            if (!isUiActive()) return@runOnUiThread
             result.onSuccess { start ->
                 val session = start.session
                 if (session != null) {
@@ -364,7 +374,10 @@ internal fun MainActivity.signInToSync(apiBaseRaw: String, emailRaw: String, pas
 
 internal fun MainActivity.createSyncAccount(apiBaseRaw: String, emailRaw: String, password: String) {
     if (syncAuthInProgress) return
-    val apiBase = normalizeApiBase(apiBaseRaw)
+    val apiBase = runCatching { validatedSyncApiBase(apiBaseRaw) }.getOrElse {
+        showError(L10n.t(this, "mobile.sync.account_creation_failed_title"), it.message)
+        return
+    }
     val email = emailRaw.trim()
     if (apiBase.isEmpty() || email.isEmpty() || password.isEmpty()) {
         showError(L10n.t(this, "mobile.sync.account_creation_failed_title"), L10n.t(this, "mobile.sync.enter_credentials_prompt"))
@@ -380,6 +393,7 @@ internal fun MainActivity.createSyncAccount(apiBaseRaw: String, emailRaw: String
         }
         runOnUiThread {
             syncAuthInProgress = false
+            if (!isUiActive()) return@runOnUiThread
             result.onSuccess { session ->
                 syncLoginChallenge = null
                 installSyncSession(session)
@@ -393,6 +407,7 @@ internal fun MainActivity.createSyncAccount(apiBaseRaw: String, emailRaw: String
 }
 
 internal fun MainActivity.showLoginCodeDialog(challenge: SyncLoginChallenge) {
+    if (!isUiActive()) return
     val form = LinearLayout(this).apply {
         orientation = LinearLayout.VERTICAL
         setPadding(dp(20), dp(8), dp(20), 0)
@@ -447,6 +462,7 @@ internal fun MainActivity.verifyLoginCode(codeRaw: String) {
         }
         runOnUiThread {
             syncAuthInProgress = false
+            if (!isUiActive()) return@runOnUiThread
             result.onSuccess { session ->
                 syncLoginChallenge = null
                 installSyncSession(session)
@@ -466,7 +482,7 @@ internal fun MainActivity.installSyncSession(session: SyncSession) {
     saveSyncSession(session)
     startSyncPolling()
     scheduleBackgroundSyncWork()
-    render()
+    requestRender()
     if (session.supportsSync) refreshAccountStatus()
     // The account prompt is the last onboarding step (after the tour), so signing
     // in there completes onboarding.
@@ -481,16 +497,20 @@ internal fun MainActivity.signOutSync() {
     syncSubscriptionCancelled = false
     syncSubscriptionProvider = null
     syncEmailVerified = null
+    cancelResendCooldown()
     resendVerificationCooldown = 0
     resendVerificationInProgress = false
     syncOffline = false
     syncFailureNotified = false
+    syncStatusInProgress = false
     saveSyncSession(null)
     syncPollHandler.removeCallbacks(syncPollRunnable)
+    syncPollHandler.removeCallbacks(syncStatusRunnable)
+    syncPollHandler.removeCallbacks(syncInitialTransportRunnable)
     syncPollHandler.removeCallbacks(syncEditRunnable)
     syncEditPending = false
     cancelBackgroundSyncWork()
-    render()
+    requestRender()
 }
 
 /// Read the authoritative subscription lifecycle so Settings can reflect a
@@ -509,7 +529,7 @@ internal fun MainActivity.refreshAccountStatus() {
                 SyncRefreshResult.Deferred -> {
                     runOnUiThread {
                         syncOffline = true
-                        render()
+                        requestRender()
                     }
                     return@runCatching null
                 }
@@ -527,10 +547,11 @@ internal fun MainActivity.refreshAccountStatus() {
         }
         runOnUiThread {
             syncInProgress = false
+            if (!isUiActive()) return@runOnUiThread
             statusResult.exceptionOrNull()?.let { error ->
                 if (isLikelyNetworkError(error) || isTransientSyncError(error)) {
                     syncOffline = true
-                    render()
+                    requestRender()
                 }
                 return@runOnUiThread
             }
@@ -542,7 +563,7 @@ internal fun MainActivity.refreshAccountStatus() {
             syncSubscriptionCancelled =
                 result.optBoolean("supports_sync", true) &&
                     result.optString("subscription_state").equals("cancelled", ignoreCase = true)
-            render()
+            requestRender()
         }
     }.start()
 }

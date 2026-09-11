@@ -104,6 +104,8 @@ private struct KnotQUpcomingWidgetView: View {
                     .font(.caption)
                     .foregroundStyle(theme.textMuted)
                     .lineLimit(2)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
+                    .multilineTextAlignment(.center)
             }
         }
         .padding(10)
@@ -113,11 +115,13 @@ private struct KnotQUpcomingWidgetView: View {
         VStack(alignment: .leading, spacing: dense ? 0 : 2) {
             currentDateHeader
             if visibleItems.isEmpty {
+                // Fill the space below the date header and centre the text in it,
+                // rather than letting it sit tucked right under the header.
                 Text(L10n.t("mobile.home.nothing_scheduled"))
-                    .font(.system(size: 12))
+                    .font(.system(size: 13))
                     .foregroundStyle(theme.textMuted)
-                    .padding(.horizontal, 2)
-                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .multilineTextAlignment(.center)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
             } else {
                 if columns <= 1 {
                     VStack(spacing: 0) {

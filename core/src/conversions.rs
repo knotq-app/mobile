@@ -36,7 +36,13 @@ impl MobileItem {
         Self {
             id: item.id.to_string(),
             text: item.text(),
-            marker: format!("{}{}", marker_str(item.marker), item.marker_family.as_suffix().map_or(String::new(), |s| format!(".{s}"))),
+            marker: format!(
+                "{}{}",
+                marker_str(item.marker),
+                item.marker_family
+                    .as_suffix()
+                    .map_or(String::new(), |s| format!(".{s}"))
+            ),
             indent: i32::from(item.indent),
             kind: item_kind_str(item.kind()).to_string(),
             done: item.single_state().is_done(),
@@ -450,6 +456,12 @@ pub(crate) fn theme_mode_str(theme_mode: ThemeMode) -> &'static str {
         ThemeMode::System => "system",
         ThemeMode::Dark => "dark",
         ThemeMode::Light => "light",
+        ThemeMode::RosePineMoon => "rose_pine_moon",
+        ThemeMode::CatppuccinMocha => "catppuccin_mocha",
+        ThemeMode::TokyoNight => "tokyo_night",
+        ThemeMode::Parchment => "parchment",
+        ThemeMode::RosePineDawn => "rose_pine_dawn",
+        ThemeMode::CatppuccinLatte => "catppuccin_latte",
     }
 }
 

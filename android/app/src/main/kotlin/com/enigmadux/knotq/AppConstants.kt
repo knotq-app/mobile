@@ -110,6 +110,18 @@ internal const val ICON_SEARCH_VECTOR_SIZE_DP = 19
 internal const val ICON_DOCK_BUTTON_WIDTH_DP = 46
 internal const val ICON_DOCK_BUTTON_HEIGHT_DP = 48
 internal const val ICON_DOCK_VECTOR_SIZE_DP = 23
+// The phone navigator paints a useful first viewport synchronously, then
+// spreads the rest across frames so a pathological workspace cannot monopolize
+// the UI thread during the first Home draw.
+internal const val NAVIGATOR_INITIAL_BATCH = 48
+internal const val NAVIGATOR_CONTINUATION_BATCH = 48
+// Archived schemes are less frequently visited but can be unbounded. Keep the
+// Home page's first frame small and materialize older rows only as that bounded
+// archive viewport is scrolled.
+internal const val ARCHIVE_INITIAL_BATCH = 12
+internal const val ARCHIVE_CONTINUATION_BATCH = 24
+internal const val ARCHIVE_VIEWPORT_TAG = "knotq.archive.viewport"
+internal const val DAILY_VIEWPORT_TAG = "knotq.daily.viewport"
 
 internal const val CALENDAR_INTERACTION_NONE = 0
 internal const val CALENDAR_INTERACTION_DRAG = 1
@@ -121,6 +133,10 @@ internal const val REQUEST_GOOGLE_AUTHORIZE = 7312
 internal const val REQUEST_GOOGLE_CHOOSE_ACCOUNT = 7313
 internal const val REVIEW_FIRST_LAUNCH_AT_PREF = "knotq.reviewFirstLaunchAt.v1"
 internal const val REVIEW_PROMPTED_PREF = "knotq.reviewPrompted.v1"
+// Last workspace theme used to paint the pre-native-loading shell. The loaded
+// workspace remains authoritative once it is available; this only prevents a
+// cold start from flashing the system theme before that snapshot arrives.
+internal const val THEME_MODE_PREF = "knotq.themeMode.v1"
 internal const val REVIEW_MIN_USAGE_MS = 14L * 24L * 60L * 60L * 1000L
 
 internal const val GLYPH_HOME = "⌂"

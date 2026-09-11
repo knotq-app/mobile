@@ -11,6 +11,11 @@ plugins {
 def keystorePropertiesFile = rootProject.file("keystore.properties")
 def keystoreProperties = new Properties()
 def hasReleaseSigning = keystorePropertiesFile.exists()
+def debugAbis = (project.findProperty("knotqDebugAbis") ?: "arm64-v8a,x86_64")
+    .toString()
+    .split(",")
+    .collect { it.trim() }
+    .findAll { it }
 if (hasReleaseSigning) {
     keystoreProperties.load(new FileInputStream(keystorePropertiesFile))
 }
@@ -23,8 +28,9 @@ android {
         applicationId "com.enigmadux.knotq"
         minSdk 26
         targetSdk 36
-        versionCode 21
-        versionName "1.0.13"
+        versionCode 24
+        versionName "1.0.16"
+        testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
 
         // Explicit sync backend override. Empty by default, in which case the
         // build-type-derived default applies (debug → sandbox, release → prod;
@@ -55,6 +61,13 @@ android {
         debug {
             // Dev/sandbox builds ship the accounts/sync/billing surface.
             buildConfigField "boolean", "ACCOUNTS_ENABLED", "true"
+            // Keep ordinary emulator APKs small and fast to install. Override
+            // with `-PknotqDebugAbis=arm64-v8a,armeabi-v7a,x86,x86_64` when a
+            // device-specific native ABI is required; release stays universal.
+            ndk {
+                abiFilters.clear()
+                abiFilters.addAll(debugAbis)
+            }
         }
         release {
             minifyEnabled true
@@ -78,9 +91,16 @@ android {
         jvmTarget = "17"
     }
 
-    packaging {
-        jniLibs {
-            keepDebugSymbols += ["**/libjnidispatch.so", "**/libknotq_mobile_core.so"]
+    // The Rust core is built for four ABIs. Keeping every native debug symbol
+    // inside the universal debug APK made ordinary emulator installs enormous
+    // (hundreds of MB) and materially slowed cold process startup. Native
+    // symbols are opt-in for the rare session that needs them; normal debug
+    // builds use the same stripped native payload shape as release.
+    if (project.findProperty("knotqKeepNativeSymbols")?.toString()?.toBoolean() == true) {
+        packaging {
+            jniLibs {
+                keepDebugSymbols += ["**/libjnidispatch.so", "**/libknotq_mobile_core.so"]
+            }
         }
     }
 }
@@ -106,6 +126,24 @@ dependencies {
     implementation "com.google.firebase:firebase-messaging"
 
     testImplementation "junit:junit:4.13.2"
+    // Keep one small connected smoke suite around the real Activity lifecycle.
+    // The JVM tests cover pure scheduling/layout logic; this catches regressions
+    // where async native startup never publishes a tree or a tab rebuild throws
+    // only on a device/emulator.
+    androidTestImplementation "androidx.test:runner:1.6.2"
+    androidTestImplementation "androidx.test:rules:1.6.1"
+    androidTestImplementation "androidx.test.ext:junit:1.2.1"
+}
+
+// Make timezone-matrix JVM tests real: Gradle's normal up-to-date checks do not
+// consider the shell's TZ environment, so explicitly changing TZ otherwise
+// reuses the previous test result. The property also sets the test JVM's zone.
+tasks.withType(Test).configureEach {
+    def testTimezone = project.findProperty("knotqTestTimezone")?.toString()
+    if (testTimezone) {
+        inputs.property("knotqTestTimezone", testTimezone)
+        systemProperty "user.timezone", testTimezone
+    }
 }
 
 // Cross-compile the Rust core (libknotq_mobile_core.so) into jniLibs before the
@@ -115,6 +153,7 @@ tasks.register("buildRustDebug") {
     doLast {
         exec {
             workingDir rootProject.projectDir
+            environment "KNOTQ_DEBUG_ABIS", debugAbis.join(",")
             commandLine "bash", "build-rust.sh", "debug"
         }
     }

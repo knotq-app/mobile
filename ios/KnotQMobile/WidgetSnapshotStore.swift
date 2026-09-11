@@ -32,8 +32,14 @@ enum KnotQWidgetSnapshotStore {
     private static let key = "knotq.upcomingWidgetSnapshot.v1"
 
     static func load() -> KnotQWidgetSnapshot {
-        guard let data = defaults.data(forKey: key),
-              let snapshot = try? JSONDecoder().decode(KnotQWidgetSnapshot.self, from: data) else {
+        decode(defaults.data(forKey: key))
+    }
+
+    /// Decode persisted widget state without inventing content. An absent or
+    /// corrupt App Group value is a normal first-launch/recovery state, and an
+    /// empty item list is a valid "nothing scheduled" state.
+    static func decode(_ data: Data?) -> KnotQWidgetSnapshot {
+        guard let data, let snapshot = try? JSONDecoder().decode(KnotQWidgetSnapshot.self, from: data) else {
             return .empty
         }
         return snapshot

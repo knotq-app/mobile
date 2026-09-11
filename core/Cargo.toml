@@ -41,6 +41,10 @@ knotq-notifications.workspace = true
 knotq-state.workspace = true
 knotq-storage-json.workspace = true
 knotq-sync.workspace = true
+# Debug-only: redirect the native lib's stderr (all `eprintln!` sync tracing) to a
+# file under the app dir so it is retrievable on Android/iOS, where stderr is
+# otherwise dropped. Used only by `install_stderr_capture`.
+libc = "0.2"
 serde.workspace = true
 serde_json.workspace = true
 sha2.workspace = true

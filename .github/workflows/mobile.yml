@@ -1,0 +1,371 @@
+name: Mobile CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+  schedule:
+    - cron: '17 3 * * *'
+
+# Every mobile job only checks out source and publishes no repository state.
+# Keep the workflow token read-only even if repository defaults are changed.
+permissions:
+  contents: read
+
+concurrency:
+  group: mobile-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  mobile-core:
+    name: Mobile core (${{ matrix.tz }})
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        # Date semantics must not silently depend on the runner's default zone.
+        tz: [UTC, America/New_York, America/Los_Angeles, Pacific/Auckland, Asia/Kolkata]
+    env:
+      TZ: ${{ matrix.tz }}
+      RUST_BACKTRACE: 1
+      KNOTQ_FUZZ_SEEDS: 8
+      KNOTQ_FUZZ_STEPS: 128
+    steps:
+      - name: Check out desktop/shared crates
+        uses: actions/checkout@v6
+        with:
+          repository: knotq-app/knotq-app
+          path: app
+
+      - name: Check out mobile shells and core
+        uses: actions/checkout@v6
+        with:
+          path: app/mobile
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        continue-on-error: true
+        with:
+          workspaces: app/mobile
+          key: mobile-core-${{ matrix.tz }}
+
+      - name: Check Rust formatting
+        working-directory: app/mobile
+        run: cargo fmt --all -- --check
+
+      - name: Run mobile core tests and stateful fuzzers
+        working-directory: app/mobile
+        # The production tests and fuzzers live in the library target. Avoid
+        # launching the zero-test timing binaries here; they are developer
+        # benchmarks and a platform loader hang must not obscure core coverage.
+        run: cargo test -p knotq-mobile-core --features accounts --release --lib -- --nocapture
+
+  mobile-core-deep:
+    name: Mobile core deep fuzz
+    # The full profile is deliberately scheduled/manual: it exercises the
+    # same production disk-backed/two-device fuzzers at a depth that is too
+    # expensive to duplicate across every PR timezone shard.
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-24.04
+    env:
+      TZ: UTC
+      RUST_BACKTRACE: 1
+      KNOTQ_FUZZ_SEEDS: 16
+      KNOTQ_FUZZ_STEPS: 256
+    steps:
+      - name: Check out desktop/shared crates
+        uses: actions/checkout@v6
+        with:
+          repository: knotq-app/knotq-app
+          path: app
+
+      - name: Check out mobile shells and core
+        uses: actions/checkout@v6
+        with:
+          path: app/mobile
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        continue-on-error: true
+        with:
+          workspaces: app/mobile
+          key: mobile-core-deep
+
+      - name: Check Rust formatting
+        working-directory: app/mobile
+        run: cargo fmt --all -- --check
+
+      - name: Run deep mobile core stateful fuzzers
+        working-directory: app/mobile
+        run: cargo test -p knotq-mobile-core --features accounts --release --lib
+
+  mobile-core-clippy:
+    name: Mobile core Clippy (warnings as errors)
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check out desktop/shared crates
+        uses: actions/checkout@v6
+        with:
+          repository: knotq-app/knotq-app
+          path: app
+
+      - name: Check out mobile shells and core
+        uses: actions/checkout@v6
+        with:
+          path: app/mobile
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        continue-on-error: true
+        with:
+          workspaces: app/mobile
+          key: mobile-core-clippy
+
+      - name: Enforce mobile core Clippy cleanliness
+        working-directory: app/mobile
+        run: cargo clippy -p knotq-mobile-core --features accounts --all-targets -- -D warnings
+
+  mobile-real-sync:
+    name: Mobile core real WebSocket sync
+    runs-on: ubuntu-24.04
+    # This job supplies the URL that the real-transport test intentionally
+    # requires. The ordinary mobile-core matrix remains deterministic and
+    # offline; this job owns the live Wrangler/DO seam.
+    env:
+      TZ: UTC
+      RUST_BACKTRACE: 1
+    steps:
+      - name: Check out desktop/shared crates
+        uses: actions/checkout@v6
+        with:
+          repository: knotq-app/knotq-app
+          path: app
+
+      - name: Check out mobile shells and core
+        uses: actions/checkout@v6
+        with:
+          path: app/mobile
+
+      - name: Check out backend
+        uses: actions/checkout@v6
+        with:
+          repository: knotq-app/backend
+          path: app/backend
+          token: ${{ secrets.BACKEND_REPO_TOKEN }}
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        continue-on-error: true
+        with:
+          workspaces: app/mobile
+          key: mobile-real-sync
+
+      - uses: pnpm/action-setup@v4
+        with:
+          package_json_file: app/backend/cloudflare/package.json
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: app/backend/cloudflare/pnpm-lock.yaml
+
+      - name: Install backend dependencies
+        working-directory: app/backend/cloudflare
+        run: pnpm install --frozen-lockfile
+
+      - name: Run mobile core against local Wrangler WebSocket backend
+        working-directory: app/mobile
+        run: ./.github/scripts/run-mobile-ws-integration.sh
+
+  ios:
+    name: iOS tests (${{ matrix.tz }})
+    runs-on: macos-15
+    strategy:
+      fail-fast: false
+      matrix:
+        # Exercise the Swift/UIKit date path in the same zones as the Rust
+        # core. This catches DST transitions and date-line rollovers that a
+        # UTC-only simulator cannot expose.
+        tz: [UTC, America/New_York, America/Los_Angeles, Pacific/Auckland, Asia/Kolkata]
+    env:
+      TZ: ${{ matrix.tz }}
+      RUST_BACKTRACE: 1
+    steps:
+      - name: Check out desktop/shared crates
+        uses: actions/checkout@v6
+        with:
+          repository: knotq-app/knotq-app
+          path: app
+
+      - name: Check out mobile shells and core
+        uses: actions/checkout@v6
+        with:
+          path: app/mobile
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        continue-on-error: true
+        with:
+          workspaces: app/mobile
+          key: ios-tests
+
+      - name: Select an installed iPhone simulator
+        id: ios-simulator
+        run: |
+          set -euo pipefail
+          # BSD awk differs across hosted macOS images for escaped grouping
+          # parentheses. Parse the simulator line with portable grep/sed instead
+          # so a toolchain update cannot leave the destination name empty.
+          simulator_name="$(xcrun simctl list devices available | grep -m1 'iPhone' | sed -E 's/^[[:space:]]*([^()]*) \\(.*/\\1/' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')"
+          test -n "$simulator_name"
+          echo "name=$simulator_name" >> "$GITHUB_OUTPUT"
+
+      - name: Run the complete iOS test target
+        working-directory: app/mobile
+        run: >-
+          xcodebuild test
+          -project ios/KnotQMobile.xcodeproj
+          -scheme KnotQMobile
+          -destination "platform=iOS Simulator,name=${{ steps.ios-simulator.outputs.name }}"
+          -only-testing:KnotQMobileTests
+          -parallel-testing-enabled NO
+
+  android:
+    name: Android unit tests and debug APK
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check out desktop/shared crates
+        uses: actions/checkout@v6
+        with:
+          repository: knotq-app/knotq-app
+          path: app
+
+      - name: Check out mobile shells and core
+        uses: actions/checkout@v6
+        with:
+          path: app/mobile
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android,armv7-linux-androideabi,i686-linux-android,x86_64-linux-android
+
+      - uses: android-actions/setup-android@v3
+
+      - name: Install Android build dependencies
+        run: sdkmanager "platform-tools" "platforms;android-36" "build-tools;35.0.0" "ndk;28.2.13676358"
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      - name: Validate and regenerate Android localization
+        working-directory: app
+        run: |
+          cargo run -p l10n-gen -- validate
+          cargo run -p l10n-gen -- generate android
+          git -C mobile diff --exit-code -- android/app/src/main/res android/app/src/main/kotlin/com/enigmadux/knotq/L10n.kt
+
+      - name: Test and assemble Android debug and release builds
+        working-directory: app/mobile
+        run: ./android/gradlew -p android :app:testDebugUnitTest :app:lintDebug :app:assembleDebug :app:assembleRelease --no-daemon --console=plain
+
+      - name: Install Android emulator image for connected smoke coverage
+        run: sdkmanager "emulator" "system-images;android-35;google_apis;x86_64"
+
+      - name: Run connected Android startup/navigation smoke test
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          target: google_apis
+          arch: x86_64
+          profile: pixel_2
+          force-avd-creation: true
+          disable-animations: true
+          emulator-options: -no-window -no-audio -no-boot-anim -gpu swiftshader_indirect
+          script: |
+            set -euo pipefail
+            cd app/mobile
+            check_frame_budget() {
+              local app_pid skipped davey
+              # The connected test runner may tear the target process down
+              # before this post-test check. Reinstall and launch the already
+              # built debug APK so the check has an authoritative KnotQ PID;
+              # otherwise system UI/launcher frame warnings can be mistaken
+              # for an app regression.
+              adb install -r android/app/build/outputs/apk/debug/app-debug.apk >/dev/null
+              adb shell pm grant com.enigmadux.knotq android.permission.POST_NOTIFICATIONS 2>/dev/null || true
+              adb logcat -c
+              adb shell am start -S -W -n com.enigmadux.knotq/.MainActivity >/dev/null
+              # Let the first native/JIT render settle before collecting the
+              # steady-state UI-thread signal. Cold-start latency is gated
+              # separately below; mixing startup compilation into this check
+              # makes the result depend on the emulator's software renderer.
+              sleep 10
+              adb logcat -c
+              sleep 2
+              app_pid="$(adb shell pidof com.enigmadux.knotq | tr -d '\r' | awk '{print $1}')"
+              test -n "$app_pid"
+              skipped="$(adb logcat -d -v threadtime | awk -v pid="$app_pid" '$3 == pid && / Choreographer: Skipped [0-9]+ frames/ { print }')"
+              davey="$(adb logcat -d -v threadtime | awk -v pid="$app_pid" '$3 == pid && / HWUI.*Davey!/ { print }')"
+              if test -n "$skipped"; then
+                echo "KnotQ skipped frames on the main thread (pid=$app_pid):"
+                echo "$skipped"
+                return 1
+              fi
+              # HWUI's Davey line includes GPU/driver upload time and is
+              # especially noisy on software-rendered CI emulators during the
+              # first JIT/native-library frame. Keep it visible for diagnosis,
+              # while the PID-filtered Choreographer signal remains the hard
+              # regression gate for app work on the UI thread.
+              if test -n "$davey"; then
+                echo "::warning::KnotQ HWUI frame telemetry on pid=$app_pid:"
+                echo "$davey"
+              fi
+            }
+            # Exercise both the ordinary snap/slide path and Android's
+            # reduced-motion path. Restore the emulator setting even when the
+            # second run fails so later workflow steps are not contaminated.
+            adb shell settings put global animator_duration_scale 1
+            adb shell settings put global transition_animation_scale 1
+            adb shell settings put global window_animation_scale 1
+            restore_motion() {
+              adb shell settings put global animator_duration_scale 1
+              adb shell settings put global transition_animation_scale 1
+              adb shell settings put global window_animation_scale 1
+            }
+            trap restore_motion EXIT
+            adb logcat -c
+            ./android/gradlew -p android :app:connectedDebugAndroidTest --no-daemon --console=plain
+            check_cold_start_budget() {
+              local total_ms
+              total_ms="$(adb shell am start -S -W -n com.enigmadux.knotq/.MainActivity | awk -F': ' '/TotalTime/ {print $2}' | tr -d '\r')"
+              test -n "$total_ms"
+              test "$total_ms" -le 15000
+            }
+            check_frame_budget
+            check_cold_start_budget
+            adb logcat -c
+            adb shell settings put global animator_duration_scale 0
+            adb shell settings put global transition_animation_scale 0
+            adb shell settings put global window_animation_scale 0
+            ./android/gradlew -p android :app:connectedDebugAndroidTest --no-daemon --console=plain
+            check_frame_budget
+            check_cold_start_budget
+
+      - name: Re-run Android JVM tests across timezone extremes
+        working-directory: app/mobile
+        run: |
+          for tz in UTC America/New_York America/Los_Angeles Pacific/Auckland Asia/Kolkata; do
+            echo "Testing Android formatters with TZ=$tz"
+            TZ="$tz" ./android/gradlew -p android :app:testDebugUnitTest --no-daemon --console=plain -PknotqTestTimezone="$tz"
+          done

@@ -572,7 +572,7 @@ public protocol MobileCoreProtocol: AnyObject, Sendable {
     
     func ensureDailyQueue(date: String?) throws  -> Bool
     
-    func forceSyncOnce(apiBase: String, bearerToken: String) throws  -> Bool
+    func forceSyncOnce(apiBase: String, bearerToken: String, accountUserId: String) throws  -> Bool
     
     func googleAuthRequest(clientId: String, redirectUri: String) throws  -> MobileGoogleAuthRequest
     
@@ -662,7 +662,7 @@ public protocol MobileCoreProtocol: AnyObject, Sendable {
     
     func syncGoogleCalendarsWithIdentity(accounts: [MobileGoogleIdentityAccount]) throws  -> MobileGoogleSyncResult
     
-    func syncOnce(apiBase: String, bearerToken: String) throws  -> Bool
+    func syncOnce(apiBase: String, bearerToken: String, accountUserId: String) throws  -> Bool
     
     func takeSyncNotice() throws  -> String?
     
@@ -946,12 +946,13 @@ open func ensureDailyQueue(date: String?)throws  -> Bool  {
 })
 }
     
-open func forceSyncOnce(apiBase: String, bearerToken: String)throws  -> Bool  {
+open func forceSyncOnce(apiBase: String, bearerToken: String, accountUserId: String)throws  -> Bool  {
     return try  FfiConverterBool.lift(try rustCallWithError(FfiConverterTypeMobileError_lift) {
     uniffi_knotq_mobile_core_fn_method_mobilecore_force_sync_once(
             self.uniffiCloneHandle(),
         FfiConverterString.lower(apiBase),
-        FfiConverterString.lower(bearerToken),$0
+        FfiConverterString.lower(bearerToken),
+        FfiConverterString.lower(accountUserId),$0
     )
 })
 }
@@ -1373,12 +1374,13 @@ open func syncGoogleCalendarsWithIdentity(accounts: [MobileGoogleIdentityAccount
 })
 }
     
-open func syncOnce(apiBase: String, bearerToken: String)throws  -> Bool  {
+open func syncOnce(apiBase: String, bearerToken: String, accountUserId: String)throws  -> Bool  {
     return try  FfiConverterBool.lift(try rustCallWithError(FfiConverterTypeMobileError_lift) {
     uniffi_knotq_mobile_core_fn_method_mobilecore_sync_once(
             self.uniffiCloneHandle(),
         FfiConverterString.lower(apiBase),
-        FfiConverterString.lower(bearerToken),$0
+        FfiConverterString.lower(bearerToken),
+        FfiConverterString.lower(accountUserId),$0
     )
 })
 }
@@ -3864,7 +3866,7 @@ private let initializationResult: InitializationResult = {
     if (uniffi_knotq_mobile_core_checksum_method_mobilecore_ensure_daily_queue() != 18110) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_knotq_mobile_core_checksum_method_mobilecore_force_sync_once() != 29540) {
+    if (uniffi_knotq_mobile_core_checksum_method_mobilecore_force_sync_once() != 19575) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_knotq_mobile_core_checksum_method_mobilecore_google_auth_request() != 56614) {
@@ -3999,7 +4001,7 @@ private let initializationResult: InitializationResult = {
     if (uniffi_knotq_mobile_core_checksum_method_mobilecore_sync_google_calendars_with_identity() != 22767) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_knotq_mobile_core_checksum_method_mobilecore_sync_once() != 14938) {
+    if (uniffi_knotq_mobile_core_checksum_method_mobilecore_sync_once() != 6662) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_knotq_mobile_core_checksum_method_mobilecore_take_sync_notice() != 52835) {

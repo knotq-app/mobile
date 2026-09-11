@@ -92,6 +92,11 @@ final class DayTimelineUIKitView: UIView, UIGestureRecognizerDelegate, UIScrollV
     var activeDragSnapKey: String?
     var creatingEvent = false
     var needsFullRender = true
+    // Sticky indicators ask for laid-out events on every scroll tick. Reuse
+    // the collision result until a full render changes the calendar, date,
+    // time format, or column width.
+    var laidEventsCache: [Int: [DayTimelineLaidOccurrence]] = [:]
+    var laidEventsCacheColumnWidth: CGFloat?
     var resetToken = 0
     var nowIndicatorTimer: Timer?
     var lastNowIndicatorDay: Date?
@@ -217,7 +222,7 @@ final class DayTimelineUIKitView: UIView, UIGestureRecognizerDelegate, UIScrollV
         let shouldReset = self.resetToken != resetToken
         let renderInputsChanged = calendarSnapshot != calendar
             || self.selectedDate != nextSelectedDate
-            || self.theme?.isDark != theme.isDark
+            || themeNeedsRerender(theme)
             || self.timeFormat != timeFormat
             || self.preferredVisibleDays != preferredVisibleDays
         let createClosed = creatingEvent && !isCreatingEvent
@@ -251,10 +256,11 @@ final class DayTimelineUIKitView: UIView, UIGestureRecognizerDelegate, UIScrollV
         }
         creatingEvent = isCreatingEvent
         backgroundColor = UIColor(theme.bgApp)
-        let calendarBlue = UIColor(calendarDayHighlightColor(dark: theme.isDark))
-        // The calendar lip is intentionally darker than the rest of the mobile
-        // chrome so the active-day blue carries the hierarchy.
-        headerSurface.backgroundColor = theme.isDark ? UIColor(hex: 0x030306) : UIColor(theme.bgToolbar)
+        let calendarBlue = UIColor(theme.accent)
+        // Keep the whole calendar chrome on the active palette. In particular,
+        // do not use a fixed OLED-black surface here: UIKit views do not inherit
+        // SwiftUI's theme automatically.
+        headerSurface.backgroundColor = UIColor(theme.bgToolbar)
         headerSurface.layer.shadowColor = UIColor.black.cgColor
         headerSurface.layer.shadowOpacity = theme.isDark ? 0 : 0.07
         headerSurface.layer.shadowRadius = 5
@@ -263,22 +269,35 @@ final class DayTimelineUIKitView: UIView, UIGestureRecognizerDelegate, UIScrollV
         titleLabel.textColor = UIColor(theme.textPrimary)
         titleChevron.tintColor = calendarBlue
         titleBackdrop.isHidden = false
-        titleBackdrop.backgroundColor = theme.isDark
-            ? UIColor(hex: 0x0b0c10)
-            : UIColor(theme.buttonBg)
-        titleBackdrop.layer.borderColor = (theme.isDark
-            ? UIColor.white.withAlphaComponent(0.08)
-            : UIColor(theme.borderOverlay)
-        ).cgColor
+        titleBackdrop.backgroundColor = UIColor(theme.buttonBg)
+        titleBackdrop.layer.borderColor = UIColor(theme.borderOverlay).cgColor
         separator.isHidden = false
-        separator.backgroundColor = theme.isDark
-            ? UIColor.white.withAlphaComponent(0.07)
-            : UIColor(theme.dividerSoft)
+        separator.backgroundColor = UIColor(theme.dividerSoft)
         if renderInputsChanged || shouldReset {
             needsFullRender = true
             setNeedsLayout()
             renderAllIfReady(force: shouldReset)
         }
+    }
+
+    private func themeNeedsRerender(_ next: KnotQTheme) -> Bool {
+        guard let current = theme else { return true }
+        return current.isDark != next.isDark
+            || colorsDiffer(current.bgApp, next.bgApp)
+            || colorsDiffer(current.bgToolbar, next.bgToolbar)
+            || colorsDiffer(current.bgModal, next.bgModal)
+            || colorsDiffer(current.buttonBg, next.buttonBg)
+            || colorsDiffer(current.dividerSoft, next.dividerSoft)
+            || colorsDiffer(current.borderOverlay, next.borderOverlay)
+            || colorsDiffer(current.textPrimary, next.textPrimary)
+            || colorsDiffer(current.textMuted, next.textMuted)
+            || colorsDiffer(current.textSoft, next.textSoft)
+            || colorsDiffer(current.accent, next.accent)
+            || colorsDiffer(current.danger, next.danger)
+    }
+
+    private func colorsDiffer(_ lhs: Color, _ rhs: Color) -> Bool {
+        !UIColor(lhs).isEqual(UIColor(rhs))
     }
 
     override func layoutSubviews() {

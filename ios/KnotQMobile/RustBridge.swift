@@ -376,12 +376,12 @@ final class RustBridge: @unchecked Sendable {
         )
     }
 
-    func syncOnce(apiBase: String, bearerToken: String) throws -> Bool {
-        try core.syncOnce(apiBase: apiBase, bearerToken: bearerToken)
+    func syncOnce(apiBase: String, bearerToken: String, accountUserID: String) throws -> Bool {
+        try core.syncOnce(apiBase: apiBase, bearerToken: bearerToken, accountUserId: accountUserID)
     }
 
-    func forceSyncOnce(apiBase: String, bearerToken: String) throws -> Bool {
-        try core.forceSyncOnce(apiBase: apiBase, bearerToken: bearerToken)
+    func forceSyncOnce(apiBase: String, bearerToken: String, accountUserID: String) throws -> Bool {
+        try core.forceSyncOnce(apiBase: apiBase, bearerToken: bearerToken, accountUserId: accountUserID)
     }
 
     func startWsSync(apiBase: String, bearerToken: String) throws {

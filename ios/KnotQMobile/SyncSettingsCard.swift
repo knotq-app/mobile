@@ -102,7 +102,7 @@ struct SyncSettingsCard: View {
         card
         #if IN_APP_PURCHASES_ENABLED
         .task { await loadProductsIfNeeded() }
-        .onChange(of: model.syncSession?.supportsSync) { supportsSync in
+        .onChange(of: model.syncSession?.supportsSync) { _, supportsSync in
             guard supportsSync == false else { return }
             Task { await model.loadSyncProducts() }
         }

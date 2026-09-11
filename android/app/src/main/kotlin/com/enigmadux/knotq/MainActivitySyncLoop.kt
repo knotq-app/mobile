@@ -52,7 +52,6 @@ import androidx.work.Constraints
 import androidx.work.ExistingPeriodicWorkPolicy
 import androidx.work.NetworkType
 import androidx.work.PeriodicWorkRequest
-import androidx.work.WorkManager
 import android.widget.ArrayAdapter
 import android.widget.AdapterView
 import android.widget.CheckBox
@@ -105,6 +104,8 @@ import kotlin.math.roundToInt
 internal fun MainActivity.startSyncPolling() {
     if (!BuildConfig.ACCOUNTS_ENABLED) return
     syncPollHandler.removeCallbacks(syncPollRunnable)
+    syncPollHandler.removeCallbacks(syncStatusRunnable)
+    syncPollHandler.removeCallbacks(syncInitialTransportRunnable)
     if (syncSession != null) {
         // Bootstrap once, then rely entirely on the socket while in the foreground:
         // NO periodic network poll. startWsNudge() drives prompt syncs from server
@@ -112,31 +113,52 @@ internal fun MainActivity.startSyncPolling() {
         // that runs only while the socket is actually down. The 3h WorkManager job
         // (scheduleBackgroundSyncWork) is the background refresh.
         syncOnce()
-        startWsSync()
-        startWsNudge()
+        syncPollHandler.post(syncInitialTransportRunnable)
+        // Status/entitlement refresh is useful, but it is not part of sync
+        // correctness. Deferring it avoids a forced token refresh + status
+        // request racing the initial pull and holding the in-progress guard.
+        syncPollHandler.postDelayed(syncStatusRunnable, 1_000)
     }
 }
 
 /// Open the persistent sync WebSocket for the current session. While connected,
 /// `sync_once`'s pull/push ride the socket. Idempotent in the core.
-internal fun MainActivity.startWsSync() {
+internal fun MainActivity.startWsSync(onStarted: (() -> Unit)? = null) {
     if (!BuildConfig.ACCOUNTS_ENABLED) return
     val session = syncSession ?: return
     if (!session.supportsSync) return
-    // runCatching also absorbs the case where `bridge` isn't initialized yet.
+    // Opening the socket takes the same native mutex as sync and can wait behind
+    // a pull/push. Never let the lifecycle handler block on that lock.
     runCatching {
-        bridge.request(
-            obj(
-                "type" to "ws_start",
-                "api_base" to session.apiBase,
-                "bearer_token" to session.bearerToken
-            )
-        )
+        coreExecutor.execute {
+            runCatching {
+                bridge.request(
+                    obj(
+                        "type" to "ws_start",
+                        "api_base" to session.apiBase,
+                        "bearer_token" to session.bearerToken
+                    )
+                )
+            }
+            if (onStarted != null) {
+                runOnUiThread {
+                    if (isUiActive() && syncSession?.refreshToken == session.refreshToken) {
+                        onStarted()
+                    }
+                }
+            }
+        }
     }
 }
 
 internal fun MainActivity.stopWsSync() {
-    runCatching { bridge.request(obj("type" to "ws_stop")) }
+    // Teardown is also a native call and may wait for an in-flight sync. Queue it
+    // instead of making Activity.onStop/onDestroy wait on the core mutex.
+    runCatching {
+        coreExecutor.execute {
+            runCatching { bridge.request(obj("type" to "ws_stop")) }
+        }
+    }
 }
 
 /// Background poller that reacts to a server `changed` nudge by syncing promptly
@@ -157,11 +179,13 @@ internal fun MainActivity.startWsNudge() {
             }
             if (!wsNudgeActive) break
             val pending = runCatching {
-                bridge.request(obj("type" to "ws_pending_changed")).optBoolean("pending", false)
+                coreExecutor.call {
+                    bridge.request(obj("type" to "ws_pending_changed")).optBoolean("pending", false)
+                }
             }.getOrDefault(false)
             if (pending) {
                 secondsSinceFallbackPoll = 0
-                runOnUiThread { syncOnce() }
+                runOnUiThread { if (isUiActive()) syncOnce() }
                 continue
             }
             secondsSinceFallbackPoll += 1
@@ -171,9 +195,11 @@ internal fun MainActivity.startWsNudge() {
                 // actually down (e.g. a network that blocks WS) so such a device
                 // still converges. While connected, rely entirely on the nudges.
                 val connected = runCatching {
-                    bridge.request(obj("type" to "ws_connected")).optBoolean("connected", false)
+                    coreExecutor.call {
+                        bridge.request(obj("type" to "ws_connected")).optBoolean("connected", false)
+                    }
                 }.getOrDefault(false)
-                if (!connected) runOnUiThread { syncOnce() }
+                if (!connected) runOnUiThread { if (isUiActive()) syncOnce() }
             }
         }
     }.start()
@@ -201,16 +227,19 @@ internal fun MainActivity.flushEditsOverWsThenStop() {
             // with any in-flight sync and with the ws_stop below, so the teardown
             // can't cut in mid-push.
             runCatching {
-                bridge.request(
-                    obj(
-                        "type" to "sync_once",
-                        "api_base" to session.apiBase,
-                        "bearer_token" to session.bearerToken
+                coreExecutor.call {
+                    bridge.request(
+                        obj(
+                            "type" to "sync_once",
+                            "api_base" to session.apiBase,
+                            "bearer_token" to session.bearerToken,
+                            "account_user_id" to session.userId
+                        )
                     )
-                )
+                }
             }
         }
-        runCatching { bridge.request(obj("type" to "ws_stop")) }
+        runCatching { coreExecutor.call { bridge.request(obj("type" to "ws_stop")) } }
     }.start()
 }
 
@@ -232,10 +261,9 @@ internal fun MainActivity.requestSyncSoon() {
 /// the iOS BGAppRefreshTask (3h cadence, network required).
 internal fun MainActivity.scheduleBackgroundSyncWork() {
     if (!BuildConfig.ACCOUNTS_ENABLED) return
-    val workManager = runCatching { WorkManager.getInstance(this) }.getOrNull() ?: return
     val session = syncSession
     if (session == null || !session.supportsSync) {
-        workManager.cancelUniqueWork(BACKGROUND_SYNC_WORK)
+        KnotQWorkManager.cancel(this, BACKGROUND_SYNC_WORK)
         return
     }
     val request = PeriodicWorkRequest.Builder(BackgroundSyncWorker::class.java, 3, TimeUnit.HOURS)
@@ -245,12 +273,12 @@ internal fun MainActivity.scheduleBackgroundSyncWork() {
                 .build()
         )
         .build()
-    workManager.enqueueUniquePeriodicWork(BACKGROUND_SYNC_WORK, ExistingPeriodicWorkPolicy.KEEP, request)
+    KnotQWorkManager.enqueuePeriodic(this, BACKGROUND_SYNC_WORK, ExistingPeriodicWorkPolicy.KEEP, request)
 }
 
 internal fun MainActivity.cancelBackgroundSyncWork() {
     if (!BuildConfig.ACCOUNTS_ENABLED) return
-    runCatching { WorkManager.getInstance(this).cancelUniqueWork(BACKGROUND_SYNC_WORK) }
+    runCatching { KnotQWorkManager.cancel(this, BACKGROUND_SYNC_WORK) }
 }
 
 internal fun MainActivity.syncOnce(force: Boolean = false) {
@@ -266,19 +294,28 @@ internal fun MainActivity.syncOnce(force: Boolean = false) {
         // Refresh the short-lived access token if near expiry (rotating +
         // persisting the new credentials). If refresh is temporarily unavailable,
         // skip this tick instead of syncing with an expired bearer token.
-        var active = when (val refresh = refreshSyncSessionIfNeeded(session)) {
+        // A foreground pull should not pay a refresh round-trip for a token that
+        // is still usable. If it expires during the pull, the bounded 401 retry
+        // below refreshes it once. This removes the common startup auth stall
+        // while retaining correctness at the expiry boundary.
+        var active = when (val refresh = refreshSyncSessionIfNeeded(
+            session,
+            minimumValiditySeconds = 15,
+        )) {
             is SyncRefreshResult.Ready -> refresh.session
             SyncRefreshResult.Deferred -> {
                 runOnUiThread {
                     syncInProgress = false
+                    if (!isUiActive()) return@runOnUiThread
                     syncOffline = true
-                    render()
+                    requestRender()
                 }
                 return@Thread
             }
             SyncRefreshResult.SessionDead -> {
                 runOnUiThread {
                     syncInProgress = false
+                    if (!isUiActive()) return@runOnUiThread
                     expireSyncSession()
                 }
                 return@Thread
@@ -289,6 +326,7 @@ internal fun MainActivity.syncOnce(force: Boolean = false) {
             val previousRefreshToken = expectedRefreshToken
             saveSyncSession(active)
             runOnUiThread {
+                if (!isUiActive()) return@runOnUiThread
                 if (syncSession?.refreshToken == previousRefreshToken) {
                     syncSession = active
                     syncOffline = false
@@ -301,6 +339,7 @@ internal fun MainActivity.syncOnce(force: Boolean = false) {
         if (!active.supportsSync) {
             runOnUiThread {
                 syncInProgress = false
+                if (!isUiActive()) return@runOnUiThread
                 if (syncSession?.refreshToken == expectedRefreshToken && syncSession != active) {
                     syncSession = active
                     syncOffline = false
@@ -308,7 +347,7 @@ internal fun MainActivity.syncOnce(force: Boolean = false) {
                     saveSyncSession(active)
                 }
                 scheduleBackgroundSyncWork()
-                render()
+                requestRender()
             }
             return@Thread
         }
@@ -317,13 +356,16 @@ internal fun MainActivity.syncOnce(force: Boolean = false) {
         var result: kotlin.Result<JSONObject>
         while (true) {
             result = runCatching {
-                bridge.request(
-                    obj(
-                        "type" to if (force) "force_sync_once" else "sync_once",
-                        "api_base" to active.apiBase,
-                        "bearer_token" to active.bearerToken
+                coreExecutor.call {
+                    bridge.request(
+                        obj(
+                            "type" to if (force) "force_sync_once" else "sync_once",
+                            "api_base" to active.apiBase,
+                            "bearer_token" to active.bearerToken,
+                            "account_user_id" to active.userId
+                        )
                     )
-                )
+                }
             }
             val error = result.exceptionOrNull()
             if (error == null || triedAuthRefresh || !isAuthRejection(error)) break
@@ -334,21 +376,24 @@ internal fun MainActivity.syncOnce(force: Boolean = false) {
                     saveSyncSession(active)
                     // Rebuild the socket: the current connection was authenticated
                     // with the token the backend just rejected.
-                    runCatching { bridge.request(obj("type" to "ws_stop")) }
+                    runCatching { coreExecutor.call { bridge.request(obj("type" to "ws_stop")) } }
                     if (active.supportsSync) {
                         runCatching {
-                            bridge.request(
-                                obj(
-                                    "type" to "ws_start",
-                                    "api_base" to active.apiBase,
-                                    "bearer_token" to active.bearerToken
+                            coreExecutor.call {
+                                bridge.request(
+                                    obj(
+                                        "type" to "ws_start",
+                                        "api_base" to active.apiBase,
+                                        "bearer_token" to active.bearerToken
+                                    )
                                 )
-                            )
+                            }
                         }
                     }
                     if (!active.supportsSync) {
                         runOnUiThread {
                             syncInProgress = false
+                            if (!isUiActive()) return@runOnUiThread
                             if (syncSession?.refreshToken == expectedRefreshToken && syncSession != active) {
                                 syncSession = active
                                 syncOffline = false
@@ -356,7 +401,7 @@ internal fun MainActivity.syncOnce(force: Boolean = false) {
                                 saveSyncSession(active)
                             }
                             scheduleBackgroundSyncWork()
-                            render()
+                            requestRender()
                         }
                         return@Thread
                     }
@@ -366,14 +411,16 @@ internal fun MainActivity.syncOnce(force: Boolean = false) {
                 SyncRefreshResult.Deferred -> {
                     runOnUiThread {
                         syncInProgress = false
+                        if (!isUiActive()) return@runOnUiThread
                         syncOffline = true
-                        render()
+                        requestRender()
                     }
                     return@Thread
                 }
                 SyncRefreshResult.SessionDead -> {
                     runOnUiThread {
                         syncInProgress = false
+                        if (!isUiActive()) return@runOnUiThread
                         expireSyncSession()
                     }
                     return@Thread
@@ -381,8 +428,16 @@ internal fun MainActivity.syncOnce(force: Boolean = false) {
             }
         }
 
+        // Snapshot expansion can walk a large calendar and takes the same core
+        // lock as sync. Fetch it on this worker before returning to the UI so a
+        // remote pull cannot freeze the editor while the screen is rebuilt.
+        val refreshedSnapshot = result.map { response ->
+            if (response.optBoolean("changed", false)) snapshotFromCore() else null
+        }
+
         runOnUiThread {
             syncInProgress = false
+            if (!isUiActive()) return@runOnUiThread
             if (syncSession?.refreshToken == expectedRefreshToken && syncSession != active) {
                 syncSession = active
                 syncOffline = false
@@ -395,7 +450,17 @@ internal fun MainActivity.syncOnce(force: Boolean = false) {
                 syncOffline = false
                 val changed = response.optBoolean("changed", false)
                 if (changed) {
-                    loadSnapshot()
+                    val refreshed = refreshedSnapshot.getOrNull()
+                    if (refreshedSnapshot.isFailure) {
+                        syncOffline = true
+                        if (!syncFailureNotified) {
+                            syncFailureNotified = true
+                            toast("Sync completed, but the workspace could not be refreshed.")
+                        }
+                        return@onSuccess
+                    }
+                    if (refreshed != null) snapshot = refreshed
+                    configureGoogleSyncPolling()
                     rescheduleNotifications()
                     val active = activeEditor()
                     if (active != null && active.isFocused) {
@@ -408,7 +473,7 @@ internal fun MainActivity.syncOnce(force: Boolean = false) {
                         // the merged text already matches (our own push echoing back).
                         reloadFocusedEditorFromSnapshot(active)
                     } else {
-                        render()
+                        requestRender()
                     }
                 }
                 val notice = response.optString("notice", "")
@@ -422,7 +487,7 @@ internal fun MainActivity.syncOnce(force: Boolean = false) {
                 // offline so a brief throttle doesn't surface a scary error toast.
                 if (isLikelyNetworkError(error) || isTransientSyncError(error)) {
                     syncOffline = true
-                    render()
+                    requestRender()
                     return@onFailure
                 }
                 if (!syncFailureNotified) {
@@ -452,12 +517,13 @@ internal fun MainActivity.persistRotatedSyncSession(previous: SyncSession, activ
     if (active === previous || active.refreshToken == previous.refreshToken) return
     saveSyncSession(active)
     runOnUiThread {
+        if (!isUiActive()) return@runOnUiThread
         if (syncSession?.refreshToken == previous.refreshToken) {
             syncSession = active
             syncOffline = false
             syncFailureNotified = false
             scheduleBackgroundSyncWork()
-            render()
+            requestRender()
         }
     }
 }
@@ -465,11 +531,14 @@ internal fun MainActivity.persistRotatedSyncSession(previous: SyncSession, activ
 internal fun MainActivity.expireSyncSession(showMessage: Boolean = true) {
     syncSession = null
     syncOffline = false
+    syncStatusInProgress = false
     syncEmailVerified = null
+    cancelResendCooldown()
     resendVerificationCooldown = 0
     resendVerificationInProgress = false
     saveSyncSession(null)
     syncPollHandler.removeCallbacks(syncPollRunnable)
+    syncPollHandler.removeCallbacks(syncInitialTransportRunnable)
     syncPollHandler.removeCallbacks(syncEditRunnable)
     syncEditPending = false
     stopWsNudge()
@@ -478,22 +547,26 @@ internal fun MainActivity.expireSyncSession(showMessage: Boolean = true) {
     if (showMessage) {
         showError("Sync session expired", "Please sign in again.")
     }
-    render()
+    requestRender()
 }
 
 // Runs on a background thread (blocking HTTP). SessionDead is only returned
 // when the refresh token is explicitly rejected by the auth endpoint. Deferred
 // means the current token may be expired but the refresh could not be completed yet.
-internal fun MainActivity.refreshSyncSessionIfNeeded(session: SyncSession, force: Boolean = false): SyncRefreshResult {
+internal fun MainActivity.refreshSyncSessionIfNeeded(
+    session: SyncSession,
+    force: Boolean = false,
+    minimumValiditySeconds: Long = 120,
+): SyncRefreshResult {
     val refreshToken = session.refreshToken
     if (refreshToken.isEmpty()) return SyncRefreshResult.Deferred
-    if (!force && !tokenNeedsRefresh(session.expiresAt)) return SyncRefreshResult.Ready(session)
+    if (!force && !tokenNeedsRefresh(session.expiresAt, minimumValiditySeconds)) return SyncRefreshResult.Ready(session)
     try {
         val connection =
             (URL("${session.apiBase}/v1/auth/refresh").openConnection() as HttpURLConnection).apply {
                 requestMethod = "POST"
-                connectTimeout = 10_000
-                readTimeout = 10_000
+                connectTimeout = 5_000
+                readTimeout = 5_000
                 doOutput = true
                 setRequestProperty("Content-Type", "application/json")
             }
@@ -504,7 +577,7 @@ internal fun MainActivity.refreshSyncSessionIfNeeded(session: SyncSession, force
             return SyncRefreshResult.SessionDead
         }
         if (status !in 200..299) return SyncRefreshResult.Deferred
-        val raw = connection.inputStream.bufferedReader().use { it.readText() }
+        val raw = connection.inputStream.use { it.readUtf8Capped() }
         val json = JSONObject(raw)
         return SyncRefreshResult.Ready(session.copy(
             bearerToken = requiredString(json, "bearer_token"),
@@ -557,9 +630,12 @@ internal fun MainActivity.isAuthRejection(error: Throwable): Boolean {
     return error.message.orEmpty().contains("unauthorized", ignoreCase = true)
 }
 
-internal fun MainActivity.tokenNeedsRefresh(expiresAt: String): Boolean {
+internal fun MainActivity.tokenNeedsRefresh(
+    expiresAt: String,
+    minimumValiditySeconds: Long = 120,
+): Boolean {
     val expiry = runCatching { java.time.Instant.parse(expiresAt) }.getOrNull() ?: return true
-    return expiry.isBefore(java.time.Instant.now().plusSeconds(120))
+    return expiry.isBefore(java.time.Instant.now().plusSeconds(minimumValiditySeconds))
 }
 
 internal fun MainActivity.requestSyncLoginStart(apiBase: String, email: String, password: String): SyncLoginStart {
@@ -605,12 +681,16 @@ internal fun MainActivity.httpJson(
     body: JSONObject,
     bearerToken: String? = null,
     accountAction: Boolean = false,
-    authorizeAction: Boolean = false
+    authorizeAction: Boolean = false,
+    timeoutMs: Int = 10_000
 ): JSONObject {
+    check(isSecureSyncApiBase(urlString)) {
+        L10n.t(this, "sync.error.api_url_https_required")
+    }
     val connection = (URL(urlString).openConnection() as HttpURLConnection).apply {
         requestMethod = method
-        connectTimeout = 10_000
-        readTimeout = 10_000
+        connectTimeout = timeoutMs
+        readTimeout = timeoutMs
         doInput = true
         doOutput = method != "GET"
         setRequestProperty("Content-Type", "application/json")
@@ -621,9 +701,9 @@ internal fun MainActivity.httpJson(
     }
     val status = connection.responseCode
     val raw = if (status in 200..299) {
-        connection.inputStream.bufferedReader().use { it.readText() }
+        connection.inputStream.use { it.readUtf8Capped() }
     } else {
-        connection.errorStream?.bufferedReader()?.use { it.readText() }.orEmpty()
+        connection.errorStream?.use { it.readUtf8Capped() }.orEmpty()
     }
     if (status !in 200..299) {
         val code = runCatching { JSONObject(raw).optString("code") }.getOrDefault("")
@@ -644,7 +724,7 @@ internal fun MainActivity.loadSyncSession(): SyncSession? {
     return runCatching {
         val json = JSONObject(raw)
         SyncSession(
-            apiBase = normalizeApiBase(json.optString("api_base")),
+            apiBase = validatedSyncApiBase(json.optString("api_base")),
             userId = json.optString("user_id"),
             email = json.optString("email"),
             supportsSync = json.optBoolean("supports_sync", true),

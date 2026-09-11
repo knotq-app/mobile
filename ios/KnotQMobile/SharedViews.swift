@@ -149,7 +149,37 @@ enum EditorKeyboardHandoff {
             isKeyboardVisible: KeyboardMetrics.isVisible,
             hasTextInput: window.firstResponderIsTextInput
         ) else {
-            proceed()
+            // A focused Home search field belongs to the source route. Pushing
+            // while it is resigning makes SwiftUI animate the keyboard-safe
+            // area and the NavigationStack at the same time; on a cold device
+            // that can leave the push visibly short or stutter near its end.
+            // Let UIKit finish that one dismissal, then begin the route push.
+            guard KeyboardMetrics.isVisible else {
+                proceed()
+                return
+            }
+            let finish: @MainActor @Sendable () -> Void = {
+                observer.map(NotificationCenter.default.removeObserver)
+                observer = nil
+                timeout?.cancel()
+                timeout = nil
+                proceed()
+            }
+            observer = NotificationCenter.default.addObserver(
+                forName: UIResponder.keyboardDidHideNotification,
+                object: nil,
+                queue: .main
+            ) { _ in
+                MainActor.assumeIsolated { finish() }
+            }
+            let work = DispatchWorkItem { MainActor.assumeIsolated { finish() } }
+            timeout = work
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.55, execute: work)
+            // The search field may not have observed the binding change from
+            // closeHomeSearch yet. Explicitly resign it after the observer is
+            // installed so the handoff cannot wait for a notification that
+            // never arrives.
+            window.endEditing(true)
             return
         }
 
@@ -646,4 +676,3 @@ enum WorkspaceNameValidation {
         return nil
     }
 }
-

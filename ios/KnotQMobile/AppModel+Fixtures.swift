@@ -7,8 +7,35 @@ import UIKit
 
 extension AppModel {
     func normalizedApiBase(_ raw: String) -> String {
-        raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        let normalized = raw.trimmingCharacters(in: .whitespacesAndNewlines)
             .trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+        return Self.isSecureSyncApiBase(normalized) ? normalized : ""
+    }
+
+    /// Sync credentials must never be sent over plaintext or to a URL carrying
+    /// userinfo/query routing data. Plain HTTP is retained only for local
+    /// loopback workers used by development and integration tests.
+    static func isSecureSyncApiBase(_ raw: String) -> Bool {
+        let normalized = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+            .trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+        guard let components = URLComponents(string: normalized),
+              let scheme = components.scheme?.lowercased(),
+              let host = components.host?.lowercased(),
+              !host.isEmpty,
+              components.user == nil,
+              components.password == nil,
+              components.query == nil,
+              components.fragment == nil else {
+            return false
+        }
+        switch scheme {
+        case "https":
+            return true
+        case "http":
+            return ["127.0.0.1", "localhost", "::1"].contains(host.trimmingCharacters(in: CharacterSet(charactersIn: "[]")))
+        default:
+            return false
+        }
     }
 
     /// The authorization code is minted by the hosted page and redeemed here, so the
@@ -157,6 +184,7 @@ extension AppModel {
 
         do {
             syncSession = nil
+            SyncSessionStore.remove(key: syncSessionKey)
             UserDefaults.standard.removeObject(forKey: syncSessionKey)
             UserDefaults.standard.set(true, forKey: "knotq.mobile.onboardingCompleted.v1")
 

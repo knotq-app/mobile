@@ -329,7 +329,12 @@ struct EventEditorSheet: View {
                 // shifts when the keyboard arrives: composing presents at a
                 // detent the keyboard already fits inside.
                 guard autoFocusesTitle else { return }
-                try? await Task.sleep(for: .milliseconds(250))
+                do {
+                    try await Task.sleep(for: .milliseconds(250))
+                } catch {
+                    return
+                }
+                guard !Task.isCancelled else { return }
                 titleFocused = true
             }
         }

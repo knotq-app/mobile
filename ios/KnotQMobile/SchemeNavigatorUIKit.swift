@@ -228,7 +228,7 @@ final class SchemeNavigatorUIKitView: UIView, UITableViewDataSource, UITableView
     func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {
         let cell = tableView.dequeueReusableCell(withIdentifier: SchemeNavigatorCell.reuseIdentifier, for: indexPath) as? SchemeNavigatorCell
             ?? SchemeNavigatorCell(style: .default, reuseIdentifier: SchemeNavigatorCell.reuseIdentifier)
-        let row = rows[indexPath.row]
+        guard let row = row(at: indexPath) else { return cell }
         cell.configure(
             row: row.node,
             depth: row.depth,
@@ -242,7 +242,7 @@ final class SchemeNavigatorUIKitView: UIView, UITableViewDataSource, UITableView
     }
 
     func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
-        let row = rows[indexPath.row]
+        guard let row = row(at: indexPath) else { return }
         if row.node.kind == "folder" {
             toggleFolder(row.id)
         } else {
@@ -258,7 +258,7 @@ final class SchemeNavigatorUIKitView: UIView, UITableViewDataSource, UITableView
         _ tableView: UITableView,
         trailingSwipeActionsConfigurationForRowAt indexPath: IndexPath
     ) -> UISwipeActionsConfiguration? {
-        let row = rows[indexPath.row]
+        guard let row = row(at: indexPath) else { return nil }
         let action = UIContextualAction(style: .normal, title: "Archive") { [weak self] _, _, completion in
             guard let self else {
                 completion(false)
@@ -301,11 +301,11 @@ final class SchemeNavigatorUIKitView: UIView, UITableViewDataSource, UITableView
         let locationInTable = recognizer.location(in: tableView)
         let locationInSelf = recognizer.location(in: self)
         guard let indexPath = tableView.indexPathForRow(at: locationInTable),
-              rows.indices.contains(indexPath.row),
+              row(at: indexPath) != nil,
               let cell = tableView.cellForRow(at: indexPath) as? SchemeNavigatorCell else {
             return
         }
-        let row = rows[indexPath.row]
+        guard let row = row(at: indexPath) else { return }
         let frameInSelf = tableView.convert(cell.frame, to: self)
 
         let preview = UIView(frame: frameInSelf)
@@ -533,6 +533,14 @@ final class SchemeNavigatorUIKitView: UIView, UITableViewDataSource, UITableView
         var next: [Row] = []
         appendRows(root.children, parentID: root.id, depth: 0, into: &next)
         return next
+    }
+
+    /// UIKit callbacks can arrive for an index path from the previous table
+    /// snapshot while a sync refresh is reloading the list. Treat that stale
+    /// callback as a no-op instead of indexing into the new rows array.
+    private func row(at indexPath: IndexPath) -> Row? {
+        guard indexPath.section == 0, rows.indices.contains(indexPath.row) else { return nil }
+        return rows[indexPath.row]
     }
 
     private func appendRows(_ nodes: [MobileNode], parentID: String, depth: Int, into rows: inout [Row]) {

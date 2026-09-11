@@ -104,51 +104,37 @@ import kotlin.math.roundToInt
 /// Re-check the sync entitlement + subscription lifecycle from the backend so a
 /// subscription bought (or changed) while the app was closed — the common
 /// "subscribe, reopen the app, see it" flow — shows up without waiting for the
-/// access token to expire. One forced token refresh re-reads supports_sync; the
-/// status read then runs on the rotated token, all on a single thread, so the
-/// single-use refresh token is never replayed concurrently. Guarded by the poll
-/// loop's in-progress flag for the same reason.
+/// access token to expire. This is auxiliary metadata, so it has its own guard
+/// and does not hold the CRDT sync-in-progress indicator while the status request
+/// runs. The refresh token is still serialized against sync/account actions by
+/// the existing syncInProgress guard.
 internal fun MainActivity.refreshSubscriptionStatus() {
     if (!BuildConfig.ACCOUNTS_ENABLED) return
-    if (syncInProgress) return
+    if (syncInProgress || syncStatusInProgress) return
     val session = syncSession ?: return
     if (session.refreshToken.isEmpty()) return
-    syncInProgress = true
+    syncStatusInProgress = true
     Thread {
-        val refresh = refreshSyncSessionIfNeeded(session, force = true)
-        val active = (refresh as? SyncRefreshResult.Ready)?.session
-        val status = active?.let {
-            runCatching {
-                httpJson(
-                    "${it.apiBase}/v1/auth/account/status",
-                    "GET",
-                    JSONObject(),
-                    bearerToken = it.bearerToken
-                )
-            }.getOrNull()
-        }
+        // The account-status response is authoritative for entitlement and can
+        // use the current bearer. Do not rotate the single-use refresh token on
+        // every launch: if this bearer is expired, the normal CRDT sync path
+        // owns the bounded refresh/retry and this auxiliary read can be retried
+        // later.
+        val status = runCatching {
+            httpJson(
+                "${session.apiBase}/v1/auth/account/status",
+                "GET",
+                JSONObject(),
+                bearerToken = session.bearerToken,
+                timeoutMs = 5_000
+            )
+        }.getOrNull()
         runOnUiThread {
-            syncInProgress = false
-            if (refresh is SyncRefreshResult.Deferred) {
-                syncOffline = true
-                render()
-                return@runOnUiThread
-            }
-            if (refresh is SyncRefreshResult.SessionDead) {
-                // Refresh token revoked/expired: drop the session like the poll loop.
-                expireSyncSession()
-                return@runOnUiThread
-            }
-            if (active != null && active !== session) {
-                syncSession = active
-                syncOffline = false
-                syncFailureNotified = false
-                saveSyncSession(active)
-                scheduleBackgroundSyncWork()
-                // A just-granted entitlement: pull the workspace promptly instead
-                // of waiting on the 30s poll.
-                if (active.supportsSync) requestSyncSoon()
-            }
+            syncStatusInProgress = false
+            // The request may finish after onStop/onDestroy. Do not publish
+            // auxiliary account state into a detached Activity; onStart will
+            // schedule a fresh status read for the next foreground session.
+            if (!isUiActive()) return@runOnUiThread
             if (status != null) {
                 syncSubscriptionProvider = status.optString("subscription_provider").ifEmpty { null }
                 syncEmailVerified =
@@ -156,8 +142,23 @@ internal fun MainActivity.refreshSubscriptionStatus() {
                 syncSubscriptionCancelled =
                     status.optBoolean("supports_sync", true) &&
                         status.optString("subscription_state").equals("cancelled", ignoreCase = true)
+                val supportsSync = if (status.has("supports_sync")) {
+                    status.optBoolean("supports_sync", false)
+                } else {
+                    // Preserve the last known entitlement if an older backend
+                    // omits the field; absence is not a revocation signal.
+                    syncSession?.supportsSync == true
+                }
+                if (syncSession?.supportsSync != supportsSync) {
+                    syncSession = syncSession?.copy(supportsSync = supportsSync)
+                    syncSession?.let { saveSyncSession(it) }
+                    scheduleBackgroundSyncWork()
+                    // A just-granted entitlement: pull the workspace promptly
+                    // instead of waiting on the 30s poll.
+                    if (supportsSync) requestSyncSoon()
+                }
             }
-            render()
+            requestSubscriptionRender()
         }
     }.start()
 }
@@ -200,6 +201,7 @@ internal fun MainActivity.reEnableSyncSubscription() {
         runOnUiThread {
             syncAccountActionInProgress = false
             syncInProgress = false
+            if (!isUiActive()) return@runOnUiThread
             result.onSuccess { updated ->
                 installSyncSession(updated)
                 showError(L10n.t(this, "mobile.subscription.reenabled_title"), L10n.t(this, "web.account.status_resume_success"))
@@ -219,7 +221,12 @@ internal fun MainActivity.openSubscriptionStorePage(url: String) {
 }
 
 internal fun MainActivity.openSyncAccountPage() {
-    val apiBase = normalizeApiBase(syncSession?.apiBase ?: defaultSyncApiBase())
+    val apiBase = runCatching {
+        validatedSyncApiBase(syncSession?.apiBase ?: defaultSyncApiBase())
+    }.getOrElse {
+        showError(L10n.t(this, "mobile.account.error_open_page_title"), it.message)
+        return
+    }
     // Match the configured backend (and pass `?api=`) so a sandbox/local build
     // manages the sandbox account, not production.
     val accountUri = Uri.parse("${syncWebBase(apiBase)}/account.html").buildUpon()
@@ -338,6 +345,7 @@ internal fun MainActivity.deleteSyncAccount(confirmEmail: String, password: Stri
         runOnUiThread {
             syncAccountActionInProgress = false
             syncInProgress = false
+            if (!isUiActive()) return@runOnUiThread
             result.onSuccess { response ->
                 val challengeId = response.optString("challenge_id")
                 if (challengeId.isEmpty()) {
@@ -416,6 +424,7 @@ internal fun MainActivity.deleteSyncAccountVerify(challengeId: String, code: Str
         runOnUiThread {
             syncAccountActionInProgress = false
             syncInProgress = false
+            if (!isUiActive()) return@runOnUiThread
             result.onSuccess {
                 signOutSync()
                 showError(
@@ -471,6 +480,7 @@ internal fun MainActivity.cancelSyncSubscription() {
         runOnUiThread {
             syncAccountActionInProgress = false
             syncInProgress = false
+            if (!isUiActive()) return@runOnUiThread
             result.onSuccess { updated ->
                 installSyncSession(updated)
                 if (updated.supportsSync) {
@@ -505,29 +515,55 @@ internal fun MainActivity.resendVerificationEmail() {
         }
         runOnUiThread {
             resendVerificationInProgress = false
+            if (!isUiActive()) return@runOnUiThread
             result.onSuccess {
                 showError(L10n.t(this, "account.verify.email_sent"), L10n.t(this, "mobile.account.verify_sent_message"))
                 startResendCooldown(60)
             }.onFailure { error ->
                 showError(L10n.t(this, "mobile.account.error_resend_title"), error.message)
             }
-            render()
+            requestSubscriptionRender()
         }
     }.start()
 }
 
+internal fun subscriptionStateNeedsRender(selectedTab: Int): Boolean = selectedTab == TAB_SETTINGS
+
+/**
+ * Subscription state is only painted by the Settings page. Avoid tearing down
+ * the active Home/Calendar/Scheme tree for a one-second cooldown tick or an
+ * entitlement response that is not visible on the current tab.
+ */
+internal fun MainActivity.requestSubscriptionRender() {
+    if (subscriptionStateNeedsRender(selectedTab)) requestRender()
+}
+
 internal fun MainActivity.startResendCooldown(seconds: Int) {
-    resendVerificationCooldown = seconds
-    val handler = Handler(Looper.getMainLooper())
+    cancelResendCooldown()
+    resendVerificationCooldown = seconds.coerceAtLeast(0)
+    if (resendVerificationCooldown == 0) return
     val tick = object : Runnable {
         override fun run() {
-            if (resendVerificationCooldown <= 0) return
+            if (resendVerificationCooldown <= 0 || isFinishing || isDestroyed) {
+                resendCooldownRunnable = null
+                return
+            }
             resendVerificationCooldown -= 1
-            render()
-            if (resendVerificationCooldown > 0) handler.postDelayed(this, 1_000)
+            requestSubscriptionRender()
+            if (resendVerificationCooldown > 0) {
+                resendCooldownHandler.postDelayed(this, 1_000)
+            } else {
+                resendCooldownRunnable = null
+            }
         }
     }
-    handler.postDelayed(tick, 1_000)
+    resendCooldownRunnable = tick
+    resendCooldownHandler.postDelayed(tick, 1_000)
+}
+
+internal fun MainActivity.cancelResendCooldown() {
+    resendCooldownRunnable?.let(resendCooldownHandler::removeCallbacks)
+    resendCooldownRunnable = null
 }
 
 // --- Google Play billing ---
@@ -553,8 +589,9 @@ internal fun MainActivity.ensureBillingClient(onReady: (BillingClient) -> Unit) 
                 onReady(client)
             } else {
                 runOnUiThread {
+                    if (!isUiActive()) return@runOnUiThread
                     purchaseInProgress = false
-                    render()
+                    requestSubscriptionRender()
                     showError(
                         L10n.t(this@ensureBillingClient, "mobile.subscription.store_unavailable_title"),
                         result.debugMessage.ifEmpty { L10n.t(this@ensureBillingClient, "mobile.subscription.play_billing_unavailable") }
@@ -654,8 +691,9 @@ private fun MainActivity.launchSyncBillingFlow() {
             val offerToken = offer?.offerToken
             if (result.responseCode != BillingClient.BillingResponseCode.OK || details == null || offerToken == null) {
                 runOnUiThread {
+                    if (!isUiActive()) return@runOnUiThread
                     purchaseInProgress = false
-                    render()
+                    requestSubscriptionRender()
                     showError(L10n.t(this, "mobile.subscription.unavailable_title"), L10n.t(this, "mobile.subscription.unavailable_message"))
                 }
                 return@queryProductDetailsAsync
@@ -669,7 +707,10 @@ private fun MainActivity.launchSyncBillingFlow() {
                 // Maps the purchase back to this account server-side (= our user id).
                 .setObfuscatedAccountId(session.userId)
                 .build()
-            runOnUiThread { client.launchBillingFlow(this, flowParams) }
+            runOnUiThread {
+                if (!isUiActive()) return@runOnUiThread
+                client.launchBillingFlow(this, flowParams)
+            }
         }
     }
 }
@@ -688,6 +729,7 @@ internal fun MainActivity.restoreGooglePlayPurchases() {
                 verifyGooglePlayPurchase(active)
             } else {
                 runOnUiThread {
+                    if (!isUiActive()) return@runOnUiThread
                     showError(L10n.t(this, "mobile.subscription.nothing_to_restore_title"), L10n.t(this, "mobile.subscription.nothing_to_restore_message"))
                 }
             }
@@ -723,13 +765,14 @@ internal fun MainActivity.verifyGooglePlayPurchase(purchase: Purchase) {
         }
         runOnUiThread {
             purchaseInProgress = false
+            if (!isUiActive()) return@runOnUiThread
             result.onSuccess { updated ->
                 installSyncSession(updated)
                 if (updated.supportsSync) {
                     showError(L10n.t(this, "settings.sync.badge_subscribed"), L10n.t(this, "mobile.subscription.subscribed_message"))
                 }
             }.onFailure { error ->
-                render()
+                requestSubscriptionRender()
                 showError(L10n.t(this, "mobile.subscription.error_verify_purchase_title"), error.message)
             }
         }

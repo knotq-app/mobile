@@ -83,13 +83,34 @@ internal object MobileNotificationScheduler {
     /// their own in-memory workspace over the same files, so whichever saves last
     /// silently reverts the other's edit — the pattern BackgroundSyncWorker
     /// already follows. Only a bridge we opened ourselves is closed.
-    private fun <T> withCore(context: Context, block: (RustBridge) -> T): T {
-        val shared = MainActivity.sharedBridge
-        val bridge = shared ?: RustBridge(context.applicationContext)
-        return try {
-            block(bridge)
-        } finally {
-            if (shared == null) bridge.close()
+    private fun <T> withCore(context: Context, block: (RustBridge) -> T): T? {
+        val deadline = System.nanoTime() + 15_000_000_000L
+        while (true) {
+            val shared = MainActivity.sharedBridge
+            if (shared != null) {
+                // During recreation the live Activity may not own the old
+                // process-wide bridge yet. Wait for its close, rather than
+                // opening a second core over the same workspace.
+                val owner = MainActivity.sharedBridgeOwner()
+                if (owner != null) {
+                    return runCatching { owner.coreExecutor.call { block(shared) } }.getOrNull()
+                }
+            } else if (MainActivity.liveActivity.current() == null) {
+                val bridge = runCatching { RustBridge(context.applicationContext) }.getOrNull() ?: return null
+                return try {
+                    runCatching { block(bridge) }.getOrNull()
+                } finally {
+                    bridge.close()
+                }
+            }
+
+            if (System.nanoTime() >= deadline) return null
+            try {
+                Thread.sleep(10)
+            } catch (interrupted: InterruptedException) {
+                Thread.currentThread().interrupt()
+                return null
+            }
         }
     }
 
@@ -242,7 +263,7 @@ internal object MobileNotificationScheduler {
             .put("item_id", intent.getStringExtra(EXTRA_ITEM_ID).orEmpty())
             .put("occurrence_json", intent.getStringExtra(EXTRA_OCCURRENCE_JSON).orEmpty())
             .put("trigger_at", intent.getStringExtra(EXTRA_TRIGGER_AT).orEmpty())
-        withCore(appContext) { it.request(body) }
+        if (withCore(appContext) { it.request(body) } == null) return
         refreshFromCore(appContext)
         // The receiver mutated the core behind a live (but stopped) activity's
         // back. Without this the app still shows the item as pending when the

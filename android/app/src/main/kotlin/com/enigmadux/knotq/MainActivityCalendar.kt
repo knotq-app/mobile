@@ -160,7 +160,12 @@ import kotlin.math.roundToInt
                 visibleHasToday -> max(0, LocalTime.now().hour - 1)
                 else -> 7
             }
-            dp(8) + dp(44) * hour
+            calendarAnchorScrollY(
+                hour = hour,
+                hourHeightPx = dp(44),
+                topOffsetPx = dp(8),
+                labelClearancePx = dp(22),
+            )
         } else {
             calendarScrollY
         }

@@ -32,6 +32,139 @@ final class KeyboardAccessoryTests: XCTestCase {
         assertNoLiveMaterial(in: toolbar, what: "the editor formatting toolbar")
     }
 
+    func testEditorImageBlocksDownsampleAndBoundTheirCache() throws {
+        let sourceSize = CGSize(width: 2400, height: 1600)
+        let source = UIGraphicsImageRenderer(size: sourceSize).image { context in
+            UIColor.systemBlue.setFill()
+            context.fill(CGRect(origin: .zero, size: sourceSize))
+        }
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent("knotq-image-cache-\(UUID().uuidString).png")
+        try XCTUnwrap(source.pngData()).write(to: url)
+        defer { try? FileManager.default.removeItem(at: url) }
+
+        let media = MobileItemMedia(
+            kind: "image",
+            path: url.path,
+            format: "png",
+            width: Int32(sourceSize.width),
+            height: Int32(sourceSize.height)
+        )
+        let editor = EditorTextView()
+        let first = try XCTUnwrap(editor.imageForMedia(media, maxPixelSize: 160))
+        let second = try XCTUnwrap(editor.imageForMedia(media, maxPixelSize: 160))
+        let larger = try XCTUnwrap(editor.imageForMedia(media, maxPixelSize: 800))
+        let pixelWidth = first.cgImage?.width ?? 0
+        let pixelHeight = first.cgImage?.height ?? 0
+
+        XCTAssertLessThanOrEqual(max(pixelWidth, pixelHeight), 160)
+        XCTAssertGreaterThan(max(larger.cgImage?.width ?? 0, larger.cgImage?.height ?? 0), max(pixelWidth, pixelHeight))
+        XCTAssertTrue(first === second, "identical display sizes should reuse the bounded thumbnail")
+    }
+
+    func testEditorImageDrawMissDecodesOffMainAndEventuallyRepaints() throws {
+        let sourceSize = CGSize(width: 1800, height: 1200)
+        let source = UIGraphicsImageRenderer(size: sourceSize).image { context in
+            UIColor.systemGreen.setFill()
+            context.fill(CGRect(origin: .zero, size: sourceSize))
+        }
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent("knotq-image-async-\(UUID().uuidString).png")
+        try XCTUnwrap(source.pngData()).write(to: url)
+        defer { try? FileManager.default.removeItem(at: url) }
+
+        let media = MobileItemMedia(
+            kind: "image",
+            path: url.path,
+            format: "png",
+            width: Int32(sourceSize.width),
+            height: Int32(sourceSize.height)
+        )
+        let editor = EditorTextView()
+        XCTAssertNil(editor.cachedImageForMedia(media, maxPixelSize: 160))
+
+        let loaded = expectation(description: "thumbnail is populated asynchronously")
+        editor.requestImageForMedia(media, maxPixelSize: 160)
+        let deadline = Date().addingTimeInterval(2)
+        func checkForThumbnail() {
+            if editor.cachedImageForMedia(media, maxPixelSize: 160) != nil {
+                loaded.fulfill()
+            } else if Date() < deadline {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.01, execute: checkForThumbnail)
+            }
+        }
+        checkForThumbnail()
+        wait(for: [loaded], timeout: 2)
+        let thumbnail = try XCTUnwrap(editor.cachedImageForMedia(media, maxPixelSize: 160))
+        XCTAssertLessThanOrEqual(max(thumbnail.cgImage?.width ?? 0, thumbnail.cgImage?.height ?? 0), 160)
+    }
+
+    func testVisibleParagraphScanMatchesFullScanAndDoesNotRescanPrefix() {
+        let text = (0..<300).map { "line \($0)" }.joined(separator: "\n") + "\n"
+        let ns = text as NSString
+        let all = paragraphRanges(in: ns)
+        XCTAssertEqual(all.count, 300)
+
+        for index in [0, 1, 37, 149, 299] {
+            let paragraph = all[index]
+            let target = NSRange(
+                location: paragraph.lineRange.location,
+                length: max(1, paragraph.lineRange.length / 2)
+            )
+            let expected = all.filter { rangesOverlapOrTouch($0.fullRange, target) }
+            let visible = paragraphRanges(in: ns, intersecting: target)
+            XCTAssertEqual(
+                visible.map(\.fullRange),
+                expected.map(\.fullRange),
+                "visible paragraph selection changed at paragraph \(index)"
+            )
+        }
+
+        let aroundBoundary = NSRange(location: all[149].fullRange.location, length: 0)
+        XCTAssertEqual(
+            paragraphRanges(in: ns, intersecting: aroundBoundary).map(\.fullRange),
+            all.filter { rangesOverlapOrTouch($0.fullRange, aroundBoundary) }.map(\.fullRange)
+        )
+    }
+
+    func testNumberedOrdinalWalksSourceParagraphsOutsideVisibleDrawSlice() {
+        let metas = [
+            LineMeta(marker: .numbered, indent: 0),
+            LineMeta(marker: .numbered, indent: 0),
+            LineMeta(marker: .numbered, indent: 1),
+            LineMeta(marker: .numbered, indent: 0),
+            LineMeta(marker: .bullet, indent: 0),
+            LineMeta(marker: .numbered, indent: 0),
+        ]
+        let storage = NSMutableAttributedString()
+        for (index, meta) in metas.enumerated() {
+            storage.append(NSAttributedString(string: "item \(index)\n", attributes: [.knotqLine: meta]))
+        }
+        let paragraphs = paragraphRanges(in: storage.string as NSString)
+        let editor = EditorTextView()
+
+        XCTAssertEqual(
+            editor.numberedOrdinal(
+                for: paragraphs[3],
+                meta: metas[3],
+                in: storage.string as NSString,
+                storage: storage
+            ),
+            3,
+            "a deeper numbered child must not reset its parent list"
+        )
+        XCTAssertEqual(
+            editor.numberedOrdinal(
+                for: paragraphs[5],
+                meta: metas[5],
+                in: storage.string as NSString,
+                storage: storage
+            ),
+            1,
+            "a same-indent non-numbered line must end the list"
+        )
+    }
+
     func testTableCellAccessoryContainsNoLiveMaterial() {
         let editor = EditorTableCellEditor(hit: sampleHit, theme: .dark)
         let accessory = try? XCTUnwrap(editor.field.inputAccessoryView)

@@ -1,4 +1,7 @@
 use super::*;
+use base64::Engine as _;
+use knotq_model::WorkspaceId;
+use sha2::{Digest, Sha256};
 use std::collections::HashSet;
 
 pub(crate) struct CommitEventEdit {
@@ -16,6 +19,16 @@ pub(crate) struct CommitEventEdit {
     pub(crate) notification_dirty: bool,
     pub(crate) draft_done: bool,
     pub(crate) scope: DateEditScope,
+}
+
+/// The small set of prelude decisions that change the transport-agnostic sync
+/// cycle. Keeping these together makes call sites auditable and avoids growing
+/// a long positional argument list every time a new repair mode is added.
+pub(crate) struct SyncCycleOptions<'a> {
+    pub(crate) account_switched: bool,
+    pub(crate) prelude_workspace_changed: bool,
+    pub(crate) media_client: Option<&'a MobileSyncHttpClient>,
+    pub(crate) push_local_edits_first: bool,
 }
 
 /// Phase timing for `MobileCoreInner::open`, printed when `KNOTQ_LOAD_TIMING`
@@ -42,6 +55,44 @@ impl LoadTiming {
         }
         self.at = std::time::Instant::now();
     }
+}
+
+/// Phase timing for one sync cycle, printed only when `KNOTQ_SYNC_TIMING` is
+/// set. Sync deliberately holds the core mutex while it runs, so a user-visible
+/// "Resyncing" delay needs a phase split rather than another total guessed from
+/// the UI. This is diagnostic-only and is inert in normal/release builds unless
+/// explicitly enabled.
+struct SyncTiming {
+    enabled: bool,
+    at: std::time::Instant,
+}
+
+impl SyncTiming {
+    fn start() -> Self {
+        Self {
+            // Debug mobile builds collect this in the native sync log by
+            // default; desktop/host tests stay quiet. Release builds require
+            // the explicit opt-in, so this cannot become store-facing noise.
+            enabled: (cfg!(debug_assertions)
+                && cfg!(any(target_os = "android", target_os = "ios")))
+                || std::env::var_os("KNOTQ_SYNC_TIMING").is_some(),
+            at: std::time::Instant::now(),
+        }
+    }
+
+    fn phase(&mut self, label: &str) {
+        if self.enabled {
+            eprintln!("  sync: {label} {}ms", self.at.elapsed().as_millis());
+        }
+        self.at = std::time::Instant::now();
+    }
+}
+
+fn sync_token_fingerprint(bearer_token: &str) -> String {
+    Sha256::digest(bearer_token.as_bytes())
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect()
 }
 
 impl MobileCoreInner {
@@ -127,8 +178,8 @@ impl MobileCoreInner {
             eprintln!("knotq: deferring settings save at startup: {error:#}");
         }
         timing.phase("save_settings");
-        let next_sequence = load_local_sync_state(&workspace_path)
-            .unwrap_or_default()
+        let persisted_sync_state = load_local_sync_state(&workspace_path).unwrap_or_default();
+        let next_sequence = persisted_sync_state
             .pending
             .iter()
             .map(|edit| edit.local_sequence)
@@ -141,9 +192,17 @@ impl MobileCoreInner {
         timing.phase("load_sync_state");
         let crdt_states = load_crdt_state(&workspace_path).unwrap_or_default();
         timing.phase("load_crdt_state");
-        let crdt =
-            WorkspaceCrdtDocuments::from_states(&workspace, settings.replica_id, &crdt_states)?;
+        let crdt = WorkspaceCrdtDocuments::from_states_lazy(
+            &workspace,
+            settings.replica_id,
+            &crdt_states,
+        )?;
         timing.phase("crdt_from_states");
+        // Do not scan every deferred CRDT update on a clean launch. The cache
+        // is only needed by the one-shot interrupted-sync recovery proof, and
+        // that proof fills it inside the sync task when it is actually needed.
+        // This keeps a normal launch entirely free of the historical daily
+        // queue's CRDT metadata work.
         Ok(Self {
             workspace_path,
             settings_path,
@@ -157,17 +216,32 @@ impl MobileCoreInner {
             dirty_schemes: std::collections::HashSet::new(),
             dirty_crdt_schemes: std::collections::HashSet::new(),
             crdt_state_requires_full_save: false,
+            daily_recovery_pending: false,
+            deferred_materialization_pending: persisted_sync_state
+                .deferred_materialization_pending
+                .iter()
+                .copied()
+                .collect(),
             sync_notice: None,
             push_token: None,
             push_environment: None,
             registered_push_token: None,
+            registered_push_environment: None,
             retained_completed: RetainedCompletedItems::default(),
             background_refresh_required: false,
+            notification_schedule_cache: None,
             last_remote_sync_at: None,
+            // A cleanly completed prior sync does not need a workspace-wide
+            // state-vector proof on every launch. Arm it only when the previous
+            // process died during a sync, after it may have advanced cursors or
+            // written only half of the paired workspace/CRDT state.
+            startup_integrity_check_pending: persisted_sync_state.sync_in_progress,
             ws_client: None,
             ws_token: std::sync::Arc::new(std::sync::Mutex::new(String::new())),
             ws_changed: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
             ws_api_base: None,
+            account_workspace_cache: None,
+            http_agent: ureq::Agent::new(),
         })
     }
 
@@ -204,6 +278,9 @@ impl MobileCoreInner {
     pub(crate) fn apply(&mut self, command: Command) -> Result<()> {
         let t0 = std::time::Instant::now();
         let crdt_changes = mobile_crdt_change_set_for_command(&command);
+        if mobile_command_may_change_notification_schedule(&self.workspace, &command) {
+            self.notification_schedule_cache = None;
+        }
         // A completion or schedule edit can require offline peers to redraw
         // their Upcoming widget / cancel a delivered banner even when the
         // pushed notification hash is unchanged (e.g. completing a past
@@ -249,6 +326,7 @@ impl MobileCoreInner {
         if changed == 0 {
             return Ok(0);
         }
+        self.notification_schedule_cache = None;
         let mut changeset = WorkspaceCrdtChangeSet::default();
         for key in &keys {
             changeset.schemes.insert(key.scheme_id);
@@ -314,8 +392,29 @@ impl MobileCoreInner {
 
         match load_daily_queue_scheme(&self.workspace_path, date) {
             Ok(Some(scheme)) if scheme.id == expected_id => {
+                self.notification_schedule_cache = None;
+                let remote_materialization_pending = self
+                    .workspace
+                    .scheme_sync
+                    .get(&expected_id)
+                    .is_some_and(|meta| {
+                        self.deferred_materialization_pending.contains(&meta.id)
+                            && self.crdt.is_deferred(expected_id)
+                    });
+                if remote_materialization_pending
+                    && self.materialize_deferred_daily_if_available(expected_id)?
+                {
+                    return Ok(Some(expected_id));
+                }
                 self.workspace.schemes.insert(expected_id, scheme);
                 self.indexed_workspace = None;
+                // A valid plain file is sufficient for this lazy load. If a
+                // remote pull retained newer CRDT bytes for this off-window
+                // day, the normal remote-change path already rewrites the
+                // file before advancing its durable cursor. Do not hydrate the
+                // whole requested history range here: `snapshot(..., 120)` can
+                // legitimately load dozens of valid historical files, and
+                // doing so would turn a lazy read into a CRDT decode sweep.
                 Ok(Some(expected_id))
             }
             Ok(Some(scheme)) => Err(anyhow!(
@@ -324,6 +423,10 @@ impl MobileCoreInner {
                 scheme.id,
                 expected_id
             )),
+            Ok(None) if self.materialize_deferred_daily_if_available(expected_id)? => {
+                self.notification_schedule_cache = None;
+                Ok(Some(expected_id))
+            }
             Ok(None) => {
                 self.workspace.daily_queue.remove(&date);
                 self.indexed_workspace = None;
@@ -339,6 +442,7 @@ impl MobileCoreInner {
                 // parse error is still surfaced so the caller knows this exact
                 // date is not yet renderable; the retry after a sync succeeds.
                 if self.crdt.request_deferred_recovery(expected_id) {
+                    self.daily_recovery_pending = true;
                     eprintln!(
                         "knotq: daily queue {date} file unreadable ({parse_error:#}); \
                          scheduled CRDT-backed recovery for {expected_id}"
@@ -347,6 +451,41 @@ impl MobileCoreInner {
                 Err(parse_error)
             }
         }
+    }
+
+    /// Hydrate one deferred daily when it enters the view and persist only that
+    /// day if its CRDT state is available. Returns whether a scheme was
+    /// materialized. A failed hydration leaves the caller's ordinary file-load
+    /// or corruption-recovery path in charge.
+    fn materialize_deferred_daily_if_available(&mut self, scheme_id: SchemeId) -> Result<bool> {
+        if !self.crdt.is_deferred(scheme_id) {
+            return Ok(false);
+        }
+        self.crdt.request_deferred_recovery(scheme_id);
+        let repaired = self
+            .crdt
+            .materialized_workspace_repair(&self.workspace, &|id| *id == scheme_id)?;
+        let Some(scheme) = repaired.schemes.get(&scheme_id).cloned() else {
+            return Ok(false);
+        };
+        self.workspace.schemes.insert(scheme_id, scheme);
+        self.indexed_workspace = None;
+        self.dirty_schemes.insert(scheme_id);
+        self.dirty_crdt_schemes.insert(scheme_id);
+        self.save_workspace()?;
+        if let Some(document) = self
+            .workspace
+            .scheme_sync
+            .get(&scheme_id)
+            .map(|meta| meta.id)
+        {
+            self.deferred_materialization_pending.remove(&document);
+            let mut sync_state = load_local_sync_state(&self.workspace_path).unwrap_or_default();
+            if sync_state.clear_deferred_materialization(document) {
+                save_local_sync_state(&self.workspace_path, &sync_state)?;
+            }
+        }
+        Ok(true)
     }
 
     pub(crate) fn load_daily_queue_date_range(
@@ -688,7 +827,10 @@ impl MobileCoreInner {
         let Some(token) = self.push_token.clone() else {
             return;
         };
-        if self.registered_push_token.as_deref() == Some(token.as_str()) {
+        let environment = self.push_environment.unwrap_or(PushEnvironment::Production);
+        if self.registered_push_token.as_deref() == Some(token.as_str())
+            && self.registered_push_environment == Some(environment)
+        {
             return;
         }
         // The core is cross-compiled per platform, so the build target tells us
@@ -706,13 +848,36 @@ impl MobileCoreInner {
             app_version: None,
             push_channel: Some(PushChannel::Fcm),
             push_token: Some(token.clone()),
-            push_environment: Some(self.push_environment.unwrap_or(PushEnvironment::Production)),
+            push_environment: Some(environment),
             notification_permission: NotificationPermissionState::default(),
             local_scheduler_supported: Some(true),
         };
-        // Best effort: on failure leave the marker unset so the next sync retries.
-        if client.register_device(&request).is_ok() {
-            self.registered_push_token = Some(token);
+        // Device registration is only a best-effort wake-up optimization. It
+        // must never hold the core mutex in front of the CRDT pull: on a cold
+        // mobile network this request can consume the full HTTP timeout while
+        // the UI reports "Resyncing". Mark this token as attempted before
+        // spawning so wake storms do not start one request per sync cycle.
+        // A new app process retries naturally, and a rotated token clears this
+        // marker in `set_push_registration`.
+        self.registered_push_token = Some(token);
+        self.registered_push_environment = Some(environment);
+        let client = client.clone();
+        let spawned = std::thread::Builder::new()
+            .name("knotq-push-registration".into())
+            .spawn(move || {
+                if let Err(error) = client.register_device(&request) {
+                    // Registration is not part of sync correctness. Keep the
+                    // failure visible in debug builds without polluting a
+                    // released sync log or turning it into a user-facing error.
+                    if cfg!(debug_assertions) {
+                        eprintln!("knotq: push-device registration skipped: {error:#}");
+                    }
+                }
+            });
+        if spawned.is_err() {
+            // Thread creation failure is exceptionally unlikely; leave the
+            // optimistic marker in place because retrying synchronously would
+            // reintroduce the very startup stall this path avoids.
         }
     }
 
@@ -729,23 +894,83 @@ impl MobileCoreInner {
             .is_some_and(|last| last.elapsed() < MIN_REMOTE_SYNC_INTERVAL)
     }
 
-    pub(crate) fn sync_once(&mut self, api_base: &str, bearer_token: &str) -> Result<bool> {
-        self.sync_once_with_mode(api_base, bearer_token, false)
+    pub(crate) fn sync_once(
+        &mut self,
+        api_base: &str,
+        bearer_token: &str,
+        account_user_id: &str,
+    ) -> Result<bool> {
+        self.sync_once_with_mode(api_base, bearer_token, account_user_id, false)
     }
 
     /// A user-requested resync must be a real pull, even if an automatic poll or
     /// silent wake ran moments ago. It deliberately uses HTTP instead of a socket
     /// that may look connected after the app was suspended.
-    pub(crate) fn force_sync_once(&mut self, api_base: &str, bearer_token: &str) -> Result<bool> {
-        self.sync_once_with_mode(api_base, bearer_token, true)
+    pub(crate) fn force_sync_once(
+        &mut self,
+        api_base: &str,
+        bearer_token: &str,
+        account_user_id: &str,
+    ) -> Result<bool> {
+        self.sync_once_with_mode(api_base, bearer_token, account_user_id, true)
+    }
+
+    fn server_workspace_id(
+        &mut self,
+        client: &MobileSyncHttpClient,
+        persisted_state: &knotq_sync::LocalSyncState,
+        account_user_id: &str,
+    ) -> Result<WorkspaceId> {
+        let cache_is_current = self.account_workspace_cache.as_ref().is_some_and(|cached| {
+            cached.api_base == client.api_base
+                && cached.bearer_token == client.bearer_token
+                && cached.fetched_at.elapsed() < ACCOUNT_WORKSPACE_CACHE_TTL
+        });
+        if cache_is_current {
+            if let Some(cached) = self.account_workspace_cache.as_ref() {
+                return Ok(cached.workspace_id);
+            }
+            return Err(anyhow!("account workspace cache became unavailable"));
+        }
+
+        // Access tokens rotate on ordinary refresh, so key this cache by the
+        // stable account id as well as the server. An actual account switch
+        // misses this guard and still takes the authoritative status path.
+        let token_fingerprint = sync_token_fingerprint(&client.bearer_token);
+        if persisted_state.server_url.as_deref() == Some(client.api_base.as_str())
+            && (persisted_state.account_user_id.as_deref() == Some(account_user_id)
+                || persisted_state.account_token_fingerprint.as_deref()
+                    == Some(token_fingerprint.as_str()))
+        {
+            if let Some(workspace_id) = persisted_state.workspace_id {
+                self.account_workspace_cache = Some(CachedAccountWorkspace {
+                    api_base: client.api_base.clone(),
+                    bearer_token: client.bearer_token.clone(),
+                    workspace_id,
+                    fetched_at: std::time::Instant::now(),
+                });
+                return Ok(workspace_id);
+            }
+        }
+
+        let workspace_id = client.account_status()?.workspace_id;
+        self.account_workspace_cache = Some(CachedAccountWorkspace {
+            api_base: client.api_base.clone(),
+            bearer_token: client.bearer_token.clone(),
+            workspace_id,
+            fetched_at: std::time::Instant::now(),
+        });
+        Ok(workspace_id)
     }
 
     fn sync_once_with_mode(
         &mut self,
         api_base: &str,
         bearer_token: &str,
+        account_user_id: &str,
         force_remote_pull: bool,
     ) -> Result<bool> {
+        let mut prelude_timing = SyncTiming::start();
         // Coalesce wake-storms: a silent push wakes every device on each push, so two
         // devices that re-push on every sync form a feedback loop that barrages the
         // backend. Skip the round-trip when nothing local is queued and we synced
@@ -753,9 +978,9 @@ impl MobileCoreInner {
         // The sync path rewrites this file around network I/O; drop the edit
         // path's copy so it cannot go stale behind it.
         self.sync_state_cache = None;
-        let has_local_pending = load_local_sync_state(&self.workspace_path)
-            .map(|state| !state.pending.is_empty())
-            .unwrap_or(false);
+        let persisted_sync_state = load_local_sync_state(&self.workspace_path).unwrap_or_default();
+        let has_local_pending = !persisted_sync_state.pending.is_empty();
+        prelude_timing.phase("prelude_load_state");
         // A server `changed` nudge over the socket means a peer pushed — always run
         // (and clear the flag) rather than coalescing it away.
         let ws_changed = self
@@ -764,16 +989,29 @@ impl MobileCoreInner {
         if !force_remote_pull && !ws_changed && self.should_coalesce_idle_sync(has_local_pending) {
             return Ok(false);
         }
-        self.last_remote_sync_at = Some(std::time::Instant::now());
         // Keep the ws reconnect token fresh (the shell hands us the current token).
         if let Ok(mut token) = self.ws_token.lock() {
             *token = bearer_token.to_string();
         }
 
-        let client = MobileSyncHttpClient {
-            api_base: normalize_sync_api_base(api_base)?,
-            bearer_token: bearer_token.to_string(),
-        };
+        let client = MobileSyncHttpClient::with_agent(
+            normalize_sync_api_base(api_base)?,
+            bearer_token.to_string(),
+            self.http_agent.clone(),
+        );
+        // A timed-out WS request marks its supervisor stopped. Recreate it before
+        // selecting the transport so the current cycle can use HTTP safely and the
+        // next cycle has a chance to use a fresh socket. This is deliberately after
+        // wake coalescing: an idle/coalesced call must not create network work.
+        if !force_remote_pull
+            && self
+                .ws_client
+                .as_ref()
+                .is_some_and(|client| client.is_stopped())
+        {
+            self.stop_ws_sync();
+            self.start_ws_sync(api_base, bearer_token);
+        }
         // Batched pull/push prefer the live socket and fall back to HTTP; aux calls
         // (account status, device register, media) always use the HTTP `client`.
         // Clone the Arc into a local so the transport doesn't borrow `self` (which is
@@ -790,10 +1028,12 @@ impl MobileCoreInner {
         // the workspace was bound to *some* account — signing into a different one
         // (e.g. prod -> sandbox) left the old id in place and wedged every pull
         // with a document-id mismatch.
-        let server_workspace_id = client.account_status()?.workspace_id;
-        let local_workspace_changed = self
+        let server_workspace_id =
+            self.server_workspace_id(&client, &persisted_sync_state, account_user_id)?;
+        prelude_timing.phase("prelude_account_status");
+        let (_local_workspace_repair_needed, local_workspace_changed) = self
             .workspace
-            .canonicalize_personal_sync_identity(server_workspace_id);
+            .canonicalize_personal_sync_identity_with_change(server_workspace_id);
         self.workspace.ensure_sync_metadata();
         // Adopt that identity on the long-lived CRDT too. `self.crdt` was loaded
         // with the id this device last synced under; if it differs, re-label the
@@ -807,21 +1047,36 @@ impl MobileCoreInner {
             .reidentify_workspace_document(self.workspace.sync.id)?;
         let account_switched = reidentified_workspace.is_some();
 
-        let mut sync_state = load_local_sync_state(&self.workspace_path).unwrap_or_default();
-        // One-time recovery: clear stale pull cursors so this sync re-pulls and
-        // re-merges every document, repairing any workspace left diverged by the
-        // earlier push-failure desync.
-        sync_state.heal_for_recovery_version();
+        let prior_account_user_id = persisted_sync_state.account_user_id.clone();
+        let mut sync_state = persisted_sync_state;
+        // One-time recovery: repair only the documents the local CRDT store is
+        // missing. The earlier wedge could advance a cursor past an off-window
+        // Daily Queue document, but re-pulling every already-owned document made
+        // cold startup needlessly expensive. Existing bytes are retained and all
+        // ordinary server sequence changes still arrive through the normal pull.
+        sync_state
+            .heal_for_recovery_version_targeted(&self.workspace, &self.crdt.known_document_ids());
         // Signing into a different account/server than the persisted cursors were
         // built against must not reuse the previous account's pull/push cursors: a
         // stale cursor silently skips pulling the new account's lower document
         // sequences and makes the bootstrap push a bare delta the new server has no
         // base for (crdt_schema_invalid). Reset them so the next sync re-pulls from
         // zero and re-seeds full snapshots (idempotent in Yjs).
-        sync_state.reset_for_account_change(self.workspace.id, &client.api_base);
+        let account_identity_changed = prior_account_user_id.as_deref() != Some(account_user_id)
+            && prior_account_user_id.is_some();
+        if account_identity_changed
+            || sync_state.reset_for_account_change(self.workspace.id, &client.api_base)
+        {
+            // A new account/server has a different document universe. Treat its
+            // first pull like a fresh startup so the integrity proof covers the
+            // newly adopted base, while later websocket wakes remain cursor-only.
+            self.startup_integrity_check_pending = true;
+        }
         sync_state.workspace_id = Some(self.workspace.id);
         sync_state.replica_id = Some(self.settings.replica_id);
         sync_state.server_url = Some(client.api_base.clone());
+        sync_state.account_token_fingerprint = Some(sync_token_fingerprint(bearer_token));
+        sync_state.account_user_id = Some(account_user_id.to_string());
 
         // If the workspace document was just re-identified to a new account's id,
         // queue its content for push. `queue_workspace_bootstrap_updates` only
@@ -846,18 +1101,40 @@ impl MobileCoreInner {
             });
         }
 
+        // Leave a durable breadcrumb until the entire cycle, including the
+        // post-push repair pull and media persistence, has completed. If the app
+        // is killed in the middle, the next launch performs the expensive proof;
+        // clean launches remain cursor-only.
+        sync_state.sync_in_progress = true;
+        save_local_sync_state(&self.workspace_path, &sync_state)?;
+        prelude_timing.phase("prelude_mark_in_progress");
+
         // Register this device (with its push token, if any) so the backend can
         // wake it via silent push. Best effort — never block sync on it.
         self.register_push_device(&client);
+        prelude_timing.phase("prelude_register_device");
 
-        self.run_sync_cycle(
+        let push_local_edits_first =
+            !force_remote_pull && !ws_changed && has_local_pending && !account_identity_changed;
+        let result = self.run_sync_cycle_with_options(
             &transport,
             &mut sync_state,
             server_workspace_id,
-            account_switched,
-            local_workspace_changed,
-            Some(&client),
-        )
+            SyncCycleOptions {
+                account_switched,
+                prelude_workspace_changed: local_workspace_changed,
+                media_client: Some(&client),
+                push_local_edits_first,
+            },
+        );
+        prelude_timing.phase("prelude_run_sync_cycle");
+        if result.is_ok() {
+            // Only coalesce future wake-ups after this cycle really completed.
+            // A failed account lookup, pull, or push must remain eligible for
+            // the next retry rather than being mistaken for a recent sync.
+            self.last_remote_sync_at = Some(std::time::Instant::now());
+        }
+        result
     }
 
     /// The transport-agnostic core of a sync cycle: pull + merge + workspace
@@ -873,29 +1150,113 @@ impl MobileCoreInner {
     ///
     /// Returns whether anything changed (a remote update landed, a workspace was
     /// repaired, something was pushed, or media moved).
-    pub(crate) fn run_sync_cycle(
+    pub(crate) fn run_sync_cycle_with_options(
         &mut self,
         transport: &dyn knotq_sync::SyncTransport,
         sync_state: &mut knotq_sync::LocalSyncState,
         server_workspace_id: knotq_model::WorkspaceId,
-        account_switched: bool,
-        prelude_workspace_changed: bool,
-        media_client: Option<&MobileSyncHttpClient>,
+        options: SyncCycleOptions<'_>,
     ) -> Result<bool> {
+        let SyncCycleOptions {
+            account_switched,
+            prelude_workspace_changed,
+            media_client,
+            push_local_edits_first,
+        } = options;
+        let mut timing = SyncTiming::start();
         // One batched pull syncs the whole workspace: the server returns the current
         // merged state of every document past our cursor (and any document created
         // on another device). Applying merged state is idempotent in Yjs.
         let workspace = self.workspace.clone();
-        let pull = batch_pull_and_apply(
-            transport,
-            &mut self.crdt,
-            sync_state,
-            workspace,
-            self.settings.replica_id,
-        )?;
+        let run_startup_integrity_check = self.startup_integrity_check_pending;
+        // Older installs may have the recovery marker but no vector cache. Fill
+        // that cache lazily here, rather than during `open`, so clean launches
+        // never pay to inspect cold Daily Queue histories. The persisted-update
+        // metadata path does not materialize deferred Yjs documents.
+        let startup_proof_eligible = run_startup_integrity_check && sync_state.pending.is_empty();
+        if startup_proof_eligible {
+            let known_documents = self.crdt.known_document_ids();
+            let cache_complete = !sync_state.integrity_state_vectors.is_empty()
+                && known_documents
+                    .iter()
+                    .all(|document| sync_state.integrity_state_vectors.contains_key(document));
+            if !cache_complete {
+                for (document, state_vector_v1) in self.crdt.persisted_state_vectors_v1() {
+                    sync_state
+                        .integrity_state_vectors
+                        .entry(document)
+                        .or_insert_with(|| {
+                            base64::engine::general_purpose::STANDARD.encode(state_vector_v1)
+                        });
+                }
+            }
+        }
+        let use_persisted_integrity_vectors =
+            startup_proof_eligible && !sync_state.integrity_state_vectors.is_empty();
+        let persisted_integrity_vectors =
+            use_persisted_integrity_vectors.then(|| sync_state.integrity_state_vectors.clone());
+        timing.phase("integrity_prepare");
+        let pull = if push_local_edits_first && !sync_state.pending.is_empty() {
+            // A local CRDT update can be merged safely without first fetching
+            // the server head. The post-push pull below still receives every
+            // peer document past its cursor, while avoiding one round-trip on
+            // every debounced keystroke. Stale squashed epochs remain protected
+            // by the typed push rejection and its bounded adoption retry.
+            PullOutcome {
+                workspace,
+                remote_updates_applied: 0,
+                pull_requests: 0,
+                remote_documents_received: 0,
+                remote_delta_documents: 0,
+                remote_state_bytes: 0,
+                remote_latest: sync_state
+                    .document_cursors
+                    .values()
+                    .map(|cursor| (cursor.document, cursor.last_pulled_sequence))
+                    .collect(),
+                changed_documents: HashSet::new(),
+                skipped: Vec::new(),
+            }
+        } else {
+            batch_pull_and_apply_with_persisted_integrity_vectors(
+                transport,
+                &mut self.crdt,
+                sync_state,
+                workspace,
+                self.settings.replica_id,
+                run_startup_integrity_check,
+                persisted_integrity_vectors.as_ref(),
+            )?
+        };
+        if pull.remote_updates_applied > 0 {
+            self.notification_schedule_cache = None;
+        }
+        self.deferred_materialization_pending
+            .extend(sync_state.deferred_materialization_pending.iter().copied());
+        if timing.enabled {
+            eprintln!(
+                "  sync: pull_result requests={} documents={} deltas={} state_bytes={} applied={} changed={} skipped={} cursors={} pending={}",
+                pull.pull_requests,
+                pull.remote_documents_received,
+                pull.remote_delta_documents,
+                pull.remote_state_bytes,
+                pull.remote_updates_applied,
+                pull.changed_documents.len(),
+                pull.skipped.len(),
+                sync_state.document_cursors.len(),
+                sync_state.pending.len(),
+            );
+        }
+        timing.phase("pull_and_apply");
+        // A successful pull has completed the one expensive startup proof. Keep
+        // ordinary websocket nudges cursor-based; local edits request their own
+        // proof after the push below.
+        if !run_startup_integrity_check || sync_state.pending.is_empty() {
+            self.startup_integrity_check_pending = false;
+        }
         // Log skipped documents (per-document errors that did not block the pull).
         for skipped in &pull.skipped {
-            if !skipped.unknown_scheme_document {
+            if !skipped.unknown_scheme_document && !skipped.deferred {
                 eprintln!(
                     "sync: skipped document {}: {}",
                     skipped.document, skipped.reason
@@ -903,13 +1264,51 @@ impl MobileCoreInner {
             }
         }
         let mut remote_updates_applied = pull.remote_updates_applied;
-        self.workspace = pull.workspace;
-        let mut repaired_workspace_changed = self
+        // Scope the durable save to documents whose Yjs state actually changed.
+        // The pull is batched, but a one-document remote edit must not turn into
+        // a rewrite of every scheme file and every CRDT state on disk.
+        let pull_changed_documents = pull.changed_documents.clone();
+        let changed_scheme_ids: HashSet<SchemeId> = pull
             .workspace
-            .canonicalize_personal_sync_identity(server_workspace_id);
-        repaired_workspace_changed |= self.workspace.normalize_one_level_folders();
-        repaired_workspace_changed |= self.workspace.normalize_item_markers();
+            .scheme_sync
+            .iter()
+            .filter_map(|(scheme_id, meta)| {
+                pull_changed_documents
+                    .contains(&meta.id)
+                    .then_some(*scheme_id)
+            })
+            .collect();
+        self.dirty_schemes
+            .extend(changed_scheme_ids.iter().copied());
+        self.dirty_crdt_schemes
+            .extend(changed_scheme_ids.iter().copied());
+        if pull_changed_documents.contains(&pull.workspace.sync.id) {
+            // The incremental CRDT writer intentionally handles scheme documents
+            // only; a changed workspace-index document requires the full writer
+            // so its own state is persisted too.
+            self.crdt_state_requires_full_save = true;
+        }
+        self.workspace = pull.workspace;
+        if self.daily_recovery_pending {
+            let repaired = self
+                .crdt
+                .materialized_workspace_for_diagnostics(&self.workspace)?;
+            if repaired != self.workspace {
+                self.workspace = repaired;
+            }
+            self.daily_recovery_pending = false;
+            self.save_workspace()?;
+        }
+        let (repaired_identity, repaired_identity_changed) = self
+            .workspace
+            .canonicalize_personal_sync_identity_with_change(server_workspace_id);
+        let repaired_folders = self.workspace.normalize_one_level_folders();
+        let repaired_markers = self.workspace.normalize_item_markers();
+        let repaired_workspace_changed = repaired_identity || repaired_folders || repaired_markers;
+        let repaired_workspace_persist_changed =
+            repaired_identity_changed || repaired_folders || repaired_markers;
         if repaired_workspace_changed {
+            self.notification_schedule_cache = None;
             let outcome = self.crdt.sync_changes(
                 &self.workspace,
                 &WorkspaceCrdtChangeSet::default().workspace(),
@@ -940,6 +1339,7 @@ impl MobileCoreInner {
                 }
             }
         }
+        timing.phase("workspace_repair");
         if account_switched {
             // Defer scheme reseeding until the destination account's workspace
             // index has been pulled. A pre-pull reseed can leave source-only scheme
@@ -960,22 +1360,27 @@ impl MobileCoreInner {
                 .unwrap_or(0)
                 + 1;
         }
+        timing.phase("account_reseed");
 
-        let mut media_downloaded = false;
-        if let Some(client) = media_client {
-            mobile_upload_local_media_assets(
+        // A read-only remote pull cannot create a new local media asset. Avoid
+        // walking and hashing the entire workspace on that path; local edits
+        // and bootstrap pushes are handled by the post-push retry below.
+        if let Some(client) = media_client.filter(|_| !sync_state.pending.is_empty()) {
+            let pending_documents: HashSet<knotq_model::DocumentId> = sync_state
+                .pending
+                .iter()
+                .map(|edit| edit.document)
+                .collect();
+            mobile_upload_local_media_assets_for_documents(
                 client,
                 sync_state,
                 &self.workspace,
                 &self.image_assets_dir,
                 &pull.remote_latest,
-            )?;
-            media_downloaded |= mobile_download_missing_media_assets(
-                client,
-                &self.workspace,
-                &self.image_assets_dir,
+                Some(&pending_documents),
             )?;
         }
+        timing.phase("media_upload");
 
         // Persist the merged workspace BEFORE pushing. The durable pull cursors are
         // saved after the push regardless of its outcome, so the workspace must be
@@ -1005,35 +1410,78 @@ impl MobileCoreInner {
         for document in &healed_documents {
             eprintln!("mobile sync: repopulated schema-less CRDT document {document}");
         }
+        timing.phase("bootstrap");
         if remote_updates_applied > 0
             || prelude_workspace_changed
-            || repaired_workspace_changed
+            || repaired_workspace_persist_changed
             || !healed_documents.is_empty()
         {
             self.save_workspace()?;
         }
-        let notification_schedule = mobile_notification_schedule_snapshot(
-            &self.workspace,
-            self.settings.notification_defaults,
-            Utc::now(),
-            0,
-        )?;
+        timing.phase("workspace_persist");
+
+        // The recovery cache is derived from raw persisted update metadata, so
+        // it does not require hydrating every cold history. On ordinary pulls,
+        // refresh only documents whose CRDT state changed in this cycle.
+        if !pull_changed_documents.is_empty() {
+            self.refresh_persisted_integrity_vectors(sync_state, Some(&pull_changed_documents));
+        }
+
+        // The risky pairing is now durable: the merged CRDT/workspace and the
+        // pull cursors are both on disk. Persist that cursor checkpoint before
+        // entering push/media work, then disarm recovery. If the process dies
+        // before the push, pending edits remain queued and the old cursor
+        // checkpoint simply causes a harmless idempotent re-pull. If it dies
+        // after the push, the normal pending-queue retry is sufficient; a
+        // workspace-wide integrity proof is not.
+        sync_state.sync_in_progress = false;
+        save_local_sync_state(&self.workspace_path, sync_state)?;
+
         // Persist pull cursors, dropped orphans, and per-document push acks even
         // if the push below fails partway, so a transient push error never forces
         // the next sync to re-download every document from sequence zero. The merged
         // workspace above is already durable, so the cursor never runs ahead of it.
         let mut pushed = Vec::new();
         let background_refresh_required = self.background_refresh_required;
-        let mut push_result = batch_push_pending(
-            transport,
-            sync_state,
-            self.settings.replica_id,
-            &notification_schedule,
-            background_refresh_required,
-            &mut pushed,
-            &mut self.crdt,
-            &self.workspace,
-        );
+        let notification_schedule = if sync_state.pending.is_empty() {
+            None
+        } else {
+            // Notification scheduling is only part of a push request. A
+            // caught-up startup/wakeup has no pending edits, so avoid traversing
+            // every visible item just to build data that will never be sent.
+            // Reuse the metadata for ordinary prose edits; the cache is cleared
+            // by local schedule-affecting commands and remote CRDT merges.
+            let now = Utc::now();
+            if let Some(cached) = self
+                .notification_schedule_cache
+                .clone()
+                .filter(|cached| cached.window_start.date_naive() == now.date_naive())
+            {
+                Some(cached)
+            } else {
+                let schedule = mobile_notification_schedule_snapshot(
+                    &self.workspace,
+                    self.settings.notification_defaults,
+                    now,
+                    0,
+                )?;
+                self.notification_schedule_cache = Some(schedule.clone());
+                Some(schedule)
+            }
+        };
+        let mut push_result = match notification_schedule.as_ref() {
+            Some(notification_schedule) => batch_push_pending(
+                transport,
+                sync_state,
+                self.settings.replica_id,
+                notification_schedule,
+                background_refresh_required,
+                &mut pushed,
+                &mut self.crdt,
+                &self.workspace,
+            ),
+            None => Ok(()),
+        };
         // A `document_epoch_stale` rejection means some document was squashed
         // (history replaced, epoch bumped) since this run's pull. One bounded
         // re-pull adopts the squashed state and re-expresses the pending edits
@@ -1046,30 +1494,109 @@ impl MobileCoreInner {
             eprintln!(
                 "mobile sync: push hit a stale document epoch; re-pulling to adopt and retrying"
             );
-            let adoption = batch_pull_and_apply(
+            let adoption = batch_pull_and_apply_with_integrity_check(
                 transport,
                 &mut self.crdt,
                 sync_state,
                 self.workspace.clone(),
                 self.settings.replica_id,
+                false,
             )?;
             remote_updates_applied += adoption.remote_updates_applied;
             self.workspace = adoption.workspace;
             self.save_workspace()?;
+            let Some(notification_schedule) = notification_schedule.as_ref() else {
+                return Err(anyhow!(
+                    "stale push retry requested without a notification schedule"
+                ));
+            };
             push_result = batch_push_pending(
                 transport,
                 sync_state,
                 self.settings.replica_id,
-                &notification_schedule,
+                notification_schedule,
                 background_refresh_required,
                 &mut pushed,
                 &mut self.crdt,
                 &self.workspace,
             );
         }
+        timing.phase("push");
         save_local_sync_state(&self.workspace_path, sync_state)?;
         push_result?;
         self.background_refresh_required = false;
+
+        // Local edits have now been accepted (or the push returned an error above).
+        // Re-run the one-shot integrity pull only after an actual push, so a
+        // mismatch caused by our own pending daily edit cannot trigger a re-pull
+        // first. At this point there is no pending local edit for an accepted
+        // document; any remaining mismatch is therefore resolved from the
+        // server's state, including deferred off-window dailies. On an ordinary
+        // caught-up startup/wakeup there is no reason to issue a second empty
+        // pull: the first pull already advanced the durable cursors.
+        if !pushed.is_empty() {
+            let pushed_documents: HashSet<knotq_model::DocumentId> =
+                pushed.iter().map(|document| document.document).collect();
+            // The push response includes the exact server sequence reached by
+            // each accepted document. Start the proof pull at those heads so a
+            // local edit does not immediately download its own full merged state
+            // again. This state is deliberately a clone: if the proof pull fails,
+            // the durable state keeps the old cursors and the next cycle retries
+            // safely. If a concurrent device pushed after our response, the proof
+            // still catches it because the server head or state vector differs.
+            let mut post_push_sync_state = sync_state.clone();
+            if !push_local_edits_first {
+                for pushed_document in &pushed {
+                    post_push_sync_state.advance_pushed_server_sequence(
+                        pushed_document.document,
+                        pushed_document.kind,
+                        pushed_document.server_sequence,
+                    );
+                }
+            }
+            let post_push_pull = batch_pull_and_apply_with_integrity_documents(
+                transport,
+                &mut self.crdt,
+                &mut post_push_sync_state,
+                self.workspace.clone(),
+                self.settings.replica_id,
+                true,
+                Some(&pushed_documents),
+            )?;
+            let mut proof_documents = pushed_documents.clone();
+            proof_documents.extend(post_push_pull.changed_documents.iter().copied());
+            remote_updates_applied += post_push_pull.remote_updates_applied;
+            if post_push_pull.remote_updates_applied > 0 {
+                self.notification_schedule_cache = None;
+                let changed_scheme_ids: HashSet<SchemeId> = post_push_pull
+                    .workspace
+                    .scheme_sync
+                    .iter()
+                    .filter_map(|(scheme_id, meta)| {
+                        post_push_pull
+                            .changed_documents
+                            .contains(&meta.id)
+                            .then_some(*scheme_id)
+                    })
+                    .collect();
+                self.dirty_schemes
+                    .extend(changed_scheme_ids.iter().copied());
+                self.dirty_crdt_schemes
+                    .extend(changed_scheme_ids.iter().copied());
+                if post_push_pull
+                    .changed_documents
+                    .contains(&post_push_pull.workspace.sync.id)
+                {
+                    self.crdt_state_requires_full_save = true;
+                }
+                self.workspace = post_push_pull.workspace;
+                self.save_workspace()?;
+            }
+            *sync_state = post_push_sync_state;
+            self.refresh_persisted_integrity_vectors(sync_state, Some(&proof_documents));
+            save_local_sync_state(&self.workspace_path, sync_state)?;
+        }
+        timing.phase("post_push_repair");
 
         if let Some(client) = media_client {
             // Retry media after the CRDT push using a head map that treats newly
@@ -1081,25 +1608,94 @@ impl MobileCoreInner {
                     .entry(pushed_document.document)
                     .or_insert(1);
             }
-            mobile_upload_local_media_assets(
-                client,
-                sync_state,
-                &self.workspace,
-                &self.image_assets_dir,
-                &media_remote_latest,
-            )?;
+            let mut media_documents: HashSet<knotq_model::DocumentId> =
+                pushed.iter().map(|document| document.document).collect();
+            media_documents.extend(sync_state.pending.iter().map(|edit| edit.document));
+            if !media_documents.is_empty() {
+                mobile_upload_local_media_assets_for_documents(
+                    client,
+                    sync_state,
+                    &self.workspace,
+                    &self.image_assets_dir,
+                    &media_remote_latest,
+                    Some(&media_documents),
+                )?;
+            }
             save_local_sync_state(&self.workspace_path, sync_state)?;
-            media_downloaded |= mobile_download_missing_media_assets(
-                client,
-                &self.workspace,
-                &self.image_assets_dir,
-            )?;
+            // Missing-media discovery is a retry/backstop and can walk every
+            // scheme plus its image metadata. A local text edit does not make
+            // an unrelated asset newly available, so avoid repeating that
+            // workspace scan on every keystroke. A remote CRDT change triggers
+            // it immediately; otherwise the interval guarantees a failed
+            // download is retried without making the hot path unbounded.
+            let now = Utc::now();
+            let media_reconciliation_due =
+                sync_state.last_media_reconciliation_at.is_none_or(|last| {
+                    now.signed_duration_since(last)
+                        .to_std()
+                        .is_ok_and(|elapsed| elapsed >= MEDIA_RECONCILIATION_INTERVAL)
+                });
+            if remote_updates_applied > 0 || !pushed.is_empty() || media_reconciliation_due {
+                // Missing media is a repair/backstop, not sync correctness. Do
+                // not hold the core mutex while serially fetching images (each
+                // request has a 30s timeout); mark the attempt durably and let a
+                // small worker do the I/O after the CRDT cycle can report done.
+                sync_state.last_media_reconciliation_at = Some(now);
+                save_local_sync_state(&self.workspace_path, sync_state)?;
+                let client = client.clone();
+                let workspace = self.workspace.clone();
+                let image_assets_dir = self.image_assets_dir.clone();
+                let spawned = std::thread::Builder::new()
+                    .name("knotq-media-reconciliation".into())
+                    .spawn(move || {
+                        let started = std::time::Instant::now();
+                        let result = mobile_download_missing_media_assets(
+                            &client,
+                            &workspace,
+                            &image_assets_dir,
+                        );
+                        if cfg!(debug_assertions) {
+                            match result {
+                                Ok(downloaded) => eprintln!(
+                                    "  sync: background media reconciliation downloaded={} {}ms",
+                                    downloaded,
+                                    started.elapsed().as_millis()
+                                ),
+                                Err(error) => eprintln!(
+                                    "knotq: background media reconciliation failed after {}ms: {error:#}",
+                                    started.elapsed().as_millis()
+                                ),
+                            }
+                        }
+                    });
+                if spawned.is_err() {
+                    // The durable timestamp prevents a thread-creation failure
+                    // from blocking this sync; the interval retry will try again.
+                }
+            }
         }
+        timing.phase("media");
 
-        Ok(remote_updates_applied > 0
-            || repaired_workspace_changed
-            || !pushed.is_empty()
-            || media_downloaded)
+        Ok(remote_updates_applied > 0 || repaired_workspace_changed || !pushed.is_empty())
+    }
+
+    /// Update the durable startup-proof cache without touching unrelated CRDT
+    /// documents. `None` is reserved for compatibility callers that need every
+    /// persisted document; deferred documents use raw update metadata.
+    fn refresh_persisted_integrity_vectors(
+        &mut self,
+        sync_state: &mut knotq_sync::LocalSyncState,
+        documents: Option<&HashSet<knotq_model::DocumentId>>,
+    ) {
+        let vectors = documents
+            .map(|documents| self.crdt.state_vectors_v1_for_documents(documents))
+            .unwrap_or_else(|| self.crdt.persisted_state_vectors_v1());
+        for (document, state_vector_v1) in vectors {
+            sync_state.integrity_state_vectors.insert(
+                document,
+                base64::engine::general_purpose::STANDARD.encode(state_vector_v1),
+            );
+        }
     }
 
     /// Returns the queue's scheme id and whether this call had to create it.
@@ -1120,6 +1716,7 @@ impl MobileCoreInner {
         self.workspace
             .scheme_sync
             .insert(id, daily_queue_sync_metadata(date));
+        self.notification_schedule_cache = None;
         self.record_crdt_changes(
             WorkspaceCrdtChangeSet::default()
                 .workspace()
@@ -1249,6 +1846,7 @@ impl MobileCoreInner {
             self.save_settings()?;
         }
         if applied.content_changed {
+            self.notification_schedule_cache = None;
             self.workspace.normalize_one_level_folders();
             self.workspace.normalize_item_markers();
             self.record_crdt_changes(applied.changes)?;

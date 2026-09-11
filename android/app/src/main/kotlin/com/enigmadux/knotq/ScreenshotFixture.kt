@@ -72,7 +72,10 @@ internal fun MainActivity.seedScreenshotFixtureIfRequested(): Boolean {
     replaceScreenshotItems(financeId, financeItems())
     seedDailyScreenshotItems()
 
-    loadSnapshot()
+    // Startup fixture seeding runs on the serial core executor. Avoid the UI
+    // scheduling side effect in loadSnapshot(); the final startup snapshot is
+    // published on the main thread by MainActivity after seeding completes.
+    snapshot = snapshotFromCore()
 
     when (screenshotInitialRoute()) {
         "home" -> { selectedTab = TAB_HOME; selectedSchemeId = null }

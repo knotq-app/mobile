@@ -1,9 +1,12 @@
 import BackgroundTasks
 import FirebaseCore
 import FirebaseMessaging
+import os
 import UIKit
 
 final class KnotQAppDelegate: NSObject, UIApplicationDelegate, MessagingDelegate {
+    private static let log = Logger(subsystem: "com.enigmadux.knotq", category: "push-registration")
+
     func application(
         _ application: UIApplication,
         didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil
@@ -30,7 +33,13 @@ final class KnotQAppDelegate: NSObject, UIApplicationDelegate, MessagingDelegate
         didRegisterForRemoteNotificationsWithDeviceToken deviceToken: Data
     ) {
         Messaging.messaging().apnsToken = deviceToken
-        Messaging.messaging().token { token, _ in
+        Messaging.messaging().token { token, error in
+            if let error {
+                let message = String(describing: error)
+                Task { @MainActor in
+                    Self.log.error("FCM token fetch failed: \(message, privacy: .public)")
+                }
+            }
             guard let token else { return }
             Task { @MainActor in
                 AppModel.shared.setPushToken(token, environment: Self.pushEnvironment)
@@ -42,6 +51,7 @@ final class KnotQAppDelegate: NSObject, UIApplicationDelegate, MessagingDelegate
         _ application: UIApplication,
         didFailToRegisterForRemoteNotificationsWithError error: Error
     ) {
+        Self.log.error("APNs registration failed: \(String(describing: error), privacy: .public)")
         AppModel.shared.setPushToken("")
     }
 
@@ -58,7 +68,12 @@ final class KnotQAppDelegate: NSObject, UIApplicationDelegate, MessagingDelegate
     }
 
     nonisolated func messaging(_ messaging: Messaging, didReceiveRegistrationToken fcmToken: String?) {
-        guard let fcmToken, !fcmToken.isEmpty else { return }
+        guard let fcmToken, !fcmToken.isEmpty else {
+            Task { @MainActor in
+                Self.log.error("FCM registration callback returned no token")
+            }
+            return
+        }
         Task { @MainActor in
             AppModel.shared.setPushToken(fcmToken, environment: Self.pushEnvironment)
         }
@@ -84,8 +99,11 @@ final class BackgroundSyncCoordinator {
 
     static let taskIdentifier = "com.enigmadux.knotq.background-sync"
     private static let refreshInterval: TimeInterval = 3 * 60 * 60
+    private static let log = Logger(subsystem: "com.enigmadux.knotq", category: "background-sync")
 
     private var registered = false
+    private var requestScheduled = false
+    private var lastScheduleFailureAt: Date?
 
     private init() {}
 
@@ -102,6 +120,9 @@ final class BackgroundSyncCoordinator {
             }
             self.handle(refreshTask)
         }
+        if !registered {
+            Self.log.error("background task registration failed")
+        }
     }
 
     @MainActor
@@ -110,17 +131,31 @@ final class BackgroundSyncCoordinator {
             cancel()
             return
         }
+        guard !requestScheduled else { return }
+        // Replace our prior request. Repeated auth refreshes, foreground
+        // transitions, and push wakes are coalesced so the scheduler does not
+        // churn or reject a burst for exceeding its pending-request quota.
+        BGTaskScheduler.shared.cancel(taskRequestWithIdentifier: Self.taskIdentifier)
         let request = BGAppRefreshTaskRequest(identifier: Self.taskIdentifier)
         request.earliestBeginDate = Date(timeIntervalSinceNow: Self.refreshInterval)
         do {
             try BGTaskScheduler.shared.submit(request)
+            requestScheduled = true
+            lastScheduleFailureAt = nil
         } catch {
-            return
+            // The simulator commonly returns `notPermitted`; keep the failure
+            // observable without flooding logs when lifecycle callbacks repeat.
+            let now = Date()
+            if lastScheduleFailureAt.map({ now.timeIntervalSince($0) >= 15 * 60 }) ?? true {
+                lastScheduleFailureAt = now
+                Self.log.error("background task scheduling failed: \(String(describing: error), privacy: .public)")
+            }
         }
     }
 
     func cancel() {
         BGTaskScheduler.shared.cancel(taskRequestWithIdentifier: Self.taskIdentifier)
+        requestScheduled = false
     }
 
     func handleRemoteNotification(
@@ -137,17 +172,24 @@ final class BackgroundSyncCoordinator {
             // This wake means a peer pushed — tell the core so the sync can't be
             // coalesced away as idle.
             model.noteRemoteChanged()
-            let changed = await model.runBackgroundSync()
+            // Keep the assertion across the pull and notification re-arm so iOS
+            // cannot suspend the process between those two durable effects.
+            let changed = await model.withBackgroundAssertion("knotq.background-push") {
+                await model.runBackgroundSync()
+            }
             completionHandler(changed ? .newData : .noData)
         }
     }
 
     private func handle(_ task: BGAppRefreshTask) {
         let completion = BackgroundTaskCompletion(task: task)
+        requestScheduled = false
         let operation = Task { @MainActor in
             let model = AppModel.shared
             scheduleIfEligible(model.backgroundRefreshEligible)
-            let success = await model.runBackgroundMaintenance()
+            let success = await model.withBackgroundAssertion("knotq.background-refresh") {
+                await model.runBackgroundMaintenance()
+            }
             completion.finish(success: success)
         }
         task.expirationHandler = {
@@ -156,7 +198,7 @@ final class BackgroundSyncCoordinator {
         }
     }
 
-    private static func isKnotQBackgroundPush(_ userInfo: [AnyHashable: Any]) -> Bool {
+    static func isKnotQBackgroundPush(_ userInfo: [AnyHashable: Any]) -> Bool {
         guard let type = userInfo["type"] as? String else { return false }
         return type == "notification_schedule_changed"
     }

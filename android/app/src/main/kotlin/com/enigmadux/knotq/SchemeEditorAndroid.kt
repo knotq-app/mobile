@@ -37,6 +37,11 @@ import android.view.inputmethod.BaseInputConnection
 import android.widget.EditText
 import android.widget.LinearLayout
 import org.json.JSONObject
+import java.util.LinkedHashMap
+import java.util.IdentityHashMap
+import java.util.concurrent.ExecutorService
+import java.util.concurrent.Executors
+import java.util.concurrent.RejectedExecutionException
 import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.roundToInt
@@ -74,20 +79,108 @@ internal const val BLOCK_OBJECT_STRING = "￼"
 // caret span the whole block (so it reads as active/selected).
 internal const val EDITOR_TEXT_LINE_HEIGHT_DP = 22
 internal const val EDITOR_HEADING_LINE_HEIGHT_DP = 30
+internal const val EDITOR_IMAGE_CACHE_MAX_BYTES = 24L * 1024L * 1024L
+
+/** Access-ordered cache bounded by a caller-provided byte weight. */
+internal open class ByteBoundedLruCache<K, V>(
+    private val maxBytes: Long,
+    private val weight: (V) -> Long,
+) : LinkedHashMap<K, V>(16, 0.75f, true) {
+    private var currentBytes = 0L
+
+    override fun put(key: K, value: V): V? {
+        val previous = super.put(key, value)
+        currentBytes -= previous?.let(weight) ?: 0L
+        currentBytes += weight(value)
+        trimToSize()
+        return previous
+    }
+
+    override fun remove(key: K): V? {
+        val previous = super.remove(key)
+        currentBytes -= previous?.let(weight) ?: 0L
+        return previous
+    }
+
+    override fun clear() {
+        super.clear()
+        currentBytes = 0L
+    }
+
+    private fun trimToSize() {
+        while (currentBytes > maxBytes && isNotEmpty()) {
+            val eldestKey = entries.iterator().next().key
+            remove(eldestKey)
+        }
+    }
+}
+
+/** Access-ordered bitmap cache bounded by native allocation size, not entry count. */
+internal class EditorBitmapCache(
+    maxBytes: Long = EDITOR_IMAGE_CACHE_MAX_BYTES,
+) : ByteBoundedLruCache<String, Bitmap?>(
+    maxBytes,
+    { bitmap -> bitmap?.allocationByteCount?.toLong() ?: 0L },
+)
 
 internal class SchemeEditText(context: android.content.Context) : EditText(context) {
     internal val chromePaint = Paint(Paint.ANTI_ALIAS_FLAG)
-    internal val imageCache = HashMap<String, Bitmap?>()
+    internal val imageCache = EditorBitmapCache()
+    internal val tableLayoutCache = object : LinkedHashMap<EditorTableLayoutKey, StaticLayout>(128, 0.75f, true) {
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<EditorTableLayoutKey, StaticLayout>?): Boolean = size > 256
+    }
+    internal val tableMetricsCache = IdentityHashMap<EditorTable, EditorTableMetrics>()
+    // Block chrome is drawn on every scroll/transition frame. Keep the small
+    // geometry helpers on the view so table/image painting does not create a
+    // short-lived object burst that can trigger GC in the middle of a slide.
+    internal val tablePathScratch = Path()
+    internal val tableHeaderRectScratch = RectF()
+    internal val imageBitmapRectScratch = Rect()
+    internal val imageFallbackRectScratch = RectF()
+    // Image blocks are painted from onDraw, so decoding must never happen in
+    // that call stack. The loader is lazy: most editors contain only text, and
+    // eagerly creating one thread per editor made whole-tree renders needlessly
+    // expensive. Detaching still shuts down a loader that was actually used.
+    private var imageLoadExecutor: ExecutorService? = null
+    internal val imageLoadPending = HashSet<String>()
+
+    internal fun imageLoader(): ExecutorService = synchronized(this) {
+        imageLoadExecutor ?: Executors.newSingleThreadExecutor().also {
+            imageLoadExecutor = it
+        }
+    }
 
     var editorTheme: UiTheme = UiTheme.dark
         set(value) {
             field = value
             applyCursorDrawable()
-            editableText?.let { applyPrefixSpans(it, fullDocument = true) }
+            if (!deferInitialStyling) editableText?.let { applyPrefixSpans(it, fullDocument = true) }
             invalidate()
         }
 
+    // Building a block-heavy editor assigns text, theme, accent, and adornments
+    // in succession. Defer their full-document styling until all inputs exist;
+    // otherwise the first frame pays for several redundant parses/layout passes
+    // (often once at width 0 and again after the real width is measured).
+    internal var deferInitialStyling = false
+
+    internal fun finishInitialStyling() {
+        deferInitialStyling = false
+        // The first draw can occur before the host reports its final width on
+        // some Android measure paths. Attach the spans immediately for correct
+        // hit regions; onSizeChanged will perform the width-specific refinement
+        // if needed.
+        editableText?.let { applyPrefixSpans(it, fullDocument = true) }
+        invalidateChromeCache()
+        invalidate()
+    }
+
     internal var caretDrawable: FixedHeightCursorDrawable? = null
+
+    override fun performClick(): Boolean {
+        super.performClick()
+        return true
+    }
 
     /// Lines reserve extra height below the text for blocks/annotations, which
     /// the stock caret would stretch across. The caret height is set per line in
@@ -135,7 +228,7 @@ internal class SchemeEditText(context: android.content.Context) : EditText(conte
     var accentColor: Int = Color.BLUE
         set(value) {
             field = value
-            editableText?.let { applyPrefixSpans(it, fullDocument = true) }
+            if (!deferInitialStyling) editableText?.let { applyPrefixSpans(it, fullDocument = true) }
             invalidate()
         }
     internal var chromeAdornments: List<EditorLineAdornment>? = emptyList()
@@ -168,9 +261,10 @@ internal class SchemeEditText(context: android.content.Context) : EditText(conte
                     lineStart = nl + 1
                     hasAdornmentSpans = true
                 }
-                applyPrefixSpans(editable, fullDocument = true)
+                if (!deferInitialStyling) applyPrefixSpans(editable, fullDocument = true)
             }
             updateCaretHeight()
+            invalidateChromeCache()
         }
 
     // Looks up the adornment for the line whose '\n' is at `nlOffset`. Once spans
@@ -196,6 +290,20 @@ internal class SchemeEditText(context: android.content.Context) : EditText(conte
     // mid-IME-composition). The host uses it to debounce a live flush of the
     // document into the core (push-on-type, like desktop) instead of only on blur.
     var onUserEdit: (() -> Unit)? = null
+    // Snapshot merges and other host-driven document replacements still pass
+    // through TextWatcher so the editor can rebuild its spans, but they are not
+    // new local edits and must not schedule another replace-items write.
+    internal var suppressUserEditCallbacks = false
+
+    internal fun setDocumentText(value: CharSequence?) {
+        val previous = suppressUserEditCallbacks
+        suppressUserEditCallbacks = true
+        try {
+            setText(value)
+        } finally {
+            suppressUserEditCallbacks = previous
+        }
+    }
     // Inline table interactions. `tableCellTapHandler` is invoked with the
     // logical line (item), the cell's row/column, and the cell's on-screen rect
     // so the host can float an editable field over it. Row/column add+delete
@@ -208,6 +316,24 @@ internal class SchemeEditText(context: android.content.Context) : EditText(conte
         }
     // Populated on every draw pass; consumed by touch hit-testing.
     internal val tableCellHits = ArrayList<TableCellHit>()
+
+    // Chrome metadata is a function of the editor text, adornment spans, and
+    // available width. Cursor movement, selection changes, and image decode
+    // completion can redraw the view without changing any of those inputs, so
+    // reparsing the whole document from onDraw is needless work.
+    private var cachedChromeText: String? = null
+    private var cachedChromeLines: List<ChromeDrawLine> = emptyList()
+    private var cachedChromeWidth = -1
+    private var cachedMarkdownHighlightSpans: Array<EditorMarkdownHighlightSpan>? = null
+    private val markerRectScratch = RectF()
+    private val markerCheckPath = Path()
+
+    private fun invalidateChromeCache() {
+        cachedChromeText = null
+        cachedChromeLines = emptyList()
+        cachedChromeWidth = -1
+        cachedMarkdownHighlightSpans = null
+    }
 
     override fun onSelectionChanged(selStart: Int, selEnd: Int) {
         super.onSelectionChanged(selStart, selEnd)
@@ -332,9 +458,10 @@ internal class SchemeEditText(context: android.content.Context) : EditText(conte
                 // a word, so gating this on `composing < 0` like the styling block
                 // above would delay the push until the word/blur committed). The
                 // debounce coalesces; the commit reads the currently visible text.
-                if (!styling && s != null) {
+                if (!styling && !suppressUserEditCallbacks && s != null) {
                     onUserEdit?.invoke()
                 }
+                invalidateChromeCache()
                 invalidate()
             }
         })
@@ -406,12 +533,16 @@ internal class SchemeEditText(context: android.content.Context) : EditText(conte
     override fun setText(text: CharSequence?, type: BufferType?) {
         val value = text?.toString().orEmpty().let { if (it.endsWith("\n")) it else "$it\n" }
         super.setText(value, type)
-        editableText?.let { applyPrefixSpans(it, fullDocument = true) }
+        if (!deferInitialStyling) editableText?.let { applyPrefixSpans(it, fullDocument = true) }
+        invalidateChromeCache()
     }
 
     override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
         super.onSizeChanged(w, h, oldw, oldh)
-        if (w != oldw) editableText?.let { applyPrefixSpans(it, fullDocument = true) }
+        if (w != oldw) {
+            editableText?.let { applyPrefixSpans(it, fullDocument = true) }
+            invalidateChromeCache()
+        }
     }
 
     override fun onDraw(canvas: Canvas) {
@@ -425,13 +556,38 @@ internal class SchemeEditText(context: android.content.Context) : EditText(conte
         drawEditorChrome(canvas)
     }
 
+    override fun onDetachedFromWindow() {
+        val loader = synchronized(this) {
+            imageLoadExecutor.also { imageLoadExecutor = null }
+        }
+        loader?.shutdownNow()
+        synchronized(imageCache) {
+            imageLoadPending.clear()
+            // A replaced editor must release decoded media immediately; waiting
+            // for the old view/executor to become unreachable can create a large
+            // transient native heap spike during rapid navigation.
+            imageCache.clear()
+        }
+        synchronized(tableLayoutCache) { tableLayoutCache.clear() }
+        tableMetricsCache.clear()
+        super.onDetachedFromWindow()
+    }
+
+
     /// Paints the translucent gold background behind every `==…==` run, clipped
     /// to the text's own ascent/descent so it never spills into a line's
     /// reserved block/annotation height. Mirrors iOS's run-level highlight.
     internal fun drawMarkdownHighlights(canvas: Canvas) {
         val layout = layout ?: return
         val editable = editableText ?: return
-        val spans = editable.getSpans(0, editable.length, EditorMarkdownHighlightSpan::class.java)
+        // TextWatcher invalidates this alongside the chrome-line cache. Avoid
+        // allocating a fresh span array on every caret/scroll redraw when the
+        // document has not changed.
+        val spans = cachedMarkdownHighlightSpans ?: editable.getSpans(
+            0,
+            editable.length,
+            EditorMarkdownHighlightSpan::class.java,
+        ).also { cachedMarkdownHighlightSpans = it }
         if (spans.isEmpty()) return
         val fm = paint.fontMetricsInt
         chromePaint.style = Paint.Style.FILL
@@ -459,10 +615,12 @@ internal class SchemeEditText(context: android.content.Context) : EditText(conte
             // Table chrome is hit-tested first: a tap on a cell takes priority
             // over caret placement / marker toggles.
             tableCellHits.firstOrNull { it.rect.contains(event.x, event.y) }?.let { hit ->
+                performClick()
                 tableCellTapHandler?.invoke(hit)
                 return true
             }
             markerLineAt(event.x, event.y)?.let { line ->
+                performClick()
                 markerTapHandler?.invoke(line)
                 return true
             }
@@ -771,9 +929,26 @@ internal class SchemeEditText(context: android.content.Context) : EditText(conte
 
     internal fun drawEditorChrome(canvas: Canvas) {
         val layout = layout ?: return
-        val value = text?.toString().orEmpty()
+        val editable = editableText ?: return
+        val cachedText = cachedChromeText
+        val value: String
+        val lines: List<ChromeDrawLine>
+        // All text mutations flow through TextWatcher (including internal
+        // repairs), and adornment/width changes invalidate the same cache. Do
+        // not compare the whole Editable here: that would leave an O(document
+        // size) scan in every unchanged redraw.
+        if (cachedText != null && cachedChromeWidth == width) {
+            value = cachedText
+            lines = cachedChromeLines
+        } else {
+            value = editable.toString()
+            lines = chromeDrawLines(value)
+            cachedChromeText = value
+            cachedChromeLines = lines
+            cachedChromeWidth = width
+        }
         tableCellHits.clear()
-        val lines = chromeDrawLines(value)
+        val visibleEditorBottom = (rootView?.height ?: resources.displayMetrics.heightPixels).coerceAtLeast(1)
         lines.forEachIndexed { index, line ->
             if (value.isEmpty()) return@forEachIndexed
             val firstVisual = layout.getLineForOffset(line.start.coerceIn(0, max(0, value.length - 1)))
@@ -784,30 +959,37 @@ internal class SchemeEditText(context: android.content.Context) : EditText(conte
             val rowBottom = totalPaddingTop + layout.getLineBottom(lastVisual) - scrollY
             val firstBottom = if (firstVisual == lastVisual) firstBottomRaw - line.extraHeight else firstBottomRaw
             val contentBottom = rowBottom - line.extraHeight
+            // Chrome is painted for the whole logical document, but the
+            // ScrollView exposes only a small vertical window. Let Canvas
+            // reject off-screen rows before doing marker, guide, annotation,
+            // table, or image work for them.
+            if (rowBottom < 0 || firstTop > visibleEditorBottom) {
+                return@forEachIndexed
+            }
             // A collapsed block line (image/table) shrinks its text row to a
             // sliver, so centering the marker in it would land it on the block's
             // top edge — half of it poking into the line above. Anchor the marker
             // to a full text-row height at the block top so it sits at the
             // table/image's top-left instead.
             val markerBottom = if (line.collapseText) firstTop + dp(EDITOR_TEXT_LINE_HEIGHT_DP) else firstBottom
-            val markerRect = markerRect(line.indent, firstTop, markerBottom)
+            markerRectInto(line.indent, firstTop, markerBottom, markerRectScratch)
             val previous = lines.getOrNull(index - 1)
             val next = lines.getOrNull(index + 1)
 
-            drawGuides(canvas, markerRect, line.indent, previous?.indent ?: 0, next?.indent ?: 0, firstTop, rowBottom)
-            val lineOrdinal = if (line.marker == "numbered") numberedOrdinalAt(lines, index) else 1
+            drawGuides(canvas, markerRectScratch, line.indent, previous?.indent ?: 0, next?.indent ?: 0, firstTop, rowBottom)
+            val lineOrdinal = line.numberedOrdinal
             val textBaseline = (totalPaddingTop + layout.getLineBaseline(firstVisual) - scrollY).toFloat()
-            drawMarker(canvas, markerRect, line.marker, line.done, lineOrdinal, textBaseline)
+            drawMarker(canvas, markerRectScratch, line.marker, line.done, lineOrdinal, textBaseline)
             line.annotation?.let { annotation ->
                 drawAnnotationBar(
                     canvas = canvas,
-                    markerRect = markerRect,
+                    markerRect = markerRectScratch,
                     top = firstTop,
                     bottom = rowBottom,
                     connectsToPrevious = previous?.annotation != null,
                     connectsToNext = next?.annotation != null
                 )
-                drawAnnotation(canvas, annotation, markerRect, contentBottom)
+                drawAnnotation(canvas, annotation, markerRectScratch, contentBottom)
             }
             // Block-only lines collapse: their text line carries no glyphs, so
             // blocks start at the line top instead of below a blank text row.
@@ -819,6 +1001,7 @@ internal class SchemeEditText(context: android.content.Context) : EditText(conte
 
     internal fun chromeDrawLines(value: String): List<ChromeDrawLine> {
         val out = ArrayList<ChromeDrawLine>()
+        val ordinalTracker = ChromeOrdinalTracker()
         var start = 0
         var lineIndex = 0
         while (start <= value.length) {
@@ -830,6 +1013,7 @@ internal class SchemeEditText(context: android.content.Context) : EditText(conte
             val prefixWidth = prefixVisualWidth(parsed, marker)
             val body = raw.drop(chromePrefixLength(raw).coerceAtMost(raw.length))
             val adornment = adornmentForLine(lineIndex, start, end)
+            val numberedOrdinal = ordinalTracker.next(parsed)
             // Blocks draw + reserve height only on the object-char line itself, so
             // a stale adornment can never paint a block onto the wrong line.
             val blocks = blocksForBody(body, adornment)
@@ -845,7 +1029,8 @@ internal class SchemeEditText(context: android.content.Context) : EditText(conte
                     prefixWidth = prefixWidth,
                     heading = isMarkdownHeading(body),
                     extraHeight = extraHeightFor(adornment, blocks, prefixWidth, collapseText = collapsesText(blocks)),
-                    collapseText = collapsesText(blocks)
+                    collapseText = collapsesText(blocks),
+                    numberedOrdinal = numberedOrdinal,
                 )
             )
             lineIndex++
@@ -879,9 +1064,8 @@ internal class SchemeEditText(context: android.content.Context) : EditText(conte
         ordinal: Int,
         textBaseline: Float
     ) {
-        val markerParts = marker.split('.', limit = 2)
-        when (markerParts[0]) {
-            "checkbox" -> {
+        when {
+            marker == "checkbox" -> {
                 chromePaint.style = Paint.Style.FILL
                 chromePaint.color = if (done) accentColor else editorTheme.buttonBg
                 canvas.drawRoundRect(rect, dp(3f), dp(3f), chromePaint)
@@ -895,24 +1079,25 @@ internal class SchemeEditText(context: android.content.Context) : EditText(conte
                     chromePaint.strokeCap = Paint.Cap.ROUND
                     chromePaint.strokeJoin = Paint.Join.ROUND
                     chromePaint.color = editorTheme.bgApp
-                    val check = Path()
+                    markerCheckPath.reset()
+                    val check = markerCheckPath
                     check.moveTo(rect.left + dp(3.2f), rect.top + dp(7.2f))
                     check.lineTo(rect.left + dp(5.8f), rect.top + dp(9.7f))
                     check.lineTo(rect.right - dp(3f), rect.top + dp(4.3f))
                     canvas.drawPath(check, chromePaint)
                 }
             }
-            "bullet" -> {
+            marker == "bullet" || marker.startsWith("bullet.") -> {
                 chromePaint.style = Paint.Style.FILL
                 chromePaint.color = accentColor
-                when (markerParts.getOrNull(1)) {
-                    "rings" -> { chromePaint.style = Paint.Style.STROKE; chromePaint.strokeWidth = dp(1.5f); canvas.drawCircle(rect.centerX(), rect.centerY(), dp(3f), chromePaint) }
-                    "squares" -> canvas.drawRect(rect.centerX() - dp(2.5f), rect.centerY() - dp(2.5f), rect.centerX() + dp(2.5f), rect.centerY() + dp(2.5f), chromePaint)
-                    "dashes" -> canvas.drawRect(rect.left + dp(1f), rect.centerY() - dp(1f), rect.right - dp(1f), rect.centerY() + dp(1f), chromePaint)
+                when (marker) {
+                    "bullet.rings" -> { chromePaint.style = Paint.Style.STROKE; chromePaint.strokeWidth = dp(1.5f); canvas.drawCircle(rect.centerX(), rect.centerY(), dp(3f), chromePaint) }
+                    "bullet.squares" -> canvas.drawRect(rect.centerX() - dp(2.5f), rect.centerY() - dp(2.5f), rect.centerX() + dp(2.5f), rect.centerY() + dp(2.5f), chromePaint)
+                    "bullet.dashes" -> canvas.drawRect(rect.left + dp(1f), rect.centerY() - dp(1f), rect.right - dp(1f), rect.centerY() + dp(1f), chromePaint)
                     else -> canvas.drawCircle(rect.centerX(), rect.centerY(), dp(2.2f), chromePaint)
                 }
             }
-            "numbered" -> {
+            marker == "numbered" -> {
                 // iOS/desktop: ordinal is right-aligned in the marker slot, but
                 // shares the row's text baseline instead of being centered in the
                 // smaller checkbox-sized rect.
@@ -965,10 +1150,14 @@ internal class SchemeEditText(context: android.content.Context) : EditText(conte
     }
 
     internal fun markerRect(indent: Int, top: Int, bottom: Int): RectF {
+        return RectF().also { markerRectInto(indent, top, bottom, it) }
+    }
+
+    private fun markerRectInto(indent: Int, top: Int, bottom: Int, out: RectF) {
         val size = dp(EDITOR_CHECKBOX_SIZE_DP).toFloat()
         val left = totalPaddingLeft + indent.coerceIn(0, 8) * dp(EDITOR_INDENT_WIDTH_DP)
         val centerY = (top + bottom) / 2f
-        return RectF(left.toFloat(), centerY - size / 2f, left + size, centerY + size / 2f)
+        out.set(left.toFloat(), centerY - size / 2f, left + size, centerY + size / 2f)
     }
 
     internal fun prefixVisualWidth(parsed: ChromeLine, marker: String): Int {

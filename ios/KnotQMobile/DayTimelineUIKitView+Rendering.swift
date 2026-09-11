@@ -12,11 +12,10 @@ extension DayTimelineUIKitView {
 
         let sunday = weekStart(for: selectedDate)
         let cellWidth = bounds.width / 7
-        // Active days use standard iOS blue on the darker lip.
-        let accent = UIColor(calendarDayHighlightColor(dark: theme.isDark))
-        let secondaryAccent = UIColor(hex: theme.isDark ? 0x052547 : 0xbacada)
-        let connectorAccent = UIColor(hex: theme.isDark ? 0x46515f : 0x9faebb)
-        let secondaryText = theme.isDark ? UIColor(hex: 0xb9dcff) : UIColor(hex: 0x0059b8)
+        let accent = UIColor(theme.accent)
+        let secondaryAccent = accent.withAlphaComponent(theme.isDark ? 0.24 : 0.16)
+        let connectorAccent = accent.withAlphaComponent(theme.isDark ? 0.46 : 0.34)
+        let secondaryText = UIColor(theme.textSoft)
         let onAccent = onAccentTextColor(accent)
         let weekdayTextColor = UIColor(theme.textMuted).withAlphaComponent(theme.isDark ? 0.42 : 0.50)
         let visibleKeys = visibleDayKeys()
@@ -113,9 +112,9 @@ extension DayTimelineUIKitView {
     func renderVisibleColumnHeader(theme: KnotQTheme) {
         let visibleCount = visibleDayCount()
         let columnWidth = max(1, (bounds.width - Self.gutterWidth) / CGFloat(visibleCount))
-        let accent = UIColor(calendarDayHighlightColor(dark: theme.isDark))
-        let secondaryAccent = UIColor(hex: theme.isDark ? 0x052547 : 0xbacada)
-        let secondaryText = theme.isDark ? UIColor(hex: 0xb9dcff) : UIColor(hex: 0x0059b8)
+        let accent = UIColor(theme.accent)
+        let secondaryAccent = accent.withAlphaComponent(theme.isDark ? 0.24 : 0.16)
+        let secondaryText = UIColor(theme.textSoft)
         let onAccent = onAccentTextColor(accent)
         let weekdayTextColor = UIColor(theme.textMuted).withAlphaComponent(theme.isDark ? 0.56 : 0.64)
         let gutter = UIView(frame: CGRect(x: 0, y: 0, width: Self.gutterWidth, height: weekStrip.bounds.height))
@@ -161,6 +160,7 @@ extension DayTimelineUIKitView {
         let visibleCount = visibleDayCount()
         let width = max(1, bounds.width)
         let colWidth = max(1, (width - Self.gutterWidth) / CGFloat(visibleCount))
+        invalidateLaidEventsCache()
         let geometry = DayTimelineGeometry(
             visibleCount: visibleCount,
             columnWidth: colWidth,
@@ -235,7 +235,7 @@ extension DayTimelineUIKitView {
     /// Sits behind the grid, now-line, and events.
     func drawPastShade(theme: KnotQTheme, geometry: DayTimelineGeometry) {
         let today = Calendar.current.startOfDay(for: Date())
-        let shade = UIColor(calendarDayHighlightColor(dark: theme.isDark)).withAlphaComponent(theme.isDark ? 0.11 : 0.13).cgColor
+        let shade = UIColor(theme.accent).withAlphaComponent(theme.isDark ? 0.11 : 0.13).cgColor
         for index in geometry.renderDayRange {
             let date = Calendar.current.startOfDay(for: dayDate(index))
             let height: CGFloat
@@ -333,6 +333,25 @@ extension DayTimelineUIKitView {
     }
 
     func laidEvents(forDayIndex dayIndex: Int, geometry: DayTimelineGeometry) -> [DayTimelineLaidOccurrence] {
+        if laidEventsCacheColumnWidth != geometry.columnWidth {
+            invalidateLaidEventsCache()
+            laidEventsCacheColumnWidth = geometry.columnWidth
+        }
+        if let cached = laidEventsCache[dayIndex] {
+            return cached
+        }
+
+        let laid = computeLaidEvents(forDayIndex: dayIndex, geometry: geometry)
+        laidEventsCache[dayIndex] = laid
+        return laid
+    }
+
+    func invalidateLaidEventsCache() {
+        laidEventsCache.removeAll(keepingCapacity: true)
+        laidEventsCacheColumnWidth = nil
+    }
+
+    private func computeLaidEvents(forDayIndex dayIndex: Int, geometry: DayTimelineGeometry) -> [DayTimelineLaidOccurrence] {
         struct Slot {
             let occurrence: MobileOccurrence
             let occurrences: [MobileOccurrence]
@@ -513,7 +532,7 @@ extension DayTimelineUIKitView {
         draftView.backgroundColor = UIColor(theme.accent).withAlphaComponent(theme.isDark ? 0.32 : 0.22)
         draftView.layer.borderColor = UIColor(theme.accent).cgColor
         draftTimeLabel.text = draftTime(draft)
-        let textColor = theme.isDark ? UIColor.white : UIColor(hex: 0x24272d)
+        let textColor = UIColor(theme.textPrimary)
         draftTimeLabel.textColor = textColor
         draftTitleLabel.textColor = textColor
         draftTimeLabel.frame = CGRect(x: 4, y: 3, width: draftView.bounds.width - 8, height: 12)

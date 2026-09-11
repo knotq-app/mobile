@@ -11,7 +11,7 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 sha2 = "0.10"
 thiserror = "1"
-ureq = { version = "2", default-features = false, features = ["json", "tls"] }
+ureq = { version = "2", default-features = false, features = ["json", "tls", "gzip"] }
 uuid = { version = "1", features = ["v4", "serde"] }
 
 knotq-commands = { path = "../desktop/commands" }
@@ -28,3 +28,16 @@ knotq-sync = { path = "../shared/sync" }
 [profile.release]
 lto = true
 codegen-units = 1
+
+# Android debug builds are installed and launched frequently on emulators. The
+# default `dev` profile leaves native core libraries effectively unoptimized,
+# which turns install, JNA loading, and first draw into a misleading performance
+# test. Keep debug assertions and useful symbol names, but strip DWARF from the
+# packaged libraries. Full native line tables are available from the unstripped
+# Cargo artifacts; keeping them inside an emulator APK makes install/JNA startup
+# disproportionately slow.
+[profile.android-debug]
+inherits = "dev"
+opt-level = 1
+debug = 1
+strip = "debuginfo"

@@ -109,31 +109,29 @@ import kotlin.math.roundToInt
             addView(LinearLayout(this@calendarWeekStrip).apply {
                 orientation = LinearLayout.HORIZONTAL
                 gravity = Gravity.CENTER_VERTICAL
-            stripDates.forEachIndexed { offset, date ->
+            stripDates.forEachIndexed { _, date ->
                 val today = date == LocalDate.now()
-                    val visible = visibleDates.contains(date.toString())
+                val visible = visibleDates.contains(date.toString())
                 addView(LinearLayout(this@calendarWeekStrip).apply {
                     orientation = LinearLayout.VERTICAL
                     gravity = Gravity.CENTER
-                        addView(text(date.dayOfWeek.getDisplayName(TextStyle.NARROW, Locale.getDefault()).uppercase(Locale.getDefault()), if (today) calendarDayHighlightColor() else adjustAlpha(theme.textMuted, if (theme.isDark) 0.42f else 0.50f), 10f, true).apply {
+                    addView(text(date.dayOfWeek.getDisplayName(TextStyle.NARROW, Locale.getDefault()).uppercase(Locale.getDefault()), if (today) calendarDayHighlightColor() else adjustAlpha(theme.textMuted, if (theme.isDark) 0.42f else 0.50f), 10f, true).apply {
                         gravity = Gravity.CENTER
-                            includeFontPadding = false
-                        }, LinearLayout.LayoutParams(-1, dp(16)))
-                        addView(text(date.dayOfMonth.toString(), calendarWeekDayTextColor(today, visible), 18f, today).apply {
+                        includeFontPadding = false
+                    }, LinearLayout.LayoutParams(-1, dp(16)))
+                    addView(text(date.dayOfMonth.toString(), calendarWeekDayTextColor(today, visible), 18f, today).apply {
                         gravity = Gravity.CENTER
-                            includeFontPadding = false
-                        }, LinearLayout.LayoutParams(-1, dp(37)))
+                        includeFontPadding = false
+                    }, LinearLayout.LayoutParams(-1, dp(37)))
                     setOnClickListener {
                         selectedDate = date
                         weekOffset = 0
-                            calendarScrollDate = date.toString()
-                        loadSnapshot()
-                        render()
+                        calendarScrollDate = date.toString()
+                        refreshSnapshotAsync()
                     }
                 }, LinearLayout.LayoutParams(0, -1, 1f).apply {
-                        setMargins(0, dp(7), 0, dp(6))
+                    setMargins(0, dp(7), 0, dp(6))
                 })
             }
             }, FrameLayout.LayoutParams(-1, -1))
         }
-

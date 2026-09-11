@@ -211,13 +211,11 @@ final class DayTimelineEventBlockView: UIControl {
         timeLabel.text = MobileDate.compactOccurrenceLabel(laid.occurrence, timeFormat: timeFormat)
         timeLabel.textColor = Self.timeColor(for: laid.occurrence, theme: theme)
         let isPill = laid.occurrence.kind == "reminder" || laid.occurrence.kind == "assignment"
-        backgroundColor = theme.isDark
-            ? UIColor(hex: 0x333333).withAlphaComponent(0.94)
-            : UIColor(hex: 0xe6e8ec).withAlphaComponent(0.62)
+        backgroundColor = UIColor(theme.bgModal).withAlphaComponent(theme.isDark ? 0.94 : 0.82)
         layer.cornerRadius = isPill ? 0 : 3
         layer.borderWidth = isPill ? 0 : 1.5
-        layer.borderColor = (theme.isDark ? UIColor.white.withAlphaComponent(0.78) : UIColor(hex: 0x24272d).withAlphaComponent(0.80)).cgColor
-        borderLine.backgroundColor = theme.isDark ? UIColor.white.withAlphaComponent(0.78) : UIColor(hex: 0x24272d).withAlphaComponent(0.80)
+        layer.borderColor = UIColor(theme.borderOverlay).cgColor
+        borderLine.backgroundColor = UIColor(theme.borderOverlay)
         borderLine.isHidden = !isPill
         setNeedsLayout()
     }
@@ -298,29 +296,25 @@ final class DayTimelineEventBlockView: UIControl {
     private static func timeColor(for occurrence: MobileOccurrence, theme: KnotQTheme) -> UIColor {
         guard !occurrence.done,
               let start = MobileDate.parseDateTime(occurrence.start ?? occurrence.end) else {
-            return theme.isDark
-                ? UIColor(hex: 0xe8edf2).withAlphaComponent(0.90)
-                : UIColor(hex: 0x2e291f).withAlphaComponent(0.90)
+            return UIColor(theme.textPrimary).withAlphaComponent(0.90)
         }
         let now = Date()
         if let end = MobileDate.parseDateTime(occurrence.end), start <= now, end > now {
-            return theme.isDark ? UIColor(hex: 0xbfbfff) : UIColor(hex: 0x2f67cf)
+            return UIColor(theme.accent)
         }
         if start < now {
-            return theme.isDark ? UIColor(hex: 0xff5a53) : UIColor(hex: 0xd20f39)
+            return UIColor(theme.danger)
         }
         let startDay = Calendar.current.startOfDay(for: start)
         let today = Calendar.current.startOfDay(for: now)
         let dayDiff = Calendar.current.dateComponents([.day], from: today, to: startDay).day ?? 0
         if dayDiff <= 0 {
-            return theme.isDark ? UIColor(hex: 0xbfbfff) : UIColor(hex: 0x2f67cf)
+            return UIColor(theme.accent)
         }
         if dayDiff <= 1 {
-            return theme.isDark ? UIColor(hex: 0xe5e5ff) : UIColor(hex: 0x4f5f8f)
+            return UIColor(theme.textSoft)
         }
-        return theme.isDark
-            ? UIColor(hex: 0xe8edf2).withAlphaComponent(0.90)
-            : UIColor(hex: 0x2e291f).withAlphaComponent(0.90)
+        return UIColor(theme.textPrimary).withAlphaComponent(0.90)
     }
 
     private static func itemTextColor(for occurrence: MobileOccurrence, done: Bool, dark: Bool) -> UIColor {
@@ -385,13 +379,9 @@ final class DayTimelineStickyIndicatorView: UIControl {
         titleLabel.text = title.isEmpty ? occurrence.kind.capitalized : title
         titleLabel.textColor = UIColor(theme.textPrimary)
         dotView.backgroundColor = UIColor(occurrenceSchemeColor(occurrence, dark: theme.isDark))
-        backgroundColor = theme.isDark
-            ? UIColor(hex: 0x333333).withAlphaComponent(0.92)
-            : UIColor(theme.bgApp).withAlphaComponent(0.86)
+        backgroundColor = UIColor(theme.bgToolbar).withAlphaComponent(theme.isDark ? 0.92 : 0.86)
         layer.borderWidth = 0.75
-        layer.borderColor = theme.isDark
-            ? UIColor.white.withAlphaComponent(0.18).cgColor
-            : UIColor(theme.dividerSoft).cgColor
+        layer.borderColor = UIColor(theme.dividerSoft).cgColor
         setNeedsLayout()
     }
 

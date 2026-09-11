@@ -88,6 +88,8 @@ struct ContentView: View {
     @State private var homeNavigationDepth = 0
     @State private var timelineResetToken = 0
     @State private var appliedScreenshotRoute = false
+    @State private var errorAlertGate = ErrorAlertGate()
+    @State private var errorAlertPresented = false
     @AppStorage("knotq.mobile.onboardingCompleted.v1") private var onboardingCompleted = false
     // Start with the short tutorial. Account sign-in is deliberately kept out of
     // onboarding and remains available from Settings.
@@ -255,18 +257,20 @@ struct ContentView: View {
             .onAppear { applyWindowAppearance(theme) }
             .onChange(of: theme.isDark) { _, _ in applyWindowAppearance(theme) }
             .alert(L10n.t("mobile.app_name"), isPresented: Binding(
-                get: { model.errorMessage != nil },
+                get: { errorAlertPresented },
                 set: { showing in
                     if !showing {
-                        model.dismissErrorMessage()
+                        dismissErrorAlert()
+                    } else {
+                        errorAlertPresented = true
                     }
                 }
             )) {
                 Button(L10n.t("common.ok"), role: .cancel) {
-                    model.dismissErrorMessage()
+                    dismissErrorAlert()
                 }
             } message: {
-                Text(model.errorMessage ?? "")
+                Text(errorAlertGate.presentedMessage ?? "")
             }
             // Spotlight onboarding lives in the app's own coordinate space (not a
             // cover) so it can ring the real dock / sidebar controls behind it.
@@ -287,6 +291,12 @@ struct ContentView: View {
                     .transition(.opacity)
                 }
             }
+        }
+        .onAppear {
+            receiveErrorMessage(model.errorMessage)
+        }
+        .onChange(of: model.errorMessage) { _, message in
+            receiveErrorMessage(message)
         }
         .background(theme.bgApp.ignoresSafeArea())
         .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillShowNotification)) { note in
@@ -403,6 +413,22 @@ struct ContentView: View {
             guard didRestoreLastScreen else { return }
             storedSchemeID = newValue ?? ""
         }
+    }
+
+    private func receiveErrorMessage(_ message: String?) {
+        guard errorAlertGate.receive(message) else { return }
+        errorAlertPresented = true
+    }
+
+    private func dismissErrorAlert() {
+        guard errorAlertPresented else { return }
+        errorAlertPresented = false
+        model.dismissErrorMessage()
+        guard errorAlertGate.dismiss() else { return }
+        // Do not present the queued error in the same runloop turn as UIKit's
+        // dismissal. That race produced "already presenting PlatformAlert" on
+        // simulator and can occur on a real device when sync errors cluster.
+        DispatchQueue.main.async { errorAlertPresented = true }
     }
 
     private var launchLoadingView: some View {
@@ -1067,4 +1093,3 @@ private extension View {
         adaptiveEditorPresentation(item: item, isPad: isPad, detents: { _ in detents }, content: content)
     }
 }
-

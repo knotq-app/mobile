@@ -94,97 +94,187 @@ import java.net.HttpURLConnection
 import java.net.URL
 import java.security.MessageDigest
 import java.security.SecureRandom
+import java.io.ByteArrayOutputStream
+import java.io.InputStream
+import java.util.concurrent.RejectedExecutionException
 import java.util.concurrent.TimeUnit
 import kotlin.math.abs
 import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.roundToInt
 
+internal const val MAX_IMAGE_ATTACH_BYTES = 64L * 1024L * 1024L
+
+/** Read picker content without allowing a corrupt/provider-sized stream to OOM the app. */
+internal fun InputStream.readBytesCapped(maxBytes: Long = MAX_IMAGE_ATTACH_BYTES): ByteArray {
+    require(maxBytes >= 0L) { "maxBytes must be non-negative" }
+    val output = ByteArrayOutputStream(minOf(maxBytes, 64L * 1024L).toInt())
+    val buffer = ByteArray(64 * 1024)
+    var total = 0L
+    while (true) {
+        val count = read(buffer)
+        if (count < 0) break
+        if (count == 0) {
+            // Although unusual for a blocking provider, InputStream permits a
+            // zero-length read. Fall back to one byte so a broken provider
+            // cannot spin this worker forever.
+            val single = read()
+            if (single < 0) break
+            total++
+            if (total > maxBytes) throw IllegalArgumentException("Image is larger than ${maxBytes / (1024L * 1024L)} MB")
+            output.write(single)
+            continue
+        }
+        total += count
+        if (total > maxBytes) throw IllegalArgumentException("Image is larger than ${maxBytes / (1024L * 1024L)} MB")
+        output.write(buffer, 0, count)
+    }
+    return output.toByteArray()
+}
+
+    private data class PreparedImageAttachment(
+        val schemeId: String,
+        val today: String,
+        val week: Int,
+        val history: Int,
+        val items: JSONArray,
+        val path: String,
+    )
+
     internal fun MainActivity.completeImageAttach(uri: Uri) {
         val (schemeId, lineIndex) = pendingImageAttach ?: return
         pendingImageAttach = null
+        val schemeJson = findScheme(schemeId)?.toString() ?: return
+        val today = selectedDate.toString()
+        val week = weekOffset
+        val history = dailyHistoryDays
+        val token = imageAttachGate.begin()
         try {
-            val bytes = contentResolver.openInputStream(uri)?.use { it.readBytes() } ?: run {
-                toast("Could not read image")
-                return
-            }
-            val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-            BitmapFactory.decodeByteArray(bytes, 0, bytes.size, bounds)
-            if (bounds.outWidth <= 0 || bounds.outHeight <= 0) {
-                toast("Unsupported image")
-                return
-            }
-            val mime = contentResolver.getType(uri).orEmpty()
-            var payload = bytes
-            var format: String
-            var extension: String
-            when {
-                mime.contains("png") -> { format = "png"; extension = "png" }
-                mime.contains("jpeg") || mime.contains("jpg") -> { format = "jpeg"; extension = "jpg" }
-                mime.contains("gif") -> { format = "gif"; extension = "gif" }
-                mime.contains("webp") -> { format = "webp"; extension = "webp" }
-                else -> {
-                    // Unknown source format: re-encode as JPEG like iOS does.
-                    val bitmap = BitmapFactory.decodeByteArray(bytes, 0, bytes.size) ?: run {
-                        toast("Unsupported image")
-                        return
+            imageAttachExecutor().execute {
+                var createdPath: String? = null
+                val result = runCatching {
+                    // This entire preparation phase is intentionally outside
+                    // coreExecutor: content providers, bitmap codecs, and
+                    // storage can all block for hundreds of milliseconds.
+                    val bytes = contentResolver.openInputStream(uri)?.use { it.readBytesCapped() }
+                        ?: throw IllegalArgumentException("Could not read image")
+                    val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+                    BitmapFactory.decodeByteArray(bytes, 0, bytes.size, bounds)
+                    if (bounds.outWidth <= 0 || bounds.outHeight <= 0) {
+                        throw IllegalArgumentException("Unsupported image")
                     }
-                    val out = java.io.ByteArrayOutputStream()
-                    bitmap.compress(Bitmap.CompressFormat.JPEG, 92, out)
-                    payload = out.toByteArray()
-                    format = "jpeg"
-                    extension = "jpg"
-                }
-            }
-            // Must live inside the core's workspace assets dir or the media
-            // entry is rejected on commit.
-            val assetsDir = File(File(filesDir, "KnotQMobile"), "workspace/assets/images")
-            if (!assetsDir.exists() && !assetsDir.mkdirs()) {
-                toast("Could not store image")
-                return
-            }
-            val file = File(assetsDir, "${UUID.randomUUID()}.$extension")
-            file.writeBytes(payload)
+                    val mime = contentResolver.getType(uri).orEmpty()
+                    var payload = bytes
+                    var format: String
+                    var extension: String
+                    when {
+                        mime.contains("png") -> { format = "png"; extension = "png" }
+                        mime.contains("jpeg") || mime.contains("jpg") -> { format = "jpeg"; extension = "jpg" }
+                        mime.contains("gif") -> { format = "gif"; extension = "gif" }
+                        mime.contains("webp") -> { format = "webp"; extension = "webp" }
+                        else -> {
+                            // Unknown source format: re-encode as JPEG like iOS does.
+                            val bitmap = BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
+                                ?: throw IllegalArgumentException("Unsupported image")
+                            val out = java.io.ByteArrayOutputStream()
+                            try {
+                                bitmap.compress(Bitmap.CompressFormat.JPEG, 92, out)
+                            } finally {
+                                bitmap.recycle()
+                            }
+                            payload = out.toByteArray()
+                            format = "jpeg"
+                            extension = "jpg"
+                        }
+                    }
+                    // Must live inside the core's workspace assets dir or the
+                    // media entry is rejected on commit.
+                    val assetsDir = File(File(filesDir, "KnotQMobile"), "workspace/assets/images")
+                    if (!assetsDir.exists() && !assetsDir.mkdirs()) {
+                        throw java.io.IOException("Could not store image")
+                    }
+                    val file = File(assetsDir, "${UUID.randomUUID()}.$extension")
+                    createdPath = file.absolutePath
+                    file.writeBytes(payload)
 
-            val scheme = findScheme(schemeId) ?: return
-            val items = scheme.optJSONArray("items") ?: return
-            val mediaJson = obj(
-                "kind" to "image",
-                "path" to file.absolutePath,
-                "format" to format,
-                "width" to bounds.outWidth,
-                "height" to bounds.outHeight
-            )
-            val media = JSONArray().put(mediaJson)
-            val content = JSONArray().put(obj("kind" to "image", "media" to mediaJson))
-            val array = JSONArray()
-            var inserted = false
-            for (index in 0 until items.length()) {
-                val item = items.optJSONObject(index) ?: continue
-                if (index == lineIndex) {
-                    if (canReplaceLineWithBlock(item)) {
-                        array.put(blockItemEdit(item.optString("id"), item.optInt("indent"), media, content))
-                    } else {
+                    val scheme = JSONObject(schemeJson)
+                    val items = scheme.optJSONArray("items") ?: throw IllegalArgumentException("Scheme has no items")
+                    val mediaJson = obj(
+                        "kind" to "image",
+                        "path" to file.absolutePath,
+                        "format" to format,
+                        "width" to bounds.outWidth,
+                        "height" to bounds.outHeight
+                    )
+                    val media = JSONArray().put(mediaJson)
+                    val content = JSONArray().put(obj("kind" to "image", "media" to mediaJson))
+                    val array = JSONArray()
+                    var inserted = false
+                    for (index in 0 until items.length()) {
+                        val item = items.optJSONObject(index) ?: continue
+                        if (index == lineIndex) {
+                            if (canReplaceLineWithBlock(item)) {
+                                array.put(blockItemEdit(item.optString("id"), item.optInt("indent"), media, content))
+                            } else {
+                                array.put(itemEditObject(item))
+                                array.put(blockItemEdit(null, item.optInt("indent"), media, content))
+                            }
+                            inserted = true
+                            continue
+                        }
                         array.put(itemEditObject(item))
-                        array.put(blockItemEdit(null, item.optInt("indent"), media, content))
                     }
-                    inserted = true
-                    continue
+                    if (!inserted) {
+                        array.put(blockItemEdit(null, 0, media, content))
+                    }
+                    PreparedImageAttachment(schemeId, today, week, history, array, file.absolutePath)
                 }
-                array.put(itemEditObject(item))
+
+                val attachment = result.getOrNull()
+                if (!token.let(imageAttachGate::isCurrent) || attachment == null) {
+                    (attachment?.path ?: createdPath)?.let(::deleteQuietly)
+                    runOnUiThread {
+                        if (token.let(imageAttachGate::isCurrent) && result.isFailure && isUiActive()) {
+                            toast(result.exceptionOrNull()?.message)
+                        }
+                    }
+                    return@execute
+                }
+
+                // Only the durable model mutation and authoritative snapshot
+                // read use the core queue. Slow media preparation above no
+                // longer serializes unrelated edits/sync/search operations.
+                val accepted = runCatching { coreExecutor.execute {
+                    var committed = false
+                    val coreResult = runCatching {
+                        if (!imageAttachGate.isCurrent(token)) return@runCatching null
+                        bridge.request(obj("type" to "replace_scheme_items", "scheme_id" to attachment.schemeId, "items" to attachment.items))
+                        committed = true
+                        snapshotFromCore(attachment.today, attachment.week, attachment.history)
+                    }
+                    if (!committed) deleteQuietly(attachment.path)
+                    runOnUiThread {
+                        if (!isUiActive() || !imageAttachGate.isCurrent(token)) return@runOnUiThread
+                        coreResult.onSuccess { refreshed ->
+                            if (refreshed == null) return@onSuccess
+                            snapshot = refreshed
+                            configureGoogleSyncPolling()
+                            rescheduleNotifications()
+                            refreshEditorAfterSnapshot(attachment.schemeId)
+                            requestSyncSoon()
+                        }.onFailure { error -> toast(error.message) }
+                    }
+                } }.isSuccess
+                if (!accepted) deleteQuietly(attachment.path)
             }
-            if (!inserted) {
-                array.put(blockItemEdit(null, 0, media, content))
-            }
-            bridge.request(obj("type" to "replace_scheme_items", "scheme_id" to schemeId, "items" to array))
-            loadSnapshot()
-            renderAfterEditorMutation()
-            requestSyncSoon()
-        } catch (error: RuntimeException) {
-            toast(error.message)
-        } catch (error: java.io.IOException) {
-            toast(error.message)
+        } catch (_: RejectedExecutionException) {
+            // Activity teardown can race a picker result. The core teardown is
+            // already authoritative; there is no live view to update.
         }
+    }
+
+    private fun MainActivity.deleteQuietly(path: String) {
+        runCatching { File(path).delete() }
     }
 
     internal fun MainActivity.canReplaceLineWithBlock(item: JSONObject): Boolean =
@@ -328,7 +418,7 @@ import kotlin.math.roundToInt
     /// EditText, so it MUST run on the main thread. Returns the payload plus the
     /// reconciled lines (the core preserves the ids we send, so they become the
     /// editor's model).
-    private fun MainActivity.buildSchemeItemsPayload(
+    internal fun MainActivity.buildSchemeItemsPayload(
         schemeId: String,
         editor: EditText,
     ): Pair<JSONArray, List<SchemeEditorLine>> {
@@ -371,13 +461,18 @@ import kotlin.math.roundToInt
         val (array, nextLines) = buildSchemeItemsPayload(schemeId, editor)
         // Adopt the sent lines now so a later flush/commit reconciles against them.
         editor.tag = nextLines
+        val writeToken = editorFlushGate.begin()
         // Core write on the shared serial executor: off the UI thread (no hang on
         // the sync lock) and ordered with `mutate`/other edits.
         coreExecutor.execute {
+            // A blur commit or newer live flush may have superseded this payload
+            // while it waited in the FIFO queue. Do not write stale full-document
+            // state or schedule a redundant sync for it.
+            if (!editorFlushGate.isCurrent(writeToken)) return@execute
             val ok = runCatching {
                 bridge.request(obj("type" to "replace_scheme_items", "scheme_id" to schemeId, "items" to array))
             }.isSuccess
-            if (ok) runOnUiThread { requestSyncSoon() }
+            if (ok) runOnUiThread { if (isUiActive()) requestSyncSoon() }
         }
     }
 
@@ -387,16 +482,31 @@ import kotlin.math.roundToInt
     /// editor so the next push-on-type flush (a full-document `replace_scheme_items`)
     /// diffs against the merged state rather than deleting the remote edit (the
     /// desktop->mobile drop). No-op when the merged text already matches what's shown
-    /// (our own push echoing back). setText re-applies markdown spans via the watcher;
-    /// the resulting same-content flush is an idempotent no-op (empty CRDT diff).
+    /// (our own push echoing back). Programmatic replacements re-apply markdown
+    /// spans via the watcher without scheduling a new local flush.
     internal fun MainActivity.reloadFocusedEditorFromSnapshot(editor: EditText) {
         val schemeId = editorSchemeIds[editor] ?: return
         val scheme = findScheme(schemeId) ?: return
         val newLines = documentLines(scheme)
         val newText = renderDocument(newLines)
-        if (newText == (editor.text?.toString() ?: "")) return
+        if (newText == (editor.text?.toString() ?: "")) {
+            // A block can change media/table metadata while its object character
+            // stays the same. Refresh adornments even when the text buffer does
+            // not need replacing.
+            if (editor is SchemeEditText) {
+                editor.lineAdornments = editorLineAdornments(scheme, timeFormat24())
+            }
+            return
+        }
         val caret = editor.selectionStart.coerceIn(0, newText.length)
-        editor.setText(newText)
+        // This is a merged remote snapshot, not a local edit. Keep the editor's
+        // styling watcher active, but do not schedule a redundant full-document
+        // replace back into the core.
+        if (editor is SchemeEditText) {
+            editor.setDocumentText(newText)
+        } else {
+            editor.setText(newText)
+        }
         editor.tag = newLines
         if (editor is SchemeEditText) {
             editor.lineAdornments = editorLineAdornments(scheme, timeFormat24())
@@ -404,24 +514,47 @@ import kotlin.math.roundToInt
         editor.setSelection(caret.coerceIn(0, editor.text?.length ?: 0))
     }
 
-    internal fun MainActivity.commitSchemeDocument(schemeId: String, editor: EditText, rerender: Boolean) {
+    /**
+     * Publishes a completed block/table mutation without tearing down the
+     * focused scheme editor. A detached editor means the user navigated away
+     * while the core work was running, so the normal render path is the safe
+     * fallback in that case.
+     */
+    internal fun MainActivity.refreshEditorAfterSnapshot(schemeId: String) {
+        val editor = editorForScheme(schemeId)
+        if (editor?.isAttachedToWindow == true) {
+            reloadFocusedEditorFromSnapshot(editor)
+        } else {
+            renderAfterEditorMutation()
+        }
+    }
+
+    internal fun MainActivity.commitSchemeDocument(
+        schemeId: String,
+        editor: EditText,
+        rerender: Boolean,
+        onComplete: (() -> Unit)? = null,
+    ) {
         // Any commit path (debounce, blur, back) supersedes a pending debounced flush.
         editorFlushRunnable?.let { syncPollHandler.removeCallbacks(it) }
         editorFlushRunnable = null
+        // Invalidate a live full-document write that is queued but has not entered
+        // native code yet. The authoritative commit below still runs in FIFO order.
+        editorFlushGate.begin()
         val (array, nextLines) = buildSchemeItemsPayload(schemeId, editor)
-        try {
-            bridge.request(obj("type" to "replace_scheme_items", "scheme_id" to schemeId, "items" to array))
-            loadSnapshot()
-            rescheduleNotifications()
-            val refreshed = findScheme(schemeId)
-            editor.tag = refreshed?.let(::documentLines) ?: nextLines
-            if (editor is SchemeEditText && refreshed != null) {
-                editor.lineAdornments = editorLineAdornments(refreshed, timeFormat24())
+        val body = obj("type" to "replace_scheme_items", "scheme_id" to schemeId, "items" to array)
+        // Blur is a frequent, quiet commit. Keep the entire core mutation and
+        // snapshot path serialized off the UI thread so a sync-held core lock
+        // cannot freeze focus or the keyboard. There is intentionally no sync
+        // escape hatch here: every editor commit must obey this invariant.
+        mutate(body, renderAfter = rerender) {
+            val scheme = findScheme(schemeId)
+            editor.tag = scheme?.let(::documentLines) ?: nextLines
+            if (editor is SchemeEditText && scheme != null) {
+                editor.lineAdornments = editorLineAdornments(scheme, timeFormat24())
             }
-            if (rerender) render()
-            requestSyncSoon()
-        } catch (error: RuntimeException) {
-            toast(error.message)
+            flushDeferredRenderAfterEditorBlur()
+            onComplete?.invoke()
         }
     }
 
@@ -464,7 +597,7 @@ import kotlin.math.roundToInt
     internal fun MainActivity.beginInlineCellEdit(schemeId: String, editor: SchemeEditText, hit: TableCellHit) {
         // Commit any field already open before opening a new one. Commit in place
         // (no full re-render) so this same editor survives to host the new field.
-        commitActiveCellEdit(rerender = false)
+        commitActiveCellEdit()
         val host = editorHosts[editor] ?: return
         val itemId = itemIdForLine(schemeId, hit.lineIndex) ?: return
         val existingLines = if (hit.isHeader) listOf(hit.text) else cellLines(schemeId, itemId, hit.tableIndex, hit.row, hit.column)
@@ -507,7 +640,7 @@ import kotlin.math.roundToInt
                     true
                 }
                 EditorInfo.IME_ACTION_DONE -> {
-                    commitActiveCellEdit(rerender = true)
+                    commitActiveCellEdit()
                     dismissKeyboard()
                     true
                 }
@@ -584,24 +717,25 @@ import kotlin.math.roundToInt
         val state = activeCellEdit ?: return
         val editor = editorForScheme(state.schemeId)
         val target = tableStructureFocusTarget(state.hit, action)
-        commitActiveCellEdit(rerender = false)
-        try {
-            when (action) {
-                TableStructureAction.INSERT_ROW_ABOVE ->
-                    bridge.insertTableRow(state.schemeId, state.itemId, state.hit.row.coerceAtLeast(0))
-                TableStructureAction.INSERT_ROW_BELOW ->
-                    bridge.insertTableRow(state.schemeId, state.itemId, state.hit.row + 1)
-                TableStructureAction.DELETE_ROW ->
-                    bridge.deleteTableRow(state.schemeId, state.itemId, state.hit.row)
-                TableStructureAction.INSERT_COLUMN_LEFT ->
-                    bridge.insertTableColumn(state.schemeId, state.itemId, state.hit.column)
-                TableStructureAction.INSERT_COLUMN_RIGHT ->
-                    bridge.insertTableColumn(state.schemeId, state.itemId, state.hit.column + 1)
-                TableStructureAction.DELETE_COLUMN ->
-                    bridge.deleteTableColumn(state.schemeId, state.itemId, state.hit.column)
-            }
-            loadSnapshot()
-            requestSyncSoon()
+        commitActiveCellEdit()
+        enqueueTableCoreMutation(
+            operation = {
+                when (action) {
+                    TableStructureAction.INSERT_ROW_ABOVE ->
+                        bridge.insertTableRow(state.schemeId, state.itemId, state.hit.row.coerceAtLeast(0))
+                    TableStructureAction.INSERT_ROW_BELOW ->
+                        bridge.insertTableRow(state.schemeId, state.itemId, state.hit.row + 1)
+                    TableStructureAction.DELETE_ROW ->
+                        bridge.deleteTableRow(state.schemeId, state.itemId, state.hit.row)
+                    TableStructureAction.INSERT_COLUMN_LEFT ->
+                        bridge.insertTableColumn(state.schemeId, state.itemId, state.hit.column)
+                    TableStructureAction.INSERT_COLUMN_RIGHT ->
+                        bridge.insertTableColumn(state.schemeId, state.itemId, state.hit.column + 1)
+                    TableStructureAction.DELETE_COLUMN ->
+                        bridge.deleteTableColumn(state.schemeId, state.itemId, state.hit.column)
+                }
+            },
+            onSuccess = {
             val refreshed = findScheme(state.schemeId)
             if (editor != null && refreshed != null) {
                 editor.lineAdornments = editorLineAdornments(refreshed, timeFormat24())
@@ -610,10 +744,39 @@ import kotlin.math.roundToInt
             } else {
                 renderAfterEditorMutation()
             }
-        } catch (error: RuntimeException) {
+            },
+            onFailure = { error ->
             toast(error.message)
-            loadSnapshot()
             renderAfterEditorMutation()
+            },
+        )
+    }
+
+    /// Runs a table mutation and its snapshot read on the serial core executor.
+    /// Table edits can otherwise block the UI behind a sync-held core lock.
+    private fun MainActivity.enqueueTableCoreMutation(
+        operation: () -> Unit,
+        onSuccess: () -> Unit,
+        onFailure: (Throwable) -> Unit,
+    ) {
+        val today = selectedDate.toString()
+        val week = weekOffset
+        val history = dailyHistoryDays
+        coreExecutor.execute {
+            val result = runCatching {
+                operation()
+                snapshotFromCore(today, week, history)
+            }
+            runOnUiThread {
+                if (!isUiActive()) return@runOnUiThread
+                result.onSuccess { refreshed ->
+                    snapshot = refreshed
+                    configureGoogleSyncPolling()
+                    rescheduleNotifications()
+                    requestSyncSoon()
+                    onSuccess()
+                }.onFailure(onFailure)
+            }
         }
     }
 
@@ -633,7 +796,7 @@ import kotlin.math.roundToInt
         val state = activeCellEdit ?: return
         val hit = state.hit
         val schemeId = state.schemeId
-        commitActiveCellEdit(rerender = false)
+        commitActiveCellEdit()
         val item = findItem(schemeId, state.itemId) ?: return
         val table = tableFromItem(item, hit.tableIndex) ?: return
         val (rows, columns) = tableDimensions(table)
@@ -651,7 +814,7 @@ import kotlin.math.roundToInt
         val state = activeCellEdit ?: return
         val hit = state.hit
         val schemeId = state.schemeId
-        commitActiveCellEdit(rerender = false)
+        commitActiveCellEdit()
         val item = findItem(schemeId, state.itemId) ?: return
         val table = tableFromItem(item, hit.tableIndex) ?: return
         val (rows, _) = tableDimensions(table)
@@ -673,7 +836,9 @@ import kotlin.math.roundToInt
     /// (its cell rects are recomputed on the next draw pass).
     internal fun MainActivity.openCellAfterLayout(schemeId: String, editor: SchemeEditText, hit: TableCellHit, row: Int, col: Int) {
         editor.post {
+            if (!isUiActive() || !editor.isAttachedToWindow) return@post
             editor.cellRectFor(hit.lineIndex, hit.tableIndex, row, col)?.let { nextRect ->
+                if (!isUiActive() || !editor.isAttachedToWindow) return@let
                 beginInlineCellEdit(
                     schemeId,
                     editor,
@@ -684,9 +849,10 @@ import kotlin.math.roundToInt
     }
 
     /// Commits the active inline cell editor (if any), applying the per-line diff
-    /// between its starting lines and the edited text. With `rerender` the whole
-    /// UI is rebuilt; otherwise only the owning editor's adornments are refreshed.
-    internal fun MainActivity.commitActiveCellEdit(rerender: Boolean) {
+    /// between its starting lines and the edited text. The owning editor is
+    /// refreshed in place after success so closing a cell never flashes the
+    /// keyboard or replaces the document view.
+    internal fun MainActivity.commitActiveCellEdit() {
         val state = activeCellEdit ?: return
         activeCellEdit = null
         state.editor.activeTableCellEdit = null
@@ -695,74 +861,64 @@ import kotlin.math.roundToInt
         val draft = state.field.text.toString()
         if (state.hit.isHeader) {
             if (draft == state.hit.text) {
-                if (rerender) { loadSnapshot(); renderAfterEditorMutation() }
                 return
             }
-            try {
-                bridge.setTableColumnName(state.schemeId, state.itemId, state.hit.column, draft)
-                loadSnapshot()
-                requestSyncSoon()
-                if (rerender) {
-                    renderAfterEditorMutation()
-                } else {
-                    val editor = editorForScheme(state.schemeId)
-                    findScheme(state.schemeId)?.let { scheme -> editor?.lineAdornments = editorLineAdornments(scheme, timeFormat24()) }
-                }
-            } catch (error: RuntimeException) {
-                toast(error.message)
-            }
+            enqueueTableCoreMutation(
+                operation = { bridge.setTableColumnName(state.schemeId, state.itemId, state.hit.column, draft) },
+                onSuccess = {
+                refreshEditorAfterSnapshot(state.schemeId)
+                },
+                onFailure = { error -> toast(error.message) },
+            )
             return
         }
         val oldLines = state.oldLines
         val newLines = if (draft.isEmpty()) emptyList() else draft.split("\n")
         if (newLines == oldLines) {
-            if (rerender) { loadSnapshot(); renderAfterEditorMutation() }
             return
         }
         val schemeId = state.schemeId
         val itemId = state.itemId
         val row = state.hit.row
         val column = state.hit.column
-        try {
-            // Overwrite existing line slots.
-            val shared = min(oldLines.size, newLines.size)
-            for (i in 0 until shared) {
-                if (oldLines[i] != newLines[i]) {
-                    bridge.setTableCellLineText(schemeId, itemId, row, column, i, newLines[i])
-                }
+        val operations = ArrayList<() -> Unit>()
+        // Overwrite existing line slots.
+        val shared = min(oldLines.size, newLines.size)
+        for (i in 0 until shared) {
+            if (oldLines[i] != newLines[i]) {
+                operations += { bridge.setTableCellLineText(schemeId, itemId, row, column, i, newLines[i]) }
             }
-            // Append any new lines beyond the old count.
-            for (i in shared until newLines.size) {
-                bridge.addTableCellLine(schemeId, itemId, row, column, i, newLines[i])
-            }
-            // Remove trailing lines that were deleted (back to front).
-            for (i in oldLines.size - 1 downTo newLines.size) {
-                bridge.removeTableCellLine(schemeId, itemId, row, column, i)
-            }
-            // An entirely emptied cell keeps one blank line so the grid still has
-            // a cell to tap.
-            if (newLines.isEmpty()) {
-                bridge.setTableCellText(schemeId, itemId, row, column, "")
-            }
-            loadSnapshot()
-            requestSyncSoon()
-            if (rerender) {
-                renderAfterEditorMutation()
-            } else {
-                // Refresh just the owning editor's table/image adornments in place.
-                val editor = editorForScheme(schemeId)
-                findScheme(schemeId)?.let { scheme -> editor?.lineAdornments = editorLineAdornments(scheme, timeFormat24()) }
-            }
-        } catch (error: RuntimeException) {
-            toast(error.message)
         }
+        // Append any new lines beyond the old count.
+        for (i in shared until newLines.size) {
+            operations += { bridge.addTableCellLine(schemeId, itemId, row, column, i, newLines[i]) }
+        }
+        // Remove trailing lines that were deleted (back to front).
+        for (i in oldLines.size - 1 downTo newLines.size) {
+            operations += { bridge.removeTableCellLine(schemeId, itemId, row, column, i) }
+        }
+        // An entirely emptied cell keeps one blank line so the grid still has
+        // a cell to tap.
+        if (newLines.isEmpty()) {
+            operations += { bridge.setTableCellText(schemeId, itemId, row, column, "") }
+        }
+        enqueueTableCoreMutation(
+            operation = { operations.forEach { it() } },
+            onSuccess = {
+                // Refresh just the owning editor in place. The cell overlay and
+                // its toolbar were already removed above, so a full tree rebuild
+                // only causes keyboard/caret flicker here.
+                refreshEditorAfterSnapshot(schemeId)
+            },
+            onFailure = { error -> toast(error.message) },
+        )
     }
 
     internal fun MainActivity.editorForScheme(schemeId: String): SchemeEditText? =
         editorSchemeIds.entries.firstOrNull { it.value == schemeId }?.key as? SchemeEditText
 
     internal fun MainActivity.dismissInlineCellEditor() {
-        commitActiveCellEdit(rerender = true)
+        commitActiveCellEdit()
     }
 
     internal fun MainActivity.occurrenceRow(occurrence: JSONObject, striped: Boolean): View {

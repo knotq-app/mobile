@@ -31,11 +31,14 @@ use knotq_storage_json::{
     load_workspace_with_options, save_app_settings, save_crdt_state, save_crdt_state_incremental,
     save_local_sync_state, save_workspace, save_workspace_incremental, WorkspaceLoadOptions,
 };
+#[cfg(test)]
+use knotq_sync::batch_pull_and_apply;
 use knotq_sync::{
-    batch_pull_and_apply, batch_push_pending, compact_pending_documents,
-    queue_account_switch_reseed, queue_workspace_bootstrap_updates, DevicePlatform,
-    NotificationPermissionState, PendingCrdtEdit, PushChannel, PushEnvironment,
-    RegisterDeviceRequest, WorkspaceCrdtChangeSet, WorkspaceCrdtDocuments,
+    batch_pull_and_apply_with_integrity_check, batch_pull_and_apply_with_integrity_documents,
+    batch_pull_and_apply_with_persisted_integrity_vectors, batch_push_pending,
+    compact_pending_documents, queue_account_switch_reseed, queue_workspace_bootstrap_updates,
+    DevicePlatform, NotificationPermissionState, PendingCrdtEdit, PullOutcome, PushChannel,
+    PushEnvironment, RegisterDeviceRequest, WorkspaceCrdtChangeSet, WorkspaceCrdtDocuments,
     MAX_PENDING_PER_DOCUMENT,
 };
 mod google_calendar;
@@ -46,7 +49,8 @@ use parsing::*;
 
 mod crdt_changes;
 use crdt_changes::{
-    mobile_command_requires_background_refresh, mobile_crdt_change_set_for_command,
+    mobile_command_may_change_notification_schedule, mobile_command_requires_background_refresh,
+    mobile_crdt_change_set_for_command,
 };
 
 // Sync internals stay compiled in every configuration; when `accounts` is off
@@ -55,7 +59,7 @@ use crdt_changes::{
 mod media_sync;
 use media_sync::{
     mobile_download_missing_media_assets, mobile_media_to_item_media,
-    mobile_notification_schedule_snapshot, mobile_upload_local_media_assets,
+    mobile_notification_schedule_snapshot, mobile_upload_local_media_assets_for_documents,
     normalize_sync_api_base, MobileSyncHttpClient,
 };
 
@@ -70,6 +74,8 @@ use conversions::{
 mod mobile_core_api;
 #[cfg_attr(not(feature = "accounts"), allow(dead_code))]
 mod mobile_core_inner_ops;
+#[cfg(test)]
+use mobile_core_inner_ops::SyncCycleOptions;
 mod mobile_core_inner_views;
 #[cfg_attr(not(feature = "accounts"), allow(dead_code))]
 mod ws_sync;
@@ -77,7 +83,15 @@ mod ws_sync;
 #[cfg(test)]
 mod tests;
 #[cfg(test)]
+mod tests_archive;
+#[cfg(test)]
+mod tests_calendar;
+#[cfg(test)]
+mod tests_daily;
+#[cfg(test)]
 mod tests_more;
+#[cfg(test)]
+mod tests_notifications;
 
 const DAILY_QUEUE_MARKER_COLOR: u32 = 0x42a5f5;
 const MOBILE_DAILY_DEFAULT_HISTORY_DAYS: i32 = 3;
@@ -114,6 +128,11 @@ const NOTIFICATION_SNOOZE_ACTIONS: &[(&str, i64)] = &[
     (ACTION_SNOOZE_1_WEEK, 7 * 24 * 60 * 60),
 ];
 const EDITOR_IMAGE_FIXTURE_TEXT: &str = "Image layout test";
+const MAX_STDERR_CAPTURE_BYTES: u64 = 8 * 1024 * 1024;
+
+fn stderr_capture_would_exceed(current_len: u64, chunk_len: usize) -> bool {
+    current_len.saturating_add(chunk_len as u64) > MAX_STDERR_CAPTURE_BYTES
+}
 const EDITOR_IMAGE_FIXTURE_PNG: &[u8] = &[
     137, 80, 78, 71, 13, 10, 26, 10, 0, 0, 0, 13, 73, 72, 68, 82, 0, 0, 0, 1, 0, 0, 0, 1, 8, 4, 0,
     0, 0, 181, 28, 12, 2, 0, 0, 0, 11, 73, 68, 65, 84, 120, 218, 99, 252, 255, 31, 0, 3, 3, 2, 0,
@@ -143,8 +162,84 @@ pub struct MobileCore {
     ws_changed: std::sync::Arc<std::sync::atomic::AtomicBool>,
 }
 
+/// Debug aid: tee the process's stderr (every `eprintln!` in the core and the
+/// shared `knotq-sync` engine — including the `knotq sync:` trace lines) into
+/// `<app_dir>/knotq-sync-debug.log`, while still forwarding it to the real
+/// stderr (Xcode console on iOS, dropped on Android). Android has no other way
+/// to see the native lib's stderr, and a sync wedge leaves nothing in logcat.
+/// Idempotent; failures are swallowed — this must never affect startup.
+fn install_stderr_capture(app_dir: &Path) {
+    use std::os::unix::io::FromRawFd;
+    static ONCE: std::sync::Once = std::sync::Once::new();
+    let log_path = app_dir.join("knotq-sync-debug.log");
+    ONCE.call_once(move || {
+        // Cap the file so a spinning loop cannot fill the disk.
+        if let Ok(meta) = std::fs::metadata(&log_path) {
+            if meta.len() > MAX_STDERR_CAPTURE_BYTES {
+                let _ = std::fs::remove_file(&log_path);
+            }
+        }
+        unsafe {
+            let mut fds = [0i32; 2];
+            if libc::pipe(fds.as_mut_ptr()) != 0 {
+                return;
+            }
+            let (read_fd, write_fd) = (fds[0], fds[1]);
+            let real_stderr = libc::dup(2);
+            if libc::dup2(write_fd, 2) < 0 {
+                libc::close(read_fd);
+                libc::close(write_fd);
+                return;
+            }
+            libc::close(write_fd);
+            let _ = std::thread::Builder::new()
+                .name("knotq-stderr-tee".into())
+                .spawn(move || {
+                    use std::io::{Read, Write};
+                    let mut reader = std::fs::File::from_raw_fd(read_fd);
+                    let mut file = std::fs::OpenOptions::new()
+                        .create(true)
+                        .append(true)
+                        .open(&log_path)
+                        .ok();
+                    let mut buf = [0u8; 8192];
+                    loop {
+                        match reader.read(&mut buf) {
+                            Ok(0) | Err(_) => break,
+                            Ok(n) => {
+                                if real_stderr >= 0 {
+                                    libc::write(
+                                        real_stderr,
+                                        buf.as_ptr() as *const libc::c_void,
+                                        n,
+                                    );
+                                }
+                                if let Some(f) = file.as_mut() {
+                                    // Keep the diagnostic breadcrumb bounded even
+                                    // while the process remains alive. A tight
+                                    // retry loop must not turn logging into a
+                                    // disk-exhaustion failure mode.
+                                    let would_exceed = f
+                                        .metadata()
+                                        .map(|meta| stderr_capture_would_exceed(meta.len(), n))
+                                        .unwrap_or(false);
+                                    if would_exceed {
+                                        let _ = f.set_len(0);
+                                    }
+                                    let _ = f.write_all(&buf[..n]);
+                                    let _ = f.flush();
+                                }
+                            }
+                        }
+                    }
+                });
+        }
+    });
+}
+
 impl MobileCore {
     pub fn new(app_dir: String) -> Result<Self, MobileError> {
+        install_stderr_capture(Path::new(&app_dir));
         let inner = MobileCoreInner::open(Path::new(&app_dir).to_path_buf())?;
         let ws_changed = std::sync::Arc::clone(&inner.ws_changed);
         Ok(Self {
@@ -195,6 +290,14 @@ struct MobileCoreInner {
     /// leave this empty and take the full, pruning CRDT save path.
     dirty_crdt_schemes: std::collections::HashSet<knotq_model::SchemeId>,
     crdt_state_requires_full_save: bool,
+    /// A lazy daily failed to parse and was hydrated from durable CRDT state;
+    /// the next sync must persist the repaired materialization even when the
+    /// server returns no changed documents.
+    daily_recovery_pending: bool,
+    /// Complete remote states retained for lazy off-window dailies. Their old
+    /// plain files remain cheap to read, but the authoritative CRDT is hydrated
+    /// when that daily enters a visible range.
+    deferred_materialization_pending: std::collections::HashSet<knotq_model::DocumentId>,
     sync_notice: Option<String>,
     // Push registration handed in from the platform (e.g. an FCM token from
     // Firebase). Registered with the backend during sync_once; `registered_push_token`
@@ -202,6 +305,7 @@ struct MobileCoreInner {
     push_token: Option<String>,
     push_environment: Option<PushEnvironment>,
     registered_push_token: Option<String>,
+    registered_push_environment: Option<PushEnvironment>,
     // Occurrences completed this session, kept on the upcoming panel (faded, in
     // place) until they're un-completed, their retention TTL elapses, or the app
     // reloads — mirroring desktop's retained-completed set.
@@ -209,10 +313,20 @@ struct MobileCoreInner {
     // A completion can change Upcoming/widgets even when the notification hash
     // remains stable; carry that intent through the next sync push.
     background_refresh_required: bool,
+    /// Cached notification schedule metadata for the current in-memory workspace.
+    /// The push protocol needs only its hash/window/count, but deriving those
+    /// values expands every scheduled item. Keep it across ordinary prose edits
+    /// and invalidate it only when a schedule-affecting change lands.
+    notification_schedule_cache: Option<knotq_sync::NotificationScheduleSnapshot>,
     // Monotonic time of the last remote sync that actually ran. Used to coalesce
     // wake-storms (silent-push/poll triggers that arrive in bursts) so a device
     // can't barrage the backend — see `sync_once`.
     last_remote_sync_at: Option<std::time::Instant>,
+    /// Run the one-shot recovery integrity proof after an interrupted sync.
+    /// Persisted state vectors keep cold/deferred documents out of the decode
+    /// path; subsequent websocket wakes rely on per-document cursors, and a
+    /// post-push proof is still requested for the documents just accepted.
+    startup_integrity_check_pending: bool,
     // Persistent WebSocket sync client (online, poll-free). `None` until the shell
     // calls `start_ws_sync`. When connected, `sync_once` pull/push ride it.
     ws_client: Option<std::sync::Arc<knotq_sync::ws::WsClient>>,
@@ -225,6 +339,20 @@ struct MobileCoreInner {
     // The api_base the current ws client was built for, so an account switch
     // rebuilds it.
     ws_api_base: Option<String>,
+    // The account-status endpoint is needed to discover the canonical workspace
+    // id, but it is not needed before every ordinary edit/pull. Cache it only
+    // in memory, keyed by the exact bearer token, so a token/account change
+    // cannot reuse another session's identity.
+    account_workspace_cache: Option<CachedAccountWorkspace>,
+    /// Shared HTTP connection pool for mobile sync and auxiliary calls.
+    http_agent: ureq::Agent,
+}
+
+struct CachedAccountWorkspace {
+    api_base: String,
+    bearer_token: String,
+    workspace_id: knotq_model::WorkspaceId,
+    fetched_at: std::time::Instant,
 }
 
 /// Minimum spacing between remote syncs that have nothing local to push. Silent
@@ -236,6 +364,16 @@ struct MobileCoreInner {
 /// whenever there are local edits queued so user changes never wait on it.
 #[cfg_attr(not(feature = "accounts"), allow(dead_code))]
 const MIN_REMOTE_SYNC_INTERVAL: std::time::Duration = std::time::Duration::from_secs(10);
+
+/// Refreshing the canonical workspace id more often than this adds a network
+/// round trip to every keystroke without improving normal sync correctness. The
+/// pull/push endpoints still authorize every request, and a new bearer token or
+/// API base invalidates this cache immediately.
+#[cfg_attr(not(feature = "accounts"), allow(dead_code))]
+const ACCOUNT_WORKSPACE_CACHE_TTL: std::time::Duration = std::time::Duration::from_secs(30);
+
+#[cfg_attr(not(feature = "accounts"), allow(dead_code))]
+const MEDIA_RECONCILIATION_INTERVAL: std::time::Duration = std::time::Duration::from_secs(30);
 
 struct GoogleCalendarApplyResult {
     content_changed: bool,

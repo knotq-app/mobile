@@ -1,6 +1,58 @@
 import SwiftUI
 import UIKit
 
+/// Captures enough identity to restore a caret after a remote editor reload.
+/// `offsetInLine` is measured in UTF-16 units because that is the coordinate
+/// system used by `NSString`, `UITextView`, and `NSRange`.
+struct EditorCaretContext: Equatable {
+    let itemID: String?
+    let lineIndex: Int
+    let offsetInLine: Int
+    let lineText: String
+}
+
+/// Maps a caret boundary from an old line into its remotely edited text.
+///
+/// Restoring the same numeric offset is correct only when the remote change is
+/// elsewhere in the document. This UTF-16 collection diff moves the caret over
+/// insertions before it and back over deletions before it. A replacement that
+/// spans the caret collapses it to the end of the replacement, preserving the
+/// nearest surviving text to the right. An insertion exactly at the caret is
+/// treated as arriving before the old right-hand anchor.
+func adaptedEditorTextOffset(from oldText: String, to newText: String, offset: Int) -> Int {
+    let oldUnits = Array(oldText.utf16)
+    let newUnits = Array(newText.utf16)
+    let oldOffset = min(max(offset, 0), oldUnits.count)
+    guard oldUnits != newUnits else { return oldOffset }
+
+    let difference = newUnits.difference(from: oldUnits)
+    let removedBefore = difference.removals.reduce(into: 0) { count, change in
+        guard case let .remove(index, _, _) = change, index < oldOffset else { return }
+        count += 1
+    }
+
+    let insertionOffsets = difference.insertions.compactMap { change -> Int? in
+        guard case let .insert(index, _, _) = change else { return nil }
+        return index
+    }.sorted()
+    var insertedBefore = insertionOffsets.filter { $0 < oldOffset }.count
+
+    // CollectionDifference represents a run inserted at one old boundary as
+    // offsets p, p+1, ... . Include the entire run when it starts exactly at
+    // the caret, rather than placing the caret inside the remote insertion.
+    if let first = insertionOffsets.firstIndex(of: oldOffset) {
+        var expected = oldOffset
+        var index = first
+        while index < insertionOffsets.count, insertionOffsets[index] == expected {
+            insertedBefore += 1
+            expected += 1
+            index += 1
+        }
+    }
+
+    return min(max(oldOffset - removedBefore + insertedBefore, 0), newUnits.count)
+}
+
 // MARK: - Editor invariants
 //
 // The editor maintains three invariants over its text storage so every other
@@ -602,9 +654,27 @@ struct EditorParagraphRange {
 func paragraphRanges(in ns: NSString, intersecting target: NSRange? = nil) -> [EditorParagraphRange] {
     guard ns.length > 0 else { return [] }
     var ranges: [EditorParagraphRange] = []
-    var start = 0
+    let targetEnd: Int?
+    var start: Int
+    if let target {
+        // TextKit commonly asks for a small visible slice. Jump to the
+        // containing paragraph instead of rescanning all preceding text.
+        let safeLocation = min(max(0, target.location), ns.length - 1)
+        start = ns.paragraphRange(for: NSRange(location: safeLocation, length: 0)).location
+        // Preserve rangesOverlapOrTouch's boundary semantics: a target that
+        // starts exactly where a paragraph starts also touches the paragraph
+        // immediately before it.
+        if start == safeLocation, start > 0 {
+            start = ns.paragraphRange(for: NSRange(location: start - 1, length: 0)).location
+        }
+        targetEnd = min(ns.length, max(0, NSMaxRange(target)))
+    } else {
+        start = 0
+        targetEnd = nil
+    }
 
     while start < ns.length {
+        if let targetEnd, start > targetEnd { break }
         var end = start
         while end < ns.length && ns.character(at: end) != 10 {
             end += 1
