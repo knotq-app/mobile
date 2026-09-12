@@ -92,6 +92,14 @@ internal class RustBridge(context: Context) : AutoCloseable {
                 "created",
                 core.ensureDailyQueue(body.stringOrNull("date"))
             )
+            "daily_queue_carryover_source" -> return JSONObject().put(
+                "source_date",
+                core.dailyQueueCarryoverSource(body.stringOrNull("date"))
+            )
+            "carryover_daily_queue" -> return JSONObject().put(
+                "carried",
+                core.carryoverDailyQueue(body.stringOrNull("date"))
+            )
             "add_today_daily_item" -> core.addTodayDailyItem(
                 body.getString("today"),
                 body.getString("text"),

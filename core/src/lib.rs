@@ -21,9 +21,10 @@ use knotq_notifications::{
     expired_event_notification_keys, DEFAULT_DURABLE_NOTIFICATION_LIMIT,
 };
 use knotq_state::{
-    daily_queue_initial_start, daily_queue_scheme_name, make_default_workspace,
-    mark_past_event_completion_keys_done, past_event_completion_keys, CalendarOccurrenceKey,
-    RetainedCompletedItems,
+    daily_queue_carryover_command, daily_queue_initial_start, daily_queue_scheme_name,
+    last_nonempty_daily_queue_day, make_default_workspace, mark_past_event_completion_keys_done,
+    past_event_completion_keys, CalendarOccurrenceKey, RetainedCompletedItems,
+    DAILY_QUEUE_CARRYOVER_LOOKBACK_DAYS,
 };
 use knotq_storage_json::{
     crdt_state_dir, crdt_state_path, edit_timing_enabled, load_app_settings, load_crdt_state,

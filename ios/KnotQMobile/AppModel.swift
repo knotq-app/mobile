@@ -106,6 +106,11 @@ final class AppModel: ObservableObject {
     var syncSessionGeneration = SyncSessionGeneration()
     var dailyHistoryDays = AppModel.initialDailyHistoryDays(for: Date())
     var pendingDailyHistoryLoadAnchorDate: String?
+    // "Roll over from {date}" affordance: the source day to carry from, once
+    // fetched for dailyCarryoverEntryDate (only meaningful while that day is
+    // still both selected and blank — see DailyDayEditorSection).
+    @Published var dailyCarryoverSourceDate: String?
+    var dailyCarryoverEntryDate: String?
     // Calendar day the model is currently anchored to. Used to notice a midnight
     // rollover (or timezone shift) so the home/daily "today" doesn't go stale
     // while the app stays alive or sits backgrounded across midnight.

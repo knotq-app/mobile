@@ -734,6 +734,30 @@ import kotlin.math.roundToInt
         mutate(obj("type" to "ensure_daily_queue", "date" to selectedDate.toString()))
     }
 
+    /// "Roll over from {date}": moves the carryover source day's incomplete
+    /// items into today, mirroring desktop's Daily carryover button exactly
+    /// (same shared knotq-state command). Clears the cached affordance state
+    /// so renderDaily() re-checks against the now-populated today.
+    internal fun MainActivity.carryoverDailyQueue() {
+        val today = LocalDate.now().toString()
+        dailyCarryoverSourceDate = null
+        dailyCarryoverCheckedForToday = null
+        pendingDailyAutoFocusDate = today
+        mutate(obj("type" to "carryover_daily_queue", "date" to today)) {
+            // Today's blank editor is still focused (scheme-open auto-focus),
+            // so mutate()'s requestRender() just deferred instead of showing
+            // the carried-over content. Blur it to flush that — but its live
+            // buffer is still the stale pre-carryover (blank) text, and a
+            // normal blur commits the editor back to the core; suppress that
+            // one commit so it can't stomp what carryover just wrote. render()
+            // (via the flush) rebuilds the row from the fresh snapshot and
+            // pendingDailyAutoFocusDate above re-focuses it at the new content.
+            suppressEditorBlurCommit = true
+            currentFocus?.clearFocus()
+            rootFrame.post { suppressEditorBlurCommit = false }
+        }
+    }
+
     internal fun MainActivity.ensureTodayDailyQueue(refreshSnapshot: Boolean = true) {
         val today = LocalDate.now().toString()
         if (snapshotContainsDailyQueue(snapshot, today)) return

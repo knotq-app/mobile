@@ -406,6 +406,38 @@ internal fun searchPreviewText(raw: String): String =
             val keepWhenEmpty = date == selectedKey || date == todayKey || date == yesterdayKey
             if (keepWhenEmpty || !isDailyEntryEmpty(day)) feedDays.add(day)
         }
+        val todayEntry = feedDays.firstOrNull { it.optString("date") == todayKey }
+        val todayIsBlank = todayEntry != null && isDailyEntryEmpty(todayEntry)
+        if (!todayIsBlank) {
+            // Today picked up content since the last check (e.g. the carryover
+            // itself just ran) — drop the stale affordance instead of leaving
+            // it to show against a day that no longer qualifies.
+            dailyCarryoverSourceDate = null
+            dailyCarryoverCheckedForToday = null
+        } else if (dailyCarryoverCheckedForToday != todayKey && !dailyCarryoverFetchInFlight) {
+            dailyCarryoverCheckedForToday = todayKey
+            dailyCarryoverFetchInFlight = true
+            coreExecutor.execute {
+                val source = runCatching {
+                    bridge.request(obj("type" to "daily_queue_carryover_source", "date" to todayKey))
+                        .optString("source_date")
+                        .takeIf { it.isNotEmpty() }
+                }.getOrNull()
+                rootFrame.post {
+                    dailyCarryoverFetchInFlight = false
+                    if (isUiActive() && dailyCarryoverCheckedForToday == todayKey) {
+                        dailyCarryoverSourceDate = source
+                        // requestRender() no-ops while today's blank editor is
+                        // focused (which it always is right now, via the
+                        // scheme-open auto-focus) to avoid stealing the
+                        // keyboard — so patch the already-built row directly
+                        // instead of waiting for a render that may never come
+                        // while the user stays on this blank day.
+                        if (source != null) showDailyCarryoverButton(todayKey, source)
+                    }
+                }
+            }
+        }
 
         val dailyList = ListView(this).apply {
             tag = DAILY_VIEWPORT_TAG
@@ -426,10 +458,12 @@ internal fun searchPreviewText(raw: String): String =
                 // recycled editor cannot safely be rebound in place. ListView
                 // still virtualizes the expensive day sections; detached rows
                 // release their editor resources through onDetachedFromWindow.
+                val day = feedDays[position]
+                val isCarryoverCandidate = day.optString("date") == todayKey && todayIsBlank
                 return LinearLayout(this@renderDaily).apply {
                     orientation = LinearLayout.VERTICAL
                     setPadding(0, 0, 0, dp(6))
-                    addView(dailyDayEditor(feedDays[position]), LinearLayout.LayoutParams(-1, -2))
+                    addView(dailyDayEditor(day, isCarryoverCandidate), LinearLayout.LayoutParams(-1, -2))
                 }
             }
         }
@@ -530,7 +564,7 @@ internal fun searchPreviewText(raw: String): String =
     /// iOS `DailyDayEditorSection`: each day is a scheme editor with the date
     /// as its inline title, the selected day softly highlighted; tapping an
     /// unselected day selects it.
-    internal fun MainActivity.dailyDayEditor(day: JSONObject): View {
+    internal fun MainActivity.dailyDayEditor(day: JSONObject, isCarryoverCandidate: Boolean = false): View {
         val date = day.optString("date")
         val scheme = day.optJSONObject("scheme") ?: return emptyState(MobileDateFormatting.fullDay(date), L10n.t(this, "mobile.daily.not_ready_title"))
         val schemeId = scheme.optString("id")
@@ -547,6 +581,19 @@ internal fun searchPreviewText(raw: String): String =
                 gravity = Gravity.CENTER_VERTICAL
                 setPadding(dp(14), 0, dp(14), 0)
             }, LinearLayout.LayoutParams(-1, dp(44)))
+            if (isCarryoverCandidate) {
+                // A placeholder, not a render() target: the source date is
+                // usually still an in-flight async fetch when this row is
+                // built (see renderDaily()), and requestRender() no-ops while
+                // this row's editor is focused — which it always is, via the
+                // scheme-open auto-focus. dailyCarryoverContainer lets the
+                // fetch populate this exact view directly once it resolves,
+                // without touching (or fighting for) the editor's focus.
+                dailyCarryoverContainer = FrameLayout(this@dailyDayEditor)
+                dailyCarryoverContainerDate = date
+                addView(dailyCarryoverContainer, LinearLayout.LayoutParams(-1, -2))
+                dailyCarryoverSourceDate?.let { renderDailyCarryoverButton(dailyCarryoverContainer!!, date, it) }
+            }
             val editor = SchemeEditText(this@dailyDayEditor).apply {
                 deferInitialStyling = true
                 setText(renderDocument(originalLines))
@@ -630,6 +677,38 @@ internal fun searchPreviewText(raw: String): String =
     }
 
     internal fun MainActivity.dailyAccent(): Int = if (theme.isDark) rgb(0xb8c9e8) else rgb(0x5a7aad)
+
+    /// Populates a daily-carryover placeholder container with the "roll over
+    /// from {date}" / "roll over yesterday" label. Pure view-building — safe
+    /// to call either inline (source already known when the row is built) or
+    /// later from the async fetch's completion (see showDailyCarryoverButton).
+    internal fun MainActivity.renderDailyCarryoverButton(container: FrameLayout, date: String, sourceDate: String) {
+        container.removeAllViews()
+        val isYesterday = runCatching {
+            LocalDate.parse(date).minusDays(1) == LocalDate.parse(sourceDate)
+        }.getOrDefault(false)
+        val label = if (isYesterday) {
+            L10n.t(this, "daily.carryover.yesterday")
+        } else {
+            L10n.t(this, "daily.carryover.from_date", mapOf("date" to MobileDateFormatting.shortDay(sourceDate)))
+        }
+        container.addView(text(label, editorChromeColor(), 13f, true).apply {
+            setPadding(dp(14), 0, dp(14), dp(4))
+            setOnClickListener { carryoverDailyQueue() }
+        }, FrameLayout.LayoutParams(-1, -2))
+    }
+
+    /// Called when the async carryover-source fetch resolves. Patches the
+    /// still-live placeholder directly rather than going through render() /
+    /// requestRender(), which silently no-ops while today's blank editor is
+    /// focused (see the call site in renderDaily()).
+    internal fun MainActivity.showDailyCarryoverButton(date: String, sourceDate: String) {
+        val container = dailyCarryoverContainer
+        if (container == null || dailyCarryoverContainerDate != date || !container.isAttachedToWindow) {
+            return
+        }
+        renderDailyCarryoverButton(container, date, sourceDate)
+    }
 
     internal fun MainActivity.renderSearch(): View {
         val root = page()

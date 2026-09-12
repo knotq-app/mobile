@@ -195,33 +195,43 @@ struct DailyDayEditorSection: View {
     let theme: KnotQTheme
     let autoFocusOnAppear: Bool
     let onSelect: () -> Void
+    @EnvironmentObject private var model: AppModel
+
+    private var isCarryoverCandidate: Bool { selected && isEmpty }
 
     var body: some View {
-        IntegratedSchemeEditorPane(
-            scheme: displayScheme,
-            theme: theme,
-            onBack: nil,
-            onAdd: {},
-            usesNativeNavigation: false,
-            showsEditorNavigation: false,
-            editorScrollEnabled: false,
-            // left/right keep the table's original gutter size (the old 10pt feed
-            // padding + 14pt inset = 24), but as `textContainerInset` rather than
-            // SwiftUI padding so the editor spans edge-to-edge: the whole gutter,
-            // right up to the screen edge, is now inside the tappable text view
-            // (the dead outer strip is gone) without narrowing the table.
-            editorInsets: UIEdgeInsets(top: 3, left: 24, bottom: 5, right: 24),
-            // Always show the day's title on the selected day, even when it's
-            // empty — a freshly created daily queue has no content yet, and
-            // hiding the title there leaves the section looking like it never got
-            // created. Non-selected empty days stay collapsed.
-            showsInlineTitle: !isEmpty || selected,
-            // Focus the selected (last/today) day on open even when it's empty —
-            // a fresh daily queue has no items, and we still want the caret + the
-            // keyboard up at the end of that section so the user can type right
-            // away. `autoFocusSelectedDay` is the real opt-in (off on iPad/screenshots).
-            autoFocusOnAppear: selected && autoFocusOnAppear
-        )
+        VStack(alignment: .leading, spacing: 0) {
+            if isCarryoverCandidate,
+               model.dailyCarryoverEntryDate == entry.date,
+               let source = model.dailyCarryoverSourceDate {
+                DailyCarryoverButton(theme: theme, entryDate: entry.date, sourceDate: source)
+            }
+            IntegratedSchemeEditorPane(
+                scheme: displayScheme,
+                theme: theme,
+                onBack: nil,
+                onAdd: {},
+                usesNativeNavigation: false,
+                showsEditorNavigation: false,
+                editorScrollEnabled: false,
+                // left/right keep the table's original gutter size (the old 10pt feed
+                // padding + 14pt inset = 24), but as `textContainerInset` rather than
+                // SwiftUI padding so the editor spans edge-to-edge: the whole gutter,
+                // right up to the screen edge, is now inside the tappable text view
+                // (the dead outer strip is gone) without narrowing the table.
+                editorInsets: UIEdgeInsets(top: 3, left: 24, bottom: 5, right: 24),
+                // Always show the day's title on the selected day, even when it's
+                // empty — a freshly created daily queue has no content yet, and
+                // hiding the title there leaves the section looking like it never got
+                // created. Non-selected empty days stay collapsed.
+                showsInlineTitle: !isEmpty || selected,
+                // Focus the selected (last/today) day on open even when it's empty —
+                // a fresh daily queue has no items, and we still want the caret + the
+                // keyboard up at the end of that section so the user can type right
+                // away. `autoFocusSelectedDay` is the real opt-in (off on iPad/screenshots).
+                autoFocusOnAppear: selected && autoFocusOnAppear
+            )
+        }
         // Fill the row's full width so the editor's own text view (and its
         // tappable side gutters beside a table) reaches the screen edge, instead
         // of sitting narrower than the row with dead section margin around it.
@@ -239,6 +249,10 @@ struct DailyDayEditorSection: View {
         // taps in the editor's transparent side gutters before they reach the text
         // view — breaking caret-before/after-a-table taps there.
         .modifier(DaySelectTapModifier(selected: selected, onSelect: onSelect))
+        .task(id: "\(entry.date)|\(isCarryoverCandidate)") {
+            guard isCarryoverCandidate else { return }
+            await model.refreshDailyCarryoverSource(for: entry.date)
+        }
     }
 
     private var displayScheme: MobileScheme {
@@ -262,6 +276,40 @@ struct DailyDayEditorSection: View {
         }
     }
 
+}
+
+/// "Roll over from {date}" / "roll over yesterday" — mirrors desktop's Daily
+/// carryover button exactly (same shared knotq-state command underneath).
+private struct DailyCarryoverButton: View {
+    let theme: KnotQTheme
+    let entryDate: String
+    let sourceDate: String
+    @EnvironmentObject private var model: AppModel
+
+    var body: some View {
+        Button {
+            model.carryoverDailyQueue(for: entryDate)
+        } label: {
+            Text(label)
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(theme.accent)
+                .padding(.horizontal, 14)
+                .padding(.top, 2)
+                .padding(.bottom, 4)
+        }
+        .buttonStyle(.plain)
+    }
+
+    private var label: String {
+        let isYesterday = AppModel.date(from: entryDate).flatMap { entry in
+            AppModel.date(from: sourceDate).map { source in
+                Calendar.current.isDate(source, inSameDayAs: Calendar.current.date(byAdding: .day, value: -1, to: entry) ?? entry)
+            }
+        } ?? false
+        return isYesterday
+            ? L10n.t("daily.carryover.yesterday")
+            : L10n.t("daily.carryover.from_date", ["date": MobileDate.formatDay(sourceDate)])
+    }
 }
 
 /// Whether an image attachment still has a file on disk.

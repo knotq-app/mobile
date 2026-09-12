@@ -1725,6 +1725,54 @@ impl MobileCoreInner {
         Ok((id, true))
     }
 
+    /// Pages in every daily-queue scheme in the carryover lookback window that
+    /// isn't already loaded, so `last_nonempty_daily_queue_day` (which only
+    /// consults schemes already in `self.workspace`) sees real data instead of
+    /// treating an off-window day as empty. Cheap: a lazy single-scheme file
+    /// read per day, skipped for days already resident.
+    fn load_daily_queue_carryover_window(&mut self, today: NaiveDate) -> Result<()> {
+        for offset in 1..=DAILY_QUEUE_CARRYOVER_LOOKBACK_DAYS {
+            self.load_daily_queue_scheme_if_needed(today - Duration::days(offset))?;
+        }
+        Ok(())
+    }
+
+    /// Read-only: see `daily_queue_carryover_source` on the public API. Shares
+    /// the lookback-loading step with `carryover_daily_queue` so the two never
+    /// disagree about what's carryable.
+    pub(crate) fn daily_queue_carryover_source(
+        &mut self,
+        today: NaiveDate,
+    ) -> Result<Option<NaiveDate>> {
+        self.load_daily_queue_carryover_window(today)?;
+        Ok(last_nonempty_daily_queue_day(&self.workspace, today))
+    }
+
+    /// See `carryover_daily_queue` on the public API.
+    pub(crate) fn carryover_daily_queue(&mut self, today: NaiveDate) -> Result<bool> {
+        let Some(previous_date) = self.daily_queue_carryover_source(today)? else {
+            return Ok(false);
+        };
+        let Some(previous_id) = self.workspace.daily_queue_scheme_id(previous_date) else {
+            return Ok(false);
+        };
+        let (today_id, _) = self.ensure_daily_queue(today)?;
+        let command = {
+            let Some(previous) = self.workspace.scheme(previous_id) else {
+                return Ok(false);
+            };
+            let Some(today_scheme) = self.workspace.scheme(today_id) else {
+                return Ok(false);
+            };
+            daily_queue_carryover_command(previous_id, previous_date, previous, today_id, today_scheme)
+        };
+        let Some(command) = command else {
+            return Ok(false);
+        };
+        self.apply(command)?;
+        Ok(true)
+    }
+
     pub(crate) fn complete_google_calendar_import(
         &mut self,
         config: GoogleOAuthConfig,

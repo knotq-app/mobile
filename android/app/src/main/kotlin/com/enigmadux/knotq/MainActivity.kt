@@ -280,6 +280,18 @@ class MainActivity : Activity() {
     internal var dailyFirstVisibleTop = 0
     internal var pendingDailyAnchorDate: String? = null
     internal var pendingDailyAutoFocusDate: String? = null
+    // "Roll over from {date}" affordance: the source day to carry from, once
+    // fetched for the currently-blank today. Null while unfetched/none/today
+    // isn't blank. dailyCarryoverCheckedForToday guards against re-querying
+    // the core on every render pass.
+    internal var dailyCarryoverSourceDate: String? = null
+    internal var dailyCarryoverCheckedForToday: String? = null
+    internal var dailyCarryoverFetchInFlight = false
+    // The live placeholder view built for the current candidate row, and the
+    // date it was built for — lets the async fetch populate it directly. Not
+    // valid once the row scrolls off/rebuilds; always check isAttachedToWindow.
+    internal var dailyCarryoverContainer: FrameLayout? = null
+    internal var dailyCarryoverContainerDate: String? = null
     internal var pendingTitleFocusSchemeId: String? = null
     internal var lastRenderedTab: Int? = null
     // The first native snapshot can be large (calendar expansion + JSON

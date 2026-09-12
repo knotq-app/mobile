@@ -143,6 +143,19 @@ final class RustBridge: @unchecked Sendable {
         try core.ensureDailyQueue(date: date)
     }
 
+    /// The date to show in a "roll over from {date}" affordance for `date`'s
+    /// Daily, or nil when there's nothing to carry. Read-only.
+    func dailyQueueCarryoverSource(date: String) throws -> String? {
+        try core.dailyQueueCarryoverSource(date: date)
+    }
+
+    /// Moves the carryover source day's not-fully-completed items into
+    /// `date`'s Daily. Returns false when there was nothing to carry.
+    @discardableResult
+    func carryoverDailyQueue(date: String) throws -> Bool {
+        try core.carryoverDailyQueue(date: date)
+    }
+
     func addItem(schemeID: String, text: String, marker: Marker, indent: Int32) throws {
         try core.addItem(schemeId: schemeID, text: text, marker: marker.rawValue, position: nil, indent: indent)
     }

@@ -305,6 +305,24 @@ interface MobileCore {
   [Throws=MobileError]
   boolean ensure_daily_queue(string? date);
 
+  // Read-only: the most recent non-empty daily-queue day strictly before
+  // `date` (within the desktop-matching lookback window), as an ISO date
+  // string, or null when there's nothing to carry (or `date`'s queue is
+  // already non-blank). Drives whether/what label a "roll over" affordance
+  // shows without mutating anything.
+  [Throws=MobileError]
+  string? daily_queue_carryover_source(string? date);
+
+  // Moves every not-fully-completed item from the carryover source day (see
+  // `daily_queue_carryover_source`) into `date`'s queue, preserving item
+  // identity (notifications/annotations follow it) and leaving a
+  // re-identified stub behind on the source day. Mirrors desktop's "roll
+  // over from {date}" button exactly (same shared knotq-state command), so
+  // it converges the same way across devices. Returns false when there was
+  // nothing to carry.
+  [Throws=MobileError]
+  boolean carryover_daily_queue(string? date);
+
   [Throws=MobileError]
   MobileGoogleAuthRequest google_auth_request(string client_id, string redirect_uri);
 

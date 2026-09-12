@@ -544,6 +544,8 @@ public protocol MobileCoreProtocol: AnyObject, Sendable {
     
     func applyNotificationAction(actionId: String, schemeId: String, itemId: String, occurrenceJson: String, triggerAt: String) throws  -> Bool
     
+    func carryoverDailyQueue(date: String?) throws  -> Bool
+    
     func commitEventEdit(schemeId: String, itemId: String, occurrenceJson: String, occurrenceIndex: Int32, title: String, occurrenceStart: String?, occurrenceEnd: String?, start: String?, end: String?, rrule: String?, notificationOffsetSecs: Int32?, notificationDirty: Bool, done: Bool, scope: String) throws 
     
     func commitEventEditPayload(payload: String) throws 
@@ -553,6 +555,8 @@ public protocol MobileCoreProtocol: AnyObject, Sendable {
     func createFolder(parentId: String?, name: String, position: Int32?) throws 
     
     func createScheme(folderId: String?, name: String, colorIndex: Int32?, position: Int32?) throws 
+    
+    func dailyQueueCarryoverSource(date: String?) throws  -> String?
     
     func deleteEventOccurrence(schemeId: String, itemId: String, occurrenceJson: String, occurrenceIndex: Int32, scope: String) throws 
     
@@ -800,6 +804,15 @@ open func applyNotificationAction(actionId: String, schemeId: String, itemId: St
 })
 }
     
+open func carryoverDailyQueue(date: String?)throws  -> Bool  {
+    return try  FfiConverterBool.lift(try rustCallWithError(FfiConverterTypeMobileError_lift) {
+    uniffi_knotq_mobile_core_fn_method_mobilecore_carryover_daily_queue(
+            self.uniffiCloneHandle(),
+        FfiConverterOptionString.lower(date),$0
+    )
+})
+}
+    
 open func commitEventEdit(schemeId: String, itemId: String, occurrenceJson: String, occurrenceIndex: Int32, title: String, occurrenceStart: String?, occurrenceEnd: String?, start: String?, end: String?, rrule: String?, notificationOffsetSecs: Int32?, notificationDirty: Bool, done: Bool, scope: String)throws   {try rustCallWithError(FfiConverterTypeMobileError_lift) {
     uniffi_knotq_mobile_core_fn_method_mobilecore_commit_event_edit(
             self.uniffiCloneHandle(),
@@ -862,6 +875,15 @@ open func createScheme(folderId: String?, name: String, colorIndex: Int32?, posi
         FfiConverterOptionInt32.lower(position),$0
     )
 }
+}
+    
+open func dailyQueueCarryoverSource(date: String?)throws  -> String?  {
+    return try  FfiConverterOptionString.lift(try rustCallWithError(FfiConverterTypeMobileError_lift) {
+    uniffi_knotq_mobile_core_fn_method_mobilecore_daily_queue_carryover_source(
+            self.uniffiCloneHandle(),
+        FfiConverterOptionString.lower(date),$0
+    )
+})
 }
     
 open func deleteEventOccurrence(schemeId: String, itemId: String, occurrenceJson: String, occurrenceIndex: Int32, scope: String)throws   {try rustCallWithError(FfiConverterTypeMobileError_lift) {
@@ -3824,6 +3846,9 @@ private let initializationResult: InitializationResult = {
     if (uniffi_knotq_mobile_core_checksum_method_mobilecore_apply_notification_action() != 6490) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_knotq_mobile_core_checksum_method_mobilecore_carryover_daily_queue() != 34575) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_knotq_mobile_core_checksum_method_mobilecore_commit_event_edit() != 44971) {
         return InitializationResult.apiChecksumMismatch
     }
@@ -3837,6 +3862,9 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_knotq_mobile_core_checksum_method_mobilecore_create_scheme() != 60715) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_knotq_mobile_core_checksum_method_mobilecore_daily_queue_carryover_source() != 36644) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_knotq_mobile_core_checksum_method_mobilecore_delete_event_occurrence() != 38818) {

@@ -121,6 +121,26 @@ extension AppModel {
         }
     }
 
+    /// Checks whether `dateKey`'s Daily has a "roll over from {date}" source,
+    /// caching the result on dailyCarryoverSourceDate for DailyDayEditorSection
+    /// to read. Safe to call repeatedly (e.g. from `.task(id:)` on selection
+    /// change) — a stale in-flight result for a since-abandoned day is dropped.
+    func refreshDailyCarryoverSource(for dateKey: String) async {
+        guard let bridge else { return }
+        let source = try? await bridge.perform { try $0.dailyQueueCarryoverSource(date: dateKey) }
+        dailyCarryoverEntryDate = dateKey
+        dailyCarryoverSourceDate = source ?? nil
+    }
+
+    /// "Roll over from {date}": moves the carryover source day's incomplete
+    /// items into `dateKey`, mirroring desktop's Daily carryover button
+    /// exactly (same shared knotq-state command).
+    func carryoverDailyQueue(for dateKey: String) {
+        dailyCarryoverSourceDate = nil
+        dailyCarryoverEntryDate = nil
+        mutate { try $0.carryoverDailyQueue(date: dateKey) }
+    }
+
     func selectDate(_ date: Date) {
         selectedDate = date
         dailyHistoryDays = Self.initialDailyHistoryDays(for: date)

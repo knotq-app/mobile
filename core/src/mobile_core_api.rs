@@ -189,6 +189,26 @@ impl MobileCore {
         Ok(true)
     }
 
+    /// The date to show in a "roll over from {date}" affordance for `date`'s
+    /// Daily, or null when there's nothing to carry. Read-only.
+    pub fn daily_queue_carryover_source(
+        &self,
+        date: Option<String>,
+    ) -> Result<Option<String>, MobileError> {
+        let date = parse_date_or_today(date.as_deref())?;
+        Ok(self
+            .lock()?
+            .daily_queue_carryover_source(date)?
+            .map(|d| d.to_string()))
+    }
+
+    /// Roll the carryover source day's not-fully-completed items into `date`'s
+    /// Daily. Returns false when there was nothing to carry.
+    pub fn carryover_daily_queue(&self, date: Option<String>) -> Result<bool, MobileError> {
+        let date = parse_date_or_today(date.as_deref())?;
+        self.lock()?.carryover_daily_queue(date).map_err(Into::into)
+    }
+
     pub fn google_auth_request(
         &self,
         client_id: String,

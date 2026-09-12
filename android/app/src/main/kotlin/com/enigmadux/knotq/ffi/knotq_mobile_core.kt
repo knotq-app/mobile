@@ -650,6 +650,8 @@ internal object IntegrityCheckingUniffiLib {
     ): Short
     external fun uniffi_knotq_mobile_core_checksum_method_mobilecore_apply_notification_action(
     ): Short
+    external fun uniffi_knotq_mobile_core_checksum_method_mobilecore_carryover_daily_queue(
+    ): Short
     external fun uniffi_knotq_mobile_core_checksum_method_mobilecore_commit_event_edit(
     ): Short
     external fun uniffi_knotq_mobile_core_checksum_method_mobilecore_commit_event_edit_payload(
@@ -659,6 +661,8 @@ internal object IntegrityCheckingUniffiLib {
     external fun uniffi_knotq_mobile_core_checksum_method_mobilecore_create_folder(
     ): Short
     external fun uniffi_knotq_mobile_core_checksum_method_mobilecore_create_scheme(
+    ): Short
+    external fun uniffi_knotq_mobile_core_checksum_method_mobilecore_daily_queue_carryover_source(
     ): Short
     external fun uniffi_knotq_mobile_core_checksum_method_mobilecore_delete_event_occurrence(
     ): Short
@@ -818,6 +822,8 @@ external fun uniffi_knotq_mobile_core_fn_method_mobilecore_add_today_daily_item(
 ): Unit
 external fun uniffi_knotq_mobile_core_fn_method_mobilecore_apply_notification_action(`ptr`: Long,`actionId`: RustBuffer.ByValue,`schemeId`: RustBuffer.ByValue,`itemId`: RustBuffer.ByValue,`occurrenceJson`: RustBuffer.ByValue,`triggerAt`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus,
 ): Byte
+external fun uniffi_knotq_mobile_core_fn_method_mobilecore_carryover_daily_queue(`ptr`: Long,`date`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus,
+): Byte
 external fun uniffi_knotq_mobile_core_fn_method_mobilecore_commit_event_edit(`ptr`: Long,`schemeId`: RustBuffer.ByValue,`itemId`: RustBuffer.ByValue,`occurrenceJson`: RustBuffer.ByValue,`occurrenceIndex`: Int,`title`: RustBuffer.ByValue,`occurrenceStart`: RustBuffer.ByValue,`occurrenceEnd`: RustBuffer.ByValue,`start`: RustBuffer.ByValue,`end`: RustBuffer.ByValue,`rrule`: RustBuffer.ByValue,`notificationOffsetSecs`: RustBuffer.ByValue,`notificationDirty`: Byte,`done`: Byte,`scope`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus,
 ): Unit
 external fun uniffi_knotq_mobile_core_fn_method_mobilecore_commit_event_edit_payload(`ptr`: Long,`payload`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus,
@@ -828,6 +834,8 @@ external fun uniffi_knotq_mobile_core_fn_method_mobilecore_create_folder(`ptr`: 
 ): Unit
 external fun uniffi_knotq_mobile_core_fn_method_mobilecore_create_scheme(`ptr`: Long,`folderId`: RustBuffer.ByValue,`name`: RustBuffer.ByValue,`colorIndex`: RustBuffer.ByValue,`position`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus,
 ): Unit
+external fun uniffi_knotq_mobile_core_fn_method_mobilecore_daily_queue_carryover_source(`ptr`: Long,`date`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus,
+): RustBuffer.ByValue
 external fun uniffi_knotq_mobile_core_fn_method_mobilecore_delete_event_occurrence(`ptr`: Long,`schemeId`: RustBuffer.ByValue,`itemId`: RustBuffer.ByValue,`occurrenceJson`: RustBuffer.ByValue,`occurrenceIndex`: Int,`scope`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus,
 ): Unit
 external fun uniffi_knotq_mobile_core_fn_method_mobilecore_delete_folder(`ptr`: Long,`folderId`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus,
@@ -1089,6 +1097,9 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
     if (lib.uniffi_knotq_mobile_core_checksum_method_mobilecore_apply_notification_action() != 6490.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
+    if (lib.uniffi_knotq_mobile_core_checksum_method_mobilecore_carryover_daily_queue() != 34575.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
     if (lib.uniffi_knotq_mobile_core_checksum_method_mobilecore_commit_event_edit() != 44971.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
@@ -1102,6 +1113,9 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_knotq_mobile_core_checksum_method_mobilecore_create_scheme() != 60715.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_knotq_mobile_core_checksum_method_mobilecore_daily_queue_carryover_source() != 36644.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_knotq_mobile_core_checksum_method_mobilecore_delete_event_occurrence() != 38818.toShort()) {
@@ -1704,6 +1718,8 @@ public interface MobileCoreInterface {
 
     fun `applyNotificationAction`(`actionId`: kotlin.String, `schemeId`: kotlin.String, `itemId`: kotlin.String, `occurrenceJson`: kotlin.String, `triggerAt`: kotlin.String): kotlin.Boolean
 
+    fun `carryoverDailyQueue`(`date`: kotlin.String?): kotlin.Boolean
+
     fun `commitEventEdit`(`schemeId`: kotlin.String, `itemId`: kotlin.String, `occurrenceJson`: kotlin.String, `occurrenceIndex`: kotlin.Int, `title`: kotlin.String, `occurrenceStart`: kotlin.String?, `occurrenceEnd`: kotlin.String?, `start`: kotlin.String?, `end`: kotlin.String?, `rrule`: kotlin.String?, `notificationOffsetSecs`: kotlin.Int?, `notificationDirty`: kotlin.Boolean, `done`: kotlin.Boolean, `scope`: kotlin.String)
 
     fun `commitEventEditPayload`(`payload`: kotlin.String)
@@ -1713,6 +1729,8 @@ public interface MobileCoreInterface {
     fun `createFolder`(`parentId`: kotlin.String?, `name`: kotlin.String, `position`: kotlin.Int?)
 
     fun `createScheme`(`folderId`: kotlin.String?, `name`: kotlin.String, `colorIndex`: kotlin.Int?, `position`: kotlin.Int?)
+
+    fun `dailyQueueCarryoverSource`(`date`: kotlin.String?): kotlin.String?
 
     fun `deleteEventOccurrence`(`schemeId`: kotlin.String, `itemId`: kotlin.String, `occurrenceJson`: kotlin.String, `occurrenceIndex`: kotlin.Int, `scope`: kotlin.String)
 
@@ -2010,6 +2028,20 @@ open class MobileCore: Disposable, AutoCloseable, MobileCoreInterface
 
 
 
+    @Throws(MobileException::class)override fun `carryoverDailyQueue`(`date`: kotlin.String?): kotlin.Boolean {
+            return FfiConverterBoolean.lift(
+    callWithHandle {
+    uniffiRustCallWithError(MobileException) { _status ->
+    UniffiLib.uniffi_knotq_mobile_core_fn_method_mobilecore_carryover_daily_queue(
+        it,
+        FfiConverterOptionalString.lower(`date`),_status)
+}
+    }
+    )
+    }
+
+
+
     @Throws(MobileException::class)override fun `commitEventEdit`(`schemeId`: kotlin.String, `itemId`: kotlin.String, `occurrenceJson`: kotlin.String, `occurrenceIndex`: kotlin.Int, `title`: kotlin.String, `occurrenceStart`: kotlin.String?, `occurrenceEnd`: kotlin.String?, `start`: kotlin.String?, `end`: kotlin.String?, `rrule`: kotlin.String?, `notificationOffsetSecs`: kotlin.Int?, `notificationDirty`: kotlin.Boolean, `done`: kotlin.Boolean, `scope`: kotlin.String)
         =
     callWithHandle {
@@ -2073,6 +2105,20 @@ open class MobileCore: Disposable, AutoCloseable, MobileCoreInterface
 }
     }
 
+
+
+
+    @Throws(MobileException::class)override fun `dailyQueueCarryoverSource`(`date`: kotlin.String?): kotlin.String? {
+            return FfiConverterOptionalString.lift(
+    callWithHandle {
+    uniffiRustCallWithError(MobileException) { _status ->
+    UniffiLib.uniffi_knotq_mobile_core_fn_method_mobilecore_daily_queue_carryover_source(
+        it,
+        FfiConverterOptionalString.lower(`date`),_status)
+}
+    }
+    )
+    }
 
 
 
