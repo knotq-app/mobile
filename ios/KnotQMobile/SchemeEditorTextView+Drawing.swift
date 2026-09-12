@@ -176,6 +176,7 @@ extension EditorTextView {
             return
         case .bullet:
             context.setFillColor(chrome.cgColor)
+            context.setStrokeColor(chrome.cgColor)
             switch bulletGlyph(family: meta.markerFamily, depth: meta.indent) {
             case .circle: context.setLineWidth(1.5); context.strokeEllipse(in: rect.insetBy(dx: 3.5, dy: 3.5))
             case .square: context.fill(CGRect(x: rect.midX - 2.5, y: rect.midY - 2.5, width: 5, height: 5))
