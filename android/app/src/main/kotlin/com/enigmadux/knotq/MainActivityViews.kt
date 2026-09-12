@@ -750,9 +750,22 @@ internal fun MainActivity.calendarItemTextColor(occurrence: JSONObject): Int {
 internal fun MainActivity.timeFormat24(): Boolean =
     snapshot.optJSONObject("settings")?.optString("time_format") == "twenty_four_hour"
 
+// Mirrors desktop/theme/src/palette.rs's PALETTE/PALETTE_LIGHT exactly — the
+// first six entries are wire-persisted and must never move; index 6+ used to
+// be missing on mobile entirely (any scheme colored beyond index 5 on desktop
+// aliased onto one of these six via a naive modulo instead of showing its
+// real color).
 internal fun MainActivity.schemeColor(index: Int): Int {
-    val darkPalette = intArrayOf(rgb(0xff453a), rgb(0xff9f0a), rgb(0x30d158), rgb(0x0a84ff), rgb(0xbf5af2), rgb(0xffd60a))
-    val lightPalette = intArrayOf(rgb(0xb84433), rgb(0xc47400), rgb(0x28764f), rgb(0x2563a6), rgb(0x735aa6), rgb(0xe0a800))
+    val darkPalette = intArrayOf(
+        rgb(0xff453a), rgb(0xff9f0a), rgb(0x30d158), rgb(0x0a84ff), rgb(0xbf5af2), rgb(0xffd60a),
+        rgb(0xff375f), rgb(0x64d2ff), rgb(0x66d4cf), rgb(0x5e5ce6), rgb(0xac8e68), rgb(0x8e8e93),
+        rgb(0xff6b6b), rgb(0xa8e063), rgb(0x4cc9f0), rgb(0x8b5cf6), rgb(0xe85aad), rgb(0xd4a017),
+    )
+    val lightPalette = intArrayOf(
+        rgb(0xb84433), rgb(0xc47400), rgb(0x28764f), rgb(0x2563a6), rgb(0x735aa6), rgb(0xe0a800),
+        rgb(0xc13563), rgb(0x0e7490), rgb(0x147d73), rgb(0x4f46a5), rgb(0x7a5b3a), rgb(0x666a73),
+        rgb(0xb84f4f), rgb(0x5d7d2a), rgb(0x287ea3), rgb(0x6d4ab5), rgb(0xa83d78), rgb(0x9a6a00),
+    )
     val palette = if (theme.isDark) darkPalette else lightPalette
     return palette[index.floorMod(palette.size)]
 }

@@ -165,7 +165,8 @@ import kotlin.math.roundToInt
     internal fun MainActivity.showColorDialog(schemeId: String) {
         val currentIndex = findScheme(schemeId)?.optInt("color_index") ?: 0
         lateinit var dialog: AlertDialog
-        val order = intArrayOf(0, 1, 5, 2, 3, 4)
+        // Mirrors desktop/theme/src/palette.rs's SCHEME_COLOR_ORDER exactly.
+        val order = intArrayOf(0, 12, 6, 16, 4, 15, 9, 3, 14, 7, 8, 2, 13, 5, 17, 1, 10, 11)
         val grid = LayoutTransactionLinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             gravity = Gravity.CENTER_HORIZONTAL

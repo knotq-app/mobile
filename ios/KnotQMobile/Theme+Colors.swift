@@ -180,11 +180,25 @@ func occurrenceStatusTimeColor(_ occurrence: MobileOccurrence, theme: KnotQTheme
     return theme.textSoft
 }
 
+// Mirrors desktop/theme/src/palette.rs's PALETTE/PALETTE_LIGHT exactly — the
+// first six entries are wire-persisted and must never move; index 6+ used to
+// be missing on mobile entirely (any scheme colored beyond index 5 on desktop
+// aliased onto one of these six via a naive modulo instead of showing its
+// real color).
 func schemeColor(_ index: Int32, dark: Bool) -> Color {
-    let darkPalette: [UInt32] = [0xff453a, 0xff9f0a, 0x30d158, 0x0a84ff, 0xbf5af2, 0xffd60a]
-    let lightPalette: [UInt32] = [0xb84433, 0xc47400, 0x28764f, 0x2563a6, 0x735aa6, 0xe0a800]
+    let darkPalette: [UInt32] = [
+        0xff453a, 0xff9f0a, 0x30d158, 0x0a84ff, 0xbf5af2, 0xffd60a,
+        0xff375f, 0x64d2ff, 0x66d4cf, 0x5e5ce6, 0xac8e68, 0x8e8e93,
+        0xff6b6b, 0xa8e063, 0x4cc9f0, 0x8b5cf6, 0xe85aad, 0xd4a017,
+    ]
+    let lightPalette: [UInt32] = [
+        0xb84433, 0xc47400, 0x28764f, 0x2563a6, 0x735aa6, 0xe0a800,
+        0xc13563, 0x0e7490, 0x147d73, 0x4f46a5, 0x7a5b3a, 0x666a73,
+        0xb84f4f, 0x5d7d2a, 0x287ea3, 0x6d4ab5, 0xa83d78, 0x9a6a00,
+    ]
     let palette = dark ? darkPalette : lightPalette
-    return Color(hex: palette[Int(index) % palette.count])
+    let wrapped = ((Int(index) % palette.count) + palette.count) % palette.count
+    return Color(hex: palette[wrapped])
 }
 
 extension Color {

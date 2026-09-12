@@ -238,7 +238,8 @@ struct SchemeColorPickerButton: View {
     let accent: Color
     @State private var showingPicker = false
 
-    private let colorOrder: [Int32] = [0, 1, 5, 2, 3, 4]
+    // Mirrors desktop/theme/src/palette.rs's SCHEME_COLOR_ORDER exactly.
+    private let colorOrder: [Int32] = [0, 12, 6, 16, 4, 15, 9, 3, 14, 7, 8, 2, 13, 5, 17, 1, 10, 11]
     var body: some View {
         Button {
             showingPicker = true
