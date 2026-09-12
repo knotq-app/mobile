@@ -979,7 +979,7 @@ internal class SchemeEditText(context: android.content.Context) : EditText(conte
             drawGuides(canvas, markerRectScratch, line.indent, previous?.indent ?: 0, next?.indent ?: 0, firstTop, rowBottom)
             val lineOrdinal = line.numberedOrdinal
             val textBaseline = (totalPaddingTop + layout.getLineBaseline(firstVisual) - scrollY).toFloat()
-            drawMarker(canvas, markerRectScratch, line.marker, line.done, lineOrdinal, textBaseline)
+            drawMarker(canvas, markerRectScratch, line.marker, line.done, lineOrdinal, textBaseline, line.indent)
             line.annotation?.let { annotation ->
                 drawAnnotationBar(
                     canvas = canvas,
@@ -1062,7 +1062,8 @@ internal class SchemeEditText(context: android.content.Context) : EditText(conte
         marker: String,
         done: Boolean,
         ordinal: Int,
-        textBaseline: Float
+        textBaseline: Float,
+        indent: Int
     ) {
         when {
             marker == "checkbox" -> {
@@ -1090,27 +1091,108 @@ internal class SchemeEditText(context: android.content.Context) : EditText(conte
             marker == "bullet" || marker.startsWith("bullet.") -> {
                 chromePaint.style = Paint.Style.FILL
                 chromePaint.color = accentColor
-                when (marker) {
-                    "bullet.rings" -> { chromePaint.style = Paint.Style.STROKE; chromePaint.strokeWidth = dp(1.5f); canvas.drawCircle(rect.centerX(), rect.centerY(), dp(3f), chromePaint) }
-                    "bullet.squares" -> canvas.drawRect(rect.centerX() - dp(2.5f), rect.centerY() - dp(2.5f), rect.centerX() + dp(2.5f), rect.centerY() + dp(2.5f), chromePaint)
-                    "bullet.dashes" -> canvas.drawRect(rect.left + dp(1f), rect.centerY() - dp(1f), rect.right - dp(1f), rect.centerY() + dp(1f), chromePaint)
-                    else -> canvas.drawCircle(rect.centerX(), rect.centerY(), dp(2.2f), chromePaint)
+                when (bulletGlyphAt(marker.substringAfter('.', ""), indent)) {
+                    BulletGlyph.CIRCLE -> { chromePaint.style = Paint.Style.STROKE; chromePaint.strokeWidth = dp(1.5f); canvas.drawCircle(rect.centerX(), rect.centerY(), dp(3f), chromePaint) }
+                    BulletGlyph.SQUARE -> canvas.drawRect(rect.centerX() - dp(2.5f), rect.centerY() - dp(2.5f), rect.centerX() + dp(2.5f), rect.centerY() + dp(2.5f), chromePaint)
+                    BulletGlyph.DASH -> canvas.drawRect(rect.left + dp(1f), rect.centerY() - dp(1f), rect.right - dp(1f), rect.centerY() + dp(1f), chromePaint)
+                    BulletGlyph.DISC -> canvas.drawCircle(rect.centerX(), rect.centerY(), dp(2.2f), chromePaint)
                 }
             }
-            marker == "numbered" -> {
+            marker == "numbered" || marker.startsWith("numbered.") -> {
                 // iOS/desktop: ordinal is right-aligned in the marker slot, but
                 // shares the row's text baseline instead of being centered in the
                 // smaller checkbox-sized rect.
+                val label = numberedLabelAt(marker.substringAfter('.', ""), indent, ordinal) + "."
                 chromePaint.style = Paint.Style.FILL
                 chromePaint.typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
                 chromePaint.textSize = dp(12f)
                 chromePaint.color = accentColor
                 chromePaint.textAlign = Paint.Align.RIGHT
-                canvas.drawText("$ordinal.", rect.right, textBaseline, chromePaint)
+                canvas.drawText(label, rect.right, textBaseline, chromePaint)
                 chromePaint.textAlign = Paint.Align.LEFT
                 chromePaint.typeface = Typeface.DEFAULT
             }
         }
+    }
+
+    private enum class BulletGlyph { DISC, CIRCLE, SQUARE, DASH }
+
+    /// Mirrors `MarkerFamily::glyph_at` in shared/model/src/item.rs: a family is
+    /// a glyph SEQUENCE indexed by indent depth, cycling once nesting runs
+    /// deeper than the sequence. `discs`/`rings`/`squares`/`dashes` are
+    /// one-entry sequences (same glyph at every depth); the empty suffix
+    /// (Standard) and `alternating` are the ones that actually vary.
+    private fun bulletGlyphAt(suffix: String, depth: Int): BulletGlyph {
+        val sequence = when (suffix) {
+            "discs" -> arrayOf(BulletGlyph.DISC)
+            "rings" -> arrayOf(BulletGlyph.CIRCLE)
+            "squares" -> arrayOf(BulletGlyph.SQUARE)
+            "dashes" -> arrayOf(BulletGlyph.DASH)
+            "alternating" -> arrayOf(BulletGlyph.DISC, BulletGlyph.CIRCLE)
+            else -> arrayOf(BulletGlyph.DISC, BulletGlyph.CIRCLE, BulletGlyph.SQUARE)
+        }
+        return sequence[depth.coerceAtLeast(0) % sequence.size]
+    }
+
+    private enum class NumberGlyph { DECIMAL, LOWER_ALPHA, UPPER_ALPHA, LOWER_ROMAN, UPPER_ROMAN }
+
+    /// Mirrors `MarkerFamily::glyph_at` for numbered families: Standard cycles
+    /// 1./a./i., Outline cycles the classic I./A./1./a./i. sequence, and the
+    /// rest are fixed at every depth.
+    private fun numberedGlyphAt(suffix: String, depth: Int): NumberGlyph {
+        val sequence = when (suffix) {
+            "decimal" -> arrayOf(NumberGlyph.DECIMAL)
+            "alpha" -> arrayOf(NumberGlyph.LOWER_ALPHA)
+            "roman" -> arrayOf(NumberGlyph.LOWER_ROMAN)
+            "outline" -> arrayOf(NumberGlyph.UPPER_ROMAN, NumberGlyph.UPPER_ALPHA, NumberGlyph.DECIMAL, NumberGlyph.LOWER_ALPHA, NumberGlyph.LOWER_ROMAN)
+            else -> arrayOf(NumberGlyph.DECIMAL, NumberGlyph.LOWER_ALPHA, NumberGlyph.LOWER_ROMAN)
+        }
+        return sequence[depth.coerceAtLeast(0) % sequence.size]
+    }
+
+    private fun numberedLabelAt(suffix: String, depth: Int, ordinal: Int): String =
+        when (numberedGlyphAt(suffix, depth)) {
+            NumberGlyph.DECIMAL -> ordinal.toString()
+            NumberGlyph.LOWER_ALPHA -> alphabeticOrdinal(ordinal, upper = false)
+            NumberGlyph.UPPER_ALPHA -> alphabeticOrdinal(ordinal, upper = true)
+            NumberGlyph.LOWER_ROMAN -> romanOrdinal(ordinal, upper = false)
+            NumberGlyph.UPPER_ROMAN -> romanOrdinal(ordinal, upper = true)
+        }
+
+    /// 1 -> a, 26 -> z, 27 -> aa, spreadsheet-column style. Mirrors
+    /// `alphabetic_ordinal` in shared/model/src/item.rs exactly.
+    private fun alphabeticOrdinal(ordinal: Int, upper: Boolean): String {
+        if (ordinal <= 0) return "0"
+        val base = if (upper) 'A' else 'a'
+        var n = ordinal
+        val out = StringBuilder()
+        while (n > 0) {
+            val rem = (n - 1) % 26
+            out.append(base + rem)
+            n = (n - 1) / 26
+        }
+        return out.reverse().toString()
+    }
+
+    private val ROMAN_NUMERAL_TABLE = listOf(
+        1000 to "m", 900 to "cm", 500 to "d", 400 to "cd",
+        100 to "c", 90 to "xc", 50 to "l", 40 to "xl",
+        10 to "x", 9 to "ix", 5 to "v", 4 to "iv", 1 to "i"
+    )
+
+    /// Mirrors `roman_ordinal` in shared/model/src/item.rs: falls back to the
+    /// plain decimal past 3,999 rather than a wall of `m`s.
+    private fun romanOrdinal(ordinal: Int, upper: Boolean): String {
+        if (ordinal <= 0 || ordinal > 3_999) return ordinal.toString()
+        var n = ordinal
+        val out = StringBuilder()
+        for ((value, numeral) in ROMAN_NUMERAL_TABLE) {
+            while (n >= value) {
+                out.append(numeral)
+                n -= value
+            }
+        }
+        return if (upper) out.toString().uppercase() else out.toString()
     }
 
     internal fun drawAnnotationBar(canvas: Canvas, markerRect: RectF, top: Int, bottom: Int, connectsToPrevious: Boolean, connectsToNext: Boolean) {

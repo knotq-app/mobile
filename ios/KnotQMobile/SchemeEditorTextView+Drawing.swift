@@ -176,14 +176,14 @@ extension EditorTextView {
             return
         case .bullet:
             context.setFillColor(chrome.cgColor)
-            switch meta.markerFamily {
-            case "rings": context.setLineWidth(1.5); context.strokeEllipse(in: rect.insetBy(dx: 3.5, dy: 3.5))
-            case "squares": context.fill(CGRect(x: rect.midX - 2.5, y: rect.midY - 2.5, width: 5, height: 5))
-            case "dashes": context.fill(CGRect(x: rect.minX + 1, y: rect.midY - 1, width: rect.width - 2, height: 2))
-            default: context.fillEllipse(in: rect.insetBy(dx: 4.5, dy: 4.5))
+            switch bulletGlyph(family: meta.markerFamily, depth: meta.indent) {
+            case .circle: context.setLineWidth(1.5); context.strokeEllipse(in: rect.insetBy(dx: 3.5, dy: 3.5))
+            case .square: context.fill(CGRect(x: rect.midX - 2.5, y: rect.midY - 2.5, width: 5, height: 5))
+            case .dash: context.fill(CGRect(x: rect.minX + 1, y: rect.midY - 1, width: rect.width - 2, height: 2))
+            case .disc: context.fillEllipse(in: rect.insetBy(dx: 4.5, dy: 4.5))
             }
         case .numbered:
-            let label = "\(ordinal)." as NSString
+            let label = "\(numberLabel(numberGlyph(family: meta.markerFamily, depth: meta.indent), ordinal: ordinal))." as NSString
             let attrs: [NSAttributedString.Key: Any] = [
                 .font: UIFont.systemFont(ofSize: 12, weight: .medium),
                 .foregroundColor: chrome
@@ -207,6 +207,89 @@ extension EditorTextView {
                 check.stroke()
             }
         }
+    }
+
+    private enum BulletGlyph { case disc, circle, square, dash }
+
+    /// Mirrors `MarkerFamily::glyph_at` in shared/model/src/item.rs: a family
+    /// is a glyph SEQUENCE indexed by indent depth, cycling once nesting runs
+    /// deeper than the sequence. `discs`/`rings`/`squares`/`dashes` are
+    /// one-entry sequences (same glyph at every depth); "standard" and
+    /// "alternating" are the ones that actually vary.
+    private func bulletGlyph(family: String, depth: Int) -> BulletGlyph {
+        let sequence: [BulletGlyph]
+        switch family {
+        case "discs": sequence = [.disc]
+        case "rings": sequence = [.circle]
+        case "squares": sequence = [.square]
+        case "dashes": sequence = [.dash]
+        case "alternating": sequence = [.disc, .circle]
+        default: sequence = [.disc, .circle, .square]
+        }
+        return sequence[max(0, depth) % sequence.count]
+    }
+
+    private enum NumberGlyph { case decimal, lowerAlpha, upperAlpha, lowerRoman, upperRoman }
+
+    /// Mirrors `MarkerFamily::glyph_at` for numbered families: "standard"
+    /// cycles 1./a./i., "outline" cycles the classic I./A./1./a./i. sequence,
+    /// and the rest are fixed at every depth.
+    private func numberGlyph(family: String, depth: Int) -> NumberGlyph {
+        let sequence: [NumberGlyph]
+        switch family {
+        case "decimal": sequence = [.decimal]
+        case "alpha": sequence = [.lowerAlpha]
+        case "roman": sequence = [.lowerRoman]
+        case "outline": sequence = [.upperRoman, .upperAlpha, .decimal, .lowerAlpha, .lowerRoman]
+        default: sequence = [.decimal, .lowerAlpha, .lowerRoman]
+        }
+        return sequence[max(0, depth) % sequence.count]
+    }
+
+    private func numberLabel(_ glyph: NumberGlyph, ordinal: Int) -> String {
+        switch glyph {
+        case .decimal: return "\(ordinal)"
+        case .lowerAlpha: return alphabeticOrdinal(ordinal, upper: false)
+        case .upperAlpha: return alphabeticOrdinal(ordinal, upper: true)
+        case .lowerRoman: return romanOrdinal(ordinal, upper: false)
+        case .upperRoman: return romanOrdinal(ordinal, upper: true)
+        }
+    }
+
+    /// 1 -> a, 26 -> z, 27 -> aa, spreadsheet-column style. Mirrors
+    /// `alphabetic_ordinal` in shared/model/src/item.rs exactly.
+    private func alphabeticOrdinal(_ ordinal: Int, upper: Bool) -> String {
+        guard ordinal > 0 else { return "0" }
+        let base: UInt8 = upper ? 65 : 97 // 'A' / 'a'
+        var n = ordinal
+        var out: [UInt8] = []
+        while n > 0 {
+            let rem = (n - 1) % 26
+            out.append(base + UInt8(rem))
+            n = (n - 1) / 26
+        }
+        return String(decoding: out.reversed(), as: UTF8.self)
+    }
+
+    private static let romanNumeralTable: [(Int, String)] = [
+        (1000, "m"), (900, "cm"), (500, "d"), (400, "cd"),
+        (100, "c"), (90, "xc"), (50, "l"), (40, "xl"),
+        (10, "x"), (9, "ix"), (5, "v"), (4, "iv"), (1, "i")
+    ]
+
+    /// Mirrors `roman_ordinal` in shared/model/src/item.rs: falls back to the
+    /// plain decimal past 3,999 rather than a wall of `m`s.
+    private func romanOrdinal(_ ordinal: Int, upper: Bool) -> String {
+        guard ordinal > 0, ordinal <= 3_999 else { return "\(ordinal)" }
+        var n = ordinal
+        var out = ""
+        for (value, numeral) in Self.romanNumeralTable {
+            while n >= value {
+                out += numeral
+                n -= value
+            }
+        }
+        return upper ? out.uppercased() : out
     }
 
     func drawAnnotationBar(meta: LineMeta, firstFragment: CGRect, visualBounds: CGRect, rowExtraHeight: CGFloat, connectsToPrevious: Bool, connectsToNext: Bool, context: CGContext) {
