@@ -515,11 +515,12 @@ internal fun MainActivity.iconSquareImage(iconRes: Int, description: String, ico
         setOnClickListener { listener() }
     }
 
-// Chrome chip with a vector icon (replaces glyph-based `iconChip`).
+// Bare nav-bar icon (no chip background) — iOS toolbars tint the glyph itself
+// and rely on the tap target's whitespace, not a filled box, to read as a
+// button. The touch target stays the same size as the old chip.
 internal fun MainActivity.iconChipImage(iconRes: Int, description: String, tint: Int = theme.textPrimary, iconSize: Int = 18, listener: () -> Unit): View =
     FrameLayout(this).apply {
         contentDescription = description
-        background = rounded(theme.buttonBg, dp(5))
         addView(iconImage(iconRes, tint, description), FrameLayout.LayoutParams(dp(iconSize), dp(iconSize), Gravity.CENTER))
         isFocusable = true
         setOnClickListener { listener() }
@@ -552,6 +553,9 @@ internal fun MainActivity.homeFloatingActions(): View =
         addView(floatingAction(R.drawable.ic_knotq_check_square_24, L10n.t(this@homeFloatingActions, "mobile.nav.tab_daily")) {
             selectedTab = TAB_DAILY
             selectedSchemeId = null
+            // Land on today (the feed's last row, cursor active) instead of
+            // wherever the user last scrolled the calendar to.
+            selectedDate = LocalDate.now()
             ensureDaily()
         }, LinearLayout.LayoutParams(dp(ICON_FLOATING_WIDTH_DP), dp(ICON_FLOATING_WIDTH_DP)).apply {
             setMargins(0, 0, dp(10), 0)

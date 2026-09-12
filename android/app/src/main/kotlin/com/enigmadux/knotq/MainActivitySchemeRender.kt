@@ -127,6 +127,10 @@ internal fun searchPreviewText(raw: String): String =
         val schemeId = scheme.optString("id")
         val readOnly = scheme.optBoolean("is_read_only", false)
         val originalLines = documentLines(scheme)
+        // Captured before schemeTitleBlock() below, which consumes (nulls) this
+        // flag itself — a freshly-created scheme focuses its title instead of
+        // the body (iOS: autoFocusOnAppear vs autoFocusTitleOnAppear).
+        val wantsTitleFocus = !readOnly && pendingTitleFocusSchemeId == schemeId
         lateinit var editor: SchemeEditText
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -147,10 +151,9 @@ internal fun searchPreviewText(raw: String): String =
             // Insert-table lives on the format toolbar; no separate header chip.
             addView(FrameLayout(this@renderSchemeEditor).apply {
                 contentDescription = L10n.t(this@renderSchemeEditor, "mobile.scheme.color_swatch_label")
-                background = rounded(theme.buttonBg, dp(7))
                 addView(View(this@renderSchemeEditor).apply {
-                    background = rounded(schemeColor(scheme.optInt("color_index")), dp(4), theme.borderOverlay)
-                }, FrameLayout.LayoutParams(dp(16), dp(16), Gravity.CENTER))
+                    background = rounded(schemeColor(scheme.optInt("color_index")), dp(8), theme.borderOverlay)
+                }, FrameLayout.LayoutParams(dp(18), dp(18), Gravity.CENTER))
                 setOnClickListener { showColorDialog(schemeId) }
             }, LinearLayout.LayoutParams(dp(32), dp(28)))
             if (!scheme.optBoolean("is_daily_queue", false)) {
@@ -253,9 +256,15 @@ internal fun searchPreviewText(raw: String): String =
                     }
                     placeCursorAtDocumentEnd(editor)
                     // Plain scroll — fullScroll(FOCUS_DOWN) would transfer focus
-                    // to the editor, and its later blur-commit made the title
-                    // untappable.
+                    // to the editor as a SIDE EFFECT of scrolling, mid-layout,
+                    // and its later blur-commit made the title untappable. An
+                    // explicit, deliberate focus request below (after scroll
+                    // position is already settled) is safe — it doesn't fire at
+                    // all when the title wants focus instead (new scheme).
                     editorScroll.scrollTo(0, max(0, editorBody.bottom - editorScroll.height))
+                    if (!readOnly && !wantsTitleFocus) {
+                        focusEditorForTyping(editor)
+                    }
                     return true
                 }
             }

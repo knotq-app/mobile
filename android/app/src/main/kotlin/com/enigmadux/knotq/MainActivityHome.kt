@@ -151,11 +151,22 @@ import kotlin.math.roundToInt
         panel.addView(navSpecial(L10n.t(this, "menu.calendar"), theme.textPrimary, selectedTab == TAB_CALENDAR) {
             selectedTab = TAB_CALENDAR
             selectedSchemeId = null
+            // Mirrors the dock's Calendar-tab reset: land back on today instead
+            // of wherever the calendar was last left scrolled.
+            if (selectedDate != LocalDate.now()) {
+                selectedDate = LocalDate.now()
+                weekOffset = 0
+                refreshSnapshotAsync()
+            }
             render()
         })
         panel.addView(navSpecial(L10n.t(this, "menu.daily"), if (theme.isDark) rgb(0xb8c9e8) else rgb(0x5a7aad), selectedTab == TAB_DAILY) {
             selectedTab = TAB_DAILY
             selectedSchemeId = null
+            // Land on today (the feed's last row, cursor active) instead of
+            // wherever the user last scrolled the calendar to — mirrors the
+            // dock's Calendar-tab reset below.
+            selectedDate = LocalDate.now()
             ensureDaily()
         })
         panel.addView(divider(), LinearLayout.LayoutParams(-1, dp(1)).apply {
