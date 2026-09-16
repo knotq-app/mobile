@@ -121,13 +121,35 @@ internal fun MainActivity.refreshSubscriptionStatus() {
         // owns the bounded refresh/retry and this auxiliary read can be retried
         // later.
         val status = runCatching {
-            httpJson(
-                "${session.apiBase}/v1/auth/account/status",
-                "GET",
-                JSONObject(),
-                bearerToken = session.bearerToken,
-                timeoutMs = 5_000
-            )
+            try {
+                httpJson(
+                    "${session.apiBase}/v1/auth/account/status",
+                    "GET",
+                    JSONObject(),
+                    bearerToken = session.bearerToken,
+                    timeoutMs = 5_000
+                )
+            } catch (error: Throwable) {
+                // The backend binds supports_sync into the access token. A token
+                // minted before a purchase is therefore rejected with 401 after
+                // the account becomes entitled; rotate the refresh token once and
+                // retry so the subscription card cannot remain stuck on inactive.
+                if (!isAuthRejection(error)) throw error
+                when (val refreshed = refreshSyncSessionIfNeeded(session, force = true)) {
+                    is SyncRefreshResult.Ready -> {
+                        persistRotatedSyncSession(session, refreshed.session)
+                        httpJson(
+                            "${refreshed.session.apiBase}/v1/auth/account/status",
+                            "GET",
+                            JSONObject(),
+                            bearerToken = refreshed.session.bearerToken,
+                            timeoutMs = 5_000
+                        )
+                    }
+                    SyncRefreshResult.Deferred,
+                    SyncRefreshResult.SessionDead -> throw error
+                }
+            }
         }.getOrNull()
         runOnUiThread {
             syncStatusInProgress = false
@@ -205,6 +227,9 @@ internal fun MainActivity.reEnableSyncSubscription() {
             result.onSuccess { updated ->
                 installSyncSession(updated)
                 showError(L10n.t(this, "mobile.subscription.reenabled_title"), L10n.t(this, "web.account.status_resume_success"))
+                // The resume response updates the entitlement, while account/status
+                // supplies the lifecycle/provider fields rendered by Settings.
+                refreshAccountStatus()
             }.onFailure { error ->
                 showError(L10n.t(this, "mobile.account.error_update_title"), error.message)
             }
@@ -718,23 +743,34 @@ private fun MainActivity.launchSyncBillingFlow() {
 internal fun MainActivity.restoreGooglePlayPurchases() {
     if (!BuildConfig.ACCOUNTS_ENABLED) return
     if (syncSession == null || purchaseInProgress) return
-    ensureBillingClient { client ->
-        val params = QueryPurchasesParams.newBuilder()
-            .setProductType(BillingClient.ProductType.SUBS)
-            .build()
-        client.queryPurchasesAsync(params) { result, purchases ->
-            val active = purchases.firstOrNull { it.purchaseState == Purchase.PurchaseState.PURCHASED }
-            if (result.responseCode == BillingClient.BillingResponseCode.OK && active != null) {
-                purchaseInProgress = true
-                verifyGooglePlayPurchase(active)
-            } else {
-                runOnUiThread {
-                    if (!isUiActive()) return@runOnUiThread
-                    showError(L10n.t(this, "mobile.subscription.nothing_to_restore_title"), L10n.t(this, "mobile.subscription.nothing_to_restore_message"))
+
+    val delaysMs = longArrayOf(0L, 1_000L, 2_000L, 3_000L, 5_000L)
+    fun query(attempt: Int) {
+        if (attempt >= delaysMs.size || !isUiActive()) return
+        ensureBillingClient { client ->
+            val params = QueryPurchasesParams.newBuilder()
+                .setProductType(BillingClient.ProductType.SUBS)
+                .build()
+            client.queryPurchasesAsync(params) { result, purchases ->
+                val active = purchases.firstOrNull { it.purchaseState == Purchase.PurchaseState.PURCHASED }
+                if (result.responseCode == BillingClient.BillingResponseCode.OK && active != null) {
+                    purchaseInProgress = true
+                    verifyGooglePlayPurchase(active)
+                } else if (attempt + 1 < delaysMs.size) {
+                    // Play may publish the restored purchase asynchronously after
+                    // the restore request. Retry the store query before reporting
+                    // that there is nothing to restore.
+                    syncPollHandler.postDelayed({ query(attempt + 1) }, delaysMs[attempt + 1])
+                } else {
+                    runOnUiThread {
+                        if (!isUiActive()) return@runOnUiThread
+                        showError(L10n.t(this, "mobile.subscription.nothing_to_restore_title"), L10n.t(this, "mobile.subscription.nothing_to_restore_message"))
+                    }
                 }
             }
         }
     }
+    query(0)
 }
 
 // Send a completed Play purchase to the backend, which reads authoritative state
@@ -773,8 +809,39 @@ internal fun MainActivity.verifyGooglePlayPurchase(purchase: Purchase) {
                 }
             }.onFailure { error ->
                 requestSubscriptionRender()
+                // Play can report success before the provider notification or
+                // entitlement write is visible to our API. Keep checking briefly
+                // so a transiently stale status does not strand the UI as inactive.
+                retrySubscriptionStatusAfterPurchase()
                 showError(L10n.t(this, "mobile.subscription.error_verify_purchase_title"), error.message)
             }
         }
     }.start()
+}
+
+/**
+ * Retry the backend entitlement read after a purchase/restore verification race.
+ * The retries are bounded and stop immediately once the session is entitled.
+ */
+internal fun MainActivity.retrySubscriptionStatusAfterPurchase() {
+    if (!BuildConfig.ACCOUNTS_ENABLED) return
+    val delaysMs = longArrayOf(0L, 1_000L, 2_000L, 3_000L, 5_000L)
+
+    fun schedule(attempt: Int) {
+        if (attempt >= delaysMs.size) return
+        val retry = object : Runnable {
+            override fun run() {
+                if (!isUiActive() || syncSession == null || syncSession?.supportsSync == true) return
+                if (syncInProgress || syncStatusInProgress) {
+                    syncPollHandler.postDelayed(this, 500L)
+                    return
+                }
+                refreshSubscriptionStatus()
+                schedule(attempt + 1)
+            }
+        }
+        syncPollHandler.postDelayed(retry, delaysMs[attempt])
+    }
+
+    schedule(0)
 }

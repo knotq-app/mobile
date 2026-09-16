@@ -104,6 +104,10 @@
     <string name="common_weekday_short_thu">Thu</string>
     <string name="common_weekday_short_tue">Tue</string>
     <string name="common_weekday_short_wed">Wed</string>
+    <string name="community_prompt_body">KnotQ is built by an indie developer, and your opinion helps. I would greatly appreciate it if you could share any feedback or ideas in our Discord server.</string>
+    <string name="community_prompt_join">Join Discord</string>
+    <string name="community_prompt_later">Maybe later</string>
+    <string name="community_prompt_title">Help shape KnotQ</string>
     <string name="daily_carryover_from_date">roll over from {date}</string>
     <string name="daily_carryover_yesterday">roll over yesterday</string>
     <string name="editor_annotation_at">at {date}</string>
@@ -919,7 +923,7 @@
         <item quantity="other">%1$d years</item>
     </plurals>
     <string name="sync_disclosure_privacy_policy">Privacy Policy</string>
-    <string name="sync_disclosure_subscription_terms">{price} per {period}, billed to your Apple Account. Your subscription renews automatically unless cancelled at least 24 hours before the end of the current period. Manage or cancel anytime in Settings.</string>
+    <string name="sync_disclosure_subscription_terms">One month free, then {price} per {period}, billed to your Apple Account. Your subscription renews automatically unless cancelled at least 24 hours before the end of the current period. Manage or cancel anytime in Settings.</string>
     <string name="sync_disclosure_terms_of_use">Terms of Use</string>
     <string name="sync_error_account_status_unsupported">The sync API does not support account status yet.</string>
     <string name="sync_error_api_unreachable">Could not reach the sync API: {error}</string>
@@ -934,7 +938,7 @@
     <string name="sync_error_checkout_url_missing">The sync API did not return a checkout URL.</string>
     <string name="sync_error_confirm_account_failed">Could not confirm the account. Please try again.</string>
     <string name="sync_error_email_not_verified">Verify your email before subscribing — check your inbox for the link.</string>
-    <string name="sync_error_manage_in_app_store">Manage this App Store subscription from your Apple account subscriptions.</string>
+    <string name="sync_error_manage_in_app_store">Open Settings → Apple Account → Subscriptions to manage this App Store subscription.</string>
     <string name="sync_error_missing_refresh_token">sync response missing refresh token</string>
     <string name="sync_error_no_active_subscription_yet">No active subscription found yet. If you just paid, wait a moment and try again.</string>
     <string name="sync_error_no_active_web_subscription">There is no active web subscription to change.</string>

@@ -111,8 +111,14 @@ extension UIResponder {
 @MainActor
 final class EditorController: ObservableObject {
     weak var view: EditorTextView?
-    @Published var isDirty = false
-    @Published var isEmpty = true
+    // These are editor-internal bookkeeping flags. SwiftUI never renders from
+    // either value; publishing them made a document load (which can happen
+    // while a UIViewRepresentable is being updated) emit an unnecessary
+    // objectWillChange and trigger "Publishing changes from within view
+    // updates is not allowed". Keep them local to the controller instead.
+    var isDirty = false
+    var isEmpty = true
+    var onEmptyStateChange: ((Bool) -> Void)?
     // Fired on every keystroke/structural edit (see `markDirty`). The editor view
     // observes it to debounce a live flush of the edits into the core (so a phone
     // edit pushes within ~1 s like desktop, instead of only on blur). A plain
@@ -138,7 +144,7 @@ final class EditorController: ObservableObject {
         view?.loadItems(items, theme: theme, timeFormat: timeFormat, placeCursorAtEnd: placeCursorAtEnd)
         baselineItems = items
         isDirty = false
-        isEmpty = items.isEmpty || items.allSatisfy {
+        setEmpty(items.isEmpty || items.allSatisfy {
             $0.text.isEmpty
                 && $0.marker == "blank"
                 && $0.indent == 0
@@ -146,6 +152,14 @@ final class EditorController: ObservableObject {
                 && $0.end == nil
                 && $0.media.isEmpty
                 && $0.tables.isEmpty
+        }, notify: false)
+    }
+
+    func setEmpty(_ value: Bool, notify: Bool = true) {
+        guard isEmpty != value else { return }
+        isEmpty = value
+        if notify {
+            onEmptyStateChange?(value)
         }
     }
 
@@ -206,7 +220,7 @@ final class EditorController: ObservableObject {
 
     func appendTaskLine(theme: KnotQTheme) {
         view?.appendTaskLine(theme: theme)
-        isEmpty = false
+        setEmpty(false)
     }
 
     func currentLineItemID() -> String? {
@@ -216,7 +230,7 @@ final class EditorController: ObservableObject {
     func setCurrentMarker(_ marker: Marker, theme: KnotQTheme) {
         view?.setCurrentMarker(marker, theme: theme)
         if marker != .blank {
-            isEmpty = false
+            setEmpty(false)
         }
     }
 
@@ -231,12 +245,12 @@ final class EditorController: ObservableObject {
     func attachImageMedia(_ media: MobileItemMedia, theme: KnotQTheme) {
         view?.attachImageMedia(media, at: pendingImageLocation, theme: theme)
         pendingImageLocation = nil
-        isEmpty = false
+        setEmpty(false)
     }
 
     func insertTableBlock(itemID: String, theme: KnotQTheme) {
         view?.insertTableBlock(itemID: itemID, theme: theme)
-        isEmpty = false
+        setEmpty(false)
     }
 
     /// Activates the text view so the system shows the caret + keyboard.

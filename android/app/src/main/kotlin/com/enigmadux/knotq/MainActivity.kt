@@ -293,6 +293,11 @@ class MainActivity : Activity() {
     internal var dailyCarryoverContainer: FrameLayout? = null
     internal var dailyCarryoverContainerDate: String? = null
     internal var pendingTitleFocusSchemeId: String? = null
+    // Set right before switching to the Search tab so renderSearch() can focus
+    // and raise the keyboard on that first render only — otherwise the query
+    // field lands unfocused and the tap that opened Search doesn't feel like
+    // it did anything until a second tap on the field itself.
+    internal var pendingSearchFocus = false
     internal var lastRenderedTab: Int? = null
     // The first native snapshot can be large (calendar expansion + JSON
     // materialization). Keep the shell responsive while it is loaded off the
@@ -485,8 +490,18 @@ class MainActivity : Activity() {
     }
     // Subscription lifecycle is auxiliary UI state. Run it after the initial
     // CRDT sync instead of racing/serializing ahead of it on every onStart.
-    internal val syncStatusRunnable = Runnable {
-        if (isUiActive() && syncSession != null && !syncInProgress) refreshSubscriptionStatus()
+    internal val syncStatusRunnable: Runnable = object : Runnable {
+        override fun run() {
+            if (!isUiActive() || syncSession == null) return
+            if (syncInProgress || syncStatusInProgress) {
+                // A foreground sync can still be finishing when the user returns from
+                // Play Store. Retry after it releases the auth guard instead of
+                // silently dropping the entitlement refresh.
+                syncPollHandler.postDelayed(syncStatusRunnable, 500)
+            } else {
+                refreshSubscriptionStatus()
+            }
+        }
     }
     // True while the post-edit push is waiting out SYNC_EDIT_DEBOUNCE_MS, so a
     // burst of edits arms the timer once (leading-window) and onStop knows to
@@ -1010,7 +1025,15 @@ class MainActivity : Activity() {
         if (workspaceUiPublished && timeZoneChangedSinceLastResume()) {
             refreshSnapshotAsync()
         }
+        // Google Play / browser subscription changes happen outside this Activity.
+        // Re-read status when control returns so the visible Settings card does not
+        // wait for the next full Activity start or background sync cycle.
+        if (BuildConfig.ACCOUNTS_ENABLED && workspaceUiPublished && syncSession != null) {
+            syncPollHandler.removeCallbacks(syncStatusRunnable)
+            syncPollHandler.postDelayed(syncStatusRunnable, 500)
+        }
         maybeRequestStoreReview()
+        maybeShowCommunityPrompt()
     }
 
     internal fun timeZoneChangedSinceLastResume(): Boolean {
@@ -1190,6 +1213,27 @@ class MainActivity : Activity() {
                 manager.launchReviewFlow(this, request.result)
             }
         }
+    }
+
+    internal fun maybeShowCommunityPrompt() {
+        if (!isUiActive() || !workspaceUiPublished || onboardingActive) return
+        val prefs = getSharedPreferences("knotq", MODE_PRIVATE)
+        if (!prefs.getBoolean(ONBOARDING_PREF, false)) return
+        if (prefs.getBoolean(COMMUNITY_PROMPTED_PREF, false)) return
+
+        val now = System.currentTimeMillis()
+        val firstLaunchAt = reviewUsageStartAt(prefs, now)
+        if (now - firstLaunchAt < COMMUNITY_MIN_USAGE_MS) return
+
+        prefs.edit().putBoolean(COMMUNITY_PROMPTED_PREF, true).apply()
+        AlertDialog.Builder(this, alertDialogTheme())
+            .setTitle(L10n.t(this, "community.prompt.title"))
+            .setMessage(L10n.t(this, "community.prompt.body"))
+            .setNegativeButton(L10n.t(this, "community.prompt.later"), null)
+            .setPositiveButton(L10n.t(this, "community.prompt.join")) { _, _ ->
+                runCatching { startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(DISCORD_URL))) }
+            }
+            .show()
     }
 
     internal fun reviewUsageStartAt(prefs: android.content.SharedPreferences, now: Long): Long {
@@ -2999,16 +3043,21 @@ class MainActivity : Activity() {
             val rect = rectOverride ?: e.rect
             val isPill = e.isReminder || e.isAssignment
             val done = e.done
-            val fillAlpha = if (done) 115 else 255
+            // eventBg()/eventBorder() already bake in the intended translucency
+            // (matching iOS's bgModal/borderOverlay opacities); scale that down
+            // further for a done item instead of clobbering it with a flat
+            // alpha, which used to erase the baked-in opacity entirely and
+            // render both as solid, high-contrast fills.
+            val doneAlphaFactor = if (done) 0.45f else 1f
             val radius = if (isPill) 0f else dp(3).toFloat()
 
             fillPaint.color = eventBg()
-            fillPaint.alpha = fillAlpha
+            fillPaint.alpha = (Color.alpha(fillPaint.color) * doneAlphaFactor).roundToInt().coerceIn(0, 255)
             canvas.drawRoundRect(rect, radius, radius, fillPaint)
 
             if (isPill) {
                 pillLinePaint.color = eventBorder()
-                pillLinePaint.alpha = fillAlpha
+                pillLinePaint.alpha = (Color.alpha(pillLinePaint.color) * doneAlphaFactor).roundToInt().coerceIn(0, 255)
                 val sw = calendarPillStrokeWidth().toFloat()
                 if (e.isReminder) {
                     canvas.drawRect(rect.left, rect.top, rect.right, rect.top + sw, pillLinePaint)
@@ -3017,7 +3066,7 @@ class MainActivity : Activity() {
                 }
             } else {
                 borderPaint.color = eventBorder()
-                borderPaint.alpha = fillAlpha
+                borderPaint.alpha = (Color.alpha(borderPaint.color) * doneAlphaFactor).roundToInt().coerceIn(0, 255)
                 borderPaint.strokeWidth = calendarEventBorderWidth().toFloat()
                 val inset = borderPaint.strokeWidth / 2f
                 canvas.drawRoundRect(
@@ -3546,14 +3595,17 @@ class MainActivity : Activity() {
                     },
                     LinearLayout.LayoutParams(0, -1, 1f).apply { setMargins(dp(7), 0, dp(4), 0) }
                 )
-                if (isFolder) {
-                    addView(
-                        inlineIcon(R.drawable.ic_knotq_chevron_right_24, theme.textMuted, widthDp = 18, iconSize = 13).apply {
-                            rotation = if (expanded) 90f else 0f
-                        },
-                        LinearLayout.LayoutParams(dp(18), dp(18))
-                    )
-                }
+                // Folders get a disclosure chevron that rotates to show expand
+                // state; scheme leaves get the same static chevron as a plain
+                // "navigates in" affordance, matching iOS's list rows (which
+                // otherwise looked like inert text next to the Daily row that
+                // already had one).
+                addView(
+                    inlineIcon(R.drawable.ic_knotq_chevron_right_24, theme.textMuted, widthDp = 18, iconSize = 13).apply {
+                        if (isFolder) rotation = if (expanded) 90f else 0f
+                    },
+                    LinearLayout.LayoutParams(dp(18), dp(18))
+                )
                 setOnClickListener {
                     if (isFolder) {
                         if (!collapsedFolderIds.add(meta.id)) {

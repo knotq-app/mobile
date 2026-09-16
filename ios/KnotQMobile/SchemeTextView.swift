@@ -17,6 +17,7 @@ struct SchemeTextView: UIViewRepresentable {
     let onDate: () -> Void
     let onImageUpload: () -> Void
     let onInsertTable: () -> Void
+    let onEmptyStateChange: (Bool) -> Void
     /// Persists an in-place cell edit (cell hit + new first-line text).
     let onTableCellCommit: (EditorTableCellHit, String) -> Void
     /// Row/column structure ops from the cell editor's accessory bar.
@@ -40,6 +41,7 @@ struct SchemeTextView: UIViewRepresentable {
         coordinator.onDateRequested = onDate
         coordinator.onImageUploadRequested = onImageUpload
         coordinator.onInsertTableRequested = onInsertTable
+        controller.onEmptyStateChange = onEmptyStateChange
         coordinator.readOnly = readOnly
         view.onTableCellCommit = onTableCellCommit
         view.onTableInsertRow = onTableInsertRow
@@ -95,6 +97,7 @@ struct SchemeTextView: UIViewRepresentable {
         coordinator.onDateRequested = onDate
         coordinator.onImageUploadRequested = onImageUpload
         coordinator.onInsertTableRequested = onInsertTable
+        controller.onEmptyStateChange = onEmptyStateChange
         coordinator.readOnly = readOnly
         uiView.onTableCellCommit = onTableCellCommit
         uiView.onTableInsertRow = onTableInsertRow

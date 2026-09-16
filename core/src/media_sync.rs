@@ -5,6 +5,7 @@ use std::path::{Path, PathBuf};
 
 use anyhow::{anyhow, Context, Result};
 use chrono::{DateTime, Duration, Utc};
+use flate2::read::MultiGzDecoder;
 use knotq_model::{
     DocumentId, ImageAssetFormat, ImageInline, Item, ItemContent, NotificationDefaults, Workspace,
 };
@@ -572,17 +573,64 @@ fn read_bounded_json<T: serde::de::DeserializeOwned>(
     reader: impl Read,
     max_bytes: usize,
 ) -> Result<T> {
-    let mut reader = reader.take((max_bytes + 1) as u64);
-    let mut bytes = Vec::with_capacity(max_bytes.min(64 * 1024));
+    // A small JSON response can have a gzip representation larger than its
+    // decoded form. Keep a modest minimum wire cap so compression detection
+    // does not reject those responses, while the decoded payload remains
+    // subject to the caller's actual limit below.
+    let wire_limit = max_bytes.max(64 * 1024);
+    let mut reader = reader.take((wire_limit + 1) as u64);
+    let mut wire_bytes = Vec::with_capacity(max_bytes.min(64 * 1024));
     reader
-        .read_to_end(&mut bytes)
+        .read_to_end(&mut wire_bytes)
         .context("read bounded JSON response")?;
-    if bytes.len() > max_bytes {
+    let is_gzip = wire_bytes.starts_with(&[0x1f, 0x8b]);
+    if !is_gzip && wire_bytes.len() > max_bytes {
         return Err(anyhow!(
             "JSON response exceeds the {max_bytes} byte client limit"
         ));
     }
-    serde_json::from_slice(&bytes).context("decode bounded JSON response")
+    if is_gzip && wire_bytes.len() > wire_limit {
+        return Err(anyhow!(
+            "compressed JSON response exceeds the {wire_limit} byte client limit"
+        ));
+    }
+    let bytes = if is_gzip {
+        // Some iOS/Cloudflare paths preserve the gzip body but remove its
+        // Content-Encoding header. ureq therefore exposes compressed bytes to
+        // us even though its gzip feature is enabled. Detect that wire format
+        // defensively and apply the same decoded-size limit.
+        let decoder = MultiGzDecoder::new(wire_bytes.as_slice());
+        let mut decoded = Vec::with_capacity(max_bytes.min(64 * 1024));
+        decoder
+            .take((max_bytes + 1) as u64)
+            .read_to_end(&mut decoded)
+            .context("decompress gzip JSON response")?;
+        if decoded.len() > max_bytes {
+            return Err(anyhow!(
+                "JSON response exceeds the {max_bytes} byte client limit after gzip decompression"
+            ));
+        }
+        decoded
+    } else {
+        wire_bytes
+    };
+    serde_json::from_slice(&bytes).map_err(|error| {
+        // Keep the public error concise, but leave the concrete serde/base64
+        // reason in the native diagnostic log. This distinguishes a malformed
+        // response from a valid response containing an incompatible field
+        // without logging any workspace contents.
+        let prefix = bytes
+            .iter()
+            .take(8)
+            .map(|byte| format!("{byte:02x}"))
+            .collect::<String>();
+        eprintln!(
+            "knotq: sync JSON response decode failed ({} bytes, prefix={}): {error}",
+            bytes.len(),
+            prefix,
+        );
+        anyhow!("decode bounded JSON response: {error}")
+    })
 }
 
 pub(crate) fn normalize_sync_api_base(raw: &str) -> Result<String> {
@@ -647,6 +695,7 @@ mod sync_api_base_tests {
         mobile_workspace_media_assets, normalize_sync_api_base, read_bounded_json,
         MobileSyncHttpClient, MAX_SYNC_MEDIA_BYTES,
     };
+    use flate2::{write::GzEncoder, Compression};
     use knotq_model::{
         ImageAssetFormat, ImageInline, Item, Scheme, SyncDocumentKind, Table, Workspace,
     };
@@ -699,6 +748,18 @@ mod sync_api_base_tests {
         let error = read_bounded_json::<serde_json::Value>(Cursor::new(oversized), payload.len())
             .unwrap_err();
         assert!(error.to_string().contains("exceeds"));
+    }
+
+    #[test]
+    fn bounded_json_reader_accepts_gzip_without_content_encoding_header() {
+        let payload = br#"{"ok":true}"#;
+        let mut encoder = GzEncoder::new(Vec::new(), Compression::default());
+        std::io::Write::write_all(&mut encoder, payload).unwrap();
+        let compressed = encoder.finish().unwrap();
+
+        let parsed: serde_json::Value =
+            read_bounded_json(Cursor::new(compressed), payload.len()).unwrap();
+        assert_eq!(parsed["ok"], true);
     }
 
     #[test]

@@ -154,6 +154,13 @@ struct SettingsForm: View {
         .toolbarBackground(.visible, for: .navigationBar)
         .toolbarBackground(theme.bgApp, for: .navigationBar)
         .tint(theme.accent)
+        // Pulling down on Settings is an explicit, low-friction way to pick up
+        // a purchase or subscription change made on another device. This reads
+        // both the effective sync entitlement and the subscription metadata used
+        // by the Sync card.
+        .refreshable {
+            await model.refreshSubscriptionStatus()
+        }
         .safeAreaInset(edge: .bottom) {
             Color.clear.frame(height: 96)
         }

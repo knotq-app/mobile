@@ -232,7 +232,7 @@ internal fun MainActivity.settingsSection(value: String): TextView = text(value,
 internal fun MainActivity.settingsGroup(vararg rows: View): View =
     LinearLayout(this).apply {
         orientation = LinearLayout.VERTICAL
-        background = rounded(if (theme.isDark) theme.bgToolbar else theme.bgModal, dp(10), theme.borderOverlay)
+        background = rounded(if (theme.isDark) theme.bgToolbar else theme.bgModal, dp(16), theme.borderOverlay)
         setPadding(dp(4), dp(3), dp(4), dp(3))
         rows.forEachIndexed { index, row ->
             if (index > 0) {
@@ -244,12 +244,20 @@ internal fun MainActivity.settingsGroup(vararg rows: View): View =
         }
     }
 
-// A tappable settings row showing an optional right-aligned value and a chevron.
-internal fun MainActivity.settingsLinkRow(label: String, value: String? = null, onClick: () -> Unit): View =
+// A tappable settings row showing an optional leading icon, right-aligned
+// value, and a chevron. The leading icon mirrors iOS's Label(_, systemImage:)
+// rows (calendar.badge.clock, archivebox, ...) instead of leaving the row as
+// bare text next to a chevron.
+internal fun MainActivity.settingsLinkRow(label: String, value: String? = null, icon: Int? = null, onClick: () -> Unit): View =
     LinearLayout(this).apply {
         orientation = LinearLayout.HORIZONTAL
         gravity = Gravity.CENTER_VERTICAL
         setPadding(dp(8), 0, dp(4), 0)
+        if (icon != null) {
+            addView(iconImage(icon, theme.textDim), LinearLayout.LayoutParams(dp(20), dp(20)).apply {
+                marginEnd = dp(10)
+            })
+        }
         addView(text(label, theme.textPrimary, 14f, false), LinearLayout.LayoutParams(0, dp(44), 1f))
         if (!value.isNullOrEmpty()) {
             addView(text(value, theme.textMuted, 13f, false).apply {
@@ -773,11 +781,16 @@ internal fun MainActivity.schemeColor(index: Int): Int {
 internal fun MainActivity.editorChromeColor(): Int =
     if (theme.isDark) rgb(0xb8c9e8) else rgb(0x536a8f)
 
+// Mirrors iOS DayTimelineEventBlockView: the card fill is the theme's modal
+// surface (not a hardcoded grey), and the border is the same low-opacity
+// overlay every other card in the app uses. Previously this was a near-opaque
+// charcoal/white outline, which read as a hard debug-rectangle border instead
+// of the soft hairline iOS draws.
 internal fun MainActivity.eventBg(): Int =
-    if (theme.isDark) adjustAlpha(rgb(0x333333), 0.62f) else adjustAlpha(rgb(0xe6e8ec), 0.62f)
+    adjustAlpha(theme.bgModal, if (theme.isDark) 0.94f else 0.82f)
 
 internal fun MainActivity.eventBorder(): Int =
-    if (theme.isDark) adjustAlpha(Color.WHITE, 0.84f) else adjustAlpha(rgb(0x24272d), 0.80f)
+    theme.borderOverlay
 
 internal fun MainActivity.calendarPillStrokeWidth(): Int =
     max(1, (1.5f * resources.displayMetrics.density).roundToInt())

@@ -45,6 +45,9 @@ jobs:
 
       - uses: dtolnay/rust-toolchain@stable
 
+      - name: Install Linux system dependencies
+        uses: ./app/.github/actions/linux-deps
+
       - uses: Swatinem/rust-cache@v2
         continue-on-error: true
         with:
@@ -88,6 +91,9 @@ jobs:
 
       - uses: dtolnay/rust-toolchain@stable
 
+      - name: Install Linux system dependencies
+        uses: ./app/.github/actions/linux-deps
+
       - uses: Swatinem/rust-cache@v2
         continue-on-error: true
         with:
@@ -118,6 +124,9 @@ jobs:
           path: app/mobile
 
       - uses: dtolnay/rust-toolchain@stable
+
+      - name: Install Linux system dependencies
+        uses: ./app/.github/actions/linux-deps
 
       - uses: Swatinem/rust-cache@v2
         continue-on-error: true
@@ -223,7 +232,7 @@ jobs:
           # BSD awk differs across hosted macOS images for escaped grouping
           # parentheses. Parse the simulator line with portable grep/sed instead
           # so a toolchain update cannot leave the destination name empty.
-          simulator_name="$(xcrun simctl list devices available | grep -m1 'iPhone' | sed -E 's/^[[:space:]]*([^()]*) \\(.*/\\1/' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')"
+          simulator_name="$(xcrun simctl list devices available | grep -m1 'iPhone' | sed -E 's/^[[:space:]]*([^()]*) \(.*/\1/' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')"
           test -n "$simulator_name"
           echo "name=$simulator_name" >> "$GITHUB_OUTPUT"
 
@@ -262,6 +271,11 @@ jobs:
           targets: aarch64-linux-android,armv7-linux-androideabi,i686-linux-android,x86_64-linux-android
 
       - uses: android-actions/setup-android@v3
+        with:
+          # The action's default `tools` package was removed from current
+          # Android SDK repositories; platform-tools is installed below with
+          # the API/NDK versions this build actually uses.
+          packages: platform-tools
 
       - name: Install Android build dependencies
         run: sdkmanager "platform-tools" "platforms;android-36" "build-tools;35.0.0" "ndk;28.2.13676358"

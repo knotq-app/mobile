@@ -144,6 +144,8 @@ extension AppModel {
             errorMessage = L10n.t("sync.error.api_url_https_required")
             return
         }
+        syncSessionRefreshTask?.cancel()
+        syncSessionRefreshTask = nil
         syncSessionGeneration.advance()
         let session = LocalSyncSession(
             apiBase: apiBase,
@@ -174,6 +176,8 @@ extension AppModel {
         resendCooldownTask = nil
         resendVerificationCooldown = 0
         resendVerificationInProgress = false
+        syncSessionRefreshTask?.cancel()
+        syncSessionRefreshTask = nil
         syncPollTask?.cancel()
         syncPollTask = nil
         stopWsSync()
@@ -184,22 +188,35 @@ extension AppModel {
         UserDefaults.standard.removeObject(forKey: syncSessionKey)
     }
 
-    /// Open Apple's Manage Subscriptions sheet. An auto-renewable subscription
-    /// bought through the App Store can only be cancelled there — neither the app
-    /// nor our backend is allowed to cancel it — so this is where an iOS user goes.
+    /// Open Apple's Manage Subscriptions sheet. If the system sheet cannot be
+    /// presented, fall back to Apple's subscriptions URL and finally explain the
+    /// Settings path so the user always has a way to manage the subscription.
     func openManageAppleSubscription() async {
         let scene = UIApplication.shared.connectedScenes
             .compactMap { $0 as? UIWindowScene }
             .first { $0.activationState == .foregroundActive }
             ?? UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first
         guard let scene else {
-            errorMessage = "Open Settings → Apple Account → Subscriptions to manage your subscription."
+            if !(await openAppleSubscriptionsURL()) {
+                errorMessage = L10n.t("sync.error.manage_in_app_store")
+            }
             return
         }
         do {
             try await AppStore.showManageSubscriptions(in: scene)
         } catch {
-            errorMessage = error.localizedDescription
+            if !(await openAppleSubscriptionsURL()) {
+                errorMessage = L10n.t("sync.error.manage_in_app_store")
+            }
+        }
+    }
+
+    private func openAppleSubscriptionsURL() async -> Bool {
+        guard let url = URL(string: "https://apps.apple.com/account/subscriptions") else { return false }
+        return await withCheckedContinuation { (continuation: CheckedContinuation<Bool, Never>) in
+            UIApplication.shared.open(url, options: [:]) { success in
+                continuation.resume(returning: success)
+            }
         }
     }
 
@@ -235,6 +252,9 @@ extension AppModel {
                 // sheet, which is where the cancel actually happens on iOS.
                 if code == "cancel_in_app_store" {
                     await openManageAppleSubscription()
+                    // The user may have cancelled in Apple's sheet; re-read the
+                    // authoritative lifecycle before returning to Settings.
+                    await refreshSubscriptionStatus()
                     return
                 }
                 throw SyncAuthError.message(Self.accountActionErrorMessage(code))
@@ -341,11 +361,13 @@ extension AppModel {
     func reEnableSyncSubscription() async {
         let provider = (subscriptionProvider ?? "").lowercased()
         if provider == "google" {
-            openManagePlaySubscription()
+            await openManagePlaySubscription()
+            await refreshSubscriptionStatus()
             return
         }
         if provider != "web" {
             await openManageAppleSubscription()
+            await refreshSubscriptionStatus()
             return
         }
         guard syncSession != nil, !syncInProgress else { return }
@@ -372,10 +394,12 @@ extension AppModel {
                 let code = body?["code"] as? String
                 if code == "resume_in_app_store" {
                     await openManageAppleSubscription()
+                    await refreshSubscriptionStatus()
                     return
                 }
                 if code == "resume_in_play_store" {
-                    openManagePlaySubscription()
+                    await openManagePlaySubscription()
+                    await refreshSubscriptionStatus()
                     return
                 }
                 throw SyncAuthError.message(Self.accountActionErrorMessage(code))
@@ -391,14 +415,18 @@ extension AppModel {
 
     /// Open Google Play's manage-subscriptions page (for the rare case an account's
     /// sync subscription is a Play one being managed from an iOS device).
-    func openManagePlaySubscription() {
+    func openManagePlaySubscription() async {
         guard let url = URL(string: "https://play.google.com/store/account/subscriptions") else { return }
-        UIApplication.shared.open(url)
+        await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+            UIApplication.shared.open(url, options: [:]) { _ in
+                continuation.resume()
+            }
+        }
     }
 
     /// Read the authoritative subscription lifecycle from the backend so Settings can
     /// reflect a cancelled-but-active subscription and offer to re-enable it.
-    func refreshAccountStatus() async {
+    func refreshAccountStatus(allowAuthRefresh: Bool = true) async {
         guard let session = syncSession,
               let url = URL(string: "\(session.apiBase)/v1/auth/account/status") else {
             subscriptionCancelled = false
@@ -417,6 +445,18 @@ extension AppModel {
             request.setValue("Bearer \(session.bearerToken)", forHTTPHeaderField: "Authorization")
             let (data, http) = try await MobileHTTPResponseLimits.data(for: request)
             guard (200..<300).contains(http.statusCode) else {
+                // Entitlement changes invalidate the supports_sync claim embedded
+                // in the access token. In particular, a token minted before an
+                // Apple purchase has supportsSync=false, while the account now
+                // has a paid grant; the backend correctly answers 401 until the
+                // long-lived refresh token mints a token with the new claim.
+                // Retry once with that rotated session so the Settings card does
+                // not remain stuck on the old cached entitlement.
+                if http.statusCode == 401, allowAuthRefresh {
+                    if await refreshSyncSessionIfNeeded(force: true) == .ready {
+                        await refreshAccountStatus(allowAuthRefresh: false)
+                    }
+                }
                 return
             }
             let status = try JSONDecoder().decode(AccountStatusPayload.self, from: data)
@@ -528,8 +568,23 @@ extension AppModel {
     func loadSyncProducts() async {
         do {
             let products = try await Product.products(for: Self.syncProductIDs)
-            syncProducts = products.sorted { $0.price < $1.price }
+            let sortedProducts = products.sorted { $0.price < $1.price }
+            syncProducts = sortedProducts
+
+            // Eligibility belongs to the current App Store account, not to the
+            // KnotQ account. Only advertise the trial when StoreKit reports both
+            // an offer on the product and eligibility for this purchaser.
+            var eligibility: [String: Bool] = [:]
+            for product in sortedProducts {
+                guard let subscription = product.subscription else { continue }
+                let hasIntroductoryOffer = subscription.introductoryOffer != nil
+                let isEligible = await subscription.isEligibleForIntroOffer
+                eligibility[product.id] = hasIntroductoryOffer && isEligible
+            }
+            syncIntroOfferEligible = eligibility
         } catch {
+            syncProducts = []
+            syncIntroOfferEligible = [:]
             errorMessage = error.localizedDescription
         }
     }
@@ -565,6 +620,13 @@ extension AppModel {
                 // the signed transaction the server re-verifies); falls back to the
                 // notification-driven refresh on any failure.
                 await verifyApplePurchase(jws: verification.jwsRepresentation)
+                // Always perform one final authoritative read after the purchase flow
+                // completes. The verification response updates the local sync session,
+                // while account/status supplies the provider and cancellation metadata
+                // that drives the visible Settings card. Keeping this explicit here
+                // ensures a successful tap cannot leave the UI showing the pre-purchase
+                // state even if StoreKit's transaction listener ran concurrently.
+                await refreshSubscriptionStatusUntilEntitled()
             case .userCancelled:
                 break
             case .pending:
@@ -589,15 +651,28 @@ extension AppModel {
             errorMessage = error.localizedDescription
             return
         }
-        // Verify any current subscription entitlement with the backend for an
-        // immediate grant; fall back to the notification-driven refresh otherwise.
-        for await entitlement in StoreKit.Transaction.currentEntitlements {
-            if case .verified(let transaction) = entitlement, transaction.productType == .autoRenewable {
-                await verifyApplePurchase(jws: entitlement.jwsRepresentation)
-                return
+        // StoreKit can take a moment to publish the restored transaction after
+        // AppStore.sync() returns. Re-query it over the same bounded propagation
+        // window before falling back to the backend status path.
+        let delays: [UInt64] = [0, 1, 2, 3, 5]
+        for (index, delay) in delays.enumerated() {
+            if delay > 0 {
+                try? await Task.sleep(nanoseconds: delay * 1_000_000_000)
             }
+            for await entitlement in StoreKit.Transaction.currentEntitlements {
+                if case .verified(let transaction) = entitlement, transaction.productType == .autoRenewable {
+                    await verifyApplePurchase(jws: entitlement.jwsRepresentation)
+                    await refreshSubscriptionStatusUntilEntitled()
+                    return
+                }
+            }
+            if syncSession?.supportsSync == true || index == delays.count - 1 { break }
         }
-        await refreshEntitlement()
+        // StoreKit may complete restore without yielding a current entitlement
+        // immediately. Refresh the session once, then keep checking account/status
+        // for the same propagation window instead of silently stopping here.
+        _ = await refreshEntitlement()
+        await refreshSubscriptionStatusUntilEntitled()
     }
 
     func handle(transactionResult: VerificationResult<StoreKit.Transaction>) async {
@@ -607,6 +682,7 @@ extension AppModel {
         // App Store Server Notifications to grant the backend entitlement.
         if transaction.productType == .autoRenewable {
             await verifyApplePurchase(jws: transactionResult.jwsRepresentation)
+            await refreshSubscriptionStatusUntilEntitled()
         } else {
             await refreshEntitlement()
         }
@@ -642,12 +718,16 @@ extension AppModel {
     /// syncInProgress guard with the refresh path: the verify response rotates the
     /// session (a fresh refresh token), so it must not race the poll loop.
     func verifyApplePurchase(jws: String) async {
-        guard !syncInProgress,
-              let session = syncSession,
-              let url = URL(string: "\(session.apiBase)/v1/billing/apple/verify") else {
-            await refreshEntitlement()
+        guard syncSession != nil else { return }
+        // The transaction listener and the purchase button can observe the same
+        // StoreKit transaction. Wait for a concurrent session rotation to finish
+        // rather than treating the purchase as already handled and returning.
+        guard await waitForSyncAuthToFinish() else {
+            await refreshSubscriptionStatusUntilEntitled()
             return
         }
+        guard let session = syncSession,
+              let url = URL(string: "\(session.apiBase)/v1/billing/apple/verify") else { return }
         syncInProgress = true
         defer { syncInProgress = false }
         do {
@@ -658,14 +738,50 @@ extension AppModel {
             request.httpBody = try JSONSerialization.data(withJSONObject: ["signed_transaction": jws])
             let (data, http) = try await MobileHTTPResponseLimits.data(for: request)
             guard (200..<300).contains(http.statusCode) else {
+                // The entitlement may still arrive through Apple's notification
+                // path. Show anything already recorded without waiting for relaunch.
+                await refreshAccountStatus()
                 return
             }
             let payload = try JSONDecoder().decode(SyncLoginResponse.self, from: data)
             installRefreshedSession(payload, from: session)
+            // The verify response updates the entitlement bit; account status owns
+            // provider/cancellation metadata used by the subscription card.
+            await refreshAccountStatus()
         } catch {
             // Fall back to the notification-driven path; the grant still arrives on
-            // the next refresh once Apple's server notification lands.
+            // the next refresh once Apple's server notification lands. Still attempt
+            // the status read so an already-applied webhook is visible immediately.
+            await refreshAccountStatus()
         }
+    }
+
+    /// StoreKit can finish before Apple's notification or the backend's billing
+    /// write is visible to account/status. Retry for a short bounded window with
+    /// increasing delays, stopping as soon as the local session becomes entitled.
+    private func refreshSubscriptionStatusUntilEntitled() async {
+        let delays: [UInt64] = [0, 1, 2, 3, 5]
+        for (index, delay) in delays.enumerated() {
+            if delay > 0 {
+                try? await Task.sleep(nanoseconds: delay * 1_000_000_000)
+            }
+            guard !Task.isCancelled, syncSession != nil else { return }
+            await refreshSubscriptionStatus()
+            if syncSession?.supportsSync == true || index == delays.count - 1 { return }
+        }
+    }
+
+    /// Wait briefly for another sync-auth operation to finish rotating the
+    /// single-use refresh token before verifying a purchase with the current
+    /// bearer/session. This avoids a race between StoreKit's listener and the
+    /// purchase button's own verification call.
+    private func waitForSyncAuthToFinish() async -> Bool {
+        for _ in 0..<50 {
+            guard !Task.isCancelled else { return false }
+            if !syncInProgress { return true }
+            try? await Task.sleep(nanoseconds: 100_000_000)
+        }
+        return !syncInProgress
     }
 
     /// Apply a refreshed/verified session payload: persist it, reschedule background

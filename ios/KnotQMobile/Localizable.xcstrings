@@ -18193,6 +18193,50 @@
         }
       }
     },
+    "community.prompt.body" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "KnotQ is built by an indie developer, and your opinion helps. I would greatly appreciate it if you could share any feedback or ideas in our Discord server."
+          }
+        }
+      }
+    },
+    "community.prompt.join" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Join Discord"
+          }
+        }
+      }
+    },
+    "community.prompt.later" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Maybe later"
+          }
+        }
+      }
+    },
+    "community.prompt.title" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Help shape KnotQ"
+          }
+        }
+      }
+    },
     "daily.carryover.from_date" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -160133,7 +160177,204 @@
         }
       }
     },
-    "sync.disclosure.subscription_terms" : {
+    "sync.disclosure.intro_month" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "شهر واحد مجانًا، ثم"
+          }
+        },
+        "cs" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "První měsíc zdarma, poté"
+          }
+        },
+        "da" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "En måned gratis, derefter"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Einen Monat kostenlos, danach"
+          }
+        },
+        "el" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ένας μήνας δωρεάν και στη συνέχεια"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "One month free, then"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Un mes gratis, luego"
+          }
+        },
+        "fi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Yksi kuukausi ilmaiseksi, sitten"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Un mois gratuit, puis"
+          }
+        },
+        "he" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "חודש אחד בחינם, ואז"
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "एक महीना मुफ़्त, फिर"
+          }
+        },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Egy hónap ingyenes, ezután"
+          }
+        },
+        "id" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Satu bulan gratis, lalu"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Un mese gratuito, poi"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "1か月無料、その後"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "1개월 무료, 이후"
+          }
+        },
+        "ms" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Satu bulan percuma, kemudian"
+          }
+        },
+        "nb" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Én måned gratis, deretter"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Eén maand gratis, daarna"
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Jeden miesiąc za darmo, potem"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Um mês grátis, depois"
+          }
+        },
+        "pt-PT" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Um mês grátis, depois"
+          }
+        },
+        "ro" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "O lună gratuit, apoi"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Один месяц бесплатно, затем"
+          }
+        },
+        "sk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Jeden mesiac zdarma, potom"
+          }
+        },
+        "sv" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "En månad gratis, sedan"
+          }
+        },
+        "th" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ฟรีหนึ่งเดือน จากนั้น"
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Bir ay ücretsiz, ardından"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Один місяць безкоштовно, потім"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Miễn phí một tháng, sau đó"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "首月免费，之后"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "免費一個月，之後"
+          }
+        }
+      }
+    },
+    "sync.disclosure.subscription_terms_no_intro" : {
       "extractionState" : "manual",
       "localizations" : {
         "ar" : {
@@ -160170,6 +160411,203 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "{price} per {period}, billed to your Apple Account. Your subscription renews automatically unless cancelled at least 24 hours before the end of the current period. Manage or cancel anytime in Settings."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "{price} por {period}, facturado a tu cuenta de Apple. Tu suscripción se renueva automáticamente a menos que la canceles al menos 24 horas antes de que termine el período actual. Gestiona o cancela en cualquier momento en Configuración."
+          }
+        },
+        "fi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "{price} per {period}, laskutetaan Apple-tilille. Tilaus uusiutuu automaattisesti, ellet peruuta sitä vähintään 24 tuntia ennen nykyisen jakson päättymistä. Hallinnoi tai peruuta milloin tahansa Asetuksissa."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "{price} par {period}, débité sur votre compte Apple. Votre abonnement se renouvelle automatiquement sauf s'il est annulé au moins 24 heures avant la fin de la période actuelle. Gérez ou annulez à tout moment dans les Paramètres."
+          }
+        },
+        "he" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "{price} לכל {period}, חיוב לחשבון Apple שלך. המנוי שלך מתחדש באופן אוטומטי אלא אם בוטל לפחות 24 שעות לפני סיום התקופה הנוכחית. ניהול או ביטול בכל עת בהגדרות."
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "{price} प्रति {period}, आपके Apple खाते में बिल किया गया। आपकी सदस्यता स्वचालित रूप से नवीकृत होती है जब तक कि वर्तमान अवधि के अंत से कम से कम 24 घंटे पहले रद्द न कर दी जाए। किसी भी समय सेटिंग्स में प्रबंधित या रद्द करें।"
+          }
+        },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "{price} havonta {period}, az Apple-fiókhoz számlázva. Az előfizetés automatikusan megújul, ha nem mondja le legalább 24 órával az aktuális időszak vége előtt. A Beállítások között bármikor kezelhet vagy lemondhat."
+          }
+        },
+        "id" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "{price} per {period}, ditagihkan ke Akun Apple Anda. Langganan Anda diperpanjang secara otomatis kecuali dibatalkan setidaknya 24 jam sebelum akhir periode saat ini. Kelola atau batalkan kapan saja di Pengaturan."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "{price} al {period}, addebitato sul tuo account Apple. La tua sottoscrizione si rinnova automaticamente a meno che tu non la annulli almeno 24 ore prima della fine del periodo attuale. Gestisci o annulla in qualsiasi momento nelle Impostazioni."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "{price} / {period}。Apple Accountに請求されます。現在の期間終了の24時間前までにキャンセルしない限り、サブスクリプションは自動的に更新されます。設定でいつでも管理またはキャンセルできます。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "{price}, {period}마다 Apple 계정으로 청구됩니다. 현재 기간이 끝나기 최소 24시간 전에 취소하지 않으면 구독이 자동으로 갱신됩니다. 설정에서 언제든지 관리하거나 취소할 수 있습니다."
+          }
+        },
+        "ms" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "{price} setiap {period}, dikenakan ke Akaun Apple anda. Langganan anda diperbaharui secara automatik melainkan dibatalkan sekurang-kurangnya 24 jam sebelum akhir tempoh semasa. Urus atau batalkan bila-bila masa dalam Tetapan."
+          }
+        },
+        "nb" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "{price} per {period}, fakturert til Apple Account-en din. Abonnementet fornyes automatisk med mindre det avbestilles minst 24 timer før slutten av den nåværende perioden. Administrer eller avbestill når som helst i Innstillinger."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "{price} per {period}, gefactureerd op je Apple Account. Je abonnement wordt automatisch vernieuwd tenzij je dit ten minste 24 uur voor het einde van de huidige periode annuleert. Je kunt het op elk moment beheren of annuleren in Instellingen."
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "{price} za {period}, naliczane na Twoje konto Apple. Twoja subskrypcja odnawia się automatycznie, chyba że anulujesz ją co najmniej 24 godziny przed końcem bieżącego okresu. Możesz zarządzać lub anulować subskrypcję w dowolnym momencie w Ustawieniach."
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "{price} por {period}, cobrado na sua Conta Apple. Sua assinatura se renova automaticamente, a menos que seja cancelada no mínimo 24 horas antes do final do período atual. Gerencie ou cancele a qualquer momento nas Configurações."
+          }
+        },
+        "pt-PT" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "{price} por {period}, cobrado na sua Conta Apple. A sua subscrição renova-se automaticamente, a menos que seja cancelada pelo menos 24 horas antes do fim do período atual. Gerencie ou cancele a qualquer momento em Definições."
+          }
+        },
+        "ro" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "{price} per {period}, facturat(ă) pe contul dvs. Apple. Abonamentul dvs. se reînnoiește automat cu excepția cazului în care este anulat cu cel puțin 24 de ore înainte de sfârșitul perioadei curente. Gestionați sau anulați oricând în Setări."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "{price} за {period}, выставлено на ваш счет Apple. Ваша подписка продлевается автоматически, если не отменена не менее чем за 24 часа до конца текущего периода. Управляйте или отмените в любое время в Параметрах."
+          }
+        },
+        "sk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "{price} za {period}, účtované na váš Apple Account. Vaše predplatné sa obnovuje automaticky, pokiaľ ho nezrušíte aspoň 24 hodín pred koncom aktuálneho obdobia. Spravovať alebo zrušiť kedykoľvek v Nastaveniach."
+          }
+        },
+        "sv" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "{price} per {period}, debiteras till ditt Apple-konto. Din prenumeration förnyas automatiskt om den inte avbryts minst 24 timmar innan den aktuella perioden slutar. Hantera eller avbryt när som helst i Inställningar."
+          }
+        },
+        "th" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "สมัครสมาชิกราคา {price} ต่อ {period} จะถูกเรียกเก็บไปยังบัญชี Apple ของคุณ การสมัครสมาชิกของคุณจะต่ออายุโดยอัตโนมัติเว้นแต่ยกเลิกอย่างน้อย 24 ชั่วโมงก่อนสิ้นสุดช่วงเวลาปัจจุบัน จัดการหรือยกเลิกได้ตลอดเวลาในการตั้งค่า"
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "{price}/{period} başına, Apple Hesabınıza faturalandırılır. Aboneliğiniz geçerli dönemin bitiminden en az 24 saat önce iptal edilmediği sürece otomatik olarak yenilenir. Ayarlardan istediğiniz zaman yönetin veya iptal edin."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "{price} на {period}, списано з облікового запису Apple. Ваша підписка автоматично поновлюється, якщо не скасована принаймні за 24 години до закінчення поточного періоду. Керуйте або скасуйте у будь-який час у Налаштуваннях."
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "{price} mỗi {period}, tính phí vào tài khoản Apple của bạn. Đăng ký sẽ tự động gia hạn trừ khi bạn hủy ít nhất 24 giờ trước khi kết thúc khoảng thời gian hiện tại. Quản lý hoặc hủy bất kỳ lúc nào trong Cài đặt."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "每 {period} {price}，计入您的 Apple 账户。您的订阅将自动续订，除非您在当前期限结束前至少 24 小时取消。可随时在设置中管理或取消。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "{price}/個{period}，帳款將計入您的 Apple 帳戶。除非在目前週期結束前至少 24 小時取消，否則訂閱會自動續約。可隨時在「設定」中管理或取消訂閱。"
+          }
+        }
+      }
+    },
+    "sync.disclosure.subscription_terms" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "{price} في {period}، سيتم فرض الرسوم على حسابك في Apple. يتم تجديد الاشتراك تلقائياً ما لم يتم إلغاؤه قبل 24 ساعة من نهاية الفترة الحالية. يمكنك إدارة أو إلغاء الاشتراك في أي وقت من الإعدادات."
+          }
+        },
+        "cs" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "{price} za {period}, účtováno na váš účet Apple. Vaše předplatné se automaticky obnovuje, pokud jej nezrušíte nejméně 24 hodin před koncem aktuálního období. Spravujte nebo zrušte předplatné kdykoli v Nastavení."
+          }
+        },
+        "da" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "{price} pr. {period}, faktureret til din Apple-konto. Dit abonnement fornyes automatisk, medmindre det annulleres mindst 24 timer før periodens afslutning. Administrer eller annuller når som helst i Indstillinger."
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "{price} pro {period}, wird auf Ihr Apple-Konto berechnet. Ihr Abonnement wird automatisch erneuert, wenn es nicht mindestens 24 Stunden vor Ablauf der aktuellen Periode storniert wird. Verwalten oder stornieren Sie jederzeit in Einstellungen."
+          }
+        },
+        "el" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "{price} ανά {period}, τιμολόγηση στο Apple Account σας. Η συνδρομή σας ανανεώνεται αυτόματα εκτός αν ακυρωθεί τουλάχιστον 24 ώρες πριν από το τέλος της τρέχουσας περιόδου. Διαχειριστείτε ή ακυρώστε ανά πάσα στιγμή στις Ρυθμίσεις."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "One month free, then {price} per {period}, billed to your Apple Account. Your subscription renews automatically unless cancelled at least 24 hours before the end of the current period. Manage or cancel anytime in Settings."
           }
         },
         "es" : {
@@ -163124,7 +163562,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Manage this App Store subscription from your Apple account subscriptions."
+            "value" : "Open Settings → Apple Account → Subscriptions to manage this App Store subscription."
           }
         },
         "es" : {

@@ -1337,11 +1337,11 @@ fn reopening_an_unchanged_workspace_does_not_rewrite_it() {
     drop(core);
 
     let workspace_dir = dir.join("workspace");
-    // The scheme files and the index are already written content-compared, so
-    // the observable proof that no save ran is the work a save does
-    // unconditionally: the rotating daily backup and a history snapshot.
+    // The scheme files and the index are already written content-compared. The
+    // incremental mutation save intentionally skips the rotating daily backup,
+    // so compare whatever backup set exists rather than requiring one here; the
+    // history store is still the observable proof that startup did not save.
     let before = write_times(&workspace_dir.join("backups"));
-    assert!(!before.is_empty(), "expected a daily backup on disk");
     let history_before = write_times(&workspace_dir.join(".knotq-history"));
     assert!(
         !history_before.is_empty(),

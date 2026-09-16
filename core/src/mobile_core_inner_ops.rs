@@ -1205,6 +1205,7 @@ impl MobileCoreInner {
             PullOutcome {
                 workspace,
                 remote_updates_applied: 0,
+                locally_repaired_documents: Vec::new(),
                 pull_requests: 0,
                 remote_documents_received: 0,
                 remote_delta_documents: 0,
@@ -1764,7 +1765,13 @@ impl MobileCoreInner {
             let Some(today_scheme) = self.workspace.scheme(today_id) else {
                 return Ok(false);
             };
-            daily_queue_carryover_command(previous_id, previous_date, previous, today_id, today_scheme)
+            daily_queue_carryover_command(
+                previous_id,
+                previous_date,
+                previous,
+                today_id,
+                today_scheme,
+            )
         };
         let Some(command) = command else {
             return Ok(false);

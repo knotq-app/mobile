@@ -1133,6 +1133,7 @@ dependencies = [
  "anyhow",
  "base64",
  "chrono",
+ "flate2",
  "knotq-commands",
  "knotq-date-util",
  "knotq-index",

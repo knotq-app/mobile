@@ -342,6 +342,30 @@ extension AppModel {
         force: Bool = false,
         minimumValidity: TimeInterval = 120
     ) async -> SyncSessionRefreshResult {
+        guard syncSession != nil else { return .sessionDead }
+        if let refreshTask = syncSessionRefreshTask {
+            // Refresh tokens are single-use. A StoreKit callback, foreground
+            // status read, and sync tick can all arrive together; they must
+            // share the same rotation rather than replaying the old token.
+            return await refreshTask.value
+        }
+        let refreshTask = Task { [weak self] in
+            guard let self else { return SyncSessionRefreshResult.sessionDead }
+            return await self.performRefreshSyncSessionIfNeeded(
+                force: force,
+                minimumValidity: minimumValidity
+            )
+        }
+        syncSessionRefreshTask = refreshTask
+        let result = await refreshTask.value
+        syncSessionRefreshTask = nil
+        return result
+    }
+
+    private func performRefreshSyncSessionIfNeeded(
+        force: Bool,
+        minimumValidity: TimeInterval
+    ) async -> SyncSessionRefreshResult {
         guard let session = syncSession else { return .sessionDead }
         let sessionGeneration = syncSessionGeneration.value
         guard Self.isSecureSyncApiBase(session.apiBase) else {

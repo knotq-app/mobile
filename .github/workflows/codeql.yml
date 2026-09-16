@@ -28,7 +28,11 @@ jobs:
             build-mode: none
           - language: java-kotlin
             runner: ubuntu-24.04
-            build-mode: autobuild
+            # The mobile checkout is intentionally paired with the desktop/shared
+            # checkout in Mobile CI; CodeQL's standalone Gradle autobuild cannot
+            # resolve that split layout. Kotlin source analysis does not need a
+            # compiled build here.
+            build-mode: none
           - language: swift
             runner: macos-15
             build-mode: autobuild

@@ -54,6 +54,10 @@ final class AppModel: ObservableObject {
     @Published var googleCalendarStatus: String?
     // Available StoreKit subscription products (empty until loaded / if unconfigured).
     @Published var syncProducts: [Product] = []
+    // StoreKit's introductory-offer eligibility is account-specific. Keep it
+    // separate from the product so the disclosure never promises a free month
+    // to someone who has already used the offer.
+    @Published var syncIntroOfferEligible: [String: Bool] = [:]
     @Published var purchaseInProgress = false
     @Published var dailyHistoryLoadAnchorDate: String?
     @Published var dailyHistoryLoadInProgress = false
@@ -101,6 +105,10 @@ final class AppModel: ObservableObject {
     var googleOAuthSession: WebAuthenticationSessionCoordinator?
     var browserSignInSession: WebAuthenticationSessionCoordinator?
     var transactionListener: Task<Void, Never>?
+    /// At most one refresh-token rotation may be in flight. Refresh tokens are
+    /// single-use; concurrent StoreKit/status/sync callers must await the same
+    /// rotation instead of replaying the old token and expiring the session.
+    var syncSessionRefreshTask: Task<SyncSessionRefreshResult, Never>?
     /// Changes whenever a different login session is installed or the current
     /// session is signed out. Async account work checks it after network waits.
     var syncSessionGeneration = SyncSessionGeneration()

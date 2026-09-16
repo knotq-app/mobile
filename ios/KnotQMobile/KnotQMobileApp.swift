@@ -15,6 +15,7 @@ struct KnotQMobileApp: App {
     }()
     @StateObject private var model = AppModel.shared
     @State private var hasHandledInitialActivation = false
+    @State private var showingCommunityPrompt = false
     @Environment(\.scenePhase) private var scenePhase
 
     var body: some Scene {
@@ -24,6 +25,7 @@ struct KnotQMobileApp: App {
                 .preferredColorScheme(model.preferredColorScheme)
                 .onAppear {
                     MobileReviewPrompt.maybeRequestReview()
+                    maybeShowCommunityPrompt()
                     // Build the system keyboard while the app is idle, so the
                     // first tap into a scheme or the daily gets the same
                     // keyboard presentation as every tap after it.
@@ -62,6 +64,7 @@ struct KnotQMobileApp: App {
                         }
                         #endif
                         MobileReviewPrompt.maybeRequestReview()
+                        maybeShowCommunityPrompt()
                     case .inactive:
                         // Blur: the app just lost focus but the socket is still alive.
                         // Push a still-debounced edit over it right away so a quick
@@ -82,7 +85,28 @@ struct KnotQMobileApp: App {
                         break
                     }
                 }
+                .alert(
+                    L10n.t("community.prompt.title"),
+                    isPresented: $showingCommunityPrompt
+                ) {
+                    Button(L10n.t("community.prompt.join")) {
+                        guard let url = URL(string: "https://discord.gg/zyeHB77scg") else { return }
+                        UIApplication.shared.open(url)
+                    }
+                    Button(L10n.t("community.prompt.later"), role: .cancel) {}
+                } message: {
+                    Text(L10n.t("community.prompt.body"))
+                }
         }
+    }
+
+    @MainActor
+    private func maybeShowCommunityPrompt() {
+        #if DEBUG
+        guard !AppModel.screenshotFixtureRequested else { return }
+        #endif
+        guard !showingCommunityPrompt, MobileCommunityPrompt.claimIfEligible() else { return }
+        showingCommunityPrompt = true
     }
 }
 
@@ -116,7 +140,7 @@ private enum MobileReviewPrompt {
         SKStoreReviewController.requestReview(in: scene)
     }
 
-    private static func usageStartAt(defaults: UserDefaults, now: TimeInterval) -> TimeInterval {
+    fileprivate static func usageStartAt(defaults: UserDefaults, now: TimeInterval) -> TimeInterval {
         let stored = defaults.double(forKey: firstLaunchAtKey)
         guard stored <= 0 else { return stored }
 
@@ -138,5 +162,25 @@ private enum MobileReviewPrompt {
                 try? url.resourceValues(forKeys: [.creationDateKey]).creationDate
             }
             .min()
+    }
+}
+
+private enum MobileCommunityPrompt {
+    private static let promptedKey = "knotq.mobile.communityPrompted.v1"
+    private static let minimumUsageInterval: TimeInterval = 7 * 24 * 60 * 60
+
+    static func claimIfEligible() -> Bool {
+        let defaults = UserDefaults.standard
+        guard defaults.bool(forKey: "knotq.mobile.onboardingCompleted.v1") else { return false }
+        guard !defaults.bool(forKey: promptedKey) else { return false }
+
+        let now = Date().timeIntervalSince1970
+        let firstLaunchAt = MobileReviewPrompt.usageStartAt(defaults: defaults, now: now)
+        guard now - firstLaunchAt >= minimumUsageInterval else { return false }
+
+        // Claim before presenting so scene changes or SwiftUI re-renders cannot
+        // show the invitation more than once on this install.
+        defaults.set(true, forKey: promptedKey)
+        return true
     }
 }

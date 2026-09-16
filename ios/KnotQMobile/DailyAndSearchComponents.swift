@@ -196,15 +196,34 @@ struct DailyDayEditorSection: View {
     let autoFocusOnAppear: Bool
     let onSelect: () -> Void
     @EnvironmentObject private var model: AppModel
+    @State private var localIsEmpty: Bool?
 
-    private var isCarryoverCandidate: Bool { selected && isEmpty }
+    private var effectiveIsEmpty: Bool { localIsEmpty ?? isEmpty }
+    private var isCarryoverCandidate: Bool { selected && effectiveIsEmpty }
+    private var showsTitle: Bool { !effectiveIsEmpty || selected }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            if isCarryoverCandidate,
-               model.dailyCarryoverEntryDate == entry.date,
-               let source = model.dailyCarryoverSourceDate {
-                DailyCarryoverButton(theme: theme, entryDate: entry.date, sourceDate: source)
+            if showsTitle {
+                HStack(alignment: .center, spacing: 8) {
+                    Text(entry.scheme.displayName)
+                        .font(.system(size: DesktopEditorMetrics.titleFontSize, weight: .bold))
+                        // Keep the focused/current day prominent while giving
+                        // historical day titles the same quieter hierarchy as
+                        // desktop's daily queue.
+                        .foregroundStyle(selected ? theme.textPrimary : theme.textSoft)
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                        .layoutPriority(1)
+
+                    if isCarryoverCandidate,
+                       model.dailyCarryoverEntryDate == entry.date,
+                       let source = model.dailyCarryoverSourceDate {
+                        DailyCarryoverButton(theme: theme, entryDate: entry.date, sourceDate: source)
+                    }
+                }
+                .padding(.horizontal, 24)
+                .frame(height: DesktopEditorMetrics.titleBlockHeight)
             }
             IntegratedSchemeEditorPane(
                 scheme: displayScheme,
@@ -220,16 +239,20 @@ struct DailyDayEditorSection: View {
                 // right up to the screen edge, is now inside the tappable text view
                 // (the dead outer strip is gone) without narrowing the table.
                 editorInsets: UIEdgeInsets(top: 3, left: 24, bottom: 5, right: 24),
-                // Always show the day's title on the selected day, even when it's
-                // empty — a freshly created daily queue has no content yet, and
-                // hiding the title there leaves the section looking like it never got
-                // created. Non-selected empty days stay collapsed.
-                showsInlineTitle: !isEmpty || selected,
+                // The Daily title is hosted in the row above so the carryover
+                // action can sit beside it instead of appearing as a separate
+                // line above the current day.
+                showsInlineTitle: false,
                 // Focus the selected (last/today) day on open even when it's empty —
                 // a fresh daily queue has no items, and we still want the caret + the
                 // keyboard up at the end of that section so the user can type right
                 // away. `autoFocusSelectedDay` is the real opt-in (off on iPad/screenshots).
-                autoFocusOnAppear: selected && autoFocusOnAppear
+                autoFocusOnAppear: selected && autoFocusOnAppear,
+                onEmptyStateChange: { empty in
+                    // Use the editor's local truth immediately; the model
+                    // snapshot will catch up after the debounced write.
+                    localIsEmpty = empty == isEmpty ? nil : empty
+                }
             )
         }
         // Fill the row's full width so the editor's own text view (and its
@@ -240,15 +263,14 @@ struct DailyDayEditorSection: View {
         // .sizeThatFits) for every day that renders content — including the
         // selected empty day, which now shows its title plus a blank editable
         // line. Only collapse non-selected empty days to nothing.
-        .frame(height: isEmpty && !selected ? 0 : nil, alignment: .top)
+        .frame(height: effectiveIsEmpty && !selected ? 0 : nil, alignment: .top)
         .clipped()
-        .background(selected ? theme.rowSelected.opacity(0.42) : Color.clear)
-        .clipShape(RoundedRectangle(cornerRadius: 7))
         // Tap-to-select only for *non-selected* days. On the selected day (the one
         // being edited) a section-wide contentShape+onTapGesture would swallow
         // taps in the editor's transparent side gutters before they reach the text
         // view — breaking caret-before/after-a-table taps there.
         .modifier(DaySelectTapModifier(selected: selected, onSelect: onSelect))
+        .onChange(of: isEmpty) { _, _ in localIsEmpty = nil }
         .task(id: "\(entry.date)|\(isCarryoverCandidate)") {
             guard isCarryoverCandidate else { return }
             await model.refreshDailyCarryoverSource(for: entry.date)
@@ -293,10 +315,10 @@ private struct DailyCarryoverButton: View {
             Text(label)
                 .font(.system(size: 13, weight: .semibold))
                 .foregroundStyle(theme.accent)
-                .padding(.horizontal, 14)
-                .padding(.top, 2)
-                .padding(.bottom, 4)
+                .lineLimit(1)
+                .minimumScaleFactor(0.8)
         }
+        .padding(.leading, 4)
         .buttonStyle(.plain)
     }
 

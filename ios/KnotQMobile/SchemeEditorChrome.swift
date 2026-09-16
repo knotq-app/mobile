@@ -21,6 +21,7 @@ struct IntegratedSchemeEditorPane: View {
     let editorScrollEnabled: Bool
     let editorInsets: UIEdgeInsets
     let showsInlineTitle: Bool
+    let onEmptyStateChange: (Bool) -> Void
 
     @StateObject private var controller = EditorController()
     @State private var dateTarget: EditorDateTarget?
@@ -91,7 +92,8 @@ struct IntegratedSchemeEditorPane: View {
         showsInlineTitle: Bool = true,
         autoFocusOnAppear: Bool = false,
         autoFocusTitleOnAppear: Bool = false,
-        onAutoFocusTitleConsumed: @escaping () -> Void = {}
+        onAutoFocusTitleConsumed: @escaping () -> Void = {},
+        onEmptyStateChange: @escaping (Bool) -> Void = { _ in }
     ) {
         self.scheme = scheme
         self.theme = theme
@@ -106,6 +108,7 @@ struct IntegratedSchemeEditorPane: View {
         self.autoFocusOnAppear = autoFocusOnAppear
         self.autoFocusTitleOnAppear = autoFocusTitleOnAppear
         self.onAutoFocusTitleConsumed = onAutoFocusTitleConsumed
+        self.onEmptyStateChange = onEmptyStateChange
     }
 
     var body: some View {
@@ -116,55 +119,7 @@ struct IntegratedSchemeEditorPane: View {
                 }
 
                 ZStack(alignment: .topLeading) {
-                    SchemeTextView(
-                        controller: controller,
-                        // Read live off the tracker rather than via
-                        // `awaitingWriteBeforeInitialLoad`: that is set in
-                        // `onAppear`, which runs *after* the text view has been made
-                        // and seeded. Later passes can't undo the seeding either
-                        // way — `updateUIView` never reloads items.
-                        items: model.schemeWrites.initialEditorItems(for: scheme),
-                        timeFormat: timeFormat,
-                        theme: theme,
-                        accent: accent,
-                        isScrollEnabled: editorScrollEnabled,
-                        textInsets: editorTextInsets,
-                        schemeTitle: scheme.displayName,
-                        showsTitle: showsInlineTitle,
-                        titleEditable: !scheme.isDailyQueue,
-                        titleValidator: titleValidator,
-                        onRenameTitle: { title in
-                            model.renameScheme(id: scheme.id, name: title)
-                        },
-                        onDate: openDateForLine,
-                        onImageUpload: {
-                            controller.prepareImageUploadTarget()
-                            showingImagePicker = true
-                        },
-                        onInsertTable: insertTableFromToolbar,
-                        onTableCellCommit: commitTableCell,
-                        onTableInsertRow: { hit, row in
-                            guard !hit.isHeader else { return }
-                            model.insertTableRow(schemeID: scheme.id, itemID: hit.itemID, row: Int32(row))
-                        },
-                        onTableDeleteRow: { hit in
-                            guard !hit.isHeader else { return }
-                            model.deleteTableRow(schemeID: scheme.id, itemID: hit.itemID, row: Int32(hit.row))
-                        },
-                        onTableInsertColumn: { hit, column in
-                            model.insertTableColumn(schemeID: scheme.id, itemID: hit.itemID, column: Int32(column))
-                        },
-                        onTableDeleteColumn: { hit in
-                            model.deleteTableColumn(schemeID: scheme.id, itemID: hit.itemID, column: Int32(hit.column))
-                        },
-                        // Typing into the blank editor we show while waiting for
-                        // the first load would be committed as the WHOLE
-                        // document — the load that was going to fill it in has
-                        // not happened yet, so the flush sees one line where the
-                        // day's real content should be. Hold edits off for the
-                        // length of that wait instead.
-                        readOnly: scheme.isReadOnly || awaitingWriteBeforeInitialLoad
-                    )
+                    editorTextView
 
                 }
                 .clipped()
@@ -236,7 +191,7 @@ struct IntegratedSchemeEditorPane: View {
             // Still waiting on our own first load — the snapshot bookkeeping below
             // (and especially the mid-edit merge) assumes a loaded document.
             guard !awaitingWriteBeforeInitialLoad else { return }
-            if loadedSchemeID == scheme.id, newItems == selfFlushItems {
+            if isSelfFlushEcho(newItems) {
                 // Our own live flush echoing back through the snapshot — the editor
                 // already shows this content, so don't reload (would reset the caret).
                 selfFlushItems = nil
@@ -301,19 +256,72 @@ struct IntegratedSchemeEditorPane: View {
             commitDocument()
         }
         .sheet(item: $dateTarget) { target in
-            if let item = model.scheme(id: scheme.id)?.items.first(where: { $0.id == target.itemID }) {
-                // iPad presents as a centered form sheet; iPhone keeps the
-                // half-height bottom sheet.
-                if isPadLayout {
-                    ItemDateSheet(schemeID: scheme.id, item: item)
-                } else {
-                    ItemDateSheet(schemeID: scheme.id, item: item)
-                        .presentationDetents([.fraction(0.50)])
-                }
-            }
+            editorDateSheet(for: target)
         }
         .archiveConfirmation(target: $pendingArchive) { _ in
             archiveCurrentScheme()
+        }
+    }
+
+    private var editorTextView: some View {
+        SchemeTextView(
+            controller: controller,
+            // Read live off the tracker rather than via
+            // `awaitingWriteBeforeInitialLoad`: that is set in `onAppear`, which
+            // runs after the text view has been made and seeded.
+            items: model.schemeWrites.initialEditorItems(for: scheme),
+            timeFormat: timeFormat,
+            theme: theme,
+            accent: accent,
+            isScrollEnabled: editorScrollEnabled,
+            textInsets: editorTextInsets,
+            schemeTitle: scheme.displayName,
+            showsTitle: showsInlineTitle,
+            titleEditable: !scheme.isDailyQueue,
+            titleValidator: titleValidator,
+            onRenameTitle: { title in
+                model.renameScheme(id: scheme.id, name: title)
+            },
+            onDate: openDateForLine,
+            onImageUpload: {
+                controller.prepareImageUploadTarget()
+                showingImagePicker = true
+            },
+            onInsertTable: insertTableFromToolbar,
+            onEmptyStateChange: onEmptyStateChange,
+            onTableCellCommit: commitTableCell,
+            onTableInsertRow: { hit, row in
+                guard !hit.isHeader else { return }
+                model.insertTableRow(schemeID: scheme.id, itemID: hit.itemID, row: Int32(row))
+            },
+            onTableDeleteRow: { hit in
+                guard !hit.isHeader else { return }
+                model.deleteTableRow(schemeID: scheme.id, itemID: hit.itemID, row: Int32(hit.row))
+            },
+            onTableInsertColumn: { hit, column in
+                model.insertTableColumn(schemeID: scheme.id, itemID: hit.itemID, column: Int32(column))
+            },
+            onTableDeleteColumn: { hit in
+                model.deleteTableColumn(schemeID: scheme.id, itemID: hit.itemID, column: Int32(hit.column))
+            },
+            // Typing into the blank editor we show while waiting for the first
+            // load would be committed as the whole document, so hold edits off
+            // for the length of that wait instead.
+            readOnly: scheme.isReadOnly || awaitingWriteBeforeInitialLoad
+        )
+    }
+
+    @ViewBuilder
+    private func editorDateSheet(for target: EditorDateTarget) -> some View {
+        if let item = model.scheme(id: scheme.id)?.items.first(where: { $0.id == target.itemID }) {
+            // iPad presents as a centered form sheet; iPhone keeps the
+            // half-height bottom sheet.
+            if isPadLayout {
+                ItemDateSheet(schemeID: scheme.id, item: item)
+            } else {
+                ItemDateSheet(schemeID: scheme.id, item: item)
+                    .presentationDetents([.fraction(0.50)])
+            }
         }
     }
 
@@ -455,6 +463,11 @@ struct IntegratedSchemeEditorPane: View {
         controller.load(items: scheme.items, theme: theme, timeFormat: timeFormat, placeCursorAtEnd: shouldPlaceCursorAtEnd)
         selfFlushItems = nil
         loadedSchemeID = scheme.id
+    }
+
+    private func isSelfFlushEcho(_ items: [MobileItem]) -> Bool {
+        guard loadedSchemeID == scheme.id else { return false }
+        return selfFlushItems == items
     }
 
     private func commitDocument(completion: (@MainActor () -> Void)? = nil) {

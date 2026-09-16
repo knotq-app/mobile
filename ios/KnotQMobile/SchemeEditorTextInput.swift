@@ -133,9 +133,7 @@ final class EditorCoordinator: NSObject, UITextViewDelegate, @preconcurrency NST
     func refreshEmpty() {
         guard let view, let controller else { return }
         let empty = view.isEffectivelyEmpty()
-        if controller.isEmpty != empty {
-            controller.isEmpty = empty
-        }
+        controller.setEmpty(empty)
     }
 
     // MARK: UITextViewDelegate

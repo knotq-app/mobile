@@ -133,6 +133,9 @@ internal const val REQUEST_GOOGLE_AUTHORIZE = 7312
 internal const val REQUEST_GOOGLE_CHOOSE_ACCOUNT = 7313
 internal const val REVIEW_FIRST_LAUNCH_AT_PREF = "knotq.reviewFirstLaunchAt.v1"
 internal const val REVIEW_PROMPTED_PREF = "knotq.reviewPrompted.v1"
+internal const val COMMUNITY_PROMPTED_PREF = "knotq.communityPrompted.v1"
+internal const val COMMUNITY_MIN_USAGE_MS = 7L * 24L * 60L * 60L * 1000L
+internal const val DISCORD_URL = "https://discord.gg/zyeHB77scg"
 // Last workspace theme used to paint the pre-native-loading shell. The loaded
 // workspace remains authoritative once it is available; this only prevents a
 // cold start from flashing the system theme before that snapshot arrives.

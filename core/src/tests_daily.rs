@@ -63,7 +63,9 @@ fn historical_daily_load_refreshes_search_index_without_decoding_all_history() {
     let mut workspace = Workspace::new();
     let mut old_daily = Scheme::new(daily_queue_scheme_name(old_date), DAILY_QUEUE_COLOR_INDEX);
     old_daily.id = old_id;
-    old_daily.items.push(Item::new("historical indexing sentinel"));
+    old_daily
+        .items
+        .push(Item::new("historical indexing sentinel"));
     workspace.daily_queue.insert(old_date, old_id);
     workspace.schemes.insert(old_id, old_daily);
     save_workspace(&workspace_path, &workspace).expect("seed workspace");

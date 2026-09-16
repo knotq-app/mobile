@@ -191,6 +191,7 @@ import kotlin.math.roundToInt
         selectedTab = TAB_HOME
         selectedSchemeId = null
         render()
+        rootFrame.postOnAnimation { maybeShowCommunityPrompt() }
         // Ask for notification permission now that onboarding is complete, matching
         // iOS (ContentView.finishOnboarding → requestAuthorizationIfNeeded). Let
         // the completed Home frame paint before Android presents its full-window

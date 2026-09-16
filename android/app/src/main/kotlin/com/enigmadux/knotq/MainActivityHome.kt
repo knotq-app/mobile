@@ -349,18 +349,27 @@ import kotlin.math.roundToInt
         LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            setPadding(dp(12), 0, dp(12), 0)
-            background = rounded(theme.bgModal, dp(8), theme.borderOverlay)
+            setPadding(dp(14), 0, dp(14), 0)
+            // A soft filled pill, no outline, icon leading the placeholder —
+            // matches iOS's search field instead of the bordered box + trailing
+            // icon this used to draw.
+            background = rounded(theme.bgToolbar, dp(20))
             // The whole pill is the tappable search control on phones. Keep
             // one accessible target after removing the desktop Search chip;
             // exposing only the decorative icon made automation and screen
             // readers miss the action.
             contentDescription = L10n.t(this@homeSearchEntry, "mobile.a11y.search")
+            // Match the Search screen's own field exactly (same icon box +
+            // gap before the text) so landing there doesn't visibly nudge
+            // the placeholder text a few dp sideways.
+            addView(iconImage(R.drawable.ic_knotq_search_24, theme.textMuted), LinearLayout.LayoutParams(dp(ICON_SEARCH_VECTOR_SIZE_DP), dp(ICON_SEARCH_VECTOR_SIZE_DP)).apply {
+                marginEnd = dp(8)
+            })
             addView(text(L10n.t(this@homeSearchEntry, "search.placeholder"), theme.textMuted, 14f, false), LinearLayout.LayoutParams(0, -1, 1f))
-            addView(iconImage(R.drawable.ic_knotq_search_24, theme.textMuted), LinearLayout.LayoutParams(dp(28), dp(ICON_SEARCH_VECTOR_SIZE_DP)))
             setOnClickListener {
                 selectedTab = TAB_SEARCH
                 selectedSchemeId = null
+                pendingSearchFocus = true
                 queueContentTransition(ContentTransitionDirection.FORWARD)
                 render()
             }
@@ -381,7 +390,7 @@ import kotlin.math.roundToInt
 
         val panel = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            background = rounded(if (theme.isDark) theme.bgToolbar else theme.bgModal, dp(8), theme.borderOverlay)
+            background = rounded(if (theme.isDark) theme.bgToolbar else theme.bgModal, dp(16), theme.borderOverlay)
             setPadding(dp(4), dp(4), dp(4), dp(3))
         }
         // Cap the scheme tree like iOS (max(180dp, 34% of screen height)) so it

@@ -32,6 +32,7 @@ accounts = []
 anyhow.workspace = true
 base64.workspace = true
 chrono.workspace = true
+flate2.workspace = true
 knotq-commands.workspace = true
 knotq-date-util.workspace = true
 knotq-index.workspace = true

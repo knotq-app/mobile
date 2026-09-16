@@ -271,10 +271,12 @@ struct SyncSettingsCard: View {
     private func disclosureText(for product: Product) -> String {
         let period = product.subscription
             .map { Self.periodDescription($0.subscriptionPeriod) } ?? L10n.t("sync.disclosure.period_generic")
-        return L10n.t("sync.disclosure.subscription_terms", [
+        let disclosure = L10n.t("sync.disclosure.subscription_terms_no_intro", [
             "price": product.displayPrice,
             "period": period,
         ])
+        guard model.syncIntroOfferEligible[product.id] == true else { return disclosure }
+        return "\(L10n.t("sync.disclosure.intro_month")) \(disclosure)"
     }
 
     /// "month" / "year" / "2 weeks" etc. for the auto-renew disclosure.
@@ -608,9 +610,11 @@ private struct DeleteSyncAccountSheet: View {
         if provider == "web" {
             await model.cancelSyncSubscription()
         } else if provider == "google" {
-            model.openManagePlaySubscription()
+            await model.openManagePlaySubscription()
+            await model.refreshSubscriptionStatus()
         } else {
             await model.openManageAppleSubscription()
+            await model.refreshSubscriptionStatus()
         }
     }
 }

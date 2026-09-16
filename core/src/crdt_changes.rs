@@ -89,53 +89,10 @@ fn item_can_be_scheduled(item: &Item) -> bool {
     item.kind() != knotq_model::ItemKind::Procedure
 }
 
+/// The shared `Command::crdt_documents` mapping, so mobile and desktop can never
+/// disagree about which documents a command writes.
 fn mobile_collect_crdt_changes(command: &Command, out: &mut WorkspaceCrdtChangeSet) {
-    match command {
-        Command::CreateFolder { .. }
-        | Command::RestoreFolder { .. }
-        | Command::RenameFolder { .. }
-        | Command::SetFolderExpanded { .. }
-        | Command::DeleteFolder { .. }
-        | Command::PermanentlyDeleteFolder { .. }
-        | Command::CreateScheme { .. }
-        | Command::RenameScheme { .. }
-        | Command::SetSchemeColor { .. }
-        | Command::SetSchemeGsync { .. }
-        | Command::SetSchemeSource { .. }
-        | Command::DeleteScheme { .. }
-        | Command::PermanentlyDeleteScheme { .. }
-        | Command::MoveNode { .. } => {
-            out.workspace = true;
-        }
-        Command::RestoreScheme { scheme, .. } | Command::RestoreDeletedScheme { scheme, .. } => {
-            out.workspace = true;
-            out.schemes.insert(scheme.id);
-        }
-        Command::RestoreDeletedFolder { schemes, .. } => {
-            out.workspace = true;
-            for scheme in schemes {
-                out.schemes.insert(scheme.id);
-            }
-        }
-        Command::InsertItem { scheme, .. }
-        | Command::UpdateItemText { scheme, .. }
-        | Command::ReplaceItem { scheme, .. }
-        | Command::SetItemIndent { scheme, .. }
-        | Command::SetItemMarker { scheme, .. }
-        | Command::SetItemMarkerFamily { scheme, .. }
-        | Command::SetItemDate { scheme, .. }
-        | Command::SetItemRecurrence { scheme, .. }
-        | Command::SetItemPriority { scheme, .. }
-        | Command::SetOccurrenceNotificationOffset { scheme, .. }
-        | Command::ToggleOccurrence { scheme, .. }
-        | Command::DeleteItem { scheme, .. }
-        | Command::ReorderItem { scheme, .. } => {
-            out.schemes.insert(*scheme);
-        }
-        Command::Batch(commands) => {
-            for command in commands {
-                mobile_collect_crdt_changes(command, out);
-            }
-        }
-    }
+    let documents = command.crdt_documents();
+    out.workspace |= documents.workspace;
+    out.schemes.extend(documents.schemes);
 }

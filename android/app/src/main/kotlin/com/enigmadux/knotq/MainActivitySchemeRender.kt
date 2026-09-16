@@ -152,7 +152,10 @@ internal fun searchPreviewText(raw: String): String =
             addView(FrameLayout(this@renderSchemeEditor).apply {
                 contentDescription = L10n.t(this@renderSchemeEditor, "mobile.scheme.color_swatch_label")
                 addView(View(this@renderSchemeEditor).apply {
-                    background = rounded(schemeColor(scheme.optInt("color_index")), dp(8), theme.borderOverlay)
+                    // A small rounded square, not a near-circle (dp(8) on an
+                    // 18dp box read as a solid dot, out of step with the app's
+                    // other rounded-rect icon buttons and color swatches).
+                    background = rounded(schemeColor(scheme.optInt("color_index")), dp(4), theme.borderOverlay)
                 }, FrameLayout.LayoutParams(dp(18), dp(18), Gravity.CENTER))
                 setOnClickListener { showColorDialog(schemeId) }
             }, LinearLayout.LayoutParams(dp(32), dp(28)))
@@ -574,13 +577,21 @@ internal fun searchPreviewText(raw: String): String =
         return LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(0, dp(3), 0, dp(5))
-            // Every day carries its title, like the desktop feed — the same
-            // short label iOS shows ("Thu, Jun 11").
-            addView(text(scheme.optString("display_name").ifEmpty { MobileDateFormatting.fullDay(date) }, theme.textPrimary, 26f, true).apply {
-                includeFontPadding = false
+            // Keep the rollover action in the same title row as the current
+            // day, matching desktop and avoiding a delayed standalone row above
+            // the editor.
+            val titleRow = LinearLayout(this@dailyDayEditor).apply {
+                orientation = LinearLayout.HORIZONTAL
                 gravity = Gravity.CENTER_VERTICAL
-                setPadding(dp(14), 0, dp(14), 0)
-            }, LinearLayout.LayoutParams(-1, dp(44)))
+                val title = text(scheme.optString("display_name").ifEmpty { MobileDateFormatting.fullDay(date) }, theme.textPrimary, 26f, true).apply {
+                    includeFontPadding = false
+                    gravity = Gravity.CENTER_VERTICAL
+                    setPadding(dp(14), 0, 0, 0)
+                    maxLines = 1
+                    ellipsize = android.text.TextUtils.TruncateAt.END
+                }
+                addView(title, LinearLayout.LayoutParams(0, dp(44), 1f))
+            }
             if (isCarryoverCandidate) {
                 // A placeholder, not a render() target: the source date is
                 // usually still an in-flight async fetch when this row is
@@ -591,9 +602,12 @@ internal fun searchPreviewText(raw: String): String =
                 // without touching (or fighting for) the editor's focus.
                 dailyCarryoverContainer = FrameLayout(this@dailyDayEditor)
                 dailyCarryoverContainerDate = date
-                addView(dailyCarryoverContainer, LinearLayout.LayoutParams(-1, -2))
+                titleRow.addView(dailyCarryoverContainer, LinearLayout.LayoutParams(-2, dp(44)).apply {
+                    gravity = Gravity.CENTER_VERTICAL
+                })
                 dailyCarryoverSourceDate?.let { renderDailyCarryoverButton(dailyCarryoverContainer!!, date, it) }
             }
+            addView(titleRow, LinearLayout.LayoutParams(-1, dp(44)))
             val editor = SchemeEditText(this@dailyDayEditor).apply {
                 deferInitialStyling = true
                 setText(renderDocument(originalLines))
@@ -693,9 +707,11 @@ internal fun searchPreviewText(raw: String): String =
             L10n.t(this, "daily.carryover.from_date", mapOf("date" to MobileDateFormatting.shortDay(sourceDate)))
         }
         container.addView(text(label, editorChromeColor(), 13f, true).apply {
-            setPadding(dp(14), 0, dp(14), dp(4))
+            setPadding(dp(4), 0, dp(14), 0)
             setOnClickListener { carryoverDailyQueue() }
-        }, FrameLayout.LayoutParams(-1, -2))
+        }, FrameLayout.LayoutParams(-2, -1).apply {
+            gravity = Gravity.CENTER_VERTICAL
+        })
     }
 
     /// Called when the async carryover-source fetch resolves. Patches the
@@ -715,27 +731,47 @@ internal fun searchPreviewText(raw: String): String =
         val query = edit("").apply {
             hint = L10n.t(this@renderSearch, "search.placeholder")
             setSingleLine(true)
-            background = rounded(theme.bgModal, dp(7), theme.borderOverlay)
-            setPadding(dp(12), 0, dp(12), 0)
+            background = null
+            setPadding(0, 0, 0, 0)
+        }
+        // Built as the exact same icon-then-text row as the Home search pill
+        // (down to the same iconImage() call and LayoutParams) rather than an
+        // EditText compound drawable — TextView centers a compound drawable
+        // slightly differently than a sibling ImageView does, and that was
+        // enough to make the magnifying glass visibly resize/shift the moment
+        // this screen replaced the Home pill.
+        val fieldPill = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(dp(14), 0, dp(14), 0)
+            background = rounded(theme.bgToolbar, dp(20))
+            addView(iconImage(R.drawable.ic_knotq_search_24, theme.textMuted), LinearLayout.LayoutParams(dp(ICON_SEARCH_VECTOR_SIZE_DP), dp(ICON_SEARCH_VECTOR_SIZE_DP)).apply {
+                marginEnd = dp(8)
+            })
+            addView(query, LinearLayout.LayoutParams(0, -1, 1f))
         }
         val results = LayoutTransactionLinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
-        // The search field and its way out share one row. The exit is not
-        // conditional on layout: a wide layout used to have no explicit way back
-        // at all, leaving system back as the only exit, and it matches the "x"
-        // beside the iPhone's search field.
+        // Always visible: this is the exit-search affordance (tap it with an
+        // empty query and it's just "leave search"), not merely a text-clear
+        // button, so it needs to be there from the moment this screen opens.
+        val clearButton = FrameLayout(this).apply {
+            background = rounded(theme.buttonBg, dp(20), theme.borderOverlay)
+            addView(
+                iconImage(R.drawable.ic_knotq_close_24, theme.textPrimary, L10n.t(this@renderSearch, "mobile.home.clear_search")),
+                FrameLayout.LayoutParams(dp(18), dp(18), Gravity.CENTER)
+            )
+            setOnClickListener { exitSearch() }
+        }
         root.addView(LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            addView(query, LinearLayout.LayoutParams(0, dp(46), 1f))
-            addView(FrameLayout(this@renderSearch).apply {
-                background = rounded(theme.buttonBg, dp(20), theme.borderOverlay)
-                addView(
-                    iconImage(R.drawable.ic_knotq_close_24, theme.textPrimary, L10n.t(this@renderSearch, "mobile.home.clear_search")),
-                    FrameLayout.LayoutParams(dp(18), dp(18), Gravity.CENTER)
-                )
-                setOnClickListener { exitSearch() }
-            }, LinearLayout.LayoutParams(dp(40), dp(40)).apply { setMargins(dp(10), 0, 0, 0) })
-        }, LinearLayout.LayoutParams(-1, -2).apply { setMargins(0, 0, 0, dp(10)) })
+            addView(fieldPill, LinearLayout.LayoutParams(0, dp(42), 1f))
+            addView(clearButton, LinearLayout.LayoutParams(dp(40), dp(40)).apply { setMargins(dp(10), 0, 0, 0) })
+        // Match the Home pill's top margin exactly (LinearLayout.LayoutParams(-1,
+        // dp(42)).apply { setMargins(0, dp(2), 0, dp(15)) } in homeSearchEntry's
+        // caller) — without it this row sits 2dp higher than Home's, which reads
+        // as the search icon itself jumping between the two screens.
+        }, LinearLayout.LayoutParams(-1, -2).apply { setMargins(0, dp(2), 0, dp(10)) })
         root.addView(results)
         val searchNow = {
             renderSearchResults(results, query.text.toString())
@@ -760,6 +796,18 @@ internal fun searchPreviewText(raw: String): String =
             if (!hasFocus) {
                 searchNow()
                 flushDeferredRenderAfterEditorBlur()
+            }
+        }
+        // Land with the keyboard already up: this screen only exists because
+        // the user just tapped a search field, so a second, separate tap to
+        // actually focus the one control on the page reads as broken.
+        if (pendingSearchFocus) {
+            pendingSearchFocus = false
+            query.post {
+                if (!isUiActive() || !query.isAttachedToWindow) return@post
+                query.requestFocus()
+                (getSystemService(Context.INPUT_METHOD_SERVICE) as? InputMethodManager)
+                    ?.showSoftInput(query, InputMethodManager.SHOW_IMPLICIT)
             }
         }
         searchNow()
@@ -902,7 +950,7 @@ internal fun searchPreviewText(raw: String): String =
 
         root.addView(settingsSection(L10n.t(this, "settings.timing.section")))
         root.addView(settingsGroup(
-            settingsLinkRow(L10n.t(this, "settings.timing.title")) {
+            settingsLinkRow(L10n.t(this, "settings.timing.title"), icon = R.drawable.ic_knotq_clock_24) {
                 settingsShowingTiming = true
                 queueContentTransition(ContentTransitionDirection.FORWARD)
                 render()
@@ -916,7 +964,8 @@ internal fun searchPreviewText(raw: String): String =
             root.addView(settingsGroup(
                 settingsLinkRow(
                     L10n.t(this, "settings.google_calendar.section"),
-                    L10n.t(this, "mobile.settings.google_accounts_connected", mapOf("count" to googleAccountCount.toString()))
+                    L10n.t(this, "mobile.settings.google_accounts_connected", mapOf("count" to googleAccountCount.toString())),
+                    icon = R.drawable.ic_knotq_calendar_24
                 ) {
                     settingsShowingGoogle = true
                     queueContentTransition(ContentTransitionDirection.FORWARD)
@@ -944,14 +993,17 @@ internal fun searchPreviewText(raw: String): String =
             }
         } else {
             root.addView(settingsGroup(
-                settingsLinkRow(if (googleAuthInProgress) L10n.t(this, "mobile.settings.google_connecting") else L10n.t(this, "mobile.settings.connect_google_calendar")) { startGoogleCalendarImport() }
+                settingsLinkRow(
+                    if (googleAuthInProgress) L10n.t(this, "mobile.settings.google_connecting") else L10n.t(this, "mobile.settings.connect_google_calendar"),
+                    icon = R.drawable.ic_knotq_calendar_24
+                ) { startGoogleCalendarImport() }
             ))
         }
 
         root.addView(settingsSection(L10n.t(this, "sidebar.context.archive")))
         val schemes = archivedSchemes()
         root.addView(settingsGroup(
-            settingsLinkRow(L10n.t(this, "mobile.settings.archived_items"), schemes.length().toString()) {
+            settingsLinkRow(L10n.t(this, "mobile.settings.archived_items"), schemes.length().toString(), icon = R.drawable.ic_knotq_archive_24) {
                 settingsShowingArchive = true
                 queueContentTransition(ContentTransitionDirection.FORWARD)
                 render()
