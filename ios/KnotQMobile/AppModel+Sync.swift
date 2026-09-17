@@ -82,7 +82,7 @@ extension AppModel {
             let apiBase = current.apiBase
             let bearerToken = current.bearerToken
             do {
-                let result = try await bridge.perform { b in
+                let result = try await bridge.performSync { b in
                     let changed = try b.syncOnce(
                         apiBase: apiBase,
                         bearerToken: bearerToken,
@@ -182,7 +182,7 @@ extension AppModel {
             do {
                 let apiBase = session.apiBase
                 let bearerToken = session.bearerToken
-                let result = try await bridge.perform { b in
+                let result = try await bridge.performSync { b in
                     let changed = try force
                         ? b.forceSyncOnce(
                             apiBase: apiBase,

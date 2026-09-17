@@ -80,6 +80,18 @@ internal class BackgroundSyncWorker(
             } else {
                 block()
             }
+        // sync_once/force_sync_once specifically: when sharing the Activity's
+        // bridge, use its dedicated sync executor (not coreExecutor) so this
+        // background sync's network round trip cannot make a concurrent UI
+        // edit wait behind it. A temporary (no live Activity) bridge has no
+        // concurrent caller to protect against, so it stays inline like
+        // `coreCall` above.
+        fun <T> syncCoreCall(block: () -> T): T =
+            if (shared === bridge && liveActivity != null) {
+                liveActivity.syncCoreExecutor.call(block)
+            } else {
+                block()
+            }
         return try {
             // Re-apply the FCM token so a device that registered (or rotated its
             // token) while backgrounded gets registered with the backend on this
@@ -102,7 +114,7 @@ internal class BackgroundSyncWorker(
             var pulledRemoteChange = false
             while (true) {
                 try {
-                    pulledRemoteChange = coreCall {
+                    pulledRemoteChange = syncCoreCall {
                         bridge.request(
                             JSONObject()
                                 .put("type", "sync_once")

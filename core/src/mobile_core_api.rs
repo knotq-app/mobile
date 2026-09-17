@@ -1122,9 +1122,7 @@ impl MobileCore {
         bearer_token: String,
         account_user_id: String,
     ) -> Result<bool, MobileError> {
-        self.lock()?
-            .sync_once(&api_base, &bearer_token, &account_user_id)
-            .map_err(Into::into)
+        self.sync_once_maybe_cold_start(&api_base, &bearer_token, &account_user_id, false)
     }
 
     #[cfg(not(feature = "accounts"))]
@@ -1144,9 +1142,113 @@ impl MobileCore {
         bearer_token: String,
         account_user_id: String,
     ) -> Result<bool, MobileError> {
-        self.lock()?
-            .force_sync_once(&api_base, &bearer_token, &account_user_id)
-            .map_err(Into::into)
+        self.sync_once_maybe_cold_start(&api_base, &bearer_token, &account_user_id, true)
+    }
+
+    /// Try the lock-free cold-start pull (see `mobile_core_cold_start_sync`)
+    /// before falling back to the ordinary, fully-locked sync path. The
+    /// fallback is exactly `self.lock()?.sync_once(...)` /
+    /// `self.lock()?.force_sync_once(...)` as before this existed, so any
+    /// device past its first sync sees zero behavior change.
+    #[cfg(feature = "accounts")]
+    fn sync_once_maybe_cold_start(
+        &self,
+        api_base: &str,
+        bearer_token: &str,
+        account_user_id: &str,
+        force: bool,
+    ) -> Result<bool, MobileError> {
+        let prelude = self.lock()?.try_prepare_cold_start_pull(api_base, bearer_token)?;
+        let Some(prelude) = prelude else {
+            let mut inner = self.lock()?;
+            return if force {
+                inner.force_sync_once(api_base, bearer_token, account_user_id)
+            } else {
+                inner.sync_once(api_base, bearer_token, account_user_id)
+            }
+            .map_err(Into::into);
+        };
+
+        // This device has never synced, so resolving the canonical workspace
+        // id is always a real network call — no cache to hit. No lock held.
+        let server_workspace_id = match prelude.transport_client.account_status() {
+            Ok(status) => status.workspace_id,
+            Err(error) => {
+                // Nothing shared was touched beyond the `sync_in_progress`
+                // breadcrumb (harmless — every later attempt overwrites it),
+                // so it is safe to just report the failure like the ordinary
+                // path would have.
+                return Err(error.into());
+            }
+        };
+
+        let transport = if force {
+            crate::ws_sync::FallbackTransport::http_only(&prelude.transport_client)
+        } else {
+            crate::ws_sync::FallbackTransport::new(
+                prelude.ws_client.as_deref(),
+                &prelude.transport_client,
+            )
+        };
+
+        let mut workspace = prelude.workspace_snapshot.clone();
+        workspace.canonicalize_personal_sync_identity_with_change(server_workspace_id);
+        workspace.ensure_sync_metadata();
+
+        // The actual network pull. No lock held for the whole rest of this
+        // scope — this is the entire point.
+        let mut pulled_crdt = knotq_sync::WorkspaceCrdtDocuments::empty(&workspace);
+        let mut pulled_sync_state = prelude.sync_state_snapshot.clone();
+        let pull_result = knotq_sync::batch_pull_and_apply_with_persisted_integrity_vectors(
+            &transport,
+            &mut pulled_crdt,
+            &mut pulled_sync_state,
+            workspace,
+            prelude.replica_id,
+            true,
+            None,
+        );
+
+        let resolved_account_workspace = CachedAccountWorkspace::new(
+            prelude.transport_client.api_base.clone(),
+            prelude.transport_client.bearer_token.clone(),
+            server_workspace_id,
+        );
+
+        let pull_outcome = match pull_result {
+            Ok(outcome) => outcome,
+            Err(error) => {
+                // The pull itself failed (network, server error). Nothing to
+                // merge; `sync_in_progress` is already durably set from the
+                // prelude, so the next attempt's recovery proof still fires.
+                // Cache the account lookup at least, so a retry does not pay
+                // for it again, then report the failure exactly as the
+                // ordinary path would have.
+                let mut inner = self.lock()?;
+                inner.account_workspace_cache = Some(resolved_account_workspace);
+                return Err(error.into());
+            }
+        };
+
+        let mut inner = self.lock()?;
+        inner.finish_cold_start_pull(
+            server_workspace_id,
+            &pulled_crdt,
+            &pulled_sync_state,
+            &pull_outcome.changed_documents,
+            resolved_account_workspace,
+        )?;
+        // Everything else — push, media, notification schedule, dirty
+        // tracking, durable saves — runs through the completely unmodified
+        // ordinary path. Cursors are already caught up, so its own pull is a
+        // fast, empty round trip (a real one, not a coalesced no-op:
+        // `last_remote_sync_at` has not been set yet at this point).
+        if force {
+            inner.force_sync_once(api_base, bearer_token, account_user_id)
+        } else {
+            inner.sync_once(api_base, bearer_token, account_user_id)
+        }
+        .map_err(Into::into)
     }
 
     #[cfg(not(feature = "accounts"))]

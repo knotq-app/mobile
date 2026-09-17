@@ -171,6 +171,213 @@ fn bootstrap_drops_orphaned_pending_delta_without_remote_base() {
     );
 }
 
+/// Build an in-memory "server" already holding one scheme with one line, and
+/// return it alongside the canonical `workspace_id` a fresh device's account
+/// lookup would resolve to.
+fn seeded_cold_start_server() -> (MobileFuzzServer, knotq_model::WorkspaceId, SchemeId) {
+    let mut initial = Workspace::new();
+    let mut scheme = Scheme::new("From another device", 0);
+    scheme.items.push(Item::new("Existing line"));
+    let scheme_id = scheme.id;
+    initial
+        .folders
+        .get_mut(&initial.root)
+        .unwrap()
+        .children
+        .push(NodeRef::Scheme(scheme_id));
+    initial.schemes.insert(scheme_id, scheme);
+    initial.canonicalize_personal_sync_identity(initial.id);
+    initial.ensure_sync_metadata();
+    let seed_crdt = WorkspaceCrdtDocuments::try_new(&initial).unwrap();
+    let seed_states = seed_crdt.document_states();
+    let server = MobileFuzzServer::seeded(&initial, &seed_states);
+    (server, initial.id, scheme_id)
+}
+
+/// Drive exactly the sequence `MobileCore::sync_once_maybe_cold_start` runs,
+/// with `between_prelude_and_merge` invoked at the point in real life where
+/// the network pull is in flight and the lock is free — i.e. where a
+/// concurrent `apply(Command)` could land. Panics (via `unwrap`) exactly where
+/// the production orchestration would propagate an error.
+fn run_cold_start_pull(
+    inner: &mut MobileCoreInner,
+    server: &MobileFuzzServer,
+    server_workspace_id: knotq_model::WorkspaceId,
+    between_prelude_and_merge: impl FnOnce(&mut MobileCoreInner),
+) {
+    let prelude = inner
+        .try_prepare_cold_start_pull("http://127.0.0.1:8788", "test-bearer")
+        .expect("prepare cold start")
+        .expect("a fresh core must be cold-start eligible");
+
+    between_prelude_and_merge(inner);
+
+    let mut workspace = prelude.workspace_snapshot.clone();
+    workspace.canonicalize_personal_sync_identity_with_change(server_workspace_id);
+    workspace.ensure_sync_metadata();
+    let mut pulled_crdt = WorkspaceCrdtDocuments::empty(&workspace);
+    let mut pulled_sync_state = prelude.sync_state_snapshot.clone();
+    let outcome = knotq_sync::batch_pull_and_apply_with_persisted_integrity_vectors(
+        server,
+        &mut pulled_crdt,
+        &mut pulled_sync_state,
+        workspace,
+        prelude.replica_id,
+        true,
+        None,
+    )
+    .expect("cold start pull");
+
+    inner
+        .finish_cold_start_pull(
+            server_workspace_id,
+            &pulled_crdt,
+            &pulled_sync_state,
+            &outcome.changed_documents,
+            CachedAccountWorkspace::new(
+                "http://127.0.0.1:8788".to_string(),
+                "test-bearer".to_string(),
+                server_workspace_id,
+            ),
+        )
+        .expect("finish cold start pull");
+}
+
+#[test]
+fn cold_start_pull_is_only_offered_before_the_first_ever_sync() {
+    let dir = std::env::temp_dir().join(format!("knotq-mobile-cold-start-elig-{}", uuid::Uuid::new_v4()));
+    let mut inner = MobileCoreInner::open(dir.clone()).unwrap();
+
+    assert!(
+        inner
+            .try_prepare_cold_start_pull("http://127.0.0.1:8788", "test-bearer")
+            .unwrap()
+            .is_some(),
+        "a fresh core with no cursors must be cold-start eligible"
+    );
+
+    // Simulate a completed prior sync: give it a cursor.
+    let mut sync_state = load_local_sync_state(&inner.workspace_path).unwrap_or_default();
+    sync_state.document_cursors.insert(
+        DocumentId::new(),
+        DocumentSyncCursor {
+            document: DocumentId::new(),
+            kind: SyncDocumentKind::Scheme,
+            last_pulled_sequence: 1,
+            last_pushed_sequence: 0,
+            epoch: 0,
+        },
+    );
+    save_local_sync_state(&inner.workspace_path, &sync_state).unwrap();
+
+    assert!(
+        inner
+            .try_prepare_cold_start_pull("http://127.0.0.1:8788", "test-bearer")
+            .unwrap()
+            .is_none(),
+        "a core that has already synced must fall back to the ordinary path"
+    );
+
+    let _ = std::fs::remove_dir_all(dir);
+}
+
+#[test]
+fn cold_start_pull_merges_remote_content_with_no_concurrent_edit() {
+    let (server, server_workspace_id, remote_scheme_id) = seeded_cold_start_server();
+    let dir = std::env::temp_dir().join(format!("knotq-mobile-cold-start-plain-{}", uuid::Uuid::new_v4()));
+    let mut inner = MobileCoreInner::open(dir.clone()).unwrap();
+
+    run_cold_start_pull(&mut inner, &server, server_workspace_id, |_| {});
+
+    assert_eq!(inner.workspace.id, server_workspace_id);
+    let remote_scheme = inner
+        .workspace
+        .schemes
+        .get(&remote_scheme_id)
+        .expect("remote scheme merged into the local workspace");
+    assert_eq!(remote_scheme.name, "From another device");
+
+    let sync_state = load_local_sync_state(&inner.workspace_path).unwrap();
+    assert!(
+        !sync_state.document_cursors.is_empty(),
+        "cursors must be recorded after a cold-start pull"
+    );
+    // A fresh core is not actually content-empty (it seeds starter schemes),
+    // so re-identifying the workspace document to the server's id queues that
+    // starter content for push -- proving the reidentify rescue path itself
+    // works even with no concurrent edit racing it.
+    assert!(
+        !sync_state.pending.is_empty(),
+        "starter content must be queued for push after the workspace is re-identified"
+    );
+
+    let _ = std::fs::remove_dir_all(dir);
+}
+
+/// The scenario the fast path exists for: `create_scheme` runs on the SAME
+/// `MobileCoreInner` in the exact window where, in production, the lock is
+/// free because the pull's network round trip is in flight on a different
+/// thread. Both the concurrently-created local scheme and the pulled remote
+/// content must survive, and the local scheme's pending edit must still be
+/// queued for push afterward -- not silently dropped by the merge.
+#[test]
+fn cold_start_pull_preserves_a_concurrent_local_edit() {
+    let (server, server_workspace_id, remote_scheme_id) = seeded_cold_start_server();
+    let dir = std::env::temp_dir().join(format!("knotq-mobile-cold-start-race-{}", uuid::Uuid::new_v4()));
+    let mut inner = MobileCoreInner::open(dir.clone()).unwrap();
+
+    let mut local_scheme_id = None;
+    run_cold_start_pull(&mut inner, &server, server_workspace_id, |inner| {
+        let folder = inner.workspace.root;
+        inner
+            .apply(Command::CreateScheme {
+                folder,
+                name: "Created during the pull".to_string(),
+                color_index: 0,
+                position: None,
+            })
+            .expect("concurrent create_scheme must succeed while the pull is unlocked");
+        local_scheme_id = inner
+            .workspace
+            .schemes
+            .iter()
+            .find(|(_, scheme)| scheme.name == "Created during the pull")
+            .map(|(id, _)| *id);
+    });
+    let local_scheme_id = local_scheme_id.expect("the concurrent scheme was created");
+
+    // Both survive the merge.
+    assert!(
+        inner.workspace.schemes.contains_key(&local_scheme_id),
+        "the concurrently created scheme must not be lost by the pull merge"
+    );
+    assert!(
+        inner.workspace.schemes.contains_key(&remote_scheme_id),
+        "the pulled remote scheme must still be present"
+    );
+
+    // The concurrent edit's pending push survives the merge (cursors are the
+    // only thing the merge overwrites).
+    let sync_state = load_local_sync_state(&inner.workspace_path).unwrap();
+    assert!(
+        !sync_state.pending.is_empty(),
+        "the concurrent local edit's queued push must not be lost by the cold-start merge"
+    );
+    assert!(
+        !sync_state.document_cursors.is_empty(),
+        "the pull's cursor advancement must still land"
+    );
+
+    // And it actually reaches the server on the next ordinary sync.
+    mobile_sync_cycle(&mut inner, &server).expect("follow-up sync pushes the queued edit");
+    assert!(
+        server.workspace.borrow().schemes.contains_key(&local_scheme_id),
+        "the concurrently created scheme must converge to the server"
+    );
+
+    let _ = std::fs::remove_dir_all(dir);
+}
+
 #[test]
 fn mobile_core_flow_creates_edits_and_searches() {
     let dir = std::env::temp_dir().join(format!("knotq-mobile-test-{}", uuid::Uuid::new_v4()));
@@ -462,7 +669,7 @@ fn completing_a_past_event_flags_background_refresh_then_clears_it_after_push() 
     let mut sync_state = LocalSyncState {
         workspace_id: Some(initial.id),
         replica_id: Some(replica_id),
-        server_url: Some("http://fuzz.local".to_string()),
+        server_url: Some("http://127.0.0.1:8788".to_string()),
         ..LocalSyncState::default()
     };
     for document in seed_states.keys() {
@@ -606,7 +813,7 @@ fn two_device_lazy_daily_lifecycle_fuzz_converges() {
             let mut sync_state = LocalSyncState {
                 workspace_id: Some(initial.id),
                 replica_id: Some(replica_id),
-                server_url: Some("http://fuzz.local".to_string()),
+                server_url: Some("http://127.0.0.1:8788".to_string()),
                 ..LocalSyncState::default()
             };
             for document in seed_states.keys() {

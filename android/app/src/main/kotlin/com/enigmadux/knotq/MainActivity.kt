@@ -380,6 +380,17 @@ class MainActivity : Activity() {
     // thread. Keeping both on the same queue avoids native-lock contention and
     // preserves edit order (like iOS's serial bridge queue) without blocking UI.
     internal val coreExecutor = SerialCoreExecutor()
+    // `sync_once`/`force_sync_once` get their OWN single-thread executor
+    // (still only one sync in flight at a time) so a sync's network round
+    // trip never makes an edit wait behind it on `coreExecutor`. Safe to run
+    // concurrently with `coreExecutor`: the Rust core's own mutex is still the
+    // sole authority on serializing actual state access, and it narrows its
+    // hold to the CPU-only merge step around a cold-start pull's network call
+    // (see `mobile_core_cold_start_sync.rs`) specifically so a concurrently
+    // dispatched edit can acquire it promptly instead of just not blocking the
+    // UI thread while still queued behind one giant call. Mirrors iOS's
+    // `RustBridge.syncQueue`.
+    internal val syncCoreExecutor = SerialCoreExecutor(threadName = "KnotQ-core-sync")
     // The inline cell editor currently shown (if any), so a second tap commits
     // the first before moving on.
     internal var activeCellEdit: ActiveCellEdit? = null
@@ -1164,13 +1175,19 @@ class MainActivity : Activity() {
             // until the finalizer runs: a WorkManager or notification callback
             // must see the closing core and queue/retry, never open a second
             // MobileCore over the same on-disk workspace.
+            // Drain `syncCoreExecutor` (a sync may be mid-flight) before
+            // `coreExecutor`'s own queued work, then close the bridge only
+            // once BOTH have drained — closing it while either still has
+            // in-flight native calls would be a use-after-close race.
             val closingBridge = bridge
-            coreExecutor.closeAfter {
-                try {
-                    closingBridge.close()
-                } finally {
-                    if (sharedBridge === closingBridge) sharedBridge = null
-                    liveActivity.clearIfCurrent(this)
+            syncCoreExecutor.closeAfter {
+                coreExecutor.closeAfter {
+                    try {
+                        closingBridge.close()
+                    } finally {
+                        if (sharedBridge === closingBridge) sharedBridge = null
+                        liveActivity.clearIfCurrent(this)
+                    }
                 }
             }
         } else {
@@ -1178,6 +1195,7 @@ class MainActivity : Activity() {
                 sharedBridge = null
                 liveActivity.clearIfCurrent(this)
             }
+            syncCoreExecutor.close()
             coreExecutor.close()
         }
         super.onDestroy()

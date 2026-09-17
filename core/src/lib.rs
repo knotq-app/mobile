@@ -74,6 +74,8 @@ use conversions::{
 
 mod mobile_core_api;
 #[cfg_attr(not(feature = "accounts"), allow(dead_code))]
+mod mobile_core_cold_start_sync;
+#[cfg_attr(not(feature = "accounts"), allow(dead_code))]
 mod mobile_core_inner_ops;
 #[cfg(test)]
 use mobile_core_inner_ops::SyncCycleOptions;
@@ -354,6 +356,17 @@ struct CachedAccountWorkspace {
     bearer_token: String,
     workspace_id: knotq_model::WorkspaceId,
     fetched_at: std::time::Instant,
+}
+
+impl CachedAccountWorkspace {
+    fn new(api_base: String, bearer_token: String, workspace_id: knotq_model::WorkspaceId) -> Self {
+        Self {
+            api_base,
+            bearer_token,
+            workspace_id,
+            fetched_at: std::time::Instant::now(),
+        }
+    }
 }
 
 /// Minimum spacing between remote syncs that have nothing local to push. Silent

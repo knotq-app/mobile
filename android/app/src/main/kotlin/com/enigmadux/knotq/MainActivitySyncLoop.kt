@@ -223,11 +223,13 @@ internal fun MainActivity.flushEditsOverWsThenStop() {
     Thread {
         if (session != null && session.supportsSync) {
             // sync_once's pull/push prefer the live socket (FallbackTransport), so
-            // this rides the already-open connection. The core lock serializes it
-            // with any in-flight sync and with the ws_stop below, so the teardown
-            // can't cut in mid-push.
+            // this rides the already-open connection. Runs on syncCoreExecutor
+            // (not coreExecutor), but the ws_stop below still only starts once
+            // this line returns — that ordering comes from this function's own
+            // sequential code, not from queue-sharing, so moving sync_once to
+            // its own executor does not let the teardown cut in mid-push.
             runCatching {
-                coreExecutor.call {
+                syncCoreExecutor.call {
                     bridge.request(
                         obj(
                             "type" to "sync_once",
@@ -356,7 +358,7 @@ internal fun MainActivity.syncOnce(force: Boolean = false) {
         var result: kotlin.Result<JSONObject>
         while (true) {
             result = runCatching {
-                coreExecutor.call {
+                syncCoreExecutor.call {
                     bridge.request(
                         obj(
                             "type" to if (force) "force_sync_once" else "sync_once",

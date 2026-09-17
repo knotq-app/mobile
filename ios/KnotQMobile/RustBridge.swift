@@ -3,11 +3,24 @@ import Foundation
 final class RustBridge: @unchecked Sendable {
     private let core: MobileCore
 
-    // All core access funnels through this serial queue. The Rust core is one
-    // big mutex, and sync_once holds it across network I/O — a snapshot or edit
-    // issued from the main thread would otherwise block the UI for the whole
-    // sync. Serial + FIFO also preserves the submission order of edits.
+    // All ordinary core access (snapshots, edits) funnels through this serial
+    // queue — never the main thread, and never `syncQueue` below. Serial +
+    // FIFO preserves the submission order of edits among themselves.
     private let queue = DispatchQueue(label: "com.knotq.rust-bridge", qos: .userInitiated)
+
+    // `syncOnce`/`forceSyncOnce` get their OWN serial queue (still only one
+    // sync in flight at a time — `AppModel.syncInProgress` also guards this at
+    // a higher level) so a sync's network round trip never makes an edit wait
+    // behind it. This only matters because the Rust core narrows its own lock
+    // to the CPU-only merge step around a cold-start pull's network call (see
+    // `mobile_core_cold_start_sync.rs`); an edit dispatched here can then
+    // actually acquire that lock promptly instead of just not blocking the UI
+    // thread while still queued behind one giant FFI call. Two separate
+    // OS-level dispatch queues are safe to run concurrently: the Rust mutex is
+    // still the sole authority on serializing actual state access, so nothing
+    // here can race the core into an inconsistent state — only the TIMING of
+    // which call gets there first changes.
+    private let syncQueue = DispatchQueue(label: "com.knotq.rust-bridge.sync", qos: .userInitiated)
 
     #if DEBUG
     /// Debug-only slow-motion for core work, in milliseconds, from
@@ -52,6 +65,17 @@ final class RustBridge: @unchecked Sendable {
     func perform<T: Sendable>(_ work: @escaping @Sendable (RustBridge) throws -> T) async throws -> T {
         try await withCheckedThrowingContinuation { continuation in
             queue.async {
+                continuation.resume(with: Result { try work(self) })
+            }
+        }
+    }
+
+    /// Like `perform`, but for `syncOnce`/`forceSyncOnce` specifically — runs
+    /// on `syncQueue` instead of `queue`, so it cannot make an edit wait
+    /// behind it. See `syncQueue`'s doc comment.
+    func performSync<T: Sendable>(_ work: @escaping @Sendable (RustBridge) throws -> T) async throws -> T {
+        try await withCheckedThrowingContinuation { continuation in
+            syncQueue.async {
                 continuation.resume(with: Result { try work(self) })
             }
         }
