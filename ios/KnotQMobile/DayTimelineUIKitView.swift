@@ -98,7 +98,11 @@ final class DayTimelineUIKitView: UIView, UIGestureRecognizerDelegate, UIScrollV
     var laidEventsCache: [Int: [DayTimelineLaidOccurrence]] = [:]
     var laidEventsCacheColumnWidth: CGFloat?
     var resetToken = 0
-    var nowIndicatorTimer: Timer?
+    // UIKit destroys views through a nonisolated deinitializer on older Swift
+    // toolchains. The view is main-thread-owned, so this is the one teardown
+    // handle explicitly marked unsafe; every mutation still happens on the
+    // main actor through the view lifecycle methods below.
+    nonisolated(unsafe) var nowIndicatorTimer: Timer?
     var lastNowIndicatorDay: Date?
 
     static let titleHeight: CGFloat = 42
@@ -349,7 +353,7 @@ final class DayTimelineUIKitView: UIView, UIGestureRecognizerDelegate, UIScrollV
         startNowIndicatorTimer()
     }
 
-    isolated deinit {
+    deinit {
         nowIndicatorTimer?.invalidate()
         NotificationCenter.default.removeObserver(self)
     }
