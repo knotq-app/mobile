@@ -245,7 +245,10 @@ fn run_cold_start_pull(
 
 #[test]
 fn cold_start_pull_is_only_offered_before_the_first_ever_sync() {
-    let dir = std::env::temp_dir().join(format!("knotq-mobile-cold-start-elig-{}", uuid::Uuid::new_v4()));
+    let dir = std::env::temp_dir().join(format!(
+        "knotq-mobile-cold-start-elig-{}",
+        uuid::Uuid::new_v4()
+    ));
     let mut inner = MobileCoreInner::open(dir.clone()).unwrap();
 
     assert!(
@@ -284,7 +287,10 @@ fn cold_start_pull_is_only_offered_before_the_first_ever_sync() {
 #[test]
 fn cold_start_pull_merges_remote_content_with_no_concurrent_edit() {
     let (server, server_workspace_id, remote_scheme_id) = seeded_cold_start_server();
-    let dir = std::env::temp_dir().join(format!("knotq-mobile-cold-start-plain-{}", uuid::Uuid::new_v4()));
+    let dir = std::env::temp_dir().join(format!(
+        "knotq-mobile-cold-start-plain-{}",
+        uuid::Uuid::new_v4()
+    ));
     let mut inner = MobileCoreInner::open(dir.clone()).unwrap();
 
     run_cold_start_pull(&mut inner, &server, server_workspace_id, |_| {});
@@ -323,7 +329,10 @@ fn cold_start_pull_merges_remote_content_with_no_concurrent_edit() {
 #[test]
 fn cold_start_pull_preserves_a_concurrent_local_edit() {
     let (server, server_workspace_id, remote_scheme_id) = seeded_cold_start_server();
-    let dir = std::env::temp_dir().join(format!("knotq-mobile-cold-start-race-{}", uuid::Uuid::new_v4()));
+    let dir = std::env::temp_dir().join(format!(
+        "knotq-mobile-cold-start-race-{}",
+        uuid::Uuid::new_v4()
+    ));
     let mut inner = MobileCoreInner::open(dir.clone()).unwrap();
 
     let mut local_scheme_id = None;
@@ -371,7 +380,11 @@ fn cold_start_pull_preserves_a_concurrent_local_edit() {
     // And it actually reaches the server on the next ordinary sync.
     mobile_sync_cycle(&mut inner, &server).expect("follow-up sync pushes the queued edit");
     assert!(
-        server.workspace.borrow().schemes.contains_key(&local_scheme_id),
+        server
+            .workspace
+            .borrow()
+            .schemes
+            .contains_key(&local_scheme_id),
         "the concurrently created scheme must converge to the server"
     );
 

@@ -1158,7 +1158,9 @@ impl MobileCore {
         account_user_id: &str,
         force: bool,
     ) -> Result<bool, MobileError> {
-        let prelude = self.lock()?.try_prepare_cold_start_pull(api_base, bearer_token)?;
+        let prelude = self
+            .lock()?
+            .try_prepare_cold_start_pull(api_base, bearer_token)?;
         let Some(prelude) = prelude else {
             let mut inner = self.lock()?;
             return if force {
