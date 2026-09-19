@@ -104,10 +104,10 @@
     <string name="common_weekday_short_thu">Thu</string>
     <string name="common_weekday_short_tue">Tue</string>
     <string name="common_weekday_short_wed">Wed</string>
-    <string name="community_prompt_body">KnotQ is built by an indie developer, and your opinion helps. I would greatly appreciate it if you could share any feedback or ideas in our Discord server.</string>
-    <string name="community_prompt_join">Join Discord</string>
-    <string name="community_prompt_later">Maybe later</string>
-    <string name="community_prompt_title">Help shape KnotQ</string>
+    <string name="community_prompt_body" tools:ignore="MissingTranslation">KnotQ is built by an indie developer, and your opinion helps. I would greatly appreciate it if you could share any feedback or ideas in our Discord server.</string>
+    <string name="community_prompt_join" tools:ignore="MissingTranslation">Join Discord</string>
+    <string name="community_prompt_later" tools:ignore="MissingTranslation">Maybe later</string>
+    <string name="community_prompt_title" tools:ignore="MissingTranslation">Help shape KnotQ</string>
     <string name="daily_carryover_from_date">roll over from {date}</string>
     <string name="daily_carryover_yesterday">roll over yesterday</string>
     <string name="editor_annotation_at">at {date}</string>

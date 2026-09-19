@@ -26,23 +26,23 @@ final class ScheduleTargetTests: XCTestCase {
         guard model.bridge != nil else { return }
         for scheme in model.snapshot?.schemes ?? []
         where scheme.name.hasPrefix(Self.scratchPrefix) {
-            _ = await removeScratchScheme(scheme.id)
+            _ = await Self.removeScratchScheme(scheme.id)
         }
     }
 
-    private func waitUntil(_ condition: () -> Bool) async {
+    private static func waitUntil(_ condition: () -> Bool) async {
         for _ in 0..<100 where !condition() {
             try? await Task.sleep(nanoseconds: 50_000_000)
         }
     }
 
     @discardableResult
-    private func removeScratchScheme(_ id: String) async -> Bool {
+    private static func removeScratchScheme(_ id: String) async -> Bool {
         let model = AppModel.shared
         model.deleteScheme(id: id)
-        await waitUntil { model.snapshot?.schemes.contains { $0.id == id } != true }
+        await Self.waitUntil { model.snapshot?.schemes.contains { $0.id == id } != true }
         model.permanentlyDeleteScheme(id: id)
-        await waitUntil { model.scheme(id: id) == nil }
+        await Self.waitUntil { model.scheme(id: id) == nil }
         return model.scheme(id: id) == nil
     }
 
@@ -85,7 +85,7 @@ final class ScheduleTargetTests: XCTestCase {
     func testASchemeStillReadsEmptyWhileTheFirstTypedLineIsInFlight() async throws {
         let model = AppModel.shared
         let schemeID = try await makeEmptyScratchScheme()
-        defer { Task { _ = await self.removeScratchScheme(schemeID) } }
+        defer { Task { _ = await Self.removeScratchScheme(schemeID) } }
 
         XCTAssertEqual(model.scheme(id: schemeID)?.items.count, 0, "starts empty")
 
@@ -115,7 +115,7 @@ final class ScheduleTargetTests: XCTestCase {
     func testTheJustTypedLineIsATargetableItemOnceFlushed() async throws {
         let model = AppModel.shared
         let schemeID = try await makeEmptyScratchScheme()
-        defer { Task { _ = await self.removeScratchScheme(schemeID) } }
+        defer { Task { _ = await Self.removeScratchScheme(schemeID) } }
 
         let landed = expectation(description: "flush")
         model.replaceSchemeItems(schemeID: schemeID, items: [edit("J")]) { landed.fulfill() }
@@ -147,11 +147,11 @@ final class ScheduleTargetTests: XCTestCase {
     func testAnUntouchedEmptySchemeStillGetsItsFirstLineCreated() async throws {
         let model = AppModel.shared
         let schemeID = try await makeEmptyScratchScheme()
-        defer { Task { _ = await self.removeScratchScheme(schemeID) } }
+        defer { Task { _ = await Self.removeScratchScheme(schemeID) } }
 
         XCTAssertEqual(model.scheme(id: schemeID)?.items.count, 0)
         model.addItem(schemeID: schemeID, text: "")
-        await waitUntil { model.scheme(id: schemeID)?.items.isEmpty == false }
+        await Self.waitUntil { model.scheme(id: schemeID)?.items.isEmpty == false }
 
         let items = model.scheme(id: schemeID)?.items ?? []
         XCTAssertEqual(items.count, 1, "exactly one line, for the schedule to attach to")
