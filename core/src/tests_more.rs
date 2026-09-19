@@ -1217,8 +1217,13 @@ fn recurring_event_edit_this_event_uses_desktop_scoped_commit() {
         .days
         .into_iter()
         .flat_map(|day| day.occurrences)
+        // The edit is expressed in UTC, while `local_date` intentionally uses
+        // the device timezone. In a UTC+13/14 timezone this timestamp belongs
+        // to Jan 8, so identify the edited occurrence by its resulting instant
+        // rather than baking a timezone-specific calendar day into the test.
         .find(|occurrence| {
-            occurrence.title == "Standup" && occurrence.local_date.as_deref() == Some("2026-01-07")
+            occurrence.title == "Standup"
+                && occurrence.start.as_deref() == Some("2026-01-07T14:00:00Z")
         })
         .expect("moved occurrence");
     assert_eq!(moved.start.as_deref(), Some("2026-01-07T14:00:00Z"));
