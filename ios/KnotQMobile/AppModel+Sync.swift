@@ -390,6 +390,9 @@ extension AppModel {
             request.httpMethod = "POST"
             request.setValue("application/json", forHTTPHeaderField: "Content-Type")
             request.httpBody = try JSONSerialization.data(withJSONObject: ["refresh_token": session.refreshToken])
+            // Capture an immutable request in the @Sendable assertion closure;
+            // the request is fully configured before the async boundary.
+            let requestToExecute = request
             // Hold a background-task assertion across the rotation so iOS lets the
             // request finish — and lets us persist the rotated token below — even if
             // the user backgrounds the app mid-flight. A bare foreground URLSession
@@ -397,7 +400,7 @@ extension AppModel {
             // server has already advanced the generation) is exactly what looks like
             // refresh-token reuse on the next launch and signs the user out.
             let (data, response) = try await withBackgroundAssertion("knotq.auth.refresh") {
-                try await MobileHTTPResponseLimits.data(for: request)
+                try await MobileHTTPResponseLimits.data(for: requestToExecute)
             }
             let http = response
             // Do not let a refresh response from a previous login sign out or
@@ -455,9 +458,9 @@ extension AppModel {
     /// retried next tick (recoverable), which is strictly better than losing a
     /// committed rotation. The server's reuse-grace window is the backstop for the
     /// residual case where the app is outright killed mid-rotation.
-    func withBackgroundAssertion<T>(
+    func withBackgroundAssertion<T: Sendable>(
         _ name: String,
-        _ work: () async throws -> T
+        _ work: @Sendable () async throws -> T
     ) async rethrows -> T {
         let app = UIApplication.shared
         var taskID: UIBackgroundTaskIdentifier = .invalid

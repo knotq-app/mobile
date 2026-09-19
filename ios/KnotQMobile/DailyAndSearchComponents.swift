@@ -401,6 +401,7 @@ private struct DailyBackButtonStyle: ButtonStyle {
 private extension View {
     @ViewBuilder
     func glassEffectIfAvailable<S: Shape>(theme: KnotQTheme, in shape: S) -> some View {
+#if compiler(>=6.2)
         if #available(iOS 26.0, *), UIDevice.current.userInterfaceIdiom != .pad {
             self
                 .glassEffect(.regular.tint(theme.isDark ? Color.white.opacity(0.06) : Color.white.opacity(0.20)).interactive(), in: shape)
@@ -410,6 +411,12 @@ private extension View {
         } else {
             self
         }
+#else
+        // Xcode 16.x cannot type-check the iOS 26 API, even behind a runtime
+        // availability check. Keep the pre-Liquid-Glass rendering on that
+        // toolchain; newer compilers still select the branch above at runtime.
+        self
+#endif
     }
 }
 

@@ -122,6 +122,7 @@ struct SchemeEditorGlassSurface<Content: View>: View {
 
     var body: some View {
         let shape = Capsule(style: .continuous)
+#if compiler(>=6.2)
         if #available(iOS 26.0, *), UIDevice.current.userInterfaceIdiom != .pad {
             content
                 .padding(.horizontal, horizontalPadding)
@@ -161,6 +162,27 @@ struct SchemeEditorGlassSurface<Content: View>: View {
                     y: theme.isDark ? 5 : 2
                 )
         }
+#else
+        // Xcode 16.x cannot type-check the iOS 26 API, even behind a runtime
+        // availability check. Preserve the established fallback appearance.
+        content
+            .padding(.horizontal, horizontalPadding)
+            .frame(height: 38)
+            .frame(minWidth: minWidth)
+            .background {
+                shape.fill(.ultraThinMaterial)
+                shape.fill(fallbackTint)
+            }
+            .overlay {
+                shape.strokeBorder(glassBorder, lineWidth: 0.8)
+            }
+            .shadow(
+                color: .black.opacity(theme.isDark ? 0.24 : 0.08),
+                radius: theme.isDark ? 12 : 5,
+                x: 0,
+                y: theme.isDark ? 5 : 2
+            )
+#endif
     }
 
     private var glassTint: Color {
