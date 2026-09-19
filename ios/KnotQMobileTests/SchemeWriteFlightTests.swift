@@ -21,8 +21,11 @@ final class SchemeWriteFlightTests: XCTestCase {
     /// is interrupted (or an older build whose teardown was fire-and-forget)
     /// leaves them behind. Sweep them before starting rather than accumulating
     /// junk in whatever simulator the suite runs on.
-    override func setUp() async throws {
-        try await super.setUp()
+    override func setUp() {
+        super.setUp()
+    }
+
+    private func sweepScratchSchemes() async {
         let model = AppModel.shared
         guard model.bridge != nil else { return }
         for scheme in model.snapshot?.schemes ?? []
@@ -100,6 +103,7 @@ final class SchemeWriteFlightTests: XCTestCase {
     }
 
     func testWriteIsInFlightUntilItsCompletionRuns() async throws {
+        await sweepScratchSchemes()
         let model = AppModel.shared
         let schemeID = try await makeScratchScheme()
 
@@ -130,6 +134,7 @@ final class SchemeWriteFlightTests: XCTestCase {
     /// write yet, so anything that rebuilds from `scheme(id:)` in this window
     /// renders text the user has already replaced.
     func testSnapshotStillHoldsPreWriteTextWhileInFlight() async throws {
+        await sweepScratchSchemes()
         let model = AppModel.shared
         let schemeID = try await makeScratchScheme()
 
@@ -165,6 +170,7 @@ final class SchemeWriteFlightTests: XCTestCase {
     /// toggle that isn't tracked can be reverted by a concurrent editor merge
     /// (see `RemoteMergeTests.testStaleBaselineRevertsAnInFlightToggle`).
     func testItemLevelOperationIsAlsoTracked() async throws {
+        await sweepScratchSchemes()
         let model = AppModel.shared
         let schemeID = try await makeScratchScheme()
 
