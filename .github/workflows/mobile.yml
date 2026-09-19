@@ -218,6 +218,11 @@ jobs:
           path: app/mobile
 
       - uses: dtolnay/rust-toolchain@stable
+        with:
+          # The Xcode build phase selects the simulator target from
+          # CURRENT_ARCH; install every target it can legitimately request so
+          # an arm64 hosted runner does not fail with E0463 before XCTest runs.
+          targets: aarch64-apple-ios,aarch64-apple-ios-sim,x86_64-apple-ios
 
       - uses: Swatinem/rust-cache@v2
         continue-on-error: true
