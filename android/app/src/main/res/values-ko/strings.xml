@@ -884,6 +884,7 @@
     <string name="sync_action_resync">다시 동기화</string>
     <string name="sync_action_resyncing">다시 동기화 중…</string>
     <string name="sync_action_sync_now">지금 동기화</string>
+    <string name="sync_disclosure_intro_month">1개월 무료, 이후</string>
     <plurals name="sync_disclosure_period_days">
         <item quantity="zero">%1$d일</item>
         <item quantity="one">%1$d일</item>
@@ -919,6 +920,7 @@
     </plurals>
     <string name="sync_disclosure_privacy_policy">개인정보보호정책</string>
     <string name="sync_disclosure_subscription_terms">{price}, {period}마다 Apple 계정으로 청구됩니다. 현재 기간이 끝나기 최소 24시간 전에 취소하지 않으면 구독이 자동으로 갱신됩니다. 설정에서 언제든지 관리하거나 취소할 수 있습니다.</string>
+    <string name="sync_disclosure_subscription_terms_no_intro">{price}, {period}마다 Apple 계정으로 청구됩니다. 현재 기간이 끝나기 최소 24시간 전에 취소하지 않으면 구독이 자동으로 갱신됩니다. 설정에서 언제든지 관리하거나 취소할 수 있습니다.</string>
     <string name="sync_disclosure_terms_of_use">이용약관</string>
     <string name="sync_error_account_status_unsupported">동기화 API가 아직 계정 상태를 지원하지 않습니다.</string>
     <string name="sync_error_api_unreachable">동기화 API에 연결할 수 없음: {error}</string>
@@ -1157,7 +1159,8 @@
     <string name="web_account_sync_optional" translatable="false">호스팅된 동기화는 선택 사항입니다</string>
     <string name="web_account_sync_promo_pill_available" translatable="false">사용 가능</string>
     <string name="web_account_sync_promo_point_local_first" translatable="false">로컬 우선 - 오프라인 상태에서 모든 것이 계속 작동합니다</string>
-    <string name="web_account_sync_promo_point_notifications" translatable="false"></string>
+    <string name="web_account_sync_promo_point_notifications" translatable="false">모든 기기에서 알림을 받을 수 있습니다</string>
+    <string name="web_account_sync_promo_point_trial" translatable="false">1개월 무료 체험</string>
     <string name="web_account_sync_promo_point_workspace" translatable="false">단계에서 일정, 미리 알림 및 작업 상태를 유지합니다. 로그인한 모든 장치에서 동일한 작업 공간을 유지합니다.</string>
     <string name="web_account_sync_promo_tagline" translatable="false">장치 간 동기화가 가능합니다.</string>
     <string name="web_account_sync_summary_active" translatable="false">동기화가 활성입니다.</string>

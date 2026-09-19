@@ -884,6 +884,7 @@
     <string name="sync_action_resync">Erneut synchronisieren</string>
     <string name="sync_action_resyncing">Wird erneut synchronisiert…</string>
     <string name="sync_action_sync_now">Jetzt synchronisieren</string>
+    <string name="sync_disclosure_intro_month">Einen Monat kostenlos, danach</string>
     <plurals name="sync_disclosure_period_days">
         <item quantity="zero">%1$d Tage</item>
         <item quantity="one" tools:ignore="ImpliedQuantity">Tag</item>
@@ -919,6 +920,7 @@
     </plurals>
     <string name="sync_disclosure_privacy_policy">Datenschutzrichtlinie</string>
     <string name="sync_disclosure_subscription_terms">{price} pro {period}, wird auf Ihr Apple-Konto berechnet. Ihr Abonnement wird automatisch erneuert, wenn es nicht mindestens 24 Stunden vor Ablauf der aktuellen Periode storniert wird. Verwalten oder stornieren Sie jederzeit in Einstellungen.</string>
+    <string name="sync_disclosure_subscription_terms_no_intro">{price} pro {period}, wird auf Ihr Apple-Konto berechnet. Ihr Abonnement wird automatisch erneuert, wenn es nicht mindestens 24 Stunden vor Ablauf der aktuellen Periode storniert wird. Verwalten oder stornieren Sie jederzeit in Einstellungen.</string>
     <string name="sync_disclosure_terms_of_use">Nutzungsbedingungen</string>
     <string name="sync_error_account_status_unsupported">Die Sync-API unterstützt den Kontostatus noch nicht.</string>
     <string name="sync_error_api_unreachable">Sync-API nicht erreichbar: {error}</string>
@@ -1157,7 +1159,8 @@
     <string name="web_account_sync_optional" translatable="false">Gehostetes Sync ist optional</string>
     <string name="web_account_sync_promo_pill_available" translatable="false">Verfügbar</string>
     <string name="web_account_sync_promo_point_local_first" translatable="false">Lokal-first – alles funktioniert offline weiter</string>
-    <string name="web_account_sync_promo_point_notifications" translatable="false">Behalten Sie Zeitpläne, Erinnerungen und Aufgabenstatus in Schritt</string>
+    <string name="web_account_sync_promo_point_notifications" translatable="false">Benachrichtigungen folgen Ihnen auf allen Geräten</string>
+    <string name="web_account_sync_promo_point_trial" translatable="false">1 Monat kostenlos testen</string>
     <string name="web_account_sync_promo_point_workspace" translatable="false">bei. Gleicher Arbeitsbereich auf jedem angemeldeten Gerät.</string>
     <string name="web_account_sync_promo_tagline" translatable="false">. Geräteübergreifende Synchronisierung ist verfügbar.</string>
     <string name="web_account_sync_summary_active" translatable="false">Sync ist aktiv.</string>

@@ -884,6 +884,7 @@
     <string name="sync_action_resync">Yeniden Senkronize Et</string>
     <string name="sync_action_resyncing">Yeniden senkronize ediliyor…</string>
     <string name="sync_action_sync_now">Şimdi senkronize et</string>
+    <string name="sync_disclosure_intro_month">Bir ay ücretsiz, ardından</string>
     <plurals name="sync_disclosure_period_days">
         <item quantity="zero">%1$d gün</item>
         <item quantity="one" tools:ignore="ImpliedQuantity">gün</item>
@@ -919,6 +920,7 @@
     </plurals>
     <string name="sync_disclosure_privacy_policy">Gizlilik Politikası</string>
     <string name="sync_disclosure_subscription_terms">{price}/{period} başına, Apple Hesabınıza faturalandırılır. Aboneliğiniz geçerli dönemin bitiminden en az 24 saat önce iptal edilmediği sürece otomatik olarak yenilenir. Ayarlardan istediğiniz zaman yönetin veya iptal edin.</string>
+    <string name="sync_disclosure_subscription_terms_no_intro">{price}/{period} başına, Apple Hesabınıza faturalandırılır. Aboneliğiniz geçerli dönemin bitiminden en az 24 saat önce iptal edilmediği sürece otomatik olarak yenilenir. Ayarlardan istediğiniz zaman yönetin veya iptal edin.</string>
     <string name="sync_disclosure_terms_of_use">Kullanım Şartları</string>
     <string name="sync_error_account_status_unsupported">Senkronizasyon API\'si henüz hesap durumunu desteklemiyor.</string>
     <string name="sync_error_api_unreachable">Senkronizasyon API\'sine ulaşılamadı: {error}</string>
@@ -1157,7 +1159,8 @@
     <string name="web_account_sync_optional" translatable="false">Barındırılan senkronizasyon isteğe bağlı</string>
     <string name="web_account_sync_promo_pill_available" translatable="false">Kullanılabilir</string>
     <string name="web_account_sync_promo_point_local_first" translatable="false">Yerel-öncelikli — her şey çevrimdışı olarak çalışmaya devam eder</string>
-    <string name="web_account_sync_promo_point_notifications" translatable="false">Adımdaki programları, hatırlatıcıları ve görev durumunu koruyun</string>
+    <string name="web_account_sync_promo_point_notifications" translatable="false">Bildirimler tüm cihazlarınızda sizinle</string>
+    <string name="web_account_sync_promo_point_trial" translatable="false">1 ay ücretsiz deneme</string>
     <string name="web_account_sync_promo_point_workspace" translatable="false">Oturum açılan her cihazda aynı çalışma alanı</string>
     <string name="web_account_sync_promo_tagline" translatable="false">Cihazlar arası senkronizasyon mevcuttur.</string>
     <string name="web_account_sync_summary_active" translatable="false">Senkronizasyon etkin.</string>

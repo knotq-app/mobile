@@ -884,6 +884,7 @@
     <string name="sync_action_resync">重新同步</string>
     <string name="sync_action_resyncing">重新同步中…</string>
     <string name="sync_action_sync_now">立即同步</string>
+    <string name="sync_disclosure_intro_month">首月免费，之后</string>
     <plurals name="sync_disclosure_period_days">
         <item quantity="zero">%1$d 天</item>
         <item quantity="one">%1$d 天</item>
@@ -919,6 +920,7 @@
     </plurals>
     <string name="sync_disclosure_privacy_policy">隐私政策</string>
     <string name="sync_disclosure_subscription_terms">每 {period} {price}，计入您的 Apple 账户。您的订阅将自动续订，除非您在当前期限结束前至少 24 小时取消。可随时在设置中管理或取消。</string>
+    <string name="sync_disclosure_subscription_terms_no_intro">每 {period} {price}，计入您的 Apple 账户。您的订阅将自动续订，除非您在当前期限结束前至少 24 小时取消。可随时在设置中管理或取消。</string>
     <string name="sync_disclosure_terms_of_use">使用条款</string>
     <string name="sync_error_account_status_unsupported">同步 API 尚不支持账户状态。</string>
     <string name="sync_error_api_unreachable">无法访问同步 API：{error}</string>
@@ -1157,7 +1159,8 @@
     <string name="web_account_sync_optional" translatable="false">托管同步是可选的</string>
     <string name="web_account_sync_promo_pill_available" translatable="false">可用</string>
     <string name="web_account_sync_promo_point_local_first" translatable="false">本地优先——一切在离线状态下继续工作</string>
-    <string name="web_account_sync_promo_point_notifications" translatable="false">在步骤</string>
+    <string name="web_account_sync_promo_point_notifications" translatable="false">通知会在所有设备上跟随你</string>
+    <string name="web_account_sync_promo_point_trial" translatable="false">免费试用 1 个月</string>
     <string name="web_account_sync_promo_point_workspace" translatable="false">中保留计划、提醒和任务状态 每个登录设备上的同一工作区</string>
     <string name="web_account_sync_promo_tagline" translatable="false">可以使用跨设备同步。</string>
     <string name="web_account_sync_summary_active" translatable="false">同步已激活。</string>

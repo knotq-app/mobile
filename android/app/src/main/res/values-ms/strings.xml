@@ -884,6 +884,7 @@
     <string name="sync_action_resync">Sinkron Semula</string>
     <string name="sync_action_resyncing">Menyinkron Semula…</string>
     <string name="sync_action_sync_now">Sinkron Sekarang</string>
+    <string name="sync_disclosure_intro_month">Satu bulan percuma, kemudian</string>
     <plurals name="sync_disclosure_period_days">
         <item quantity="zero">%1$d hari</item>
         <item quantity="one">%1$d hari</item>
@@ -919,6 +920,7 @@
     </plurals>
     <string name="sync_disclosure_privacy_policy">Dasar Privasi</string>
     <string name="sync_disclosure_subscription_terms">{price} setiap {period}, dikenakan ke Akaun Apple anda. Langganan anda diperbaharui secara automatik melainkan dibatalkan sekurang-kurangnya 24 jam sebelum akhir tempoh semasa. Urus atau batalkan bila-bila masa dalam Tetapan.</string>
+    <string name="sync_disclosure_subscription_terms_no_intro">{price} setiap {period}, dikenakan ke Akaun Apple anda. Langganan anda diperbaharui secara automatik melainkan dibatalkan sekurang-kurangnya 24 jam sebelum akhir tempoh semasa. Urus atau batalkan bila-bila masa dalam Tetapan.</string>
     <string name="sync_disclosure_terms_of_use">Syarat Penggunaan</string>
     <string name="sync_error_account_status_unsupported">API sinkron tidak menyokong status akaun lagi.</string>
     <string name="sync_error_api_unreachable">Tidak dapat menjangkau API sinkron: {error}</string>
@@ -1157,7 +1159,8 @@
     <string name="web_account_sync_optional" translatable="false">Sinkron tuan rumah adalah pilihan</string>
     <string name="web_account_sync_promo_pill_available" translatable="false">Tersedia</string>
     <string name="web_account_sync_promo_point_local_first" translatable="false">Tempatan-dahulu — semuanya terus bekerja luar talian</string>
-    <string name="web_account_sync_promo_point_notifications" translatable="false">Simpan jadual, peringatan dan keadaan tugas mengikut langkah</string>
+    <string name="web_account_sync_promo_point_notifications" translatable="false">Pemberitahuan mengikuti anda merentas peranti</string>
+    <string name="web_account_sync_promo_point_trial" translatable="false">Percubaan percuma selama 1 bulan</string>
     <string name="web_account_sync_promo_point_workspace" translatable="false">Ruang kerja yang sama merentas setiap peranti yang dilog masuk</string>
     <string name="web_account_sync_promo_tagline" translatable="false">Penyegerakan merentas peranti tersedia.</string>
     <string name="web_account_sync_summary_active" translatable="false">Sinkron aktif.</string>

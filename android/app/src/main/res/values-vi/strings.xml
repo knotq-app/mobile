@@ -884,6 +884,7 @@
     <string name="sync_action_resync">Đồng bộ lại</string>
     <string name="sync_action_resyncing">Đang đồng bộ lại…</string>
     <string name="sync_action_sync_now">Đồng bộ ngay</string>
+    <string name="sync_disclosure_intro_month">Miễn phí một tháng, sau đó</string>
     <plurals name="sync_disclosure_period_days">
         <item quantity="zero">%1$d ngày</item>
         <item quantity="one">%1$d ngày</item>
@@ -919,6 +920,7 @@
     </plurals>
     <string name="sync_disclosure_privacy_policy">Chính sách bảo mật</string>
     <string name="sync_disclosure_subscription_terms">{price} mỗi {period}, tính phí vào tài khoản Apple của bạn. Đăng ký sẽ tự động gia hạn trừ khi bạn hủy ít nhất 24 giờ trước khi kết thúc khoảng thời gian hiện tại. Quản lý hoặc hủy bất kỳ lúc nào trong Cài đặt.</string>
+    <string name="sync_disclosure_subscription_terms_no_intro">{price} mỗi {period}, tính phí vào tài khoản Apple của bạn. Đăng ký sẽ tự động gia hạn trừ khi bạn hủy ít nhất 24 giờ trước khi kết thúc khoảng thời gian hiện tại. Quản lý hoặc hủy bất kỳ lúc nào trong Cài đặt.</string>
     <string name="sync_disclosure_terms_of_use">Điều khoản sử dụng</string>
     <string name="sync_error_account_status_unsupported">API đồng bộ chưa hỗ trợ trạng thái tài khoản.</string>
     <string name="sync_error_api_unreachable">Không thể truy cập API đồng bộ: {error}</string>
@@ -1157,7 +1159,8 @@
     <string name="web_account_sync_optional" translatable="false">Đồng bộ được lưu trữ là tùy chọn</string>
     <string name="web_account_sync_promo_pill_available" translatable="false">Khả dụng</string>
     <string name="web_account_sync_promo_point_local_first" translatable="false">Cục bộ trước — mọi thứ tiếp tục hoạt động ngoại tuyến</string>
-    <string name="web_account_sync_promo_point_notifications" translatable="false">Giữ lịch trình, lời nhắc và trạng thái nhiệm vụ trong bước</string>
+    <string name="web_account_sync_promo_point_notifications" translatable="false">Thông báo theo bạn trên mọi thiết bị</string>
+    <string name="web_account_sync_promo_point_trial" translatable="false">Dùng thử miễn phí 1 tháng</string>
     <string name="web_account_sync_promo_point_workspace" translatable="false">Có cùng một không gian làm việc trên mọi thiết bị đã đăng nhập</string>
     <string name="web_account_sync_promo_tagline" translatable="false">Có sẵn tính năng đồng bộ hóa trên nhiều thiết bị.</string>
     <string name="web_account_sync_summary_active" translatable="false">Đồng bộ đang hoạt động.</string>

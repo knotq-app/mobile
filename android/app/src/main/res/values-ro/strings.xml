@@ -884,6 +884,7 @@
     <string name="sync_action_resync">Resincronizare</string>
     <string name="sync_action_resyncing">Se resincronizează…</string>
     <string name="sync_action_sync_now">Sincronizează acum</string>
+    <string name="sync_disclosure_intro_month">O lună gratuit, apoi</string>
     <plurals name="sync_disclosure_period_days">
         <item quantity="zero">%1$d zile</item>
         <item quantity="one" tools:ignore="ImpliedQuantity">zi</item>
@@ -919,6 +920,7 @@
     </plurals>
     <string name="sync_disclosure_privacy_policy">Politica de confidențialitate</string>
     <string name="sync_disclosure_subscription_terms">{price} per {period}, facturat(ă) pe contul dvs. Apple. Abonamentul dvs. se reînnoiește automat cu excepția cazului în care este anulat cu cel puțin 24 de ore înainte de sfârșitul perioadei curente. Gestionați sau anulați oricând în Setări.</string>
+    <string name="sync_disclosure_subscription_terms_no_intro">{price} per {period}, facturat(ă) pe contul dvs. Apple. Abonamentul dvs. se reînnoiește automat cu excepția cazului în care este anulat cu cel puțin 24 de ore înainte de sfârșitul perioadei curente. Gestionați sau anulați oricând în Setări.</string>
     <string name="sync_disclosure_terms_of_use">Termeni de utilizare</string>
     <string name="sync_error_account_status_unsupported">API-ul de sincronizare nu acceptă încă starea contului.</string>
     <string name="sync_error_api_unreachable">Nu s-a putut accesa API-ul de sincronizare: {error}</string>
@@ -1157,7 +1159,8 @@
     <string name="web_account_sync_optional" translatable="false">Sincronizarea găzduită este opțională</string>
     <string name="web_account_sync_promo_pill_available" translatable="false">Disponibil</string>
     <string name="web_account_sync_promo_point_local_first" translatable="false">Prioritate locală — totul continuă să funcționeze offline</string>
-    <string name="web_account_sync_promo_point_notifications" translatable="false">Păstrați programele, mementourile și starea sarcinii în pasul</string>
+    <string name="web_account_sync_promo_point_notifications" translatable="false">Notificările vă însoțesc pe toate dispozitivele</string>
+    <string name="web_account_sync_promo_point_trial" translatable="false">1 lună de probă gratuită</string>
     <string name="web_account_sync_promo_point_workspace" translatable="false">Același spațiu de lucru pe fiecare dispozitiv conectat</string>
     <string name="web_account_sync_promo_tagline" translatable="false">Sincronizarea pe mai multe dispozitive este disponibilă.</string>
     <string name="web_account_sync_summary_active" translatable="false">Sincronizarea este activă.</string>

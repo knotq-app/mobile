@@ -884,6 +884,7 @@
     <string name="sync_action_resync">סנכרון מחדש</string>
     <string name="sync_action_resyncing">סנכרון מחדש…</string>
     <string name="sync_action_sync_now">סנכרון כעת</string>
+    <string name="sync_disclosure_intro_month">חודש אחד בחינם, ואז</string>
     <plurals name="sync_disclosure_period_days">
         <item quantity="zero">%1$d ימים</item>
         <item quantity="one" tools:ignore="ImpliedQuantity">יום</item>
@@ -919,6 +920,7 @@
     </plurals>
     <string name="sync_disclosure_privacy_policy">מדיניות פרטיות</string>
     <string name="sync_disclosure_subscription_terms">{price} לכל {period}, חיוב לחשבון Apple שלך. המנוי שלך מתחדש באופן אוטומטי אלא אם בוטל לפחות 24 שעות לפני סיום התקופה הנוכחית. ניהול או ביטול בכל עת בהגדרות.</string>
+    <string name="sync_disclosure_subscription_terms_no_intro">{price} לכל {period}, חיוב לחשבון Apple שלך. המנוי שלך מתחדש באופן אוטומטי אלא אם בוטל לפחות 24 שעות לפני סיום התקופה הנוכחית. ניהול או ביטול בכל עת בהגדרות.</string>
     <string name="sync_disclosure_terms_of_use">תנאי השימוש</string>
     <string name="sync_error_account_status_unsupported">ממשק סנכרון לא תומך במצב חשבון עדיין.</string>
     <string name="sync_error_api_unreachable">לא היה אפשר להגיע לממשק סנכרון: {error}</string>
@@ -1157,7 +1159,8 @@
     <string name="web_account_sync_optional" translatable="false">סנכרון מתאחסן הוא אופציונלי</string>
     <string name="web_account_sync_promo_pill_available" translatable="false">זמין</string>
     <string name="web_account_sync_promo_point_local_first" translatable="false">מקומי ראשון — הכל ממשיך לעבוד במצב לא מקוון</string>
-    <string name="web_account_sync_promo_point_notifications" translatable="false">שמור על לוחות זמנים, תזכורות ומצב משימות בשלב</string>
+    <string name="web_account_sync_promo_point_notifications" translatable="false">ההתראות שלך זמינות בכל המכשירים</string>
+    <string name="web_account_sync_promo_point_trial" translatable="false">חודש ניסיון חינם</string>
     <string name="web_account_sync_promo_point_workspace" translatable="false">. אותו סביבת עבודה בכל מכשיר מחובר</string>
     <string name="web_account_sync_promo_tagline" translatable="false">סנכרון חוצה-מכשיר זמין.</string>
     <string name="web_account_sync_summary_active" translatable="false">סנכרון פעיל.</string>

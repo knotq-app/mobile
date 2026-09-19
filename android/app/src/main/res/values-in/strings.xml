@@ -884,6 +884,7 @@
     <string name="sync_action_resync">Sinkronisasi Ulang</string>
     <string name="sync_action_resyncing">Menyinkronisasi Ulang…</string>
     <string name="sync_action_sync_now">Sinkronisasi Sekarang</string>
+    <string name="sync_disclosure_intro_month">Satu bulan gratis, lalu</string>
     <plurals name="sync_disclosure_period_days">
         <item quantity="zero">%1$d hari</item>
         <item quantity="one">%1$d hari</item>
@@ -919,6 +920,7 @@
     </plurals>
     <string name="sync_disclosure_privacy_policy">Kebijakan Privasi</string>
     <string name="sync_disclosure_subscription_terms">{price} per {period}, ditagihkan ke Akun Apple Anda. Langganan Anda diperpanjang secara otomatis kecuali dibatalkan setidaknya 24 jam sebelum akhir periode saat ini. Kelola atau batalkan kapan saja di Pengaturan.</string>
+    <string name="sync_disclosure_subscription_terms_no_intro">{price} per {period}, ditagihkan ke Akun Apple Anda. Langganan Anda diperpanjang secara otomatis kecuali dibatalkan setidaknya 24 jam sebelum akhir periode saat ini. Kelola atau batalkan kapan saja di Pengaturan.</string>
     <string name="sync_disclosure_terms_of_use">Ketentuan Penggunaan</string>
     <string name="sync_error_account_status_unsupported">API sinkronisasi belum mendukung status akun.</string>
     <string name="sync_error_api_unreachable">Tidak dapat menjangkau API sinkronisasi: {error}</string>
@@ -1157,7 +1159,8 @@
     <string name="web_account_sync_optional" translatable="false">Sinkronisasi tuan rumah bersifat opsional</string>
     <string name="web_account_sync_promo_pill_available" translatable="false">Tersedia</string>
     <string name="web_account_sync_promo_point_local_first" translatable="false">Lokal-pertama — semuanya tetap berfungsi offline</string>
-    <string name="web_account_sync_promo_point_notifications" translatable="false">Simpan jadwal, pengingat, dan status tugas dalam langkah</string>
+    <string name="web_account_sync_promo_point_notifications" translatable="false">Notifikasi mengikuti Anda di semua perangkat</string>
+    <string name="web_account_sync_promo_point_trial" translatable="false">Uji coba gratis selama 1 bulan</string>
     <string name="web_account_sync_promo_point_workspace" translatable="false">Ruang kerja yang sama di setiap perangkat yang masuk</string>
     <string name="web_account_sync_promo_tagline" translatable="false">Sinkronisasi lintas perangkat tersedia.</string>
     <string name="web_account_sync_summary_active" translatable="false">Sinkronisasi aktif.</string>

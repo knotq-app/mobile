@@ -884,6 +884,7 @@
     <string name="sync_action_resync">Пересинхронізувати</string>
     <string name="sync_action_resyncing">Пересинхронізація…</string>
     <string name="sync_action_sync_now">Синхронізувати зараз</string>
+    <string name="sync_disclosure_intro_month">Один місяць безкоштовно, потім</string>
     <plurals name="sync_disclosure_period_days">
         <item quantity="zero">%1$d днів</item>
         <item quantity="one" tools:ignore="ImpliedQuantity">день</item>
@@ -919,6 +920,7 @@
     </plurals>
     <string name="sync_disclosure_privacy_policy">Політика конфіденційності</string>
     <string name="sync_disclosure_subscription_terms">{price} на {period}, списано з облікового запису Apple. Ваша підписка автоматично поновлюється, якщо не скасована принаймні за 24 години до закінчення поточного періоду. Керуйте або скасуйте у будь-який час у Налаштуваннях.</string>
+    <string name="sync_disclosure_subscription_terms_no_intro">{price} на {period}, списано з облікового запису Apple. Ваша підписка автоматично поновлюється, якщо не скасована принаймні за 24 години до закінчення поточного періоду. Керуйте або скасуйте у будь-який час у Налаштуваннях.</string>
     <string name="sync_disclosure_terms_of_use">Умови використання</string>
     <string name="sync_error_account_status_unsupported">API синхронізації ще не підтримує статус облікового запису.</string>
     <string name="sync_error_api_unreachable">Не вдалося досягти API синхронізації: {error}</string>
@@ -1157,7 +1159,8 @@
     <string name="web_account_sync_optional" translatable="false">Розміщена синхронізація опційна</string>
     <string name="web_account_sync_promo_pill_available" translatable="false">Доступна</string>
     <string name="web_account_sync_promo_point_local_first" translatable="false">Локально-перше — все продовжує працювати в автономному режимі</string>
-    <string name="web_account_sync_promo_point_notifications" translatable="false">Зберігайте розклади, нагадування та стан завдань на кроці</string>
+    <string name="web_account_sync_promo_point_notifications" translatable="false">Сповіщення доступні на всіх ваших пристроях</string>
+    <string name="web_account_sync_promo_point_trial" translatable="false">1 місяць безкоштовного пробного періоду</string>
     <string name="web_account_sync_promo_point_workspace" translatable="false">. Одна робоча область на кожному пристрої, на якому ви ввійшли в систему. Доступна синхронізація між пристроями</string>
     <string name="web_account_sync_promo_tagline" translatable="false">.</string>
     <string name="web_account_sync_summary_active" translatable="false">Синхронізація активна.</string>

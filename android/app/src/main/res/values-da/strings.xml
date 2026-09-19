@@ -884,6 +884,7 @@
     <string name="sync_action_resync">Gensynkroniser</string>
     <string name="sync_action_resyncing">Gensynkroniserer…</string>
     <string name="sync_action_sync_now">Synkroniser nu</string>
+    <string name="sync_disclosure_intro_month">En måned gratis, derefter</string>
     <plurals name="sync_disclosure_period_days">
         <item quantity="zero">%1$d dage</item>
         <item quantity="one" tools:ignore="ImpliedQuantity">dag</item>
@@ -919,6 +920,7 @@
     </plurals>
     <string name="sync_disclosure_privacy_policy">Privatlivspolitik</string>
     <string name="sync_disclosure_subscription_terms">{price} pr. {period}, faktureret til din Apple-konto. Dit abonnement fornyes automatisk, medmindre det annulleres mindst 24 timer før periodens afslutning. Administrer eller annuller når som helst i Indstillinger.</string>
+    <string name="sync_disclosure_subscription_terms_no_intro">{price} pr. {period}, faktureret til din Apple-konto. Dit abonnement fornyes automatisk, medmindre det annulleres mindst 24 timer før periodens afslutning. Administrer eller annuller når som helst i Indstillinger.</string>
     <string name="sync_disclosure_terms_of_use">Vilkår for brug</string>
     <string name="sync_error_account_status_unsupported">Synkroniserings-API\'en understøtter ikke kontostatus endnu.</string>
     <string name="sync_error_api_unreachable">Kunne ikke nå synkroniserings-API\'en: {error}</string>
@@ -1157,7 +1159,8 @@
     <string name="web_account_sync_optional" translatable="false">Hosted synkronisering er valgfri</string>
     <string name="web_account_sync_promo_pill_available" translatable="false">Tilgængelig</string>
     <string name="web_account_sync_promo_point_local_first" translatable="false">Lokal-først — alt fortsætter med at virke offline</string>
-    <string name="web_account_sync_promo_point_notifications" translatable="false">Hold tidsplaner, påmindelser og opgavetilstand i trin</string>
+    <string name="web_account_sync_promo_point_notifications" translatable="false">Notifikationer følger dig på tværs af enheder</string>
+    <string name="web_account_sync_promo_point_trial" translatable="false">1 måneds gratis prøveperiode</string>
     <string name="web_account_sync_promo_point_workspace" translatable="false">Samme arbejdsområde på tværs af alle loggede enheder</string>
     <string name="web_account_sync_promo_tagline" translatable="false">synkronisering på tværs af enheder er tilgængelig.</string>
     <string name="web_account_sync_summary_active" translatable="false">Synkronisering er aktiv.</string>

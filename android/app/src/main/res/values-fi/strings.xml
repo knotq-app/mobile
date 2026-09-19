@@ -884,6 +884,7 @@
     <string name="sync_action_resync">Synkronoi uudelleen</string>
     <string name="sync_action_resyncing">Synkronoidaan uudelleen…</string>
     <string name="sync_action_sync_now">Synkronoi nyt</string>
+    <string name="sync_disclosure_intro_month">Yksi kuukausi ilmaiseksi, sitten</string>
     <plurals name="sync_disclosure_period_days">
         <item quantity="zero">%1$d päivää</item>
         <item quantity="one" tools:ignore="ImpliedQuantity">päivä</item>
@@ -919,6 +920,7 @@
     </plurals>
     <string name="sync_disclosure_privacy_policy">Tietosuojakäytäntö</string>
     <string name="sync_disclosure_subscription_terms">{price} per {period}, laskutetaan Apple-tilille. Tilaus uusiutuu automaattisesti, ellet peruuta sitä vähintään 24 tuntia ennen nykyisen jakson päättymistä. Hallinnoi tai peruuta milloin tahansa Asetuksissa.</string>
+    <string name="sync_disclosure_subscription_terms_no_intro">{price} per {period}, laskutetaan Apple-tilille. Tilaus uusiutuu automaattisesti, ellet peruuta sitä vähintään 24 tuntia ennen nykyisen jakson päättymistä. Hallinnoi tai peruuta milloin tahansa Asetuksissa.</string>
     <string name="sync_disclosure_terms_of_use">Käyttöehdot</string>
     <string name="sync_error_account_status_unsupported">Synkronointiohjelmarajapinta ei vielä tue tilin tilaa.</string>
     <string name="sync_error_api_unreachable">Synkronointiohjelmarajapintaan ei saavuttu: {error}</string>
@@ -1157,7 +1159,8 @@
     <string name="web_account_sync_optional" translatable="false">Isännöity synkronointi on valinnainen</string>
     <string name="web_account_sync_promo_pill_available" translatable="false">Käytettävissä</string>
     <string name="web_account_sync_promo_point_local_first" translatable="false">Paikallinen ensin — kaikki toimii offline-tilassa</string>
-    <string name="web_account_sync_promo_point_notifications" translatable="false">Pidä aikataulut, muistutukset ja tehtävän tila vaiheessa</string>
+    <string name="web_account_sync_promo_point_notifications" translatable="false">Ilmoitukset seuraavat sinua laitteesta toiseen</string>
+    <string name="web_account_sync_promo_point_trial" translatable="false">1 kuukauden ilmainen kokeilu</string>
     <string name="web_account_sync_promo_point_workspace" translatable="false">Sama työtila jokaisessa kirjautuneessa laitteessa</string>
     <string name="web_account_sync_promo_tagline" translatable="false">Laitteiden välinen synkronointi on käytettävissä.</string>
     <string name="web_account_sync_summary_active" translatable="false">Synkronointi on aktiivinen.</string>

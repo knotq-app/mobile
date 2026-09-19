@@ -1,3 +1,9 @@
+// UniFFI emits a large metadata buffer as a `const`; newer Clippy releases
+// flag that generated representation. Keep this allowance crate-wide because
+// the generated file is expanded at the crate root, and limit it to that one
+// generated-code lint.
+#![allow(clippy::large_const_arrays)]
+
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::{Mutex, MutexGuard};

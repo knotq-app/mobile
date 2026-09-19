@@ -884,6 +884,7 @@
     <string name="sync_action_resync">Ponowna synchronizacja</string>
     <string name="sync_action_resyncing">Trwa ponowna synchronizacja…</string>
     <string name="sync_action_sync_now">Synchronizuj teraz</string>
+    <string name="sync_disclosure_intro_month">Jeden miesiąc za darmo, potem</string>
     <plurals name="sync_disclosure_period_days">
         <item quantity="zero">%1$d dni</item>
         <item quantity="one" tools:ignore="ImpliedQuantity">dzień</item>
@@ -919,6 +920,7 @@
     </plurals>
     <string name="sync_disclosure_privacy_policy">Polityka prywatności</string>
     <string name="sync_disclosure_subscription_terms">{price} za {period}, naliczane na Twoje konto Apple. Twoja subskrypcja odnawia się automatycznie, chyba że anulujesz ją co najmniej 24 godziny przed końcem bieżącego okresu. Możesz zarządzać lub anulować subskrypcję w dowolnym momencie w Ustawieniach.</string>
+    <string name="sync_disclosure_subscription_terms_no_intro">{price} za {period}, naliczane na Twoje konto Apple. Twoja subskrypcja odnawia się automatycznie, chyba że anulujesz ją co najmniej 24 godziny przed końcem bieżącego okresu. Możesz zarządzać lub anulować subskrypcję w dowolnym momencie w Ustawieniach.</string>
     <string name="sync_disclosure_terms_of_use">Warunki użytkowania</string>
     <string name="sync_error_account_status_unsupported">Synchronizacja nie obsługuje jeszcze statusu konta.</string>
     <string name="sync_error_api_unreachable">Nie można połączyć się z interfejsem API synchronizacji: {error}</string>
@@ -1157,7 +1159,8 @@
     <string name="web_account_sync_optional" translatable="false">Synchronizacja w chmurze jest opcjonalna</string>
     <string name="web_account_sync_promo_pill_available" translatable="false">Dostępne</string>
     <string name="web_account_sync_promo_point_local_first" translatable="false">Lokalnie najpierw — wszystko działa w trybie offline</string>
-    <string name="web_account_sync_promo_point_notifications" translatable="false">Zachowaj harmonogramy, przypomnienia i stan zadań na bieżąco</string>
+    <string name="web_account_sync_promo_point_notifications" translatable="false">Powiadomienia są dostępne na wszystkich Twoich urządzeniach</string>
+    <string name="web_account_sync_promo_point_trial" translatable="false">1 miesiąc bezpłatnego okresu próbnego</string>
     <string name="web_account_sync_promo_point_workspace" translatable="false">Ten sam obszar roboczy na każdym zalogowanym urządzeniu</string>
     <string name="web_account_sync_promo_tagline" translatable="false">Dostępna jest synchronizacja między urządzeniami.</string>
     <string name="web_account_sync_summary_active" translatable="false">Synchronizacja jest aktywna.</string>

@@ -884,6 +884,7 @@
     <string name="sync_action_resync">ซิงค์ใหม่</string>
     <string name="sync_action_resyncing">กำลังซิงค์ใหม่…</string>
     <string name="sync_action_sync_now">ซิงค์ตอนนี้</string>
+    <string name="sync_disclosure_intro_month">ฟรีหนึ่งเดือน จากนั้น</string>
     <plurals name="sync_disclosure_period_days">
         <item quantity="zero">%1$d วัน</item>
         <item quantity="one">%1$d วัน</item>
@@ -919,6 +920,7 @@
     </plurals>
     <string name="sync_disclosure_privacy_policy">นโยบายความเป็นส่วนตัว</string>
     <string name="sync_disclosure_subscription_terms">สมัครสมาชิกราคา {price} ต่อ {period} จะถูกเรียกเก็บไปยังบัญชี Apple ของคุณ การสมัครสมาชิกของคุณจะต่ออายุโดยอัตโนมัติเว้นแต่ยกเลิกอย่างน้อย 24 ชั่วโมงก่อนสิ้นสุดช่วงเวลาปัจจุบัน จัดการหรือยกเลิกได้ตลอดเวลาในการตั้งค่า</string>
+    <string name="sync_disclosure_subscription_terms_no_intro">สมัครสมาชิกราคา {price} ต่อ {period} จะถูกเรียกเก็บไปยังบัญชี Apple ของคุณ การสมัครสมาชิกของคุณจะต่ออายุโดยอัตโนมัติเว้นแต่ยกเลิกอย่างน้อย 24 ชั่วโมงก่อนสิ้นสุดช่วงเวลาปัจจุบัน จัดการหรือยกเลิกได้ตลอดเวลาในการตั้งค่า</string>
     <string name="sync_disclosure_terms_of_use">ข้อกำหนดการใช้งาน</string>
     <string name="sync_error_account_status_unsupported">Sync API ยังไม่รองรับสถานะบัญชี</string>
     <string name="sync_error_api_unreachable">ไม่สามารถเข้าถึง Sync API: {error}</string>
@@ -1157,7 +1159,8 @@
     <string name="web_account_sync_optional" translatable="false">Hosted Sync เป็นตัวเลือก</string>
     <string name="web_account_sync_promo_pill_available" translatable="false">พร้อมใช้งาน</string>
     <string name="web_account_sync_promo_point_local_first" translatable="false">Local-first — ทุกอย่างยังคงทำงานได้แม้ออฟไลน์</string>
-    <string name="web_account_sync_promo_point_notifications" translatable="false">เก็บกำหนดการ การแจ้งเตือน และสถานะงานไว้ในขั้นตอน</string>
+    <string name="web_account_sync_promo_point_notifications" translatable="false">การแจ้งเตือนติดตามคุณในทุกอุปกรณ์</string>
+    <string name="web_account_sync_promo_point_trial" translatable="false">ทดลองใช้ฟรี 1 เดือน</string>
     <string name="web_account_sync_promo_point_workspace" translatable="false">พื้นที่ทำงานเดียวกันในทุกอุปกรณ์ที่ลงชื่อเข้าใช้</string>
     <string name="web_account_sync_promo_tagline" translatable="false">การซิงค์ข้ามอุปกรณ์พร้อมใช้งาน</string>
     <string name="web_account_sync_summary_active" translatable="false">Sync ใช้งานอยู่</string>

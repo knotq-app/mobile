@@ -889,6 +889,7 @@
     <string name="sync_action_resync">Resync</string>
     <string name="sync_action_resyncing">Resyncing…</string>
     <string name="sync_action_sync_now">Sync now</string>
+    <string name="sync_disclosure_intro_month">One month free, then</string>
     <plurals name="sync_disclosure_period_days">
         <item quantity="zero">%1$d days</item>
         <item quantity="one" tools:ignore="ImpliedQuantity">day</item>
@@ -924,6 +925,7 @@
     </plurals>
     <string name="sync_disclosure_privacy_policy">Privacy Policy</string>
     <string name="sync_disclosure_subscription_terms">One month free, then {price} per {period}, billed to your Apple Account. Your subscription renews automatically unless cancelled at least 24 hours before the end of the current period. Manage or cancel anytime in Settings.</string>
+    <string name="sync_disclosure_subscription_terms_no_intro">{price} per {period}, billed to your Apple Account. Your subscription renews automatically unless cancelled at least 24 hours before the end of the current period. Manage or cancel anytime in Settings.</string>
     <string name="sync_disclosure_terms_of_use">Terms of Use</string>
     <string name="sync_error_account_status_unsupported">The sync API does not support account status yet.</string>
     <string name="sync_error_api_unreachable">Could not reach the sync API: {error}</string>
@@ -1162,7 +1164,8 @@
     <string name="web_account_sync_optional" translatable="false">Hosted sync is optional</string>
     <string name="web_account_sync_promo_pill_available" translatable="false">Available</string>
     <string name="web_account_sync_promo_point_local_first" translatable="false">Local-first — everything keeps working offline</string>
-    <string name="web_account_sync_promo_point_notifications" translatable="false">Keep schedules, reminders, and task state in step</string>
+    <string name="web_account_sync_promo_point_notifications" translatable="false">Notifications follow you across devices</string>
+    <string name="web_account_sync_promo_point_trial" translatable="false">1 month free trial</string>
     <string name="web_account_sync_promo_point_workspace" translatable="false">Same workspace across every signed-in device</string>
     <string name="web_account_sync_promo_tagline" translatable="false">Cross-device sync is available.</string>
     <string name="web_account_sync_summary_active" translatable="false">Sync is active.</string>
@@ -1503,6 +1506,21 @@
     <string name="web_home_hero_title" translatable="false">Reminders, Assignments, Events, and Plans in one workspace</string>
     <string name="web_home_meta_description" translatable="false">KnotQ is a local-first desktop planning workspace where structured notes become tasks, deadlines, reminders, and calendar events.</string>
     <string name="web_home_meta_title" translatable="false">KnotQ: Calendar + Organization Planner</string>
+    <string name="web_home_overview_ai_body" translatable="false">Connect KnotQ to AI tools with control over how your workspace is shared.</string>
+    <string name="web_home_overview_ai_title" translatable="false">AI / MCP connection</string>
+    <string name="web_home_overview_daily_body" translatable="false">A new and dedicated way to keep track of daily progress on long-term tasks.</string>
+    <string name="web_home_overview_daily_title" translatable="false">Daily Queue</string>
+    <string name="web_home_overview_documents_body" translatable="false">Write plans as living documents that keep notes, tasks, and dates together.</string>
+    <string name="web_home_overview_documents_title" translatable="false">Your schedules live as documents</string>
+    <string name="web_home_overview_google_body" translatable="false">Bring your existing calendar into the same view as the work you schedule yourself.</string>
+    <string name="web_home_overview_google_title" translatable="false">Google Calendar integration</string>
+    <string name="web_home_overview_image_alt" translatable="false">KnotQ Upcoming widget on an iPhone Home Screen showing colour-coded events and assignments.</string>
+    <string name="web_home_overview_title" translatable="false">The Big Picture</string>
+    <string name="web_home_overview_unified_body" translatable="false">Reminders, events, calendars, and plans in one place.</string>
+    <string name="web_home_overview_unified_title" translatable="false">One unified workspace</string>
+    <string name="web_home_overview_widget_body" translatable="false">See upcoming events and assignments on your iPhone Home Screen.</string>
+    <string name="web_home_overview_widget_caption" translatable="false">Upcoming items at a glance.</string>
+    <string name="web_home_overview_widget_title" translatable="false">Mobile app + widget</string>
     <string name="web_home_pitch_eyebrow" translatable="false">Why KnotQ</string>
     <string name="web_home_pitch_tile1_body" translatable="false">Plans from every scheme, plus your Google Calendar, in a single week view.</string>
     <string name="web_home_pitch_tile1_title" translatable="false">One calendar for everything</string>

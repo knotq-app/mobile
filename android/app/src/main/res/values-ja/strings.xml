@@ -884,6 +884,7 @@
     <string name="sync_action_resync">再度同期</string>
     <string name="sync_action_resyncing">再度同期中…</string>
     <string name="sync_action_sync_now">今すぐ同期</string>
+    <string name="sync_disclosure_intro_month">1か月無料、その後</string>
     <plurals name="sync_disclosure_period_days">
         <item quantity="zero">%1$d日</item>
         <item quantity="one">%1$d日</item>
@@ -919,6 +920,7 @@
     </plurals>
     <string name="sync_disclosure_privacy_policy">プライバシーポリシー</string>
     <string name="sync_disclosure_subscription_terms">{price} / {period}。Apple Accountに請求されます。現在の期間終了の24時間前までにキャンセルしない限り、サブスクリプションは自動的に更新されます。設定でいつでも管理またはキャンセルできます。</string>
+    <string name="sync_disclosure_subscription_terms_no_intro">{price} / {period}。Apple Accountに請求されます。現在の期間終了の24時間前までにキャンセルしない限り、サブスクリプションは自動的に更新されます。設定でいつでも管理またはキャンセルできます。</string>
     <string name="sync_disclosure_terms_of_use">利用規約</string>
     <string name="sync_error_account_status_unsupported">同期APIはまだアカウントステータスをサポートしていません。</string>
     <string name="sync_error_api_unreachable">同期APIに接続できませんでした: {error}</string>
@@ -1157,7 +1159,8 @@
     <string name="web_account_sync_optional" translatable="false">ホストされた同期はオプション</string>
     <string name="web_account_sync_promo_pill_available" translatable="false">利用可能</string>
     <string name="web_account_sync_promo_point_local_first" translatable="false">ローカルファースト—すべてがオフラインで機能し続けます</string>
-    <string name="web_account_sync_promo_point_notifications" translatable="false">スケジュール、リマインダー、およびタスクの状態をステップ</string>
+    <string name="web_account_sync_promo_point_notifications" translatable="false">通知をすべてのデバイスで受け取れます</string>
+    <string name="web_account_sync_promo_point_trial" translatable="false">1か月無料トライアル</string>
     <string name="web_account_sync_promo_point_workspace" translatable="false">に保持します。 サインインしているすべてのデバイス間で同じワークスペース</string>
     <string name="web_account_sync_promo_tagline" translatable="false">クロスデバイス同期が利用可能です。</string>
     <string name="web_account_sync_summary_active" translatable="false">同期がアクティブです。</string>

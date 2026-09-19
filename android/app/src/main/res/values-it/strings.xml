@@ -884,6 +884,7 @@
     <string name="sync_action_resync">Risincronizza</string>
     <string name="sync_action_resyncing">Risincronizzazione in corso…</string>
     <string name="sync_action_sync_now">Sincronizza ora</string>
+    <string name="sync_disclosure_intro_month">Un mese gratuito, poi</string>
     <plurals name="sync_disclosure_period_days">
         <item quantity="zero">%1$d giorni</item>
         <item quantity="one" tools:ignore="ImpliedQuantity">giorno</item>
@@ -919,6 +920,7 @@
     </plurals>
     <string name="sync_disclosure_privacy_policy">Informativa sulla privacy</string>
     <string name="sync_disclosure_subscription_terms">{price} al {period}, addebitato sul tuo account Apple. La tua sottoscrizione si rinnova automaticamente a meno che non la annulli almeno 24 ore prima della fine del periodo attuale. Gestisci o annulla in qualsiasi momento nelle Impostazioni.</string>
+    <string name="sync_disclosure_subscription_terms_no_intro">{price} al {period}, addebitato sul tuo account Apple. La tua sottoscrizione si rinnova automaticamente a meno che tu non la annulli almeno 24 ore prima della fine del periodo attuale. Gestisci o annulla in qualsiasi momento nelle Impostazioni.</string>
     <string name="sync_disclosure_terms_of_use">Condizioni d\'uso</string>
     <string name="sync_error_account_status_unsupported">L\'API di sincronizzazione non supporta ancora lo stato dell\'account.</string>
     <string name="sync_error_api_unreachable">Impossibile raggiungere l\'API di sincronizzazione: {error}</string>
@@ -1157,7 +1159,8 @@
     <string name="web_account_sync_optional" translatable="false">La sincronizzazione ospitata è opzionale</string>
     <string name="web_account_sync_promo_pill_available" translatable="false">Disponibile</string>
     <string name="web_account_sync_promo_point_local_first" translatable="false">Locale-first — tutto continua a funzionare offline</string>
-    <string name="web_account_sync_promo_point_notifications" translatable="false">Mantieni pianificazioni, promemoria e stato delle attività nel passaggio</string>
+    <string name="web_account_sync_promo_point_notifications" translatable="false">Le notifiche ti seguono su tutti i dispositivi</string>
+    <string name="web_account_sync_promo_point_trial" translatable="false">1 mese di prova gratuito</string>
     <string name="web_account_sync_promo_point_workspace" translatable="false">Stesso spazio di lavoro su tutti i dispositivi su cui è stato effettuato l\'accesso</string>
     <string name="web_account_sync_promo_tagline" translatable="false">È disponibile la sincronizzazione tra dispositivi.</string>
     <string name="web_account_sync_summary_active" translatable="false">La sincronizzazione è attiva.</string>

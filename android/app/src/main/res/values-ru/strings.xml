@@ -884,6 +884,7 @@
     <string name="sync_action_resync">Переподключение</string>
     <string name="sync_action_resyncing">Переподключение…</string>
     <string name="sync_action_sync_now">Синхронизировать сейчас</string>
+    <string name="sync_disclosure_intro_month">Один месяц бесплатно, затем</string>
     <plurals name="sync_disclosure_period_days">
         <item quantity="zero" tools:ignore="ImpliedQuantity">дней</item>
         <item quantity="one" tools:ignore="ImpliedQuantity">день</item>
@@ -919,6 +920,7 @@
     </plurals>
     <string name="sync_disclosure_privacy_policy">Политика приватности</string>
     <string name="sync_disclosure_subscription_terms">{price} за {period}, выставлено на ваш счет Apple. Ваша подписка продлевается автоматически, если не отменена не менее чем за 24 часа до конца текущего периода. Управляйте или отмените в любое время в Параметрах.</string>
+    <string name="sync_disclosure_subscription_terms_no_intro">{price} за {period}, выставлено на ваш счет Apple. Ваша подписка продлевается автоматически, если не отменена не менее чем за 24 часа до конца текущего периода. Управляйте или отмените в любое время в Параметрах.</string>
     <string name="sync_disclosure_terms_of_use">Условия использования</string>
     <string name="sync_error_account_status_unsupported">API синхронизации пока не поддерживает статус учётной записи.</string>
     <string name="sync_error_api_unreachable">Не удалось подключиться к API синхронизации: {error}</string>
@@ -1157,7 +1159,8 @@
     <string name="web_account_sync_optional" translatable="false">Размещённая синхронизация необязательна</string>
     <string name="web_account_sync_promo_pill_available" translatable="false">Доступно</string>
     <string name="web_account_sync_promo_point_local_first" translatable="false">Локально сначала — всё продолжает работать в автономном режиме</string>
-    <string name="web_account_sync_promo_point_notifications" translatable="false">Сохраняйте расписания, напоминания и состояние задач на шаге</string>
+    <string name="web_account_sync_promo_point_notifications" translatable="false">Уведомления доступны на всех ваших устройствах</string>
+    <string name="web_account_sync_promo_point_trial" translatable="false">1 месяц бесплатного пробного периода</string>
     <string name="web_account_sync_promo_point_workspace" translatable="false">. Одна и та же рабочая область на каждом устройстве, на котором выполнен вход.</string>
     <string name="web_account_sync_promo_tagline" translatable="false">Доступна синхронизация между устройствами.</string>
     <string name="web_account_sync_summary_active" translatable="false">Синхронизация активна.</string>

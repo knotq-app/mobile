@@ -884,6 +884,7 @@
     <string name="sync_action_resync">Επανασυγχρονισμός</string>
     <string name="sync_action_resyncing">Επανασυγχρονισμός…</string>
     <string name="sync_action_sync_now">Συγχρονισμός τώρα</string>
+    <string name="sync_disclosure_intro_month">Ένας μήνας δωρεάν και στη συνέχεια</string>
     <plurals name="sync_disclosure_period_days">
         <item quantity="zero">%1$d ημέρες</item>
         <item quantity="one" tools:ignore="ImpliedQuantity">ημέρα</item>
@@ -919,6 +920,7 @@
     </plurals>
     <string name="sync_disclosure_privacy_policy">Πολιτική Ιδιωτικότητας</string>
     <string name="sync_disclosure_subscription_terms">{price} ανά {period}, τιμολόγηση στο Apple Account σας. Η συνδρομή σας ανανεώνεται αυτόματα εκτός αν ακυρωθεί τουλάχιστον 24 ώρες πριν από το τέλος της τρέχουσας περιόδου. Διαχειριστείτε ή ακυρώστε ανά πάσα στιγμή στις Ρυθμίσεις.</string>
+    <string name="sync_disclosure_subscription_terms_no_intro">{price} ανά {period}, τιμολόγηση στο Apple Account σας. Η συνδρομή σας ανανεώνεται αυτόματα εκτός αν ακυρωθεί τουλάχιστον 24 ώρες πριν από το τέλος της τρέχουσας περιόδου. Διαχειριστείτε ή ακυρώστε ανά πάσα στιγμή στις Ρυθμίσεις.</string>
     <string name="sync_disclosure_terms_of_use">Όροι Χρήσης</string>
     <string name="sync_error_account_status_unsupported">Το API συγχρονισμού δεν υποστηρίζει ακόμη τη δήλωση κατάστασης λογαριασμού.</string>
     <string name="sync_error_api_unreachable">Δεν ήταν δυνατό να προσεγγιστεί το API συγχρονισμού: {error}</string>
@@ -1157,7 +1159,8 @@
     <string name="web_account_sync_optional" translatable="false">Ο φιλοξενημένος συγχρονισμός είναι προαιρετικός</string>
     <string name="web_account_sync_promo_pill_available" translatable="false">Διαθέσιμο</string>
     <string name="web_account_sync_promo_point_local_first" translatable="false">Τοπικό πρώτο — όλα παραμένουν λειτουργικά χωρίς σύνδεση</string>
-    <string name="web_account_sync_promo_point_notifications" translatable="false">Διατηρήστε τα χρονοδιαγράμματα, τις υπενθυμίσεις και την κατάσταση εργασιών στο βήμα</string>
+    <string name="web_account_sync_promo_point_notifications" translatable="false">Οι ειδοποιήσεις σας ακολουθούν σε όλες τις συσκευές</string>
+    <string name="web_account_sync_promo_point_trial" translatable="false">1 μήνας δωρεάν δοκιμής</string>
     <string name="web_account_sync_promo_point_workspace" translatable="false">Ο ίδιος χώρος εργασίας σε κάθε συνδεδεμένη συσκευή είναι διαθέσιμος ο συγχρονισμός μεταξύ συσκευών</string>
     <string name="web_account_sync_promo_tagline" translatable="false">.</string>
     <string name="web_account_sync_summary_active" translatable="false">Ο συγχρονισμός είναι ενεργός.</string>

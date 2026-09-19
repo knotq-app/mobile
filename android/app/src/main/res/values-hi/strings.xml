@@ -884,6 +884,7 @@
     <string name="sync_action_resync">फिर से सिंक करें</string>
     <string name="sync_action_resyncing">फिर से सिंक किया जा रहा है…</string>
     <string name="sync_action_sync_now">अभी सिंक करें</string>
+    <string name="sync_disclosure_intro_month">एक महीना मुफ़्त, फिर</string>
     <plurals name="sync_disclosure_period_days">
         <item quantity="zero">%1$d दिन</item>
         <item quantity="one" tools:ignore="ImpliedQuantity">दिन</item>
@@ -919,6 +920,7 @@
     </plurals>
     <string name="sync_disclosure_privacy_policy">गोपनीयता नीति</string>
     <string name="sync_disclosure_subscription_terms">{price} प्रति {period}, आपके Apple खाते में बिल किया गया। आपकी सदस्यता स्वचालित रूप से नवीकृत होती है जब तक कि वर्तमान अवधि के अंत से कम से कम 24 घंटे पहले रद्द न कर दी जाए। किसी भी समय सेटिंग्स में प्रबंधित या रद्द करें।</string>
+    <string name="sync_disclosure_subscription_terms_no_intro">{price} प्रति {period}, आपके Apple खाते में बिल किया गया। आपकी सदस्यता स्वचालित रूप से नवीकृत होती है जब तक कि वर्तमान अवधि के अंत से कम से कम 24 घंटे पहले रद्द न कर दी जाए। किसी भी समय सेटिंग्स में प्रबंधित या रद्द करें।</string>
     <string name="sync_disclosure_terms_of_use">उपयोग की शर्तें</string>
     <string name="sync_error_account_status_unsupported">सिंक API अभी खाता स्थिति का समर्थन नहीं करता है।</string>
     <string name="sync_error_api_unreachable">सिंक API तक नहीं पहुँचा जा सका: {error}</string>
@@ -1157,7 +1159,8 @@
     <string name="web_account_sync_optional" translatable="false">होस्ट किया गया सिंक वैकल्पिक है</string>
     <string name="web_account_sync_promo_pill_available" translatable="false">उपलब्ध</string>
     <string name="web_account_sync_promo_point_local_first" translatable="false">स्थानीय-पहले — सब कुछ ऑफ़लाइन काम करता रहता है</string>
-    <string name="web_account_sync_promo_point_notifications" translatable="false">शेड्यूल, रिमाइंडर और कार्य स्थिति को चरण</string>
+    <string name="web_account_sync_promo_point_notifications" translatable="false">नोटिफ़िकेशन आपके सभी डिवाइस पर मिलेंगे</string>
+    <string name="web_account_sync_promo_point_trial" translatable="false">1 महीने का मुफ़्त परीक्षण</string>
     <string name="web_account_sync_promo_point_workspace" translatable="false">में रखें, प्रत्येक साइन-इन डिवाइस पर समान कार्यस्थान</string>
     <string name="web_account_sync_promo_tagline" translatable="false">क्रॉस-डिवाइस सिंक उपलब्ध है।</string>
     <string name="web_account_sync_summary_active" translatable="false">सिंक सक्रिय है।</string>

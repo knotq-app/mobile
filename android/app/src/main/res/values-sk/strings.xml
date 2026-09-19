@@ -884,6 +884,7 @@
     <string name="sync_action_resync">Znova synchronizovať</string>
     <string name="sync_action_resyncing">Synchronizácia prebiehá…</string>
     <string name="sync_action_sync_now">Synchronizovať teraz</string>
+    <string name="sync_disclosure_intro_month">Jeden mesiac zdarma, potom</string>
     <plurals name="sync_disclosure_period_days">
         <item quantity="zero">%1$d dní</item>
         <item quantity="one" tools:ignore="ImpliedQuantity">deň</item>
@@ -919,6 +920,7 @@
     </plurals>
     <string name="sync_disclosure_privacy_policy">Zásady ochrany osobných údajov</string>
     <string name="sync_disclosure_subscription_terms">{price} za {period}, účtované na váš Apple Account. Vaše predplatné sa obnovuje automaticky, pokiaľ ho nezrušíte aspoň 24 hodín pred koncom aktuálneho obdobia. Spravovať alebo zrušiť kedykoľvek v Nastaveniach.</string>
+    <string name="sync_disclosure_subscription_terms_no_intro">{price} za {period}, účtované na váš Apple Account. Vaše predplatné sa obnovuje automaticky, pokiaľ ho nezrušíte aspoň 24 hodín pred koncom aktuálneho obdobia. Spravovať alebo zrušiť kedykoľvek v Nastaveniach.</string>
     <string name="sync_disclosure_terms_of_use">Podmienky použitia</string>
     <string name="sync_error_account_status_unsupported">Synchronizačné API zatiaľ nepodporuje stav účtu.</string>
     <string name="sync_error_api_unreachable">Nie je možné dosiahnuť synchronizačné API: {error}</string>
@@ -1157,7 +1159,8 @@
     <string name="web_account_sync_optional" translatable="false">Hostovaná synchronizácia je voliteľná</string>
     <string name="web_account_sync_promo_pill_available" translatable="false">Dostupné</string>
     <string name="web_account_sync_promo_point_local_first" translatable="false">Lokálne — všetko pracuje aj offline</string>
-    <string name="web_account_sync_promo_point_notifications" translatable="false">Uchovávajte plány, pripomienky a stav úloh v kroku</string>
+    <string name="web_account_sync_promo_point_notifications" translatable="false">Upozornenia vás sprevádzajú na všetkých zariadeniach</string>
+    <string name="web_account_sync_promo_point_trial" translatable="false">1 mesiac bezplatnej skúšobnej verzie</string>
     <string name="web_account_sync_promo_point_workspace" translatable="false">Rovnaký pracovný priestor na každom prihlásenom zariadení</string>
     <string name="web_account_sync_promo_tagline" translatable="false">Synchronizácia medzi zariadeniami je k dispozícii.</string>
     <string name="web_account_sync_summary_active" translatable="false">Synchronizácia je aktívna.</string>

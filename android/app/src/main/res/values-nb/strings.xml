@@ -884,6 +884,7 @@
     <string name="sync_action_resync">Omsynkroniser</string>
     <string name="sync_action_resyncing">Omsynkroniserer…</string>
     <string name="sync_action_sync_now">Synkroniser nå</string>
+    <string name="sync_disclosure_intro_month">Én måned gratis, deretter</string>
     <plurals name="sync_disclosure_period_days">
         <item quantity="zero">%1$d dager</item>
         <item quantity="one" tools:ignore="ImpliedQuantity">dag</item>
@@ -919,6 +920,7 @@
     </plurals>
     <string name="sync_disclosure_privacy_policy">Personvernregler</string>
     <string name="sync_disclosure_subscription_terms">{price} per {period}, fakturert til Apple Account-en din. Abonnementet fornyes automatisk med mindre det avbestilles minst 24 timer før slutten av den nåværende perioden. Administrer eller avbestill når som helst i Innstillinger.</string>
+    <string name="sync_disclosure_subscription_terms_no_intro">{price} per {period}, fakturert til Apple Account-en din. Abonnementet fornyes automatisk med mindre det avbestilles minst 24 timer før slutten av den nåværende perioden. Administrer eller avbestill når som helst i Innstillinger.</string>
     <string name="sync_disclosure_terms_of_use">Brukervilkår</string>
     <string name="sync_error_account_status_unsupported">Synk-APIet støtter ikke kontostatus ennå.</string>
     <string name="sync_error_api_unreachable">Kunne ikke nå synk-APIet: {error}</string>
@@ -1157,7 +1159,8 @@
     <string name="web_account_sync_optional" translatable="false">Hoastet synk er valgfritt</string>
     <string name="web_account_sync_promo_pill_available" translatable="false">Tilgjengelig</string>
     <string name="web_account_sync_promo_point_local_first" translatable="false">Lokalt først – alt fortsetter å fungere frakoblet</string>
-    <string name="web_account_sync_promo_point_notifications" translatable="false">Hold tidsplaner, påminnelser og oppgavestatus i trinn</string>
+    <string name="web_account_sync_promo_point_notifications" translatable="false">Varsler følger deg på tvers av enheter</string>
+    <string name="web_account_sync_promo_point_trial" translatable="false">1 måneds gratis prøveperiode</string>
     <string name="web_account_sync_promo_point_workspace" translatable="false">Samme arbeidsområde på tvers av alle påloggede enheter.</string>
     <string name="web_account_sync_promo_tagline" translatable="false">-synkronisering på tvers av enheter er tilgjengelig.</string>
     <string name="web_account_sync_summary_active" translatable="false">Synk er aktivt.</string>

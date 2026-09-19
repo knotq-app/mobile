@@ -884,6 +884,7 @@
     <string name="sync_action_resync">Opnieuw synchroniseren</string>
     <string name="sync_action_resyncing">Opnieuw synchroniseren…</string>
     <string name="sync_action_sync_now">Nu synchroniseren</string>
+    <string name="sync_disclosure_intro_month">Eén maand gratis, daarna</string>
     <plurals name="sync_disclosure_period_days">
         <item quantity="zero">%1$d dagen</item>
         <item quantity="one" tools:ignore="ImpliedQuantity">dag</item>
@@ -919,6 +920,7 @@
     </plurals>
     <string name="sync_disclosure_privacy_policy">Privacybeleid</string>
     <string name="sync_disclosure_subscription_terms">{price} per {period}, gefactureerd op je Apple Account. Je abonnement wordt automatisch vernieuwd tenzij je dit ten minste 24 uur voor het einde van de huidige periode annuleert. Je kunt het op elk moment beheren of annuleren in Instellingen.</string>
+    <string name="sync_disclosure_subscription_terms_no_intro">{price} per {period}, gefactureerd op je Apple Account. Je abonnement wordt automatisch vernieuwd tenzij je dit ten minste 24 uur voor het einde van de huidige periode annuleert. Je kunt het op elk moment beheren of annuleren in Instellingen.</string>
     <string name="sync_disclosure_terms_of_use">Gebruiksvoorwaarden</string>
     <string name="sync_error_account_status_unsupported">De sync-API ondersteunt accountstatus nog niet.</string>
     <string name="sync_error_api_unreachable">Kon de sync-API niet bereiken: {error}</string>
@@ -1157,7 +1159,8 @@
     <string name="web_account_sync_optional" translatable="false">Gehoste synchronisatie is optioneel</string>
     <string name="web_account_sync_promo_pill_available" translatable="false">Beschikbaar</string>
     <string name="web_account_sync_promo_point_local_first" translatable="false">Lokaal eerst — alles werkt offline</string>
-    <string name="web_account_sync_promo_point_notifications" translatable="false">Houd schema\'s, herinneringen en taakstatus bij in stap</string>
+    <string name="web_account_sync_promo_point_notifications" translatable="false">Meldingen volgen je op al je apparaten</string>
+    <string name="web_account_sync_promo_point_trial" translatable="false">1 maand gratis proefperiode</string>
     <string name="web_account_sync_promo_point_workspace" translatable="false">. Dezelfde werkruimte op elk aangemeld apparaat.</string>
     <string name="web_account_sync_promo_tagline" translatable="false">Synchronisatie tussen verschillende apparaten is beschikbaar.</string>
     <string name="web_account_sync_summary_active" translatable="false">Sync is actief.</string>
