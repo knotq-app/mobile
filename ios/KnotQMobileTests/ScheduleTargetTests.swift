@@ -20,13 +20,18 @@ final class ScheduleTargetTests: XCTestCase {
 
     private static let scratchPrefix = "schedule-target-test-"
 
-    override func setUp() async throws {
-        try await super.setUp()
-        let model = AppModel.shared
-        guard model.bridge != nil else { return }
-        for scheme in model.snapshot?.schemes ?? []
-        where scheme.name.hasPrefix(Self.scratchPrefix) {
-            _ = await Self.removeScratchScheme(scheme.id)
+    override func setUp() {
+        super.setUp()
+        Task { @MainActor in
+            let model = AppModel.shared
+            guard model.bridge != nil else {
+                return
+            }
+            for scheme in model.snapshot?.schemes ?? []
+            where scheme.name.hasPrefix(Self.scratchPrefix) {
+                let id = scheme.id
+                _ = await Self.removeScratchScheme(id)
+            }
         }
     }
 
