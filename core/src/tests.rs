@@ -1387,3 +1387,150 @@ fn replace_scheme_items_preserves_existing_metadata() {
 
     let _ = std::fs::remove_dir_all(dir);
 }
+
+/// Tapping **Snooze** or **Mark done** on a notification must reach the
+/// account, not just the phone.
+///
+/// The button is handled with the app in the background, so everything about
+/// this path is easy to get wrong in a way that still *looks* right on the
+/// device: the local reschedule happens, the banner clears, and the edit sits
+/// in the pending queue until the next foreground. The existing coverage drove
+/// `apply` with a hand-built `Command`; this drives the entry point the shells
+/// actually call, so a change that bypasses `MobileCoreInner::apply` — the one
+/// place that sets `background_refresh_required` — is caught here.
+///
+/// Asserted for each action: the workspace changed, the offline-peer wake flag
+/// is set, the next sync cycle carries that flag, and the edit is visible in
+/// the server's own materialized workspace afterwards.
+#[test]
+fn a_notification_action_reaches_the_server_and_flags_the_offline_peer_wake() {
+    let dir =
+        std::env::temp_dir().join(format!("knotq-mobile-notifaction-{}", uuid::Uuid::new_v4()));
+    let workspace_path = dir.join("workspace").join("workspace.json");
+
+    // An event still ahead of us, so the action has something to act on.
+    let mut initial = Workspace::new();
+    let mut scheme = Scheme::new("Work", 0);
+    let start = chrono::Utc::now() + chrono::Duration::hours(2);
+    let end = start + chrono::Duration::hours(1);
+    let event = Item::new("Standup").with_start(start).with_end(end);
+    let item_id = event.id;
+    scheme.items.push(event);
+    let scheme_id = scheme.id;
+    initial
+        .folders
+        .get_mut(&initial.root)
+        .unwrap()
+        .children
+        .push(NodeRef::Scheme(scheme_id));
+    initial.schemes.insert(scheme_id, scheme);
+    initial.canonicalize_personal_sync_identity(initial.id);
+    initial.ensure_sync_metadata();
+
+    let seed_crdt = WorkspaceCrdtDocuments::try_new(&initial).unwrap();
+    let seed_states = seed_crdt.document_states();
+    let server = MobileFuzzServer::seeded(&initial, &seed_states);
+
+    let replica_id = ReplicaId::new();
+    let mut sync_state = LocalSyncState {
+        workspace_id: Some(initial.id),
+        replica_id: Some(replica_id),
+        server_url: Some("http://127.0.0.1:8788".to_string()),
+        ..LocalSyncState::default()
+    };
+    for document in seed_states.keys() {
+        sync_state.document_cursors.insert(
+            *document,
+            DocumentSyncCursor {
+                document: *document,
+                kind: if *document == initial.sync.id {
+                    SyncDocumentKind::PersonalWorkspace
+                } else {
+                    SyncDocumentKind::Scheme
+                },
+                last_pulled_sequence: 1,
+                last_pushed_sequence: 1,
+                epoch: 0,
+            },
+        );
+    }
+    save_workspace(&workspace_path, &initial).unwrap();
+    save_crdt_state(&workspace_path, &seed_states).unwrap();
+    save_local_sync_state(&workspace_path, &sync_state).unwrap();
+
+    let mut dev = MobileCoreInner::open(dir.clone()).unwrap();
+    dev.settings.replica_id = replica_id;
+
+    // "Snooze 15 minutes" from the banner.
+    let changed = dev
+        .apply_notification_action(
+            ACTION_SNOOZE_15_MINUTES,
+            scheme_id,
+            item_id,
+            OccurrenceId::Single,
+            start,
+        )
+        .unwrap();
+    assert!(changed, "snoozing a live occurrence changes the workspace");
+    assert!(
+        dev.background_refresh_required,
+        "a snooze has to wake this account's other devices"
+    );
+    mobile_sync_cycle(&mut dev, &server).unwrap();
+    assert_eq!(
+        server.push_background_refresh.borrow().last().copied(),
+        Some(true),
+        "the snooze push carries the offline-peer wake flag"
+    );
+    assert!(
+        server
+            .workspace
+            .borrow()
+            .scheme(scheme_id)
+            .and_then(|scheme| scheme.item(item_id))
+            .map(|item| item
+                .state_for_occurrence(&OccurrenceId::Single)
+                .notification_offset_secs
+                .is_some())
+            .unwrap_or(false),
+        "the snooze itself has to reach the server, not just the phone's own schedule"
+    );
+
+    // "Mark done" from the banner.
+    let changed = dev
+        .apply_notification_action(
+            ACTION_MARK_DONE,
+            scheme_id,
+            item_id,
+            OccurrenceId::Single,
+            start,
+        )
+        .unwrap();
+    assert!(
+        changed,
+        "marking a live occurrence done changes the workspace"
+    );
+    assert!(dev.background_refresh_required);
+    mobile_sync_cycle(&mut dev, &server).unwrap();
+    assert_eq!(
+        server.push_background_refresh.borrow().last().copied(),
+        Some(true),
+        "the completion push carries the offline-peer wake flag"
+    );
+    assert!(
+        server
+            .workspace
+            .borrow()
+            .scheme(scheme_id)
+            .and_then(|scheme| scheme.item(item_id))
+            .map(|item| item.state_for_occurrence(&OccurrenceId::Single).is_done())
+            .unwrap_or(false),
+        "the completion has to reach the server"
+    );
+    assert!(
+        !dev.background_refresh_required,
+        "the flag clears once the push that carried it succeeded"
+    );
+
+    let _ = std::fs::remove_dir_all(&dir);
+}
