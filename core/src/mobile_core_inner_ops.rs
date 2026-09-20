@@ -119,7 +119,7 @@ impl MobileCoreInner {
         // any missing sync identity. Together they decide whether what we hold
         // differs from what is on disk — see the save below.
         let workspace_changed = workspace.normalize_one_level_folders()
-            | workspace.normalize_item_markers()
+            | !workspace.normalize_item_markers().is_empty()
             | workspace.ensure_sync_metadata();
         timing.phase("normalize");
         let settings = load_app_settings(&settings_path).unwrap_or_default();
@@ -297,7 +297,10 @@ impl MobileCoreInner {
         self.dirty_schemes
             .extend(receipt.touched.schemes.iter().copied());
         self.workspace.normalize_one_level_folders();
-        self.workspace.normalize_item_markers();
+        // The schemes this repaired are already in `dirty_schemes` above (a
+        // marker repair only touches items the command just wrote), so the
+        // returned set adds nothing here.
+        let _ = self.workspace.normalize_item_markers();
         let t1 = std::time::Instant::now();
         self.record_crdt_changes(crdt_changes)?;
         let t2 = std::time::Instant::now();
@@ -1304,16 +1307,24 @@ impl MobileCoreInner {
             .workspace
             .canonicalize_personal_sync_identity_with_change(server_workspace_id);
         let repaired_folders = self.workspace.normalize_one_level_folders();
-        let repaired_markers = self.workspace.normalize_item_markers();
+        let repaired_marker_schemes = self.workspace.normalize_item_markers();
+        let repaired_markers = !repaired_marker_schemes.is_empty();
         let repaired_workspace_changed = repaired_identity || repaired_folders || repaired_markers;
         let repaired_workspace_persist_changed =
             repaired_identity_changed || repaired_folders || repaired_markers;
         if repaired_workspace_changed {
             self.notification_schedule_cache = None;
-            let outcome = self.crdt.sync_changes(
-                &self.workspace,
-                &WorkspaceCrdtChangeSet::default().workspace(),
-            );
+            // The identity and folder repairs are index-level, but a marker
+            // repair rewrites item *content*: queueing only the index would
+            // leave the plain workspace holding something its own scheme
+            // documents never received, and the next pull reads that
+            // difference as a local edit and re-asserts the stale value. See
+            // `app/TODO.md` 0e for the desktop twin of this.
+            let mut repair_changes = WorkspaceCrdtChangeSet::default().workspace();
+            repair_changes
+                .schemes
+                .extend(repaired_marker_schemes.iter().copied());
+            let outcome = self.crdt.sync_changes(&self.workspace, &repair_changes);
             for error in &outcome.errors {
                 // A repair-encoding error for one document must not wedge the entire
                 // sync. Log it and queue whatever updates did encode; the pull
@@ -1903,8 +1914,13 @@ impl MobileCoreInner {
         if applied.content_changed {
             self.notification_schedule_cache = None;
             self.workspace.normalize_one_level_folders();
-            self.workspace.normalize_item_markers();
-            self.record_crdt_changes(applied.changes)?;
+            let mut changes = applied.changes;
+            // A marker repair rewrites item content, so the schemes it touched
+            // have to reach their documents with this import's own changes.
+            changes
+                .schemes
+                .extend(self.workspace.normalize_item_markers());
+            self.record_crdt_changes(changes)?;
             self.save_workspace()?;
         }
 

@@ -737,7 +737,8 @@ impl MobileCoreInner {
             .scheme_mut(scheme_id)
             .ok_or_else(|| anyhow!("scheme {scheme_id} is missing"))?;
         scheme.items = next_items;
-        self.workspace.normalize_item_markers();
+        // Confined to `scheme_id`, which is recorded as changed just below.
+        let _ = self.workspace.normalize_item_markers();
         let t0 = std::time::Instant::now();
         self.record_crdt_changes(WorkspaceCrdtChangeSet::default().touch_scheme(scheme_id))?;
         let t1 = std::time::Instant::now();
