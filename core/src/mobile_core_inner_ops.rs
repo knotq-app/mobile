@@ -119,7 +119,7 @@ impl MobileCoreInner {
         // any missing sync identity. Together they decide whether what we hold
         // differs from what is on disk — see the save below.
         let workspace_changed = workspace.normalize_one_level_folders()
-            | !workspace.normalize_item_markers().is_empty()
+            | workspace.normalize_item_markers()
             | workspace.ensure_sync_metadata();
         timing.phase("normalize");
         let settings = load_app_settings(&settings_path).unwrap_or_default();
@@ -1307,7 +1307,7 @@ impl MobileCoreInner {
             .workspace
             .canonicalize_personal_sync_identity_with_change(server_workspace_id);
         let repaired_folders = self.workspace.normalize_one_level_folders();
-        let repaired_marker_schemes = self.workspace.normalize_item_markers();
+        let repaired_marker_schemes = self.workspace.repair_item_markers();
         let repaired_markers = !repaired_marker_schemes.is_empty();
         let repaired_workspace_changed = repaired_identity || repaired_folders || repaired_markers;
         let repaired_workspace_persist_changed =
@@ -1917,9 +1917,7 @@ impl MobileCoreInner {
             let mut changes = applied.changes;
             // A marker repair rewrites item content, so the schemes it touched
             // have to reach their documents with this import's own changes.
-            changes
-                .schemes
-                .extend(self.workspace.normalize_item_markers());
+            changes.schemes.extend(self.workspace.repair_item_markers());
             self.record_crdt_changes(changes)?;
             self.save_workspace()?;
         }
