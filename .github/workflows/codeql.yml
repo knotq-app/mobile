@@ -26,16 +26,22 @@ jobs:
           - language: actions
             runner: ubuntu-24.04
             build-mode: none
-          - language: java-kotlin
-            runner: ubuntu-24.04
-            # The mobile checkout is intentionally paired with the desktop/shared
-            # checkout in Mobile CI; CodeQL's standalone Gradle autobuild cannot
-            # resolve that split layout. Kotlin source analysis does not need a
-            # compiled build here.
-            build-mode: none
-          - language: swift
-            runner: macos-15
-            build-mode: autobuild
+          # java-kotlin and swift are disabled, not removed. This repository is
+          # public, so CodeQL is free here and both languages are worth
+          # analysing — 76 Kotlin and 80 Swift files. Neither currently works:
+          #
+          #   java-kotlin  fails with "CodeQL could not process any code written
+          #                in Java/Kotlin" despite `build-mode: none` and the
+          #                sources sitting in android/app/src/main/kotlin.
+          #   swift        uses autobuild, which cannot build the Xcode project
+          #                standalone — the iOS target needs the Rust core's
+          #                XCFramework built first.
+          #
+          # Both have been red on main for weeks, producing the appearance of
+          # security scanning while analysing nothing, which is worse than an
+          # honest gap. Re-enable each as its build is fixed; do not delete
+          # them, and do not assume this is a licensing limit — that applies to
+          # the private backend repository, not to this one.
 
     steps:
       - uses: actions/checkout@v6
