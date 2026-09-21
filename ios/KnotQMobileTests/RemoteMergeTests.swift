@@ -117,7 +117,26 @@ final class RemoteMergeTests: XCTestCase {
         XCTAssertNotNil(whole)
         XCTAssertNotNil(fractional)
         XCTAssertEqual(fractional?.timeIntervalSince1970 ?? 0, (whole?.timeIntervalSince1970 ?? 0) + 0.123, accuracy: 0.001)
-        XCTAssertEqual(MobileDate.formatTime("2026-09-10T17:00:00.123-04:00", timeFormat: "twenty_four_hour"), "17:00")
+
+        // `formatTime` renders in the device's zone (`TimeZone.current`), and
+        // this suite runs across five of them. Hard-coding "17:00" asserted the
+        // offset in the *input* string, which is only the local rendering at
+        // UTC-04:00 — so this failed in every matrix entry except one. Derive
+        // the expectation from the same instant instead, via Calendar rather
+        // than a second DateFormatter, so the check stays independent of the
+        // formatter it is testing.
+        let localComponents = Calendar(identifier: .gregorian)
+            .dateComponents(in: .current, from: fractional ?? .distantPast)
+        let expectedLocalTime = String(
+            format: "%02d:%02d",
+            localComponents.hour ?? -1,
+            localComponents.minute ?? -1
+        )
+        XCTAssertEqual(
+            MobileDate.formatTime("2026-09-10T17:00:00.123-04:00", timeFormat: "twenty_four_hour"),
+            expectedLocalTime,
+            "a 24-hour time renders the instant in the device's own zone"
+        )
     }
 
     func testDateOnlyParsingRejectsNormalizedOrNonCanonicalDates() {
