@@ -400,6 +400,30 @@ jobs:
       # would never be cached and every debugging run would pay the cold boot
       # again. The snapshot is a property of the emulator image, not of whether
       # our test passed.
+      # `MainActivitySmokeTest` rotates to landscape and asserts the shell
+      # reaches its wide layout, which `MainActivity.isWideLayout()` gates on
+      # screenWidthDp >= 760. A pixel_2 is only 731dp wide in landscape, so
+      # that assertion could never hold on it. Which profiles exist depends on
+      # the device catalog shipped with the runner's command-line tools —
+      # pixel_8 is missing from it — so resolve one at runtime instead of
+      # pinning a name that may not be there. Every candidate is ~411dp in
+      # portrait, so the phone-layout half of the test still holds.
+      - name: Pick an emulator profile that can reach the wide layout
+        id: emulator-profile
+        run: |
+          set -euo pipefail
+          available="$(avdmanager list device)"
+          for candidate in pixel_8 pixel_7 pixel_6 pixel_4_xl pixel_3_xl pixel_2_xl; do
+            if printf '%s' "$available" | grep -q "\"$candidate\""; then
+              echo "Using emulator profile $candidate"
+              echo "name=$candidate" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+          done
+          echo "No device profile wide enough for the wide-layout test:" >&2
+          printf '%s\n' "$available" >&2
+          exit 1
+
       - name: Restore the cached emulator AVD
         id: avd-cache
         uses: actions/cache/restore@v4
@@ -407,7 +431,7 @@ jobs:
           path: |
             ~/.android/avd/*
             ~/.android/adb*
-          key: avd-android-35-google_apis-x86_64-pixel_8
+          key: avd-android-35-google_apis-x86_64-${{ steps.emulator-profile.outputs.name }}
 
       - name: Run connected Android startup/navigation smoke test
         uses: reactivecircus/android-emulator-runner@v2
@@ -415,11 +439,7 @@ jobs:
           api-level: 35
           target: google_apis
           arch: x86_64
-          # `MainActivitySmokeTest` rotates to landscape and asserts the app
-          # reaches its wide layout, which starts at 760dp. A pixel_2 is only
-          # 731dp wide in landscape, so that assertion could never pass on it —
-          # the device, not the test, was wrong. A Pixel 8 is 914dp.
-          profile: pixel_8
+          profile: ${{ steps.emulator-profile.outputs.name }}
           force-avd-creation: false
           disable-animations: true
           emulator-boot-timeout: 900
@@ -439,4 +459,4 @@ jobs:
           path: |
             ~/.android/avd/*
             ~/.android/adb*
-          key: avd-android-35-google_apis-x86_64-pixel_8
+          key: avd-android-35-google_apis-x86_64-${{ steps.emulator-profile.outputs.name }}
