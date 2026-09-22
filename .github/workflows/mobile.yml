@@ -375,13 +375,20 @@ jobs:
       - name: Install Android emulator image for connected smoke coverage
         run: sdkmanager "emulator" "system-images;android-35;google_apis;x86_64"
 
-      # A cold AVD boot on a hosted runner took 15 minutes of this job's 37 and
-      # was paid again on every re-run. Cache the device directory, and let the
-      # run below save a boot snapshot into it, so later runs resume in about a
-      # minute instead of booting from scratch. `force-avd-creation: false`
-      # keeps a restored AVD rather than recreating (and re-booting) it.
-      - name: Cache the emulator AVD and its boot snapshot
-        uses: actions/cache@v4
+      # A cold AVD boot on a hosted runner took 15 minutes, and was paid again
+      # on every re-run. Cache the device directory, and let the run below save
+      # a boot snapshot into it, so later runs resume in about a minute instead
+      # of booting from scratch. `force-avd-creation: false` keeps a restored
+      # AVD rather than recreating (and re-booting) it.
+      #
+      # Restore and save are separate on purpose: `actions/cache` only saves
+      # when the job succeeds, so while the smoke test is failing the snapshot
+      # would never be cached and every debugging run would pay the cold boot
+      # again. The snapshot is a property of the emulator image, not of whether
+      # our test passed.
+      - name: Restore the cached emulator AVD
+        id: avd-cache
+        uses: actions/cache/restore@v4
         with:
           path: |
             ~/.android/avd/*
@@ -405,3 +412,12 @@ jobs:
           # -o pipefail". Keep this to one line and let bash read the
           # whole smoke test from a file.
           script: bash app/mobile/.github/scripts/android-smoke.sh
+
+      - name: Save the emulator AVD and its boot snapshot
+        if: always() && steps.avd-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            ~/.android/avd/*
+            ~/.android/adb*
+          key: avd-android-35-google_apis-x86_64-pixel_2
