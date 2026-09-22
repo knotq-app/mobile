@@ -33,16 +33,18 @@ final class KnotQAppDelegate: NSObject, UIApplicationDelegate, MessagingDelegate
         didRegisterForRemoteNotificationsWithDeviceToken deviceToken: Data
     ) {
         Messaging.messaging().apnsToken = deviceToken
-        Messaging.messaging().token { token, error in
-            if let error {
-                let message = String(describing: error)
-                Task { @MainActor in
-                    Self.log.error("FCM token fetch failed: \(message, privacy: .public)")
-                }
-            }
-            guard let token else { return }
-            Task { @MainActor in
+        // Awaited rather than given a completion closure. `UIApplicationDelegate`
+        // is main-actor isolated, so a closure literal written here inherits that
+        // isolation while Firebase delivers the token on one of its own queues —
+        // and Swift 6's dynamic isolation check traps the process when it does.
+        // See `MobileNotificationScheduler.updateBadgeCount`, where the same
+        // shape crashed the app on every core write.
+        Task { @MainActor in
+            do {
+                let token = try await Messaging.messaging().token()
                 AppModel.shared.setPushToken(token, environment: Self.pushEnvironment)
+            } catch {
+                Self.log.error("FCM token fetch failed: \(String(describing: error), privacy: .public)")
             }
         }
     }
