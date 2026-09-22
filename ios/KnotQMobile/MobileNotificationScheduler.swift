@@ -121,12 +121,18 @@ final class MobileNotificationScheduler: NSObject, UNUserNotificationCenterDeleg
         #if DEBUG
         guard !AppModel.screenshotFixtureRequested else { return }
         #endif
-        center.getNotificationSettings { [center] settings in
-            guard settings.authorizationStatus == .notDetermined else { return }
-            center.requestAuthorization(options: [.alert, .badge, .sound]) { _, error in
-                if let error {
-                    Self.log.error("notification authorization failed: \(String(describing: error), privacy: .public)")
-                }
+        // Awaited rather than handed completion closures, for the same reason
+        // as `updateBadgeCount`: these callbacks arrive on the notification
+        // centre's own queue, and a closure written here would carry this
+        // method's main-actor isolation into them and trap.
+        Task { @MainActor in
+            guard await center.notificationSettings().authorizationStatus == .notDetermined else {
+                return
+            }
+            do {
+                _ = try await center.requestAuthorization(options: [.alert, .badge, .sound])
+            } catch {
+                Self.log.error("notification authorization failed: \(String(describing: error), privacy: .public)")
             }
         }
     }
@@ -288,10 +294,21 @@ final class MobileNotificationScheduler: NSObject, UNUserNotificationCenterDeleg
     }
 
     /// Set the app icon badge to the current overdue count. `0` clears it.
+    ///
+    /// Deliberately awaits the notification centre instead of handing it a
+    /// completion closure. A closure literal written inside a `@MainActor`
+    /// member inherits main-actor isolation, but `UNUserNotificationCenter`
+    /// runs its completions on its own queue — and Swift 6's dynamic isolation
+    /// check (`swift_task_isCurrentExecutor` → `dispatch_assert_queue`) then
+    /// traps the whole process the moment that happens. That is not a
+    /// theoretical hazard: it killed the app on every core write.
     @MainActor
     func updateBadgeCount(_ count: Int) {
-        center.setBadgeCount(max(0, count)) { error in
-            if let error {
+        let badge = max(0, count)
+        Task { @MainActor in
+            do {
+                try await center.setBadgeCount(badge)
+            } catch {
                 Self.log.error("notification badge update failed: \(String(describing: error), privacy: .public)")
             }
         }
