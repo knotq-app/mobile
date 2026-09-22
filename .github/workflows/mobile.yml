@@ -320,33 +320,73 @@ jobs:
         working-directory: app/mobile
         run: ./android/gradlew -p android :app:testDebugUnitTest :app:lintDebug :app:assembleDebug :app:assembleRelease --no-daemon --console=plain
 
+      - name: Re-run Android JVM tests across timezone extremes
+        working-directory: app/mobile
+        run: |
+          for tz in UTC America/New_York America/Los_Angeles Pacific/Auckland Asia/Kolkata; do
+            echo "Testing Android formatters with TZ=$tz"
+            TZ="$tz" ./android/gradlew -p android :app:testDebugUnitTest --no-daemon --console=plain -PknotqTestTimezone="$tz"
+          done
+
+  android-smoke:
+    # Its own job so the emulator boots while the build/lint/release job is
+    # still running: chained behind it, the two together were the slowest thing
+    # in this workflow by a wide margin.
+    name: Android connected smoke test
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check out desktop/shared crates
+        uses: actions/checkout@v6
+        with:
+          repository: knotq-app/knotq-app
+          path: app
+
+      - name: Check out mobile shells and core
+        uses: actions/checkout@v6
+        with:
+          path: app/mobile
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Install Linux Rust build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y pkg-config libdbus-1-dev
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android,armv7-linux-androideabi,i686-linux-android,x86_64-linux-android
+
+      - uses: android-actions/setup-android@v3
+        with:
+          # The action's default `tools` package was removed from current
+          # Android SDK repositories; platform-tools is installed below with
+          # the API/NDK versions this build actually uses.
+          packages: platform-tools
+
+      - name: Install Android build dependencies
+        run: sdkmanager "platform-tools" "platforms;android-36" "build-tools;35.0.0" "ndk;28.2.13676358"
+
+      - uses: gradle/actions/setup-gradle@v4
+
       - name: Install Android emulator image for connected smoke coverage
         run: sdkmanager "emulator" "system-images;android-35;google_apis;x86_64"
 
-      # A cold AVD boot on a hosted runner took 15 minutes of the job's 37, and
-      # paid it again on every re-run. Cache the device with a saved snapshot so
-      # later runs resume it in about a minute.
-      - name: Cache the emulator AVD
-        id: avd-cache
+      # A cold AVD boot on a hosted runner took 15 minutes of this job's 37 and
+      # was paid again on every re-run. Cache the device directory, and let the
+      # run below save a boot snapshot into it, so later runs resume in about a
+      # minute instead of booting from scratch. `force-avd-creation: false`
+      # keeps a restored AVD rather than recreating (and re-booting) it.
+      - name: Cache the emulator AVD and its boot snapshot
         uses: actions/cache@v4
         with:
           path: |
             ~/.android/avd/*
             ~/.android/adb*
           key: avd-android-35-google_apis-x86_64-pixel_2
-
-      - name: Create the emulator snapshot
-        if: steps.avd-cache.outputs.cache-hit != 'true'
-        uses: reactivecircus/android-emulator-runner@v2
-        with:
-          api-level: 35
-          target: google_apis
-          arch: x86_64
-          profile: pixel_2
-          force-avd-creation: false
-          disable-animations: false
-          emulator-options: -no-window -no-audio -no-boot-anim -gpu swiftshader_indirect -no-snapshot-load
-          script: echo "AVD snapshot saved."
 
       - name: Run connected Android startup/navigation smoke test
         uses: reactivecircus/android-emulator-runner@v2
@@ -357,7 +397,7 @@ jobs:
           profile: pixel_2
           force-avd-creation: false
           disable-animations: true
-          emulator-options: -no-window -no-audio -no-boot-anim -gpu swiftshader_indirect -no-snapshot-save
+          emulator-options: -no-window -no-audio -no-boot-anim -gpu swiftshader_indirect
           # `reactivecircus/android-emulator-runner` splits `script` on
           # newlines and runs each line as its own `/usr/bin/sh -c`, which
           # is dash on Ubuntu: a multi-line script loses all shell state
@@ -365,11 +405,3 @@ jobs:
           # -o pipefail". Keep this to one line and let bash read the
           # whole smoke test from a file.
           script: bash app/mobile/.github/scripts/android-smoke.sh
-
-      - name: Re-run Android JVM tests across timezone extremes
-        working-directory: app/mobile
-        run: |
-          for tz in UTC America/New_York America/Los_Angeles Pacific/Auckland Asia/Kolkata; do
-            echo "Testing Android formatters with TZ=$tz"
-            TZ="$tz" ./android/gradlew -p android :app:testDebugUnitTest --no-daemon --console=plain -PknotqTestTimezone="$tz"
-          done
