@@ -407,7 +407,7 @@ jobs:
           path: |
             ~/.android/avd/*
             ~/.android/adb*
-          key: avd-android-35-google_apis-x86_64-pixel_2
+          key: avd-android-35-google_apis-x86_64-pixel_8
 
       - name: Run connected Android startup/navigation smoke test
         uses: reactivecircus/android-emulator-runner@v2
@@ -415,7 +415,11 @@ jobs:
           api-level: 35
           target: google_apis
           arch: x86_64
-          profile: pixel_2
+          # `MainActivitySmokeTest` rotates to landscape and asserts the app
+          # reaches its wide layout, which starts at 760dp. A pixel_2 is only
+          # 731dp wide in landscape, so that assertion could never pass on it —
+          # the device, not the test, was wrong. A Pixel 8 is 914dp.
+          profile: pixel_8
           force-avd-creation: false
           disable-animations: true
           emulator-boot-timeout: 900
@@ -435,4 +439,4 @@ jobs:
           path: |
             ~/.android/avd/*
             ~/.android/adb*
-          key: avd-android-35-google_apis-x86_64-pixel_2
+          key: avd-android-35-google_apis-x86_64-pixel_8
