@@ -63,6 +63,32 @@ restore_motion() {
   adb shell settings put global window_animation_scale 1
 }
 
+# `sys.boot_completed` — the only thing the emulator action waits for — flips
+# long before the device is usable. Play services then spends another minute
+# staging modules while the package manager thrashes; the run that first got
+# this far recorded 18-second Looper dispatches, `Long monitor contention ...
+# waiters=12` and the system ANR-killing its own background apps. Instrumenting
+# into that storm gets the app process killed before a single test is
+# enumerated, which Gradle reports only as "Starting 0 tests ... Instrumentation
+# run failed due to Process crashed".
+#
+# The device's own load average is the honest signal for "the boot storm is
+# over". Bounded, because a runner that never settles should still run the test
+# and report a real result rather than hang.
+wait_for_device_idle() {
+  local deadline=$((SECONDS + 420)) load
+  adb wait-for-device
+  while [ "$SECONDS" -lt "$deadline" ]; do
+    load="$(adb shell cat /proc/loadavg 2>/dev/null | tr -d '\r' | awk '{print int($1)}')"
+    if [ -n "$load" ] && [ "$load" -le 2 ]; then
+      echo "Device settled (load average ${load})."
+      return 0
+    fi
+    sleep 10
+  done
+  echo "::warning::Emulator never went idle (load average ${load:-unknown}); running the smoke test anyway."
+}
+
 # Gradle reports an instrumentation failure as "Process crashed" and a path to
 # an HTML report that never leaves the runner, which says nothing about why the
 # app died. The device log does, so print it here rather than losing it with
@@ -79,6 +105,8 @@ run_connected_tests() {
   echo "::endgroup::"
   return 1
 }
+
+wait_for_device_idle
 
 # Exercise both the ordinary snap/slide path and Android's reduced-motion path.
 # Restore the emulator setting even when the second run fails so later workflow
