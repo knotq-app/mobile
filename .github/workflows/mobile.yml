@@ -416,18 +416,42 @@ jobs:
         id: emulator-profile
         run: |
           set -uo pipefail
+          # Probe by actually creating a throwaway AVD, not by reading
+          # `avdmanager list device`: the runner lists pixel_8 and creates it
+          # happily with the command-line tools on PATH, while the emulator
+          # action's own avdmanager answers "No device found matching --device
+          # pixel_8". The device catalog ships with each cmdline-tools copy and
+          # the image has more than one, so require a candidate to work with
+          # every avdmanager present — then whichever the action picks accepts
+          # it too.
+          managers=()
+          for manager in "${ANDROID_SDK_ROOT:-$ANDROID_HOME}"/cmdline-tools/*/bin/avdmanager; do
+            [ -x "$manager" ] && managers+=("$manager")
+          done
+          if [ "${#managers[@]}" -eq 0 ]; then
+            echo "No avdmanager found under the Android SDK." >&2
+            exit 1
+          fi
+          printf 'Probing with: %s\n' "${managers[@]}"
           for candidate in pixel_8 pixel_7 pixel_6 pixel_4_xl pixel_3_xl pixel_2_xl; do
-            if echo no | avdmanager create avd --force -n knotq-profile-probe \
-                 --package 'system-images;android-35;google_apis;x86_64' \
-                 --device "$candidate" >/dev/null 2>&1; then
-              avdmanager delete avd -n knotq-profile-probe >/dev/null 2>&1 || true
+            usable=1
+            for manager in "${managers[@]}"; do
+              if ! echo no | "$manager" create avd --force -n knotq-profile-probe \
+                   --package 'system-images;android-35;google_apis;x86_64' \
+                   --device "$candidate" >/dev/null 2>&1; then
+                usable=0
+                break
+              fi
+            done
+            "${managers[0]}" delete avd -n knotq-profile-probe >/dev/null 2>&1
+            if [ "$usable" -eq 1 ]; then
               echo "Using emulator profile $candidate"
               echo "name=$candidate" >> "$GITHUB_OUTPUT"
               exit 0
             fi
           done
           echo "No device profile wide enough for the wide-layout test could be created." >&2
-          avdmanager list device >&2
+          "${managers[0]}" list device >&2
           exit 1
 
       - name: Restore the cached emulator AVD
