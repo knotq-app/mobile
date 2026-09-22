@@ -403,25 +403,31 @@ jobs:
       # `MainActivitySmokeTest` rotates to landscape and asserts the shell
       # reaches its wide layout, which `MainActivity.isWideLayout()` gates on
       # screenWidthDp >= 760. A pixel_2 is only 731dp wide in landscape, so
-      # that assertion could never hold on it. Which profiles exist depends on
-      # the device catalog shipped with the runner's command-line tools —
-      # pixel_8 is missing from it — so resolve one at runtime instead of
-      # pinning a name that may not be there. Every candidate is ~411dp in
-      # portrait, so the phone-layout half of the test still holds.
+      # that assertion could never hold on it. Every candidate below is wide
+      # enough in landscape and still ~411dp in portrait, so the phone-layout
+      # half of the same test keeps working.
+      #
+      # The profile is probed by actually creating an AVD rather than by
+      # reading `avdmanager list device`: the runner lists pixel_8 but then
+      # rejects `--device pixel_8`, so the listing is not the authority on what
+      # this SDK will accept. Probing asks exactly the question the emulator
+      # action will ask.
       - name: Pick an emulator profile that can reach the wide layout
         id: emulator-profile
         run: |
-          set -euo pipefail
-          available="$(avdmanager list device)"
+          set -uo pipefail
           for candidate in pixel_8 pixel_7 pixel_6 pixel_4_xl pixel_3_xl pixel_2_xl; do
-            if printf '%s' "$available" | grep -q "\"$candidate\""; then
+            if echo no | avdmanager create avd --force -n knotq-profile-probe \
+                 --package 'system-images;android-35;google_apis;x86_64' \
+                 --device "$candidate" >/dev/null 2>&1; then
+              avdmanager delete avd -n knotq-profile-probe >/dev/null 2>&1 || true
               echo "Using emulator profile $candidate"
               echo "name=$candidate" >> "$GITHUB_OUTPUT"
               exit 0
             fi
           done
-          echo "No device profile wide enough for the wide-layout test:" >&2
-          printf '%s\n' "$available" >&2
+          echo "No device profile wide enough for the wide-layout test could be created." >&2
+          avdmanager list device >&2
           exit 1
 
       - name: Restore the cached emulator AVD
