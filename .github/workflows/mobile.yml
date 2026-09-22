@@ -262,25 +262,11 @@ jobs:
       # "Crash: KnotQMobile (<pid>) <external symbol>", which names neither the
       # signal nor a single frame, so a crash-only failure is undiagnosable
       # from the job log. The simulator writes the real report to the host's
-      # DiagnosticReports; print it rather than losing it with the runner.
+      # DiagnosticReports; summarise it rather than losing it with the runner.
       - name: Report the crash behind an iOS test failure
         if: failure()
-        run: |
-          set -uo pipefail
-          found=0
-          for report in \
-            "$HOME/Library/Logs/DiagnosticReports"/KnotQMobile*.ips \
-            "$HOME/Library/Logs/DiagnosticReports"/KnotQMobile*.crash; do
-            [ -f "$report" ] || continue
-            found=1
-            echo "::group::$report"
-            head -c 20000 "$report"
-            echo
-            echo "::endgroup::"
-          done
-          if [ "$found" -eq 0 ]; then
-            echo "No KnotQMobile crash report was written; the failure was not a host-app crash."
-          fi
+        run: bash .github/scripts/ios-crash-report.sh
+        working-directory: app/mobile
 
   android:
     name: Android unit tests and debug APK
