@@ -323,6 +323,31 @@ jobs:
       - name: Install Android emulator image for connected smoke coverage
         run: sdkmanager "emulator" "system-images;android-35;google_apis;x86_64"
 
+      # A cold AVD boot on a hosted runner took 15 minutes of the job's 37, and
+      # paid it again on every re-run. Cache the device with a saved snapshot so
+      # later runs resume it in about a minute.
+      - name: Cache the emulator AVD
+        id: avd-cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.android/avd/*
+            ~/.android/adb*
+          key: avd-android-35-google_apis-x86_64-pixel_2
+
+      - name: Create the emulator snapshot
+        if: steps.avd-cache.outputs.cache-hit != 'true'
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          target: google_apis
+          arch: x86_64
+          profile: pixel_2
+          force-avd-creation: false
+          disable-animations: false
+          emulator-options: -no-window -no-audio -no-boot-anim -gpu swiftshader_indirect -no-snapshot-load
+          script: echo "AVD snapshot saved."
+
       - name: Run connected Android startup/navigation smoke test
         uses: reactivecircus/android-emulator-runner@v2
         with:
@@ -330,9 +355,9 @@ jobs:
           target: google_apis
           arch: x86_64
           profile: pixel_2
-          force-avd-creation: true
+          force-avd-creation: false
           disable-animations: true
-          emulator-options: -no-window -no-audio -no-boot-anim -gpu swiftshader_indirect
+          emulator-options: -no-window -no-audio -no-boot-anim -gpu swiftshader_indirect -no-snapshot-save
           # `reactivecircus/android-emulator-runner` splits `script` on
           # newlines and runs each line as its own `/usr/bin/sh -c`, which
           # is dash on Ubuntu: a multi-line script loses all shell state

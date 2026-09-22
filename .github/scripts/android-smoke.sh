@@ -63,6 +63,23 @@ restore_motion() {
   adb shell settings put global window_animation_scale 1
 }
 
+# Gradle reports an instrumentation failure as "Process crashed" and a path to
+# an HTML report that never leaves the runner, which says nothing about why the
+# app died. The device log does, so print it here rather than losing it with
+# the emulator.
+run_connected_tests() {
+  if ./android/gradlew -p android :app:connectedDebugAndroidTest --no-daemon --console=plain; then
+    return 0
+  fi
+  echo "::group::logcat crash buffer"
+  adb logcat -d -b crash || true
+  echo "::endgroup::"
+  echo "::group::logcat, last 400 lines"
+  adb logcat -d -v threadtime | tail -400 || true
+  echo "::endgroup::"
+  return 1
+}
+
 # Exercise both the ordinary snap/slide path and Android's reduced-motion path.
 # Restore the emulator setting even when the second run fails so later workflow
 # steps are not contaminated.
@@ -72,7 +89,7 @@ adb shell settings put global window_animation_scale 1
 trap restore_motion EXIT
 
 adb logcat -c
-./android/gradlew -p android :app:connectedDebugAndroidTest --no-daemon --console=plain
+run_connected_tests
 check_frame_budget
 check_cold_start_budget
 
@@ -80,6 +97,6 @@ adb logcat -c
 adb shell settings put global animator_duration_scale 0
 adb shell settings put global transition_animation_scale 0
 adb shell settings put global window_animation_scale 0
-./android/gradlew -p android :app:connectedDebugAndroidTest --no-daemon --console=plain
+run_connected_tests
 check_frame_budget
 check_cold_start_budget
