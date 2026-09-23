@@ -106,7 +106,23 @@ run_connected_tests() {
   return 1
 }
 
+# The AVD comes out of `actions/cache` with a boot snapshot, and that snapshot is
+# taken AFTER a smoke run — so it still has KnotQ installed, signed with the
+# debug keystore of whichever runner saved it. Every runner generates its own
+# `~/.android/debug.keystore`, so installing over that copy fails with
+# INSTALL_FAILED_UPDATE_INCOMPATIBLE ("signatures do not match") before a single
+# test runs. The run that seeds the cache passes and every run that restores it
+# fails, which is exactly the pattern the scheduled runs showed. Start from a
+# device with no KnotQ on it; a missing package is not an error.
+remove_previous_installs() {
+  local package
+  for package in com.enigmadux.knotq com.enigmadux.knotq.test; do
+    adb uninstall "$package" >/dev/null 2>&1 || true
+  done
+}
+
 wait_for_device_idle
+remove_previous_installs
 
 # Exercise both the ordinary snap/slide path and Android's reduced-motion path.
 # Restore the emulator setting even when the second run fails so later workflow
