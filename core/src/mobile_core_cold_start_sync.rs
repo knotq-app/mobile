@@ -121,7 +121,7 @@ impl MobileCoreInner {
     pub(crate) fn finish_cold_start_pull(
         &mut self,
         server_workspace_id: knotq_model::WorkspaceId,
-        pulled_crdt: &WorkspaceCrdtDocuments,
+        pulled_crdt: &mut WorkspaceCrdtDocuments,
         pulled_sync_state: &knotq_sync::LocalSyncState,
         changed_documents: &HashSet<knotq_model::DocumentId>,
         resolved_account_workspace: CachedAccountWorkspace,
@@ -150,8 +150,23 @@ impl MobileCoreInner {
             .crdt
             .reidentify_workspace_document(self.workspace.sync.id)?;
 
-        if !changed_documents.is_empty() {
-            let snapshot = pulled_crdt.full_snapshot_updates_for_documents(changed_documents);
+        // Every scheme in the account is new to this device, and the pull has
+        // already decoded each one into `pulled_crdt` -- which is discarded the
+        // moment this returns. Take those documents rather than re-encoding
+        // them out of it and decoding them back into empty documents here: for
+        // a document this replica holds nothing for, the two are the same
+        // document (see `adopt_absent_scheme_documents`). What is left is the
+        // workspace index -- which always has local content to union -- plus
+        // any scheme a concurrent edit created while the pull ran unlocked, and
+        // those still take the ordinary merge below.
+        let adopted = self
+            .crdt
+            .adopt_absent_scheme_documents(pulled_crdt, changed_documents);
+        let remaining: HashSet<knotq_model::DocumentId> =
+            changed_documents.difference(&adopted).copied().collect();
+        let mut materialized = false;
+        if !remaining.is_empty() {
+            let snapshot = pulled_crdt.full_snapshot_updates_for_documents(&remaining);
             let updates: Vec<StoredCrdtUpdate> = snapshot
                 .updates
                 .into_iter()
@@ -183,7 +198,39 @@ impl MobileCoreInner {
             }
             self.workspace = outcome.workspace;
             self.notification_schedule_cache = None;
+            materialized = true;
         }
+        if !adopted.is_empty() {
+            self.notification_schedule_cache = None;
+            if !materialized {
+                // Nothing needed an ordinary merge, so nothing has rebuilt the
+                // visible workspace from the documents just adopted. (A real
+                // cold start always merges the workspace index, so this is the
+                // belt-and-braces path, not the common one.)
+                self.workspace = self
+                    .crdt
+                    .materialized_workspace_repair(&self.workspace, &|_| false)?;
+            }
+        }
+        // Persist the merged workspace and CRDT BEFORE the advanced cursors
+        // below reach disk. The ordinary path saves inside
+        // `run_sync_cycle_with_options`, but only when that cycle's OWN pull
+        // applied something -- and the cycle this hands off to is deliberately
+        // caught up, so it applies nothing and saves nothing. Without this the
+        // entire first download lived in memory only: the next launch loaded a
+        // starter workspace while `sync-state.json` claimed every document was
+        // already pulled, so the account looked empty and the starter content's
+        // bootstrap push was rejected (`crdt_schema_invalid`) -- a wedge, not
+        // just a slow resync.
+        //
+        // A full save (empty dirty sets + `crdt_state_requires_full_save`) is
+        // both correct and minimal here: a cold start touches every document, so
+        // a full write is a superset of anything a concurrent edit marked dirty
+        // while the pull ran unlocked.
+        self.dirty_schemes.clear();
+        self.dirty_crdt_schemes.clear();
+        self.crdt_state_requires_full_save = true;
+        self.save_workspace()?;
         let mut live = self
             .sync_state_cache
             .take()

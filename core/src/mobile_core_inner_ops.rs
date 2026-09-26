@@ -345,35 +345,48 @@ impl MobileCoreInner {
         // read cache before persistence so a later snapshot/search can only
         // observe a freshly-built view of the workspace.
         self.indexed_workspace = None;
-        // Rewrite only the scheme files that changed. A full save writes all of
-        // them — measured at ~55 ms of a ~57 ms edit on a 170-scheme workspace,
-        // which is the entire cost of a keystroke pause. An empty dirty set
-        // still means "write everything", so the paths that can touch any
-        // scheme (sync pulls, migrations) keep their previous behaviour.
-        if self.dirty_schemes.is_empty() {
-            save_workspace(&self.workspace_path, &self.workspace)?;
-        } else {
-            save_workspace_incremental(&self.workspace_path, &self.workspace, &self.dirty_schemes)?;
-        }
-        // Persist the CRDT documents' state in lockstep with the workspace so a
-        // restart restores them consistently (and with their stable identity).
-        // A checkbox or text edit changes exactly one scheme document. Once the
-        // per-document directory is authoritative, avoid encoding and probing
-        // every other CRDT document for that common path. Structural edits and
-        // all migration/legacy states retain the full writer, which also sweeps
-        // deleted documents safely.
-        let can_save_crdt_incrementally = !self.crdt_state_requires_full_save
-            && !self.dirty_crdt_schemes.is_empty()
-            && crdt_state_dir(&self.workspace_path).is_dir()
-            && !crdt_state_path(&self.workspace_path).exists();
-        if can_save_crdt_incrementally {
-            save_crdt_state_incremental(
-                &self.workspace_path,
-                &self.crdt.scheme_document_states(&self.dirty_crdt_schemes),
-            )?;
-        } else {
-            save_crdt_state(&self.workspace_path, &self.crdt.document_states())?;
-        }
+        // The workspace files and the CRDT states are the two halves of one
+        // durable checkpoint, so they share one durability barrier rather than
+        // paying for one each. On a bulk save (a first sync restoring a whole
+        // account) that is the difference between one device-cache flush and
+        // one per file — see `knotq_storage_json::with_durability_batch`.
+        knotq_storage_json::with_durability_batch(|| {
+            // Rewrite only the scheme files that changed. A full save writes all
+            // of them — measured at ~55 ms of a ~57 ms edit on a 170-scheme
+            // workspace, which is the entire cost of a keystroke pause. An empty
+            // dirty set still means "write everything", so the paths that can
+            // touch any scheme (sync pulls, migrations) keep their previous
+            // behaviour.
+            if self.dirty_schemes.is_empty() {
+                save_workspace(&self.workspace_path, &self.workspace)?;
+            } else {
+                save_workspace_incremental(
+                    &self.workspace_path,
+                    &self.workspace,
+                    &self.dirty_schemes,
+                )?;
+            }
+            // Persist the CRDT documents' state in lockstep with the workspace so a
+            // restart restores them consistently (and with their stable identity).
+            // A checkbox or text edit changes exactly one scheme document. Once the
+            // per-document directory is authoritative, avoid encoding and probing
+            // every other CRDT document for that common path. Structural edits and
+            // all migration/legacy states retain the full writer, which also sweeps
+            // deleted documents safely.
+            let can_save_crdt_incrementally = !self.crdt_state_requires_full_save
+                && !self.dirty_crdt_schemes.is_empty()
+                && crdt_state_dir(&self.workspace_path).is_dir()
+                && !crdt_state_path(&self.workspace_path).exists();
+            if can_save_crdt_incrementally {
+                save_crdt_state_incremental(
+                    &self.workspace_path,
+                    &self.crdt.scheme_document_states(&self.dirty_crdt_schemes),
+                )?;
+            } else {
+                save_crdt_state(&self.workspace_path, &self.crdt.document_states())?;
+            }
+            Ok(())
+        })?;
         // Only clear once both writes landed: a failure must leave the schemes
         // marked so the next save retries them rather than leaving them stale.
         self.dirty_schemes.clear();
