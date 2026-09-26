@@ -231,7 +231,7 @@ fn run_cold_start_pull(
     inner
         .finish_cold_start_pull(
             server_workspace_id,
-            &pulled_crdt,
+            &mut pulled_crdt,
             &pulled_sync_state,
             &outcome.changed_documents,
             CachedAccountWorkspace::new(
@@ -316,6 +316,217 @@ fn cold_start_pull_merges_remote_content_with_no_concurrent_edit() {
         !sync_state.pending.is_empty(),
         "starter content must be queued for push after the workspace is re-identified"
     );
+
+    let _ = std::fs::remove_dir_all(dir);
+}
+
+/// Adopting the pull's documents must produce exactly what re-merging them
+/// produced.
+///
+/// `finish_cold_start_pull` used to re-encode every document out of the
+/// throwaway pull store and decode it back into an empty document in the live
+/// one. For a document this replica holds nothing for those are the same
+/// document, so the round trip is pure cost — but "these are the same document"
+/// is exactly the kind of claim that quietly stops being true, so assert it
+/// directly: run one pull down each path and compare the materialized workspace
+/// and every document's persisted bytes.
+#[test]
+fn adopting_pulled_documents_matches_re_merging_them() {
+    use knotq_sync::StoredCrdtUpdate;
+    use std::collections::HashSet;
+
+    /// One cold-start pull, landed either by adoption or by the full-snapshot
+    /// re-merge it replaced.
+    fn land(adopt: bool) -> (Workspace, Vec<(DocumentId, Vec<u8>)>) {
+        let (server, server_workspace_id, _) = seeded_cold_start_server();
+        let dir = std::env::temp_dir().join(format!(
+            "knotq-mobile-cold-start-diff-{adopt}-{}",
+            uuid::Uuid::new_v4()
+        ));
+        let mut inner = MobileCoreInner::open(dir.clone()).unwrap();
+        let prelude = inner
+            .try_prepare_cold_start_pull("http://127.0.0.1:8788", "test-bearer")
+            .unwrap()
+            .unwrap();
+        let mut workspace = prelude.workspace_snapshot.clone();
+        workspace.canonicalize_personal_sync_identity_with_change(server_workspace_id);
+        workspace.ensure_sync_metadata();
+        let mut pulled_crdt = WorkspaceCrdtDocuments::empty(&workspace);
+        let mut pulled_sync_state = prelude.sync_state_snapshot.clone();
+        let pull = knotq_sync::batch_pull_and_apply_with_persisted_integrity_vectors(
+            &server,
+            &mut pulled_crdt,
+            &mut pulled_sync_state,
+            workspace,
+            prelude.replica_id,
+            true,
+            None,
+        )
+        .unwrap();
+
+        inner
+            .workspace
+            .canonicalize_personal_sync_identity_with_change(server_workspace_id);
+        inner.workspace.ensure_sync_metadata();
+        inner
+            .crdt
+            .reidentify_workspace_document(inner.workspace.sync.id)
+            .unwrap();
+
+        let merge: HashSet<DocumentId> = if adopt {
+            let adopted = inner
+                .crdt
+                .adopt_absent_scheme_documents(&mut pulled_crdt, &pull.changed_documents);
+            assert!(
+                !adopted.is_empty(),
+                "the remote scheme document must be adoptable"
+            );
+            pull.changed_documents
+                .difference(&adopted)
+                .copied()
+                .collect()
+        } else {
+            pull.changed_documents.clone()
+        };
+        let snapshot = pulled_crdt.full_snapshot_updates_for_documents(&merge);
+        let updates: Vec<StoredCrdtUpdate> = snapshot
+            .updates
+            .into_iter()
+            .map(|update| StoredCrdtUpdate {
+                workspace_id: inner.workspace.id,
+                document: update.document,
+                kind: update.kind,
+                replica_id: inner.settings.replica_id,
+                sequence: 0,
+                received_at: Utc::now(),
+                update_v1: update.update_v1,
+            })
+            .collect();
+        let outcome = inner.crdt.apply_remote_updates(&inner.workspace, &updates);
+        assert!(outcome.workspace_is_ok(), "merge must succeed ({adopt})");
+        inner.workspace = outcome.workspace;
+
+        let mut states: Vec<(DocumentId, Vec<u8>)> = inner
+            .crdt
+            .document_states()
+            .into_iter()
+            .map(|(document, bytes)| (document, bytes.to_vec()))
+            .collect();
+        states.sort_by_key(|(document, _)| *document);
+        let workspace = inner.workspace.clone();
+        let _ = std::fs::remove_dir_all(dir);
+        (workspace, states)
+    }
+
+    let (adopted_workspace, adopted_states) = land(true);
+    let (merged_workspace, merged_states) = land(false);
+
+    // Not a vacuous comparison: both paths really carried the account.
+    assert!(
+        adopted_workspace
+            .schemes
+            .values()
+            .any(|scheme| scheme.name == "From another device"),
+        "the adopted workspace must hold the remote scheme"
+    );
+    assert!(adopted_states.len() > 1, "more than the index is persisted");
+
+    // Scheme ids and workspace ids are freshly minted per run, so compare what
+    // is actually comparable across two independent runs: the content.
+    let names = |workspace: &Workspace| {
+        let mut names: Vec<(String, Vec<String>)> = workspace
+            .schemes
+            .values()
+            .map(|scheme| {
+                (
+                    scheme.name.clone(),
+                    scheme
+                        .items
+                        .iter()
+                        .map(|item| item.content.as_text().unwrap_or_default().to_string())
+                        .collect(),
+                )
+            })
+            .collect();
+        names.sort();
+        names
+    };
+    assert_eq!(
+        names(&adopted_workspace),
+        names(&merged_workspace),
+        "adoption must materialize the same content as the re-merge"
+    );
+    assert_eq!(
+        adopted_states.len(),
+        merged_states.len(),
+        "adoption must persist the same number of documents"
+    );
+    for (_, bytes) in &adopted_states {
+        assert!(!bytes.is_empty(), "no adopted document may be empty");
+    }
+}
+
+/// A cold-start pull must leave its download ON DISK before the cursors that
+/// declare it downloaded.
+///
+/// The ordinary path saves inside `run_sync_cycle_with_options`, but only when
+/// that cycle's own pull applied something — and the cycle a cold start hands
+/// off to is deliberately caught up, so it applies nothing. That left the whole
+/// first download in memory only while `sync-state.json` recorded every
+/// document as pulled: the next launch read a starter workspace, the server had
+/// nothing left to send it, and the starter content's bootstrap push came back
+/// `crdt_schema_invalid`. An empty account and a wedged device, from a sync that
+/// reported success.
+#[test]
+fn cold_start_pull_is_durable_before_the_next_launch() {
+    let (server, server_workspace_id, remote_scheme_id) = seeded_cold_start_server();
+    let dir = std::env::temp_dir().join(format!(
+        "knotq-mobile-cold-start-durable-{}",
+        uuid::Uuid::new_v4()
+    ));
+    let mut inner = MobileCoreInner::open(dir.clone()).unwrap();
+
+    run_cold_start_pull(&mut inner, &server, server_workspace_id, |_| {});
+    assert!(inner.workspace.schemes.contains_key(&remote_scheme_id));
+
+    // Nothing else runs: the process "dies" here, exactly as an iOS app that is
+    // backgrounded and reaped right after its first sync does.
+    let relaunched = MobileCoreInner::open(dir.clone()).expect("relaunch");
+    let scheme = relaunched
+        .workspace
+        .schemes
+        .get(&remote_scheme_id)
+        .expect("the pulled scheme must survive a relaunch");
+    assert_eq!(scheme.name, "From another device");
+    assert_eq!(
+        relaunched.workspace.id, server_workspace_id,
+        "the canonicalized workspace identity must be durable too"
+    );
+    assert!(
+        relaunched
+            .crdt
+            .known_document_ids()
+            .contains(&relaunched.workspace.sync.id),
+        "the merged CRDT half must be durable alongside the plain files"
+    );
+
+    // And the device is not wedged: an ordinary sync from that relaunch works.
+    let mut relaunched = relaunched;
+    let mut sync_state = load_local_sync_state(&relaunched.workspace_path).unwrap_or_default();
+    relaunched
+        .run_sync_cycle_with_options(
+            &server,
+            &mut sync_state,
+            server_workspace_id,
+            SyncCycleOptions {
+                account_switched: false,
+                prelude_workspace_changed: false,
+                media_client: None,
+                push_local_edits_first: false,
+            },
+        )
+        .expect("an ordinary sync after the first launch must not be rejected");
+    assert!(relaunched.workspace.schemes.contains_key(&remote_scheme_id));
 
     let _ = std::fs::remove_dir_all(dir);
 }

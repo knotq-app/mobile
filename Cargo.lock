@@ -1211,6 +1211,7 @@ dependencies = [
  "knotq-rrule",
  "knotq-sync",
  "serde",
+ "serde_json",
 ]
 
 [[package]]
@@ -1238,6 +1239,7 @@ dependencies = [
  "knotq-model",
  "knotq-storage",
  "knotq-sync",
+ "libc",
  "quick-xml",
  "serde",
  "serde_json",

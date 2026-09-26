@@ -1235,7 +1235,7 @@ impl MobileCore {
         let mut inner = self.lock()?;
         inner.finish_cold_start_pull(
             server_workspace_id,
-            &pulled_crdt,
+            &mut pulled_crdt,
             &pulled_sync_state,
             &pull_outcome.changed_documents,
             resolved_account_workspace,

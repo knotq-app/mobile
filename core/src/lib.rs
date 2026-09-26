@@ -101,6 +101,8 @@ mod tests_daily;
 mod tests_more;
 #[cfg(test)]
 mod tests_notifications;
+#[cfg(test)]
+mod tests_perf;
 
 const DAILY_QUEUE_MARKER_COLOR: u32 = 0x42a5f5;
 const MOBILE_DAILY_DEFAULT_HISTORY_DAYS: i32 = 3;
