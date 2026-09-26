@@ -86,7 +86,12 @@ struct EditorRichClipboardItem: Codable {
             marker: marker,
             indent: Int(indent),
             done: done,
-            itemID: nil,
+            // A pasted line is deliberately NOT the source line — reusing that
+            // id would alias one item across two documents — but it still needs
+            // an id of its own, or every live flush re-creates it. See the
+            // paragraph-split case in
+            // `EditorCoordinator.textStorage(_:didProcessEditing:...)`.
+            itemID: UUID().uuidString,
             annotation: MobileDate.annotationText(start: start, end: end, timeFormat: timeFormat),
             start: marker == .checkbox ? start : nil,
             end: marker == .checkbox ? end : nil,

@@ -81,12 +81,34 @@ extension EditorCoordinator {
             if fullRange.location > 0 {
                 let prev = storage.attribute(.knotqLine, at: fullRange.location - 1, effectiveRange: nil) as? LineMeta
                 if let prev, prev === meta {
-                    // Cloned via attribute inheritance — fresh paragraph, reset identity.
+                    // Cloned via attribute inheritance — fresh paragraph, reset
+                    // identity.
+                    //
+                    // Mint the id here rather than leaving it nil and adopting
+                    // the one the core returns. `flushLive` sends the WHOLE item
+                    // list every ~0.6 s while typing, and a line that is still
+                    // id-less is presented as a new draft each time — so each
+                    // flush created *another* item for the same line. The core
+                    // replaces the plain list positionally, so this stayed
+                    // invisible locally, but an ordinary scheme write
+                    // deliberately does not tombstone items the list dropped
+                    // (they may be a materialization's hidden duplicate), so
+                    // every superseded id stayed live in the CRDT and came back
+                    // the next time the workspace was materialized: one typed
+                    // line, five identical rows.
+                    //
+                    // `adoptItemIDs` was the guard against that, but it bails
+                    // whenever the paragraph count no longer matches the
+                    // returned item count — which is precisely what happens when
+                    // the user keeps typing during the async write. Owning the
+                    // id removes the race instead of narrowing it: the core
+                    // already adopts a caller-minted id (see
+                    // `replace_scheme_items`), so every flush lands on one item.
                     meta = LineMeta(
                         marker: prev.marker,
                         indent: prev.indent,
                         done: false,
-                        itemID: nil,
+                        itemID: UUID().uuidString,
                         annotation: nil,
                         media: [],
                         tables: []

@@ -746,7 +746,10 @@ final class EditorTextView: UITextView {
 
     func appendTaskLine(theme: KnotQTheme) {
         let storage = textStorage
-        let meta = LineMeta(marker: .checkbox)
+        // Owns its id from the start, so the repeated live flushes while the
+        // user types into it all land on one item — see the paragraph-split
+        // case in `EditorCoordinator.textStorage(_:didProcessEditing:...)`.
+        let meta = LineMeta(marker: .checkbox, itemID: UUID().uuidString)
         let attrs = EditorAttributes.bodyAttributes(meta: meta, theme: theme)
         var lineStart = storage.length
         coordinator?.suppress {

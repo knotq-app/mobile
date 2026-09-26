@@ -118,7 +118,7 @@ extension EditorCoordinator {
         // The block body is a single glyph at para.location; a caret past it
         // starts a line after the block, otherwise before it.
         let insertAfter = range.location > para.location
-        let newMeta = LineMeta(marker: .blank, indent: meta.indent)
+        let newMeta = LineMeta(marker: .blank, indent: meta.indent, itemID: UUID().uuidString)
         let attrs = EditorAttributes.bodyAttributes(meta: newMeta, theme: theme)
         let insertionLocation = insertAfter ? NSMaxRange(para) : para.location
         suppress {
