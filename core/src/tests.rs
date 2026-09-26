@@ -320,6 +320,98 @@ fn cold_start_pull_merges_remote_content_with_no_concurrent_edit() {
     let _ = std::fs::remove_dir_all(dir);
 }
 
+/// Repeated full-list flushes of the same line must land on ONE item when the
+/// caller owns its id.
+///
+/// The iOS editor's `flushLive` sends the whole item list every ~0.6 s while the
+/// user types. A line whose id it does not know is presented as a new draft each
+/// time, so each flush minted another item for it. The plain list is replaced
+/// positionally, which hid that locally — but an ordinary scheme write
+/// deliberately does not tombstone items the list dropped (they may be a
+/// materialization's hidden duplicate), so every superseded id stayed live in
+/// the CRDT and came back on the next materialization: one typed line, five
+/// identical rows.
+///
+/// The editor now mints the id when it creates the line. This is the core-side
+/// half of that contract.
+#[test]
+fn repeated_flushes_of_a_caller_minted_line_stay_one_item() {
+    let dir = std::env::temp_dir().join(format!(
+        "knotq-mobile-flush-identity-{}",
+        uuid::Uuid::new_v4()
+    ));
+    let mut inner = MobileCoreInner::open(dir.clone()).unwrap();
+
+    let mut scheme = Scheme::new("Typing", 0);
+    scheme.items.push(Item::new("existing line"));
+    let scheme_id = scheme.id;
+    let root = inner.workspace.root;
+    inner
+        .workspace
+        .folders
+        .get_mut(&root)
+        .unwrap()
+        .children
+        .push(NodeRef::Scheme(scheme_id));
+    inner.workspace.schemes.insert(scheme_id, scheme);
+    inner.workspace.ensure_sync_metadata();
+
+    let draft = |id: Option<String>, text: &str| MobileItemEdit {
+        id,
+        text: text.to_string(),
+        marker: "blank".to_string(),
+        indent: 0,
+        done: false,
+        start: None,
+        end: None,
+        notification_offset_secs: None,
+        repeat_rule: None,
+        media: Vec::new(),
+        content: Vec::new(),
+    };
+    let existing_id = inner.workspace.schemes[&scheme_id].items[0].id.to_string();
+    let typed_id = uuid::Uuid::new_v4().to_string();
+
+    for round in 0..5 {
+        inner
+            .replace_scheme_items(
+                scheme_id,
+                vec![
+                    draft(Some(existing_id.clone()), "existing line"),
+                    draft(Some(typed_id.clone()), &format!("typing {round}")),
+                ],
+            )
+            .expect("flush");
+    }
+
+    let items = &inner.workspace.schemes[&scheme_id].items;
+    assert_eq!(
+        items.len(),
+        2,
+        "five flushes of one line must not accumulate items: {:?}",
+        items
+            .iter()
+            .map(|item| item.content.as_text().unwrap_or_default())
+            .collect::<Vec<_>>()
+    );
+    assert_eq!(items[1].id.to_string(), typed_id, "the caller's id is kept");
+    assert_eq!(items[1].content.as_text(), Some("typing 4"));
+
+    // And the CRDT agrees with what the user sees — the projection law. Without
+    // a stable id this held six items while the workspace showed two.
+    let materialized = inner
+        .crdt
+        .materialized_workspace_for_diagnostics(&inner.workspace)
+        .expect("materialize");
+    assert_eq!(
+        materialized.schemes[&scheme_id].items.len(),
+        2,
+        "the CRDT must not retain the superseded lines"
+    );
+
+    let _ = std::fs::remove_dir_all(dir);
+}
+
 /// Adopting the pull's documents must produce exactly what re-merging them
 /// produced.
 ///
