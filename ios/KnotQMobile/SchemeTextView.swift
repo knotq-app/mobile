@@ -134,6 +134,9 @@ struct SchemeTextView: UIViewRepresentable {
         if themeChanged {
             uiView.restyleForTheme(theme)
         }
+        if themeChanged || accentChanged {
+            uiView.rebuildInputAccessoryForTheme()
+        }
         if readOnly, uiView.inputAccessoryView != nil {
             uiView.inputAccessoryView = nil
         }

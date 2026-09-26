@@ -217,6 +217,28 @@ final class EditorTextView: UITextView {
         return height
     }
 
+    /// Rebuild the cached formatting bar against the current theme.
+    ///
+    /// The bar paints itself — panel fill, border, dividers, icon tint — from
+    /// the theme it was built with, and is then cached on this view as its
+    /// `inputAccessoryView` for the view's whole lifetime (it is only ever
+    /// built `if inputAccessoryView == nil`). A theme switch therefore left the
+    /// previous theme's bar sitting above the keyboard: on the light theme,
+    /// Obsidian's `bgApp` is pure black, so the formatting bar came up as a
+    /// black slab. The Daily feed never showed it because it mounts and tears
+    /// down an editor per day as the feed scrolls, so its bar is almost always
+    /// freshly built.
+    func rebuildInputAccessoryForTheme() {
+        guard isEditable, inputAccessoryView != nil, let coordinator else { return }
+        inputAccessoryView = coordinator.makeToolbar(for: self)
+        if isFirstResponder {
+            // The keyboard is already up with the old bar attached; without
+            // this it keeps showing it until the next focus.
+            reloadInputViews()
+            coordinator.refreshToolbarActiveMarker(in: self)
+        }
+    }
+
     override func becomeFirstResponder() -> Bool {
         // The formatting toolbar is built on demand: the Daily feed mounts an
         // editor per day while scrolling, and only a focused one shows it.
