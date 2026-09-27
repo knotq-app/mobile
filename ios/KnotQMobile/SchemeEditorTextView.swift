@@ -787,18 +787,25 @@ final class EditorTextView: UITextView {
         let caret = clampedCaret(location ?? selectedRange.location, in: textStorage)
         let paragraph = editableParagraphRange(in: textStorage.string as NSString, at: caret)
         let old = lineMeta(at: paragraph.location, in: textStorage)
-        let blockMeta = LineMeta(
-            marker: .blank,
-            indent: old.indent,
-            media: [media],
-            content: [.image(media: media)]
-        )
-        let blockParagraph = makeBlockAttributedParagraph(meta: blockMeta, theme: theme)
         let body = bodyText(paragraphRange: paragraph, in: textStorage)
         let replacesEmptyLine = body.isEmpty
             && !old.hasBlockContent
             && old.marker == .blank
             && old.annotation == nil
+        // Which line this block *is* decides where its identity comes from.
+        // Taking over an empty line keeps that line's id; adding a line below
+        // it mints one. Either way the block must carry an id before it can be
+        // flushed: without one it is presented as a new draft on every flush
+        // and the core mints another item each time. `insertTable` below has
+        // always been given a caller-minted id for this reason.
+        let blockMeta = LineMeta(
+            marker: .blank,
+            indent: old.indent,
+            itemID: replacesEmptyLine ? (old.itemID ?? UUID().uuidString) : UUID().uuidString,
+            media: [media],
+            content: [.image(media: media)]
+        )
+        let blockParagraph = makeBlockAttributedParagraph(meta: blockMeta, theme: theme)
         let insertionLocation = replacesEmptyLine ? paragraph.location : NSMaxRange(paragraph)
 
         coordinator?.suppress {
