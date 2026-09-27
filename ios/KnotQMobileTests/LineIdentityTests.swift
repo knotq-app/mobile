@@ -27,12 +27,10 @@ final class LineIdentityTests: XCTestCase {
 
     /// Kept alive for the duration of a test: the coordinator holds its view
     /// weakly, and a deallocated view turns every handler into a silent no-op.
+    /// XCTest builds a fresh instance per test, so this is released with it;
+    /// it needs no teardown, and an override of the nonisolated `tearDown`
+    /// could not touch it from a `@MainActor` class anyway.
     private var liveViews: [EditorTextView] = []
-
-    override func tearDown() {
-        liveViews.removeAll()
-        super.tearDown()
-    }
 
     /// An editor holding `lines`, each already carrying its own id, the way a
     /// scheme loaded from the core arrives. Every line must be non-empty:
