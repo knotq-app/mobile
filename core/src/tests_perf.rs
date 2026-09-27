@@ -281,7 +281,10 @@ fn repeated_flush_without_id_adoption() {
         "\n  items after 5 flushes: {}",
         inner.workspace.schemes[&scheme_id].items.len()
     );
-    eprintln!("  distinct ids minted for ONE typed line: {}", distinct.len());
+    eprintln!(
+        "  distinct ids minted for ONE typed line: {}",
+        distinct.len()
+    );
     for (index, id) in seen_ids.iter().enumerate() {
         eprintln!("    flush {index}: {id}");
     }
@@ -367,8 +370,8 @@ fn repeated_flush_churn_as_a_peer_sees_it() {
     // Device A types one line. `KNOTQ_CLIENT_MINTS_ID=1` models the fix: the
     // editor mints the line's id up front and sends the same one every flush,
     // instead of leaving it nil and relying on adopting the core's.
-    let client_id = std::env::var_os("KNOTQ_CLIENT_MINTS_ID")
-        .map(|_| uuid::Uuid::new_v4().to_string());
+    let client_id =
+        std::env::var_os("KNOTQ_CLIENT_MINTS_ID").map(|_| uuid::Uuid::new_v4().to_string());
     for _ in 0..5 {
         dev_a
             .replace_scheme_items(
