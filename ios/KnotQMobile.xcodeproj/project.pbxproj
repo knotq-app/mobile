@@ -91,6 +91,7 @@
 		010000000000000000000069 /* EditorCoordinator+Toolbar.swift in Sources */ = {isa = PBXBuildFile; fileRef = 020000000000000000000069 /* EditorCoordinator+Toolbar.swift */; };
 		01000000000000000000006A /* SchemeEditorRemoteMerge.swift in Sources */ = {isa = PBXBuildFile; fileRef = 02000000000000000000006A /* SchemeEditorRemoteMerge.swift */; };
 		01000000000000000000006B /* RemoteMergeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 02000000000000000000006B /* RemoteMergeTests.swift */; };
+		010000000000000000000079 /* LineIdentityTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 020000000000000000000079 /* LineIdentityTests.swift */; };
 		01000000000000000000006C /* L10n.swift in Sources */ = {isa = PBXBuildFile; fileRef = 02000000000000000000006C /* L10n.swift */; };
 		01000000000000000000006D /* Localizable.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = 02000000000000000000006D /* Localizable.xcstrings */; };
 		01000000000000000000006E /* Localizable.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = 02000000000000000000006D /* Localizable.xcstrings */; };
@@ -223,6 +224,7 @@
 		020000000000000000000069 /* EditorCoordinator+Toolbar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "EditorCoordinator+Toolbar.swift"; sourceTree = "<group>"; };
 		02000000000000000000006A /* SchemeEditorRemoteMerge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SchemeEditorRemoteMerge.swift; sourceTree = "<group>"; };
 		02000000000000000000006B /* RemoteMergeTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RemoteMergeTests.swift; sourceTree = "<group>"; };
+		020000000000000000000079 /* LineIdentityTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LineIdentityTests.swift; sourceTree = "<group>"; };
 		02000000000000000000006C /* L10n.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = L10n.swift; sourceTree = "<group>"; };
 		02000000000000000000006D /* Localizable.xcstrings */ = {isa = PBXFileReference; lastKnownFileType = text.json.xcstrings; path = Localizable.xcstrings; sourceTree = "<group>"; };
 		02000000000000000000006E /* SchemeWriteTracker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SchemeWriteTracker.swift; sourceTree = "<group>"; };
@@ -396,6 +398,7 @@
 				020000000000000000000072 /* RefreshFlightGateTests.swift */,
 				020000000000000000000075 /* SyncSessionStoreTests.swift */,
 				02000000000000000000006B /* RemoteMergeTests.swift */,
+				020000000000000000000079 /* LineIdentityTests.swift */,
 				02000000000000000000005C /* MarkerConcealmentTests+Reveal.swift */,
 				02000000000000000000005D /* MarkerConcealmentTests+TableCrash.swift */,
 				02000000000000000000005E /* MarkerConcealmentTests+Markdown.swift */,
@@ -715,6 +718,7 @@
 				010000000000000000000072 /* RefreshFlightGateTests.swift in Sources */,
 				010000000000000000000075 /* SyncSessionStoreTests.swift in Sources */,
 				01000000000000000000006B /* RemoteMergeTests.swift in Sources */,
+				010000000000000000000079 /* LineIdentityTests.swift in Sources */,
 				01000000000000000000005C /* MarkerConcealmentTests+Reveal.swift in Sources */,
 				01000000000000000000005D /* MarkerConcealmentTests+TableCrash.swift in Sources */,
 				01000000000000000000005E /* MarkerConcealmentTests+Markdown.swift in Sources */,

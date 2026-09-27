@@ -259,7 +259,17 @@ extension EditorCoordinator {
         let paraRange = editableParagraphRange(in: storage.string as NSString, at: undo.lineLocation)
         let body = bodyText(paragraphRange: paraRange, in: storage)
         let bodyRange = NSRange(location: paraRange.location, length: (body as NSString).length)
-        let restoredMeta = LineMeta()
+        // Undo restores this line's *previous* state — it does not create a new
+        // line — so it has to keep the line's identity. A bare `LineMeta()`
+        // drops `itemID` along with the marker, and the line then flushes as a
+        // fresh draft while the item it used to be stays live in the CRDT: one
+        // line, two items, and materialization shows both.
+        let existingMeta = lineMeta(at: paraRange.location, in: storage)
+        let restoredMeta = LineMeta(
+            marker: .blank,
+            indent: existingMeta.indent,
+            itemID: existingMeta.itemID
+        )
         let attrs = EditorAttributes.bodyAttributes(meta: restoredMeta, theme: theme)
         suppress {
             storage.beginEditing()
@@ -295,7 +305,15 @@ extension EditorCoordinator {
         // otherwise) so the block keeps its own line (invariant I4).
         if currentMeta.hasBlockContent {
             let insertAfter = cursor > currentPara.location
-            let blankMeta = LineMeta(marker: .blank, indent: currentMeta.indent)
+            // A new line, so it is minted with an id here rather than waiting
+            // for the core to assign one. A line that reaches a flush without
+            // one is presented as a fresh draft every time, and each flush
+            // mints another item for it — see `handleTypingOnBlockLine`.
+            let blankMeta = LineMeta(
+                marker: .blank,
+                indent: currentMeta.indent,
+                itemID: UUID().uuidString
+            )
             let blankAttrs = EditorAttributes.bodyAttributes(meta: blankMeta, theme: theme)
             let insertionLocation = insertAfter ? NSMaxRange(currentPara) : currentPara.location
             suppress {
