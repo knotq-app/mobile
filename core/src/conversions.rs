@@ -52,7 +52,7 @@ impl MobileItem {
                 .single_state()
                 .notification_offset_secs
                 .map(offset_to_i32),
-            repeat_rule: recurrence_rule(item.repeats.as_ref()),
+            repeat_rule: recurrence_rule(item.repeats.as_ref().map(plain_recurrence)),
             media: mobile_item_image_assets(item)
                 .iter()
                 .filter_map(|media| MobileItemMedia::from_media(media, image_assets_dir))
@@ -105,6 +105,12 @@ pub(crate) fn mobile_inlines_to_inlines(
 }
 
 /// Extracts the first RRULE body from a recurrence for display on the client.
+/// A line's recurrence as a plain reference, however the model holds it —
+/// inline or behind a `Box`.
+pub(crate) fn plain_recurrence<T: std::borrow::Borrow<Recurrence>>(repeats: &T) -> &Recurrence {
+    repeats.borrow()
+}
+
 pub(crate) fn recurrence_rule(repeats: Option<&Recurrence>) -> Option<String> {
     repeats.and_then(|r| r.rrules.first().cloned())
 }
@@ -256,9 +262,10 @@ impl MobileOccurrence {
             .scheme(context.scheme_id)
             .and_then(|scheme| scheme.item(context.item_id));
         let title = item.map(|item| item.text()).unwrap_or_default();
-        let repeat_rule = item.and_then(|item| recurrence_rule(item.repeats.as_ref()));
+        let repeat_rule =
+            item.and_then(|item| recurrence_rule(item.repeats.as_ref().map(plain_recurrence)));
         let can_delete_future = item
-            .and_then(|item| item.repeats.as_ref())
+            .and_then(|item| item.repeats.as_ref().map(plain_recurrence))
             .is_some_and(recurrence_can_delete_future);
         let local_date = context
             .occurrence
