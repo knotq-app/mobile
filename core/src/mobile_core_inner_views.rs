@@ -697,7 +697,7 @@ impl MobileCoreInner {
             if should_apply_rich_metadata {
                 item.start = parse_datetime_opt(draft.start.as_deref())?;
                 item.end = parse_datetime_opt(draft.end.as_deref())?;
-                item.repeats = recurrence_from_rrule(draft.repeat_rule);
+                item.repeats = recurrence_from_rrule(draft.repeat_rule).map(Into::into);
                 // Legacy text+media path: rebuild the inline run, swapping the
                 // attached images, then collapse back to single-content (a block
                 // wins, so a line with media becomes an image line).
@@ -736,7 +736,7 @@ impl MobileCoreInner {
             .workspace
             .scheme_mut(scheme_id)
             .ok_or_else(|| anyhow!("scheme {scheme_id} is missing"))?;
-        scheme.items = next_items;
+        scheme.items = next_items.into();
         // Confined to `scheme_id`, which is recorded as changed just below.
         let _ = self.workspace.normalize_item_markers();
         let t0 = std::time::Instant::now();

@@ -72,14 +72,17 @@ fn google_calendar_full_sync_updates_an_event_without_minting_a_new_item() {
     let mut existing = Item::new("Old title");
     existing.marker = ItemMarker::Checkbox;
     existing.start = Some(original_start);
-    existing.external = Some(knotq_model::ExternalItemSource {
-        provider: CalendarProvider::Google,
-        account_id: "account".to_string(),
-        calendar_id: "calendar".to_string(),
-        event_id: "event-1".to_string(),
-        instance_id: None,
-        updated_at: None,
-    });
+    existing.external = Some(
+        knotq_model::ExternalItemSource {
+            provider: CalendarProvider::Google,
+            account_id: "account".to_string(),
+            calendar_id: "calendar".to_string(),
+            event_id: "event-1".to_string(),
+            instance_id: None,
+            updated_at: None,
+        }
+        .into(),
+    );
     let item_id = existing.id;
     scheme.items.push(existing);
     inner.workspace.schemes.insert(scheme_id, scheme);
@@ -107,14 +110,17 @@ fn google_calendar_full_sync_updates_an_event_without_minting_a_new_item() {
     let mut imported = Item::new("New title");
     imported.marker = ItemMarker::Checkbox;
     imported.start = Some(updated_start);
-    imported.external = Some(knotq_model::ExternalItemSource {
-        provider: CalendarProvider::Google,
-        account_id: "account".to_string(),
-        calendar_id: "calendar".to_string(),
-        event_id: "event-1".to_string(),
-        instance_id: None,
-        updated_at: Some(updated_start),
-    });
+    imported.external = Some(
+        knotq_model::ExternalItemSource {
+            provider: CalendarProvider::Google,
+            account_id: "account".to_string(),
+            calendar_id: "calendar".to_string(),
+            event_id: "event-1".to_string(),
+            instance_id: None,
+            updated_at: Some(updated_start),
+        }
+        .into(),
+    );
 
     let result = inner
         .apply_imported_google_calendars(

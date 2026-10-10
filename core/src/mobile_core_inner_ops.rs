@@ -707,7 +707,11 @@ impl MobileCoreInner {
             draft_done,
             start_dirty: occurrence_start != draft_start,
             end_dirty: occurrence_end != draft_end,
-            repeats_dirty: item.repeats != draft_repeats,
+            repeats_dirty: item
+                .repeats
+                .as_ref()
+                .map(crate::conversions::plain_recurrence)
+                != draft_repeats.as_ref(),
             notification_dirty,
             done_dirty: occurrence_state.is_done() != draft_done,
         };
@@ -1735,7 +1739,7 @@ impl MobileCoreInner {
         let id = daily_queue_scheme_id(date);
         let mut scheme = Scheme::new(daily_queue_scheme_name(date), DAILY_QUEUE_COLOR_INDEX);
         scheme.id = id;
-        scheme.items = Vec::new();
+        scheme.items = Default::default();
         self.workspace.daily_queue.insert(date, id);
         self.workspace.schemes.insert(id, scheme);
         self.workspace
