@@ -1,3 +1,10 @@
+// The shared model is changing shape under this crate (`Item::repeats` and
+// `Item::external` gain a `Box`, `Scheme::items` becomes an `ItemList`), and
+// for the span of that change the sites that touch them convert through
+// `Into` so they compile against either. Against whichever shape matches,
+// that conversion is to the same type. Remove once the app change has landed.
+#![allow(clippy::useless_conversion)]
+
 // UniFFI emits a large metadata buffer as a `const`; newer Clippy releases
 // flag that generated representation. Keep this allowance crate-wide because
 // the generated file is expanded at the crate root, and limit it to that one
