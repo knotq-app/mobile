@@ -99,7 +99,12 @@ private func appendEditorParagraph(body: String, meta: LineMeta, theme: KnotQThe
     // Heading / *bold* / _italic_ styling lives here too — not just in
     // setLineMeta — so markdown renders correctly on the very first load
     // instead of staying plain until the first edit.
-    applyInlineMarkdownStyling(body: body, bodyRange: bodyRange, in: result)
+    applyInlineMarkdownStyling(
+        body: body,
+        bodyRange: bodyRange,
+        in: result,
+        palette: MarkdownPalette(theme: theme, done: meta.done)
+    )
 }
 
 /// A block paragraph: a single `blockObjectChar` carrying a `KnotQBlockAttachment`
@@ -220,8 +225,10 @@ func setLineMeta(
     target.removeAttribute(.paragraphStyle, range: targetRange)
     target.removeAttribute(.strikethroughStyle, range: targetRange)
     target.removeAttribute(.strikethroughColor, range: targetRange)
+    target.removeAttribute(.underlineStyle, range: targetRange)
     target.addAttributes(attrs, range: targetRange)
-    applyInlineMarkdownStyling(body: body, bodyRange: targetBodyRange, in: target)
+    let palette = MarkdownPalette(theme: theme, done: meta.done)
+    applyInlineMarkdownStyling(body: body, bodyRange: targetBodyRange, in: target, palette: palette)
     guard !current.isEqual(target) else { return }
 
     storage.removeAttribute(.font, range: safeRange)
@@ -231,12 +238,13 @@ func setLineMeta(
     storage.removeAttribute(.paragraphStyle, range: safeRange)
     storage.removeAttribute(.strikethroughStyle, range: safeRange)
     storage.removeAttribute(.strikethroughColor, range: safeRange)
+    storage.removeAttribute(.underlineStyle, range: safeRange)
     storage.addAttributes(attrs, range: safeRange)
     let bodyRange = NSRange(
         location: safeRange.location,
         length: (body as NSString).length
     )
-    applyInlineMarkdownStyling(body: body, bodyRange: bodyRange, in: storage)
+    applyInlineMarkdownStyling(body: body, bodyRange: bodyRange, in: storage, palette: palette)
 }
 
 /// Re-applies theme-derived attributes to the existing editor storage without
@@ -257,18 +265,64 @@ func restyleEditorStorage(_ storage: NSTextStorage, theme: KnotQTheme) {
     _ = ensureWellFormed(storage, theme: theme)
 }
 
-/// Applies heading enlargement or `**...**`/`*...*`/`==...==`/`~~...~~` emphasis over a paragraph
-/// body. Shared by `setLineMeta` and `buildAttributedString` so styling is
-/// identical whether a line is edited or freshly loaded. Marker characters are
-/// tagged `.knotqMarker` so the layout manager can collapse them off the caret.
+/// Colours for the markdown forms that are told apart by colour. Passing none
+/// still applies every font, marker and underline; only the tints are skipped.
+struct MarkdownPalette {
+    let quoteText: UIColor?
+    let link: UIColor?
+    let codeBackground: UIColor
+
+    /// A completed line stays uniformly muted, so its quote and link text keep
+    /// the line's own colour (as on desktop).
+    init(theme: KnotQTheme, done: Bool = false) {
+        quoteText = done ? nil : UIColor(theme.textSoft)
+        link = done ? nil : UIColor(theme.accent)
+        codeBackground = UIColor(theme.rowHover)
+    }
+}
+
+/// Applies heading enlargement or inline markup (`**bold**`, `*italic*`,
+/// `==highlight==`, `~~strike~~`, `` `code` ``, `[label](url)`, bare URLs) over
+/// a paragraph body, plus the two forms that take a whole line when
+/// `blockForms` is set: a `> quote` and a `---` rule. Shared by `setLineMeta`
+/// and `buildAttributedString` so styling is identical whether a line is edited
+/// or freshly loaded. Marker characters are tagged `.knotqMarker` so the layout
+/// manager can collapse them off the caret.
 func applyInlineMarkdownStyling(
     body: String,
     bodyRange: NSRange,
     in storage: NSMutableAttributedString,
     enlargeHeadings: Bool = true,
-    baseFont: UIFont = UIFont.systemFont(ofSize: DesktopEditorMetrics.textFontSize)
+    baseFont: UIFont = UIFont.systemFont(ofSize: DesktopEditorMetrics.textFontSize),
+    palette: MarkdownPalette? = nil,
+    blockForms: Bool = true
 ) {
     guard bodyRange.length > 0 else { return }
+    if blockForms, isMarkdownRule(body) {
+        // The dashes are all marker: off the caret's line nothing is drawn for
+        // them and the editor paints the rule in the row instead.
+        storage.addAttribute(.knotqMarker, value: true, range: bodyRange)
+        return
+    }
+    if blockForms, let markerLen = markdownQuoteMarkerLength(body) {
+        let marker = min(markerLen, bodyRange.length)
+        storage.addAttribute(.knotqMarker, value: true, range: NSRange(location: bodyRange.location, length: marker))
+        let rest = NSRange(location: bodyRange.location + marker, length: bodyRange.length - marker)
+        if rest.length > 0, let color = palette?.quoteText {
+            storage.addAttribute(.foregroundColor, value: color, range: rest)
+        }
+        let ns = body as NSString
+        parseInlineEmphasis(
+            ns: ns,
+            range: NSRange(location: marker, length: ns.length - marker),
+            style: InlineStyle(),
+            lineLocation: bodyRange.location,
+            storage: storage,
+            baseFont: baseFont,
+            palette: palette
+        )
+        return
+    }
     if isMarkdownHeading(body) {
         // The compact daily preview keeps headings at body size (bold) so a
         // larger font doesn't overflow its fixed row height.
@@ -288,8 +342,29 @@ func applyInlineMarkdownStyling(
             )
         }
     } else {
-        applyEmphasis(body: body, lineLocation: bodyRange.location, storage: storage, baseFont: baseFont)
+        applyEmphasis(body: body, lineLocation: bodyRange.location, storage: storage, baseFont: baseFont, palette: palette)
     }
+}
+
+/// A line that is nothing but three or more dashes: a horizontal rule.
+func isMarkdownRule(_ body: String) -> Bool {
+    let dashes = body.trimmingCharacters(in: .whitespaces).utf16
+    return dashes.count >= 3 && dashes.allSatisfy { $0 == 0x2D }
+}
+
+/// UTF-16 length of the `> ` that opens a quoted line (leading whitespace
+/// included), or of the whole line when it is only `>`. nil when not a quote.
+func markdownQuoteMarkerLength(_ body: String) -> Int? {
+    let ns = body as NSString
+    var i = 0
+    while i < ns.length, isInlineWhitespace(ns.character(at: i)) { i += 1 }
+    guard i < ns.length, ns.character(at: i) == 0x3E else { return nil }
+    if i + 1 == ns.length { return ns.length }
+    return ns.character(at: i + 1) == 0x20 ? i + 2 : nil
+}
+
+private func isInlineWhitespace(_ unit: unichar) -> Bool {
+    Unicode.Scalar(unit).map { CharacterSet.whitespaces.contains($0) } ?? false
 }
 
 func markdownDisplayAttributedString(
@@ -297,7 +372,9 @@ func markdownDisplayAttributedString(
     attributes: [NSAttributedString.Key: Any],
     enlargeHeadings: Bool = false,
     removeMarkers: Bool = true,
-    baseFont: UIFont? = nil
+    baseFont: UIFont? = nil,
+    palette: MarkdownPalette? = nil,
+    blockForms: Bool = true
 ) -> NSAttributedString {
     let displayText = body.isEmpty ? " " : body
     let storage = NSMutableAttributedString(string: displayText, attributes: attributes)
@@ -312,7 +389,9 @@ func markdownDisplayAttributedString(
             bodyRange: paragraph.lineRange,
             in: storage,
             enlargeHeadings: enlargeHeadings,
-            baseFont: effectiveBaseFont
+            baseFont: effectiveBaseFont,
+            palette: palette,
+            blockForms: blockForms
         )
     }
     if removeMarkers {
@@ -354,6 +433,8 @@ private struct InlineStyle {
     var italic = false
     var highlight = false
     var strikethrough = false
+    var code = false
+    var link = false
 }
 
 private enum InlineEmphasis {
@@ -387,7 +468,8 @@ func applyEmphasis(
     body: String,
     lineLocation: Int,
     storage: NSMutableAttributedString,
-    baseFont: UIFont = UIFont.systemFont(ofSize: DesktopEditorMetrics.textFontSize)
+    baseFont: UIFont = UIFont.systemFont(ofSize: DesktopEditorMetrics.textFontSize),
+    palette: MarkdownPalette? = nil
 ) {
     let ns = body as NSString
     parseInlineEmphasis(
@@ -396,8 +478,110 @@ func applyEmphasis(
         style: InlineStyle(),
         lineLocation: lineLocation,
         storage: storage,
-        baseFont: baseFont
+        baseFont: baseFont,
+        palette: palette
     )
+}
+
+/// The closing backtick of a `` `code` `` span opening at `index`. An empty
+/// pair is not a span.
+private func codeSpanClose(_ ns: NSString, at index: Int, limit: Int) -> Int? {
+    guard ns.character(at: index) == 0x60 else { return nil }
+    var close = index + 1
+    while close < limit, ns.character(at: close) != 0x60 { close += 1 }
+    return close < limit && close > index + 1 ? close : nil
+}
+
+/// A `[label](target)` link: the label and target ranges, and the index just
+/// past the closing `)`.
+struct NamedMarkdownLink: Equatable {
+    let label: NSRange
+    let target: NSRange
+    let end: Int
+}
+
+/// What a `[label](target)` target may start with. Only web and mail addresses
+/// qualify; anything else (`file:`, an app's own scheme) stays plain text.
+private let namedLinkTargetPrefixes = ["https://", "http://", "www.", "mailto:"]
+
+/// Parses a `[label](target)` link opening at `index`. The label must be
+/// non-empty and hold no brackets, and the target must be a web or mail address
+/// with no whitespace — so ordinary bracketed prose (`[x] (later)`, `[1](2)`)
+/// is left alone. Mirrors the desktop `named_link_at`.
+func namedMarkdownLink(_ ns: NSString, at index: Int, limit: Int) -> NamedMarkdownLink? {
+    let open: unichar = 0x5B, close: unichar = 0x5D, parenOpen: unichar = 0x28, parenClose: unichar = 0x29
+    guard index < limit, ns.character(at: index) == open else { return nil }
+    var labelEnd = index + 1
+    while labelEnd < limit {
+        let unit = ns.character(at: labelEnd)
+        if unit == close || unit == open || unit == 0xFFFC { break }
+        labelEnd += 1
+    }
+    guard labelEnd > index + 1, labelEnd + 1 < limit,
+          ns.character(at: labelEnd) == close, ns.character(at: labelEnd + 1) == parenOpen else { return nil }
+    let targetStart = labelEnd + 2
+    var targetEnd = targetStart
+    while targetEnd < limit {
+        let unit = ns.character(at: targetEnd)
+        if unit == parenClose || isURLTerminator(unit) { break }
+        targetEnd += 1
+    }
+    guard targetEnd < limit, ns.character(at: targetEnd) == parenClose else { return nil }
+    let target = ns.substring(with: NSRange(location: targetStart, length: targetEnd - targetStart))
+    guard namedLinkTargetPrefixes.contains(where: { target.count > $0.count && target.hasPrefix($0) }) else { return nil }
+    return NamedMarkdownLink(
+        label: NSRange(location: index + 1, length: labelEnd - index - 1),
+        target: NSRange(location: targetStart, length: targetEnd - targetStart),
+        end: targetEnd + 1
+    )
+}
+
+private let bareLinkPrefixes = ["https://", "http://", "www."]
+private let bareLinkStopCharacters = Set("<>\"`{}|\\^\u{FFFC}".utf16)
+private let bareLinkTrailingTrim = Set(".,;:!?'\")]}>".utf16)
+
+private func isURLTerminator(_ unit: unichar) -> Bool {
+    guard let scalar = Unicode.Scalar(unit) else { return false }
+    return CharacterSet.whitespacesAndNewlines.contains(scalar) || CharacterSet.controlCharacters.contains(scalar)
+}
+
+/// The end of a bare `http(s)://` or `www.` URL opening at `index`, with
+/// trailing sentence punctuation trimmed (a closing paren is kept when it
+/// balances one inside the URL). nil when no URL starts here, or when the
+/// prefix sits mid-word. Mirrors the desktop `detect_links`.
+func bareMarkdownLinkEnd(_ ns: NSString, at index: Int, limit: Int) -> Int? {
+    // Every prefix starts with `h` or `w`; skip the string compares otherwise.
+    guard index < limit else { return nil }
+    let first = ns.character(at: index)
+    guard first == 0x68 || first == 0x77,
+          bareLinkPrefixes.contains(where: { matchesToken(ns, $0, at: index, limit: limit) }) else { return nil }
+    if index > 0 {
+        let before = ns.character(at: index - 1)
+        if before == 0x2F || before == 0x2E { return nil }
+        if let scalar = Unicode.Scalar(before), CharacterSet.alphanumerics.contains(scalar) { return nil }
+    }
+    var end = index
+    while end < limit {
+        let unit = ns.character(at: end)
+        if isURLTerminator(unit) || bareLinkStopCharacters.contains(unit) { break }
+        end += 1
+    }
+    var opens = 0, closes = 0
+    for i in index..<end {
+        let unit = ns.character(at: i)
+        if unit == 0x28 { opens += 1 } else if unit == 0x29 { closes += 1 }
+    }
+    while end > index {
+        let last = ns.character(at: end - 1)
+        if last == 0x29 {
+            if opens >= closes { break }
+            closes -= 1
+        } else if !bareLinkTrailingTrim.contains(last) {
+            break
+        }
+        end -= 1
+    }
+    return end > index ? end : nil
 }
 
 private func parseInlineEmphasis(
@@ -406,11 +590,26 @@ private func parseInlineEmphasis(
     style: InlineStyle,
     lineLocation: Int,
     storage: NSMutableAttributedString,
-    baseFont: UIFont
+    baseFont: UIFont,
+    palette: MarkdownPalette?
 ) {
     let end = NSMaxRange(range)
     var i = range.location
     var plainStart = i
+
+    func mark(_ location: Int, _ length: Int) {
+        guard length > 0 else { return }
+        storage.addAttribute(.knotqMarker, value: true, range: NSRange(location: lineLocation + location, length: length))
+    }
+    func apply(_ style: InlineStyle, _ location: Int, _ length: Int) {
+        applyInlineStyle(
+            style,
+            over: NSRange(location: lineLocation + location, length: length),
+            storage: storage,
+            baseFont: baseFont,
+            palette: palette
+        )
+    }
 
     func flushPlain(upTo: Int) {
         if upTo > plainStart {
@@ -418,12 +617,58 @@ private func parseInlineEmphasis(
                 style,
                 over: NSRange(location: lineLocation + plainStart, length: upTo - plainStart),
                 storage: storage,
-                baseFont: baseFont
+                baseFont: baseFont,
+                palette: palette
             )
         }
     }
 
     while i < end {
+        // Code first: whatever sits between two backticks is literal, so a
+        // `**` or a `[` inside it must not start anything.
+        if let close = codeSpanClose(ns, at: i, limit: end) {
+            flushPlain(upTo: i)
+            var code = style
+            code.code = true
+            mark(i, 1)
+            apply(code, i + 1, close - i - 1)
+            mark(close, 1)
+            i = close + 1
+            plainStart = i
+            continue
+        }
+        // `[label](url)`: the label is content (and may carry emphasis); the
+        // brackets and the address are markers.
+        if let link = namedMarkdownLink(ns, at: i, limit: end) {
+            flushPlain(upTo: i)
+            var linked = style
+            linked.link = true
+            mark(i, 1)
+            parseInlineEmphasis(
+                ns: ns,
+                range: link.label,
+                style: linked,
+                lineLocation: lineLocation,
+                storage: storage,
+                baseFont: baseFont,
+                palette: palette
+            )
+            mark(NSMaxRange(link.label), link.end - NSMaxRange(link.label))
+            i = link.end
+            plainStart = i
+            continue
+        }
+        // A bare URL is literal too: an underscore or asterisk in an address is
+        // part of the address, never emphasis.
+        if !style.link, let linkEnd = bareMarkdownLinkEnd(ns, at: i, limit: end) {
+            flushPlain(upTo: i)
+            var linked = style
+            linked.link = true
+            apply(linked, i, linkEnd - i)
+            i = linkEnd
+            plainStart = i
+            continue
+        }
         if let match = openDelimiter(ns, at: i, limit: end) {
             let tokenLen = (match.token as NSString).length
             let innerStart = i + tokenLen
@@ -444,7 +689,8 @@ private func parseInlineEmphasis(
                         style: inner,
                         lineLocation: lineLocation,
                         storage: storage,
-                        baseFont: baseFont
+                        baseFont: baseFont,
+                        palette: palette
                     )
                 }
                 i = close.location + tokenLen
@@ -467,15 +713,25 @@ private func applyInlineStyle(
     _ style: InlineStyle,
     over range: NSRange,
     storage: NSMutableAttributedString,
-    baseFont: UIFont
+    baseFont: UIFont,
+    palette: MarkdownPalette?
 ) {
     guard range.length > 0 else { return }
-    if style.bold || style.italic {
+    if style.bold || style.italic || style.code {
         storage.addAttribute(
             .font,
-            value: styledInlineFont(baseFont: baseFont, bold: style.bold, italic: style.italic),
+            value: styledInlineFont(baseFont: baseFont, bold: style.bold, italic: style.italic, code: style.code),
             range: range
         )
+    }
+    if style.link, !style.code {
+        if let color = palette?.link {
+            storage.addAttribute(.foregroundColor, value: color, range: range)
+        }
+        storage.addAttribute(.underlineStyle, value: NSUnderlineStyle.single.rawValue, range: range)
+    }
+    if style.code, !style.highlight, let background = palette?.codeBackground {
+        storage.addAttribute(.backgroundColor, value: background, range: range)
     }
     if style.highlight {
         // Only the translucent background is applied; the text keeps its base
@@ -490,7 +746,11 @@ private func applyInlineStyle(
     }
 }
 
-private func styledInlineFont(baseFont: UIFont, bold: Bool, italic: Bool) -> UIFont {
+private func styledInlineFont(baseFont: UIFont, bold: Bool, italic: Bool, code: Bool = false) -> UIFont {
+    // Code is set in the system monospace at the line's own size and weight.
+    let baseFont = code
+        ? UIFont.monospacedSystemFont(ofSize: baseFont.pointSize, weight: .regular)
+        : baseFont
     var traits = baseFont.fontDescriptor.symbolicTraits
     if bold { traits.insert(.traitBold) }
     if italic { traits.insert(.traitItalic) }

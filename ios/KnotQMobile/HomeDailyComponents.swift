@@ -398,7 +398,7 @@ final class HomeDailyPreviewRendererView: UIView {
             let next = index + 1 < items.count ? items[index + 1] : nil
             drawIndentGuides(item: item, previous: previous, next: next, row: row, context: context)
             drawMarker(row.row, y: row.y, context: context)
-            drawText(row, width: bounds.width)
+            drawText(row, width: bounds.width, context: context)
             if let annotation = row.annotation {
                 let previousAnnotated = index > 0 && layout[index - 1].annotation != nil
                 let nextAnnotated = index + 1 < layout.count && layout[index + 1].annotation != nil
@@ -461,7 +461,8 @@ final class HomeDailyPreviewRendererView: UIView {
             body: text,
             bodyRange: NSRange(location: 0, length: (text as NSString).length),
             in: result,
-            enlargeHeadings: false
+            enlargeHeadings: false,
+            palette: MarkdownPalette(theme: theme, done: item.done)
         )
         var markers: [NSRange] = []
         result.enumerateAttribute(.knotqMarker, in: NSRange(location: 0, length: result.length)) { value, range, _ in
@@ -474,9 +475,29 @@ final class HomeDailyPreviewRendererView: UIView {
         return result
     }
 
-    private func drawText(_ row: LayoutRow, width: CGFloat) {
+    private func drawText(_ row: LayoutRow, width: CGFloat, context: CGContext) {
+        let item = row.row.item
         let rect = CGRect(x: 0, y: row.y, width: max(1, width - Metrics.trailingInset), height: row.textHeight)
-        displayAttributedText(for: row.row.item).draw(
+        let lineLeft = Metrics.baseX + CGFloat(item.indent) * Metrics.indentWidth
+        let textLeft = lineLeft + (item.marker == "blank" ? 0 : Metrics.markerSlot)
+        // A `---` rule has no text to show (its dashes are all marker): draw
+        // the line it stands for. A `> quote` gets its bar beside the text.
+        if isMarkdownRule(item.text) {
+            context.setFillColor(UIColor(theme.divider).cgColor)
+            context.fill(CGRect(x: textLeft, y: row.y + Metrics.textLineHeight / 2 - 0.5, width: max(0, rect.maxX - textLeft), height: 1))
+            return
+        }
+        if markdownQuoteMarkerLength(item.text) != nil {
+            context.setFillColor(UIColor(theme.divider).cgColor)
+            context.fill(CGRect(
+                // Left of the checkbox or bullet, so the bar frames the whole line.
+                x: lineLeft - DesktopEditorMetrics.quoteBarGap,
+                y: row.y + 2,
+                width: DesktopEditorMetrics.quoteBarWidth,
+                height: max(4, row.textHeight - 4)
+            ))
+        }
+        displayAttributedText(for: item).draw(
             with: rect,
             options: [.usesLineFragmentOrigin, .usesFontLeading, .truncatesLastVisibleLine],
             context: nil

@@ -73,6 +73,146 @@ extension MarkerConcealmentTests {
         XCTAssertEqual(markerRanges(storage), [NSRange(location: 0, length: 2)])
     }
 
+    // MARK: - Code, links, quotes and rules (parity with the desktop editor)
+
+    func testBackticksMarkCodeAndHideThemselves() {
+        let body = "run `cargo test` now"
+        XCTAssertEqual(displayed(body), "run cargo test now")
+        let storage = styled(body)
+        let code = (body as NSString).range(of: "cargo test")
+        let font = storage.attribute(.font, at: code.location, effectiveRange: nil) as? UIFont
+        XCTAssertTrue(font?.fontDescriptor.symbolicTraits.contains(.traitMonoSpace) ?? false)
+        XCTAssertNotNil(storage.attribute(.backgroundColor, at: code.location, effectiveRange: nil))
+        XCTAssertNil(storage.attribute(.backgroundColor, at: 0, effectiveRange: nil))
+    }
+
+    func testCodeIsLiteralAndAnEmptyPairIsNotASpan() {
+        XCTAssertEqual(displayed("`**not bold**`"), "**not bold**")
+        XCTAssertEqual(displayed("`[a](https://b.c)`"), "[a](https://b.c)")
+        XCTAssertEqual(displayed("a `` b"), "a `` b")
+        XCTAssertEqual(displayed("one ` tick"), "one ` tick")
+    }
+
+    func testNamedLinkShowsOnlyItsLabel() {
+        let body = "see [the docs](https://example.com/a_b) today"
+        XCTAssertEqual(displayed(body), "see the docs today")
+        let storage = styled(body)
+        let label = (body as NSString).range(of: "the docs")
+        XCTAssertEqual(
+            storage.attribute(.underlineStyle, at: label.location, effectiveRange: nil) as? Int,
+            NSUnderlineStyle.single.rawValue
+        )
+        XCTAssertNil(storage.attribute(.underlineStyle, at: 0, effectiveRange: nil))
+        XCTAssertEqual(displayed("[**bold** label](mailto:a@b.co)"), "bold label")
+    }
+
+    func testBracketedProseIsNotALink() {
+        for body in ["[x] (later)", "[1](2)", "[](https://a.b)", "[a](file:///etc)", "[a](https://a b)", "[a](https://)"] {
+            XCTAssertNil(namedMarkdownLink(body as NSString, at: 0, limit: (body as NSString).length), body)
+        }
+        XCTAssertEqual(displayed("[1](2)"), "[1](2)")
+    }
+
+    func testBareLinkIsUnderlinedAndKeepsItsUnderscores() {
+        let body = "at https://example.com/my_file_name."
+        // The address is literal: its underscores are not italic markers.
+        XCTAssertEqual(displayed(body), body)
+        let ns = body as NSString
+        let start = ns.range(of: "https").location
+        XCTAssertEqual(bareMarkdownLinkEnd(ns, at: start, limit: ns.length), ns.length - 1)
+        XCTAssertEqual(
+            styled(body).attribute(.underlineStyle, at: start, effectiveRange: nil) as? Int,
+            NSUnderlineStyle.single.rawValue
+        )
+        XCTAssertNil(bareMarkdownLinkEnd("xhttps://a.b" as NSString, at: 1, limit: 12))
+        let wiki = "(https://en.wikipedia.org/wiki/Rust_(language))" as NSString
+        XCTAssertEqual(bareMarkdownLinkEnd(wiki, at: 1, limit: wiki.length), wiki.length - 1)
+    }
+
+    func testQuoteHidesItsMarkerAndSoftensItsText() {
+        XCTAssertEqual(markdownQuoteMarkerLength("> said"), 2)
+        XCTAssertEqual(markdownQuoteMarkerLength("  > said"), 4)
+        XCTAssertEqual(markdownQuoteMarkerLength(">"), 1)
+        XCTAssertNil(markdownQuoteMarkerLength(">said"))
+        XCTAssertNil(markdownQuoteMarkerLength("a > b"))
+        XCTAssertEqual(displayed("> a **b**"), "a b")
+
+        let body = "> said"
+        let storage = styled(body)
+        XCTAssertEqual(storage.attribute(.foregroundColor, at: 2, effectiveRange: nil) as? UIColor, UIColor(KnotQTheme.dark.textSoft))
+        // A completed line keeps its own colour.
+        let done = styled(body, palette: MarkdownPalette(theme: .dark, done: true))
+        XCTAssertEqual(done.attribute(.foregroundColor, at: 2, effectiveRange: nil) as? UIColor, UIColor.label)
+    }
+
+    func testRuleIsAllMarkerAndOnlyInItsOwnRow() {
+        XCTAssertTrue(isMarkdownRule("---"))
+        XCTAssertTrue(isMarkdownRule("  ------ "))
+        XCTAssertFalse(isMarkdownRule("--"))
+        XCTAssertFalse(isMarkdownRule("--- x"))
+        XCTAssertFalse(isMarkdownRule("- - -"))
+        XCTAssertEqual(markerRanges(styled("---")), [NSRange(location: 0, length: 3)])
+        // A table cell has no row of its own: quotes and rules stay as typed.
+        XCTAssertEqual(displayed("---", blockForms: false), "---")
+        XCTAssertEqual(displayed("> a", blockForms: false), "> a")
+    }
+
+    func testRestylingALineClearsItsLinkUnderline() {
+        let (view, _) = makeWiredEditorView()
+        view.textStorage.setAttributedString(NSAttributedString(
+            string: "https://example.com\n",
+            attributes: EditorAttributes.bodyAttributes(meta: LineMeta(), theme: .dark)
+        ))
+        let paragraph = NSRange(location: 0, length: view.textStorage.length)
+        setLineMeta(LineMeta(), onParagraph: paragraph, in: view.textStorage, theme: .dark)
+        XCTAssertNotNil(view.textStorage.attribute(.underlineStyle, at: 0, effectiveRange: nil))
+        view.textStorage.replaceCharacters(in: NSRange(location: 0, length: 8), with: "")
+        setLineMeta(LineMeta(), onParagraph: NSRange(location: 0, length: view.textStorage.length), in: view.textStorage, theme: .dark)
+        XCTAssertNil(view.textStorage.attribute(.underlineStyle, at: 0, effectiveRange: nil))
+    }
+
+    func testEditorDrawsQuotesAndRulesWithoutCrashing() {
+        let (view, _) = makeWiredEditorView()
+        let attrs = EditorAttributes.bodyAttributes(meta: LineMeta(), theme: .dark)
+        view.textStorage.setAttributedString(NSAttributedString(string: "> quoted\n---\n>\nplain `code`\n", attributes: attrs))
+        for paragraph in paragraphRanges(in: view.textStorage.string as NSString) {
+            setLineMeta(LineMeta(), onParagraph: paragraph.fullRange, in: view.textStorage, theme: .dark)
+        }
+        renderEditor(view)
+    }
+
+    func testSearchPreviewDropsMarkdownButKeepsNames() {
+        XCTAssertEqual(searchPreviewText("**sharper labels**\n### Thesis\n__concrete, small__"), "sharper labels Thesis concrete, small")
+        XCTAssertEqual(searchPreviewText("run `cargo test`"), "run cargo test")
+        XCTAssertEqual(searchPreviewText("see [the docs](https://example.com/a_b) today"), "see the docs today")
+        XCTAssertEqual(searchPreviewText("> said once\nabove\n---\nbelow"), "said once above below")
+        XCTAssertEqual(searchPreviewText("[1](2) my_file_name"), "[1](2) my_file_name")
+        XCTAssertEqual(searchPreviewText("Calendar"), "Calendar")
+    }
+
+    func styled(_ body: String, palette: MarkdownPalette = MarkdownPalette(theme: .dark)) -> NSTextStorage {
+        let storage = NSTextStorage(
+            string: body,
+            attributes: [.font: UIFont.systemFont(ofSize: 17), .foregroundColor: UIColor.label]
+        )
+        applyInlineMarkdownStyling(
+            body: body,
+            bodyRange: NSRange(location: 0, length: (body as NSString).length),
+            in: storage,
+            palette: palette
+        )
+        return storage
+    }
+
+    /// What a line reads as off the caret, with its markers collapsed.
+    func displayed(_ body: String, blockForms: Bool = true) -> String {
+        markdownDisplayAttributedString(
+            body: body,
+            attributes: [.font: UIFont.systemFont(ofSize: 17)],
+            blockForms: blockForms
+        ).string
+    }
+
     func taggedRanges(for body: String) -> [NSRange] {
         let storage = NSTextStorage(string: body, attributes: [.font: UIFont.systemFont(ofSize: 17)])
         applyEmphasis(body: body, lineLocation: 0, storage: storage)

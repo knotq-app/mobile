@@ -63,6 +63,14 @@ extension EditorTextView {
                 rowExtraHeight: rowExtraHeight, context: context
             )
             drawMarker(meta: meta, ordinal: ordinal, fragment: firstFragment, context: context)
+            if !meta.hasBlockContent, paragraph.lineRange.length > 0 {
+                drawBlockMarkup(
+                    body: ns.substring(with: paragraph.lineRange),
+                    hidesMarkers: editorLayoutManager.isHiddenMarker(at: paragraph.lineRange.location),
+                    hasMarker: meta.marker != .blank,
+                    firstFragment: firstFragment, visualBounds: visualBounds, context: context
+                )
+            }
             if let annotation = meta.annotation {
                 drawAnnotationBar(meta: meta, firstFragment: firstFragment, visualBounds: visualBounds, rowExtraHeight: rowExtraHeight, connectsToPrevious: previousAnnotated, connectsToNext: nextAnnotated, context: context)
                 drawAnnotation(annotation, meta: meta, visualBounds: visualBounds, context: context)
@@ -73,6 +81,29 @@ extension EditorTextView {
             if meta.hasBlockContent {
                 drawBlock(meta: meta, firstFragment: firstFragment, paragraphRange: paragraph.fullRange, context: context)
             }
+        }
+    }
+
+    /// Paints what a whole-line markdown form draws beside or instead of its
+    /// text: the bar of a `> quote`, and the line of a `---` rule. The rule is
+    /// only drawn while its dashes are collapsed — on the caret's line they are
+    /// shown as typed.
+    func drawBlockMarkup(body: String, hidesMarkers: Bool, hasMarker: Bool, firstFragment: CGRect, visualBounds: CGRect, context: CGContext) {
+        if isMarkdownRule(body) {
+            guard hidesMarkers else { return }
+            let right = bounds.width - textContainerInset.right
+            guard right > firstFragment.minX else { return }
+            context.setFillColor(UIColor(theme.divider).cgColor)
+            context.fill(CGRect(x: firstFragment.minX, y: firstFragment.midY - 0.5, width: right - firstFragment.minX, height: 1))
+        } else if markdownQuoteMarkerLength(body) != nil {
+            context.setFillColor(UIColor(theme.divider).cgColor)
+            context.fill(CGRect(
+                // Left of the checkbox or bullet, so the bar frames the whole line.
+                x: firstFragment.minX - (hasMarker ? DesktopEditorMetrics.markerSlot : 0) - DesktopEditorMetrics.quoteBarGap,
+                y: visualBounds.minY + 2,
+                width: DesktopEditorMetrics.quoteBarWidth,
+                height: max(4, visualBounds.height - 4)
+            ))
         }
     }
 
@@ -639,7 +670,7 @@ extension EditorTextView {
 
     func drawTableText(_ text: String, in rect: CGRect, attributes: [NSAttributedString.Key: Any]) {
         let inset = rect.insetBy(dx: 7, dy: 7)
-        markdownDisplayAttributedString(body: text, attributes: attributes, baseFont: tableBaseFont(attributes))
+        markdownDisplayAttributedString(body: text, attributes: attributes, baseFont: tableBaseFont(attributes), palette: MarkdownPalette(theme: theme), blockForms: false)
             .draw(in: inset)
     }
 
@@ -657,10 +688,10 @@ extension EditorTextView {
         attributes: [NSAttributedString.Key: Any]
     ) -> NSAttributedString {
         guard let cell else {
-            return markdownDisplayAttributedString(body: "", attributes: attributes, baseFont: tableBaseFont(attributes))
+            return markdownDisplayAttributedString(body: "", attributes: attributes, baseFont: tableBaseFont(attributes), palette: MarkdownPalette(theme: theme), blockForms: false)
         }
         guard !cell.lines.isEmpty else {
-            return markdownDisplayAttributedString(body: cell.text, attributes: attributes, baseFont: tableBaseFont(attributes))
+            return markdownDisplayAttributedString(body: cell.text, attributes: attributes, baseFont: tableBaseFont(attributes), palette: MarkdownPalette(theme: theme), blockForms: false)
         }
 
         let result = NSMutableAttributedString()
@@ -671,7 +702,9 @@ extension EditorTextView {
             let lineText = NSMutableAttributedString(attributedString: markdownDisplayAttributedString(
                 body: line.text,
                 attributes: attributes,
-                baseFont: tableBaseFont(attributes)
+                baseFont: tableBaseFont(attributes),
+                palette: MarkdownPalette(theme: theme, done: line.done),
+                blockForms: false
             ))
             if line.done, lineText.length > 0 {
                 let lineRange = NSRange(location: 0, length: lineText.length)
@@ -682,7 +715,7 @@ extension EditorTextView {
         }
         return result.length > 0
             ? result
-            : markdownDisplayAttributedString(body: cell.text, attributes: attributes, baseFont: tableBaseFont(attributes))
+            : markdownDisplayAttributedString(body: cell.text, attributes: attributes, baseFont: tableBaseFont(attributes), palette: MarkdownPalette(theme: theme), blockForms: false)
     }
 
     func tableBaseFont(_ attributes: [NSAttributedString.Key: Any]) -> UIFont {
