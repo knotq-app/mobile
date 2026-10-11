@@ -41,68 +41,31 @@ import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.roundToInt
 
+    /// Styles a text line's body: a `---` rule (all marker — the line itself is
+    /// painted by `drawBlockMarkup`), a `> quote` (marker hidden, text softened),
+    /// or ordinary inline markup.
     internal fun SchemeEditText.applyMarkdownSpans(editable: Editable, body: String, bodyStart: Int, bodyEnd: Int) {
-        parseInlineMarkdown(
-            editable = editable,
-            body = body,
-            start = 0,
-            end = body.length,
-            bodyStart = bodyStart,
-            bodyEnd = bodyEnd,
-            style = InlineMarkdownStyle()
-        )
-    }
-
-    internal fun SchemeEditText.parseInlineMarkdown(
-        editable: Editable,
-        body: String,
-        start: Int,
-        end: Int,
-        bodyStart: Int,
-        bodyEnd: Int,
-        style: InlineMarkdownStyle
-    ) {
-        var index = start
-        var plainStart = index
-
-        fun flushPlain(upTo: Int) {
-            if (upTo <= plainStart) return
-            applyInlineMarkdownStyle(
-                editable = editable,
-                start = (bodyStart + plainStart).coerceAtMost(bodyEnd),
-                end = (bodyStart + upTo).coerceAtMost(bodyEnd),
-                style = style
-            )
+        if (isMarkdownRule(body)) {
+            applyMarkdownMarkerSpan(editable, bodyStart, bodyEnd)
+            return
         }
-
-        while (index < end) {
-            val delimiter = openMarkdownDelimiter(body, index, end)
-            if (delimiter != null) {
-                val innerStart = index + delimiter.token.length
-                val close = findMarkdownClose(body, delimiter.token, innerStart, end)
-                if (close >= 0) {
-                    flushPlain(index)
-                    applyMarkdownMarkerSpan(editable, bodyStart + index, bodyStart + innerStart)
-                    applyMarkdownMarkerSpan(editable, bodyStart + close, bodyStart + close + delimiter.token.length)
-                    if (close > innerStart) {
-                        parseInlineMarkdown(
-                            editable = editable,
-                            body = body,
-                            start = innerStart,
-                            end = close,
-                            bodyStart = bodyStart,
-                            bodyEnd = bodyEnd,
-                            style = style.with(delimiter.emphasis)
-                        )
-                    }
-                    index = close + delimiter.token.length
-                    plainStart = index
-                    continue
-                }
+        val quoteMarker = markdownQuoteMarkerLength(body)?.coerceAtMost(body.length) ?: 0
+        if (quoteMarker > 0) {
+            applyMarkdownMarkerSpan(editable, bodyStart, bodyStart + quoteMarker)
+            val quoteStart = (bodyStart + quoteMarker).coerceAtMost(bodyEnd)
+            if (bodyEnd > quoteStart) {
+                editable.setSpan(EditorMarkdownQuoteSpan(editorTheme.textSoft), quoteStart, bodyEnd, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE)
             }
-            index++
         }
-        flushPlain(end)
+        for (run in inlineMarkdownRuns(body, start = quoteMarker)) {
+            val start = (bodyStart + run.start).coerceAtMost(bodyEnd)
+            val end = (bodyStart + run.end).coerceAtMost(bodyEnd)
+            if (run.marker) {
+                applyMarkdownMarkerSpan(editable, start, end)
+            } else {
+                applyInlineMarkdownStyle(editable, start, end, run.style)
+            }
+        }
     }
 
     internal fun SchemeEditText.applyInlineMarkdownStyle(editable: Editable, start: Int, end: Int, style: InlineMarkdownStyle) {
@@ -121,6 +84,15 @@ import kotlin.math.roundToInt
         }
         if (style.strike) {
             editable.setSpan(EditorMarkdownStrikeSpan(), start, end, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE)
+        }
+        if (style.code) {
+            editable.setSpan(EditorMarkdownCodeSpan(), start, end, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE)
+            // A highlight inside code wins: it is the more deliberate mark.
+            if (!style.highlight) {
+                editable.setSpan(EditorMarkdownHighlightSpan(editorTheme.dividerSoft), start, end, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE)
+            }
+        } else if (style.link) {
+            editable.setSpan(EditorMarkdownLinkSpan(editorTheme.accent), start, end, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE)
         }
     }
 
@@ -151,21 +123,6 @@ import kotlin.math.roundToInt
         revealedMarkdownStart = startLine
         revealedMarkdownEnd = endLine
         return changed
-    }
-
-    internal fun SchemeEditText.openMarkdownDelimiter(body: String, index: Int, limit: Int): MarkdownDelimiter? {
-        for (candidate in markdownDelimiters) {
-            if (matchesMarkdownToken(body, candidate.token, index, limit)) return candidate
-        }
-        return null
-    }
-
-    internal fun SchemeEditText.matchesMarkdownToken(body: String, token: String, index: Int, limit: Int): Boolean =
-        index + token.length <= limit && body.regionMatches(index, token, 0, token.length)
-
-    internal fun SchemeEditText.findMarkdownClose(body: String, token: String, start: Int, limit: Int): Int {
-        val close = body.indexOf(token, startIndex = start)
-        return if (close >= 0 && close + token.length <= limit) close else -1
     }
 
     internal fun SchemeEditText.headingMarkerLength(body: String): Int? {

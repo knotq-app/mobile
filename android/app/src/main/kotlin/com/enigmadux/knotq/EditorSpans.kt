@@ -181,10 +181,25 @@ internal class DoneTextColorSpan(color: Int) : ForegroundColorSpan(color)
 
 internal class EditorMarkdownSpan(style: Int) : StyleSpan(style)
 
-// A tag-only span: the gold fill is painted by `drawMarkdownHighlights` so it
-// can be clipped to the text run (a real BackgroundColorSpan fills the whole
-// line box, bleeding into reserved block/annotation height).
-internal class EditorMarkdownHighlightSpan
+// A tag-only span: the fill (gold for `==…==`, a soft tint behind `code`) is
+// painted by `drawMarkdownHighlights` so it can be clipped to the text run (a
+// real BackgroundColorSpan fills the whole line box, bleeding into reserved
+// block/annotation height).
+internal class EditorMarkdownHighlightSpan(val color: Int = EDITOR_HIGHLIGHT_COLOR)
+
+internal class EditorMarkdownCodeSpan : android.text.style.TypefaceSpan("monospace")
+
+// A link reads as one by underline and colour. A completed line's own muted
+// colour is applied after this span, so it wins there (as on desktop).
+internal class EditorMarkdownLinkSpan(private val color: Int) :
+    android.text.style.CharacterStyle(), android.text.style.UpdateAppearance {
+    override fun updateDrawState(paint: TextPaint) {
+        paint.color = color
+        paint.isUnderlineText = true
+    }
+}
+
+internal class EditorMarkdownQuoteSpan(color: Int) : ForegroundColorSpan(color)
 
 internal val EDITOR_HIGHLIGHT_COLOR = rgbaColor(0xffd000, 102)
 
@@ -213,36 +228,3 @@ internal class EditorMarkdownMarkerSpan : ReplacementSpan() {
 }
 
 internal class EditorTextSizeSpan(sizeSp: Int) : AbsoluteSizeSpan(sizeSp, true)
-
-internal data class InlineMarkdownStyle(
-    val bold: Boolean = false,
-    val italic: Boolean = false,
-    val highlight: Boolean = false,
-    val strike: Boolean = false,
-) {
-    fun with(emphasis: InlineMarkdownEmphasis): InlineMarkdownStyle =
-        when (emphasis) {
-            InlineMarkdownEmphasis.BOLD -> copy(bold = true)
-            InlineMarkdownEmphasis.ITALIC -> copy(italic = true)
-            InlineMarkdownEmphasis.HIGHLIGHT -> copy(highlight = true)
-            InlineMarkdownEmphasis.STRIKE -> copy(strike = true)
-        }
-}
-
-internal enum class InlineMarkdownEmphasis {
-    BOLD,
-    ITALIC,
-    HIGHLIGHT,
-    STRIKE,
-}
-
-internal data class MarkdownDelimiter(val token: String, val emphasis: InlineMarkdownEmphasis)
-
-internal val markdownDelimiters = listOf(
-    MarkdownDelimiter("**", InlineMarkdownEmphasis.BOLD),
-    MarkdownDelimiter("__", InlineMarkdownEmphasis.BOLD),
-    MarkdownDelimiter("==", InlineMarkdownEmphasis.HIGHLIGHT),
-    MarkdownDelimiter("~~", InlineMarkdownEmphasis.STRIKE),
-    MarkdownDelimiter("*", InlineMarkdownEmphasis.ITALIC),
-    MarkdownDelimiter("_", InlineMarkdownEmphasis.ITALIC),
-)

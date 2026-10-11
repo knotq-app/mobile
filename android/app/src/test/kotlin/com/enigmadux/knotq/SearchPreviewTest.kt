@@ -14,6 +14,15 @@ class SearchPreviewTest {
     }
 
     @Test
+    fun stripsCodeLinksQuotesAndRules() {
+        assertEquals("run cargo test", searchPreviewText("run `cargo test`"))
+        assertEquals("see the docs today", searchPreviewText("see [the docs](https://example.com/a_b) today"))
+        assertEquals("said once above below", searchPreviewText("> said once\nabove\n---\nbelow"))
+        // Bracketed prose and names with single underscores are content.
+        assertEquals("[1](2) my_file_name", searchPreviewText("[1](2) my_file_name"))
+    }
+
+    @Test
     fun malformedPreviewInputNeverThrows() {
         var state = 0x31415926
         repeat(8192) {

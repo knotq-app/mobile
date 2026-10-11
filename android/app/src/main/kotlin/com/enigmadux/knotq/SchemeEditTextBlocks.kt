@@ -465,47 +465,28 @@ internal fun editorBitmapSampleSize(width: Int, height: Int, maxDimension: Int =
         return layout
     }
 
-    // Renders `value` with inline markdown (bold, italic, highlight, strike)
-    // stripped of delimiter tokens — matching iOS cell rendering. Headers
+    // Renders `value` with inline markdown (bold, italic, highlight, strike,
+    // code, links) stripped of marker characters — matching iOS cell rendering.
+    // A cell has no row of its own, so quotes and rules stay as typed. Headers
     // (bold=true) are returned as plain text; body cells get styled spans.
     internal fun SchemeEditText.tableTextMarkdownSpannable(value: String, bold: Boolean): CharSequence {
         if (bold || value.isEmpty()) return value
-        if (value.none { it == '*' || it == '_' || it == '=' || it == '~' }) return value
+        val mayHoldMarkup = value.any { it == '*' || it == '_' || it == '=' || it == '~' || it == '`' || it == '[' } ||
+            value.contains("://") || value.contains("www.")
+        if (!mayHoldMarkup) return value
         val ssb = SpannableStringBuilder()
         var lineStart = 0
         while (lineStart <= value.length) {
             if (lineStart == value.length) break
             val lineEnd = value.indexOf('\n', lineStart).let { if (it < 0) value.length else it }
             if (lineStart > 0) ssb.append('\n')
-            appendCellMarkdownSegment(ssb, value, lineStart, lineEnd, InlineMarkdownStyle())
+            for (run in inlineMarkdownRuns(value, lineStart, lineEnd)) {
+                if (!run.marker) appendCellStyledText(ssb, value.substring(run.start, run.end), run.style)
+            }
             if (lineEnd >= value.length) break
             lineStart = lineEnd + 1
         }
         return ssb
-    }
-
-    internal fun SchemeEditText.appendCellMarkdownSegment(ssb: SpannableStringBuilder, src: String, srcStart: Int, srcEnd: Int, style: InlineMarkdownStyle) {
-        val body = src.substring(srcStart, srcEnd)
-        val limit = body.length
-        var index = 0
-        var plainStart = 0
-        while (index < limit) {
-            val delimiter = openMarkdownDelimiter(body, index, limit)
-            if (delimiter != null) {
-                val tokenLen = delimiter.token.length
-                val innerStart = index + tokenLen
-                val close = findMarkdownClose(body, delimiter.token, innerStart, limit)
-                if (close >= 0) {
-                    if (index > plainStart) appendCellStyledText(ssb, body.substring(plainStart, index), style)
-                    appendCellMarkdownSegment(ssb, src, srcStart + innerStart, srcStart + close, style.with(delimiter.emphasis))
-                    index = close + tokenLen
-                    plainStart = index
-                    continue
-                }
-            }
-            index++
-        }
-        if (limit > plainStart) appendCellStyledText(ssb, body.substring(plainStart, limit), style)
     }
 
     internal fun SchemeEditText.appendCellStyledText(ssb: SpannableStringBuilder, text: String, style: InlineMarkdownStyle) {
@@ -522,6 +503,12 @@ internal fun editorBitmapSampleSize(width: Int, height: Int, maxDimension: Int =
         if (typeface != null) ssb.setSpan(StyleSpan(typeface), s, e, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE)
         if (style.highlight) ssb.setSpan(BackgroundColorSpan(EDITOR_HIGHLIGHT_COLOR), s, e, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE)
         if (style.strike) ssb.setSpan(StrikethroughSpan(), s, e, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE)
+        if (style.code) {
+            ssb.setSpan(EditorMarkdownCodeSpan(), s, e, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE)
+            if (!style.highlight) ssb.setSpan(BackgroundColorSpan(editorTheme.dividerSoft), s, e, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE)
+        } else if (style.link) {
+            ssb.setSpan(EditorMarkdownLinkSpan(editorTheme.accent), s, e, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE)
+        }
     }
 
     internal fun SchemeEditText.mediaDisplaySize(media: EditorLineMedia, maxWidth: Int): Pair<Float, Float> {

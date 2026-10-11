@@ -100,6 +100,9 @@ internal data class TableCellHit(
     val isHeader: Boolean get() = row < 0
 }
 
+/// What a text line draws beside or instead of its text.
+internal enum class MarkdownBlockMarkup { NONE, QUOTE, RULE }
+
 internal data class ChromeDrawLine(
     val start: Int,
     val end: Int,
@@ -112,6 +115,7 @@ internal data class ChromeDrawLine(
     val heading: Boolean,
     val extraHeight: Int,
     val collapseText: Boolean,
+    val blockMarkup: MarkdownBlockMarkup = MarkdownBlockMarkup.NONE,
     // Computed while the cached chrome list is built. Keeping it here avoids
     // walking all preceding lines for every numbered line during onDraw.
     val numberedOrdinal: Int = 1,
