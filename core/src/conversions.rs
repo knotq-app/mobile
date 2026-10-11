@@ -5,7 +5,7 @@ use anyhow::{anyhow, Result};
 use chrono::{DateTime, Duration, Local, NaiveDate, Utc};
 use knotq_commands::recurrence_can_delete_future;
 use knotq_date_util::DateRange;
-use knotq_index::IndexedWorkspace;
+use knotq_index::IndexedView;
 use knotq_model::{
     ColumnId, GoogleOAuthAccount, ImageAssetFormat, ImageInline, ImportedCalendarSource, Inline,
     Item, ItemContent, ItemId, ItemKind, ItemMarker, NotificationDefaults, OccurrenceId,
@@ -328,7 +328,7 @@ impl MobileNotificationRequest {
 }
 
 pub(crate) fn mobile_upcoming(
-    indexed: &IndexedWorkspace,
+    indexed: IndexedView<'_>,
     from: DateTime<Utc>,
     lookahead: UpcomingDisplaySettings,
     limit: usize,

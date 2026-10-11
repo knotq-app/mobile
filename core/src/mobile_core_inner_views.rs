@@ -74,7 +74,7 @@ impl MobileCoreInner {
             .collect();
 
         self.ensure_indexed_workspace();
-        let Some(indexed) = self.indexed_workspace.as_ref() else {
+        let Some(indexed) = self.indexed_view() else {
             return Err(anyhow!("index cache could not be initialized"));
         };
         let range = knotq_date_util::DateRange {
@@ -171,7 +171,7 @@ impl MobileCoreInner {
         self.load_daily_queue_calendar_range(grid_start, grid_end)?;
 
         self.ensure_indexed_workspace();
-        let Some(indexed) = self.indexed_workspace.as_ref() else {
+        let Some(indexed) = self.indexed_view() else {
             return Err(anyhow!("index cache could not be initialized"));
         };
         let range = knotq_date_util::DateRange {
@@ -327,7 +327,7 @@ impl MobileCoreInner {
     pub(crate) fn search(&mut self, query: &str) -> Result<Vec<MobileSearchHit>> {
         let time_format = self.settings.time_format;
         self.ensure_indexed_workspace();
-        let Some(indexed) = self.indexed_workspace.as_ref() else {
+        let Some(indexed) = self.indexed_view() else {
             return Err(anyhow!("index cache could not be initialized"));
         };
         let hits = indexed
@@ -378,8 +378,16 @@ impl MobileCoreInner {
     /// lazy document load invalidates the cache.
     fn ensure_indexed_workspace(&mut self) {
         if self.indexed_workspace.is_none() {
-            self.indexed_workspace = Some(IndexedWorkspace::build(self.workspace.clone()));
+            self.indexed_workspace = Some(WorkspaceIndex::build(&self.workspace));
         }
+    }
+
+    /// The cached indexes read against the live workspace, so the index never
+    /// holds a second copy of it.
+    fn indexed_view(&self) -> Option<IndexedView<'_>> {
+        self.indexed_workspace
+            .as_ref()
+            .map(|index| index.view(&self.workspace))
     }
 
     pub(crate) fn restore_deleted_scheme(&mut self, scheme_id: SchemeId) -> Result<()> {

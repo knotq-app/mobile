@@ -15,7 +15,7 @@ use knotq_commands::{
     EventDeleteScope, EventPopupDraft, WorkspaceCommandExt,
 };
 use knotq_index::query::{SearchHitStatus, SearchOptions, SearchTarget};
-use knotq_index::IndexedWorkspace;
+use knotq_index::{IndexedView, WorkspaceIndex};
 use knotq_model::{
     daily_queue_scheme_id, daily_queue_sync_metadata, AppSettings, CalendarProvider, FolderId,
     GoogleOAuthAccount, ImageAssetFormat, ImageInline, Inline, Item, ItemContent, ItemId,
@@ -282,7 +282,7 @@ struct MobileCoreInner {
     /// Reused across consecutive read-only snapshot/month/search requests.
     /// Every workspace write and lazy daily-queue hydration invalidates it, so
     /// it can never outlive the materialized workspace it indexes.
-    indexed_workspace: Option<IndexedWorkspace>,
+    indexed_workspace: Option<WorkspaceIndex>,
     settings: AppSettings,
     crdt: WorkspaceCrdtDocuments,
     next_sequence: u64,
