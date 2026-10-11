@@ -76,7 +76,12 @@ extension EditorTextView {
             result.append(NSAttributedString(string: item.text, attributes: attrs))
             let bodyRange = NSRange(location: bodyLocation, length: (item.text as NSString).length)
             result.append(NSAttributedString(string: "\n", attributes: attrs))
-            applyInlineMarkdownStyling(body: item.text, bodyRange: bodyRange, in: result)
+            applyInlineMarkdownStyling(
+                body: item.text,
+                bodyRange: bodyRange,
+                in: result,
+                palette: MarkdownPalette(theme: theme, done: meta.done)
+            )
         }
         return result
     }

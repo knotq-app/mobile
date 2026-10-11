@@ -496,7 +496,7 @@ struct DesktopSearchPane: View {
                                         .font(.system(size: 10, weight: .bold, design: .monospaced))
                                         .foregroundStyle(theme.textSoft)
                                 }
-                                Text(hit.title)
+                                Text(searchPreviewText(hit.title))
                                     .font(.system(size: 14))
                                     .foregroundStyle(theme.textPrimary)
                                     .lineLimit(2)

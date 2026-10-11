@@ -103,8 +103,9 @@ import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.roundToInt
 
-private val searchBlockPrefix = Regex("^(?:#{1,6}\\s+|[-*+]\\s+|\\[[ xX]\\]\\s+)")
-private val searchInlineMarker = Regex("(?:\\*\\*|__|==|~~)")
+private val searchBlockPrefix = Regex("^(?:#{1,6}\\s+|>\\s+|[-*+]\\s+|\\[[ xX]\\]\\s+)")
+private val searchNamedLink = Regex("\\[([^\\[\\]]+)\\]\\((?:https?://|www\\.|mailto:)[^\\s)]+\\)")
+private val searchInlineMarker = Regex("(?:\\*\\*|__|==|~~|`)")
 
 /**
  * Search indexes the source document, so a hit can contain the Markdown that
@@ -117,7 +118,9 @@ internal fun searchPreviewText(raw: String): String =
     raw.lineSequence()
         .map { line ->
             line.trim()
+                .takeUnless(::isMarkdownRule).orEmpty()
                 .replace(searchBlockPrefix, "")
+                .replace(searchNamedLink, "$1")
                 .replace(searchInlineMarker, "")
         }
         .filter(String::isNotBlank)

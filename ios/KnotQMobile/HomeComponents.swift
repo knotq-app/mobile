@@ -662,7 +662,7 @@ struct HomeSearchHitRow: View {
                         .lineLimit(1)
                 }
 
-                Text(hit.title)
+                Text(searchPreviewText(hit.title))
                     .font(.system(size: 15))
                     .foregroundStyle(theme.textPrimary)
                     .lineLimit(2)

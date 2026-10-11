@@ -5,7 +5,8 @@ import UIKit
 
 extension NSAttributedString.Key {
     static let knotqLine = NSAttributedString.Key("knotqLine")
-    /// Marks markdown marker characters (`*`, `**`, `==`, the leading `#`) so the
+    /// Marks markdown marker characters (`*`, `**`, `==`, a backtick, the leading
+    /// `#` or `> `, the brackets and address of a `[label](url)`, a `---`) so the
     /// layout manager can collapse them on lines that don't contain the caret.
     static let knotqMarker = NSAttributedString.Key("knotqMarker")
 }
@@ -88,6 +89,10 @@ enum DesktopEditorMetrics {
     static let annotationBarGap: CGFloat = 8
     static let annotationTextGap: CGFloat = 7
     static let indentGuideXShift: CGFloat = 2
+    /// A `> quote`'s bar: how far left of the line (its marker, or its text
+    /// when it has none) it sits, and how wide it is.
+    static let quoteBarGap: CGFloat = 5.5
+    static let quoteBarWidth: CGFloat = 2.5
     static let imageMaxHeight: CGFloat = 300
     static let imageFallbackWidth: CGFloat = 320
     static let imageFallbackHeight: CGFloat = 180

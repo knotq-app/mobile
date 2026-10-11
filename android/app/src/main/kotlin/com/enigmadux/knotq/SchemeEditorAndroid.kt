@@ -52,6 +52,10 @@ internal const val EDITOR_INDENT_WIDTH_DP = 15
 internal const val EDITOR_CHECKBOX_SIZE_DP = 14
 internal const val EDITOR_ANNOTATION_HEIGHT_DP = 14
 internal const val EDITOR_ANNOTATION_BAR_GAP_DP = 8
+// A `> quote`'s bar: how far left of the line (its marker, or its text when it
+// has none) it sits, and how wide it is.
+internal const val EDITOR_QUOTE_BAR_GAP_DP = 5.5f
+internal const val EDITOR_QUOTE_BAR_WIDTH_DP = 2.5f
 internal const val EDITOR_ANNOTATION_TEXT_GAP_DP = 7
 internal const val EDITOR_INDENT_GUIDE_X_SHIFT_DP = 2
 internal const val EDITOR_IMAGE_TOP_GAP_DP = 8
@@ -591,8 +595,8 @@ internal class SchemeEditText(context: android.content.Context) : EditText(conte
         if (spans.isEmpty()) return
         val fm = paint.fontMetricsInt
         chromePaint.style = Paint.Style.FILL
-        chromePaint.color = EDITOR_HIGHLIGHT_COLOR
         for (span in spans) {
+            chromePaint.color = span.color
             val spanStart = editable.getSpanStart(span)
             val spanEnd = editable.getSpanEnd(span)
             if (spanEnd <= spanStart) continue
@@ -696,6 +700,9 @@ internal class SchemeEditText(context: android.content.Context) : EditText(conte
         removeSpansInRange(editable, rangeStart, rangeEnd, EditorMarkdownHighlightSpan::class.java)
         removeSpansInRange(editable, rangeStart, rangeEnd, EditorMarkdownMarkerSpan::class.java)
         removeSpansInRange(editable, rangeStart, rangeEnd, EditorMarkdownStrikeSpan::class.java)
+        removeSpansInRange(editable, rangeStart, rangeEnd, EditorMarkdownCodeSpan::class.java)
+        removeSpansInRange(editable, rangeStart, rangeEnd, EditorMarkdownLinkSpan::class.java)
+        removeSpansInRange(editable, rangeStart, rangeEnd, EditorMarkdownQuoteSpan::class.java)
         removeSpansInRange(editable, rangeStart, rangeEnd, EditorTextSizeSpan::class.java)
         updateRevealedMarkdownRange(value)
 
@@ -980,6 +987,7 @@ internal class SchemeEditText(context: android.content.Context) : EditText(conte
             val lineOrdinal = line.numberedOrdinal
             val textBaseline = (totalPaddingTop + layout.getLineBaseline(firstVisual) - scrollY).toFloat()
             drawMarker(canvas, markerRectScratch, line.marker, line.done, lineOrdinal, textBaseline, line.indent)
+            drawBlockMarkup(canvas, line, firstTop, firstBottom, contentBottom)
             line.annotation?.let { annotation ->
                 drawAnnotationBar(
                     canvas = canvas,
@@ -996,6 +1004,29 @@ internal class SchemeEditText(context: android.content.Context) : EditText(conte
             val blockTop = if (line.collapseText) firstTop else
                 contentBottom + if (line.annotation == null) 0 else dp(EDITOR_ANNOTATION_HEIGHT_DP)
             drawBlockStack(canvas, line.blocks, line.prefixWidth, blockTop, index)
+        }
+    }
+
+    /// Paints what a whole-line markdown form draws beside or instead of its
+    /// text: the bar of a `> quote`, and the line of a `---` rule. The rule is
+    /// only drawn while its dashes are collapsed — on the caret's line they are
+    /// shown as typed.
+    internal fun drawBlockMarkup(canvas: Canvas, line: ChromeDrawLine, firstTop: Int, firstBottom: Int, contentBottom: Int) {
+        if (line.blockMarkup == MarkdownBlockMarkup.NONE) return
+        val textLeft = (totalPaddingLeft + line.prefixWidth).toFloat()
+        chromePaint.style = Paint.Style.FILL
+        chromePaint.color = editorTheme.divider
+        if (line.blockMarkup == MarkdownBlockMarkup.RULE) {
+            if (markdownRangeIsRevealed(line.start, line.end)) return
+            val right = (width - totalPaddingRight).toFloat()
+            val y = (firstTop + firstBottom) / 2f
+            if (right > textLeft) canvas.drawRect(textLeft, y - dp(0.5f), right, y + dp(0.5f), chromePaint)
+        } else {
+            // Left of the checkbox or bullet, so the bar frames the whole line.
+            val markerSlot = if (line.marker == "blank") 0 else dp(EDITOR_MARKER_SLOT_DP)
+            val left = textLeft - markerSlot - dp(EDITOR_QUOTE_BAR_GAP_DP)
+            val top = firstTop + dp(2f)
+            canvas.drawRect(left, top, left + dp(EDITOR_QUOTE_BAR_WIDTH_DP), max(top + dp(4f), contentBottom - dp(2f)), chromePaint)
         }
     }
 
@@ -1028,6 +1059,12 @@ internal class SchemeEditText(context: android.content.Context) : EditText(conte
                     blocks = blocks,
                     prefixWidth = prefixWidth,
                     heading = isMarkdownHeading(body),
+                    blockMarkup = when {
+                        blocks.isNotEmpty() -> MarkdownBlockMarkup.NONE
+                        isMarkdownRule(body) -> MarkdownBlockMarkup.RULE
+                        markdownQuoteMarkerLength(body) != null -> MarkdownBlockMarkup.QUOTE
+                        else -> MarkdownBlockMarkup.NONE
+                    },
                     extraHeight = extraHeightFor(adornment, blocks, prefixWidth, collapseText = collapsesText(blocks)),
                     collapseText = collapsesText(blocks),
                     numberedOrdinal = numberedOrdinal,
