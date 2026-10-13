@@ -1048,6 +1048,98 @@ fn completing_a_past_event_flags_background_refresh_then_clears_it_after_push() 
     let _ = std::fs::remove_dir_all(&dir);
 }
 
+/// A device whose sync journal was found damaged offers every document back to
+/// the server as a full snapshot. That is a one-time repair: once the push has
+/// landed the obligation must be cleared on disk, or every later sync repeats
+/// the whole upload.
+#[test]
+fn storage_recovery_reseeds_once_and_is_cleared_after_the_push() {
+    let dir = std::env::temp_dir().join(format!("knotq-mobile-recovery-{}", uuid::Uuid::new_v4()));
+    let workspace_path = dir.join("workspace").join("workspace.json");
+
+    let mut initial = Workspace::new();
+    let mut scheme = Scheme::new("Work", 0);
+    scheme.items.push(Item::new("Standup"));
+    let scheme_id = scheme.id;
+    initial
+        .folders
+        .get_mut(&initial.root)
+        .unwrap()
+        .children
+        .push(NodeRef::Scheme(scheme_id));
+    initial.schemes.insert(scheme_id, scheme);
+    initial.canonicalize_personal_sync_identity(initial.id);
+    initial.ensure_sync_metadata();
+
+    let seed_crdt = WorkspaceCrdtDocuments::try_new(&initial).unwrap();
+    let seed_states = seed_crdt.document_states();
+    let server = MobileFuzzServer::seeded(&initial, &seed_states);
+
+    let replica_id = ReplicaId::new();
+    let mut sync_state = LocalSyncState {
+        workspace_id: Some(initial.id),
+        replica_id: Some(replica_id),
+        server_url: Some("http://127.0.0.1:8788".to_string()),
+        ..LocalSyncState::default()
+    };
+    for document in seed_states.keys() {
+        sync_state.document_cursors.insert(
+            *document,
+            DocumentSyncCursor {
+                document: *document,
+                kind: if *document == initial.sync.id {
+                    SyncDocumentKind::PersonalWorkspace
+                } else {
+                    SyncDocumentKind::Scheme
+                },
+                last_pulled_sequence: 1,
+                last_pushed_sequence: 1,
+                epoch: 0,
+            },
+        );
+    }
+    sync_state.mark_storage_recovery();
+    save_workspace(&workspace_path, &initial).unwrap();
+    save_crdt_state(&workspace_path, &seed_states).unwrap();
+    save_local_sync_state(&workspace_path, &sync_state).unwrap();
+
+    let mut dev = MobileCoreInner::open(dir.clone()).unwrap();
+    dev.settings.replica_id = replica_id;
+    assert!(
+        load_local_sync_state(&workspace_path)
+            .unwrap()
+            .needs_storage_recovery(),
+        "opening the workspace does not itself discharge the recovery"
+    );
+
+    mobile_sync_cycle(&mut dev, &server).unwrap();
+    let pushes_after_recovery = *server.push_calls.borrow();
+    assert!(
+        pushes_after_recovery > 0,
+        "the recovery sync offers the device's documents to the server"
+    );
+    assert!(
+        !load_local_sync_state(&workspace_path)
+            .unwrap()
+            .needs_storage_recovery(),
+        "the recovery is cleared on disk once its push has landed"
+    );
+
+    mobile_sync_cycle(&mut dev, &server).unwrap();
+    assert_eq!(
+        *server.push_calls.borrow(),
+        pushes_after_recovery,
+        "a caught-up device with no edits does not upload everything again"
+    );
+    assert_eq!(
+        item_texts(&dev.workspace.schemes[&scheme_id].items),
+        vec!["Standup".to_string()],
+        "the recovery leaves the content alone"
+    );
+
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
 #[test]
 fn two_device_lazy_daily_lifecycle_fuzz_converges() {
     // Two real, disk-backed `MobileCoreInner` instances ("two laptops") on one
