@@ -19,6 +19,7 @@ ios/KnotQMobile.xcodeproj/xcuserdata/
 *.ipa
 *.dSYM
 *.dSYM.zip
+release-artifacts/
 .build/
 .swiftpm/
 *.hprof

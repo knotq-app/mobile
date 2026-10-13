@@ -61,9 +61,19 @@ extension DayTimelineUIKitView {
                 height: circleFrame.height
             ))
             circle.isUserInteractionEnabled = false
-            circle.backgroundColor = today ? accent : secondaryAccent
+            // Shield the connector behind translucent secondary highlights so
+            // its two bars do not show through the day circle.
+            circle.backgroundColor = today ? accent : headerSurface.backgroundColor
             circle.layer.cornerRadius = circleSize / 2
             circle.layer.cornerCurve = .continuous
+            if !today {
+                let tint = UIView(frame: circle.bounds)
+                tint.isUserInteractionEnabled = false
+                tint.backgroundColor = secondaryAccent
+                tint.layer.cornerRadius = circleSize / 2
+                tint.layer.cornerCurve = .continuous
+                circle.addSubview(tint)
+            }
             weekStrip.addSubview(circle)
         }
 
