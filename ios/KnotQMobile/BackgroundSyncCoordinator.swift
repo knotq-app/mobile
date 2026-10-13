@@ -112,9 +112,14 @@ final class BackgroundSyncCoordinator {
     @MainActor
     func register() {
         guard !registered else { return }
+        // The handler below is a closure inside a `@MainActor` type, so it is
+        // main-actor isolated and Swift 6 traps the process if it is entered
+        // anywhere else. `using: nil` runs it on the scheduler's own background
+        // queue — which killed the app on every background refresh. Ask for
+        // the main queue instead.
         registered = BGTaskScheduler.shared.register(
             forTaskWithIdentifier: Self.taskIdentifier,
-            using: nil
+            using: .main
         ) { task in
             guard let refreshTask = task as? BGAppRefreshTask else {
                 task.setTaskCompleted(success: false)
@@ -194,7 +199,17 @@ final class BackgroundSyncCoordinator {
             }
             completion.finish(success: success)
         }
-        task.expirationHandler = {
+        task.expirationHandler = Self.expirationHandler(cancelling: operation, completion: completion)
+    }
+
+    /// Built outside the main actor on purpose, so the closure is explicitly
+    /// free of its isolation: the system does not promise which queue it
+    /// expires a task on.
+    nonisolated private static func expirationHandler(
+        cancelling operation: Task<Void, Never>,
+        completion: BackgroundTaskCompletion
+    ) -> @Sendable () -> Void {
+        {
             operation.cancel()
             completion.finish(success: false)
         }
@@ -206,7 +221,9 @@ final class BackgroundSyncCoordinator {
     }
 }
 
-private final class BackgroundTaskCompletion {
+/// Finishes a background task exactly once, from whichever of the work and the
+/// expiry gets there first. Lock-guarded, so safe to share across queues.
+private final class BackgroundTaskCompletion: @unchecked Sendable {
     private let lock = NSLock()
     private var completed = false
     private weak var task: BGTask?
