@@ -1553,6 +1553,10 @@ impl MobileCoreInner {
         timing.phase("push");
         save_local_sync_state(&self.workspace_path, sync_state)?;
         push_result?;
+        if sync_state.needs_storage_recovery() {
+            sync_state.clear_storage_recovery();
+            save_local_sync_state(&self.workspace_path, sync_state)?;
+        }
         self.background_refresh_required = false;
 
         // Local edits have now been accepted (or the push returned an error above).
