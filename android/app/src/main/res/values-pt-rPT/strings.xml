@@ -1018,7 +1018,7 @@
     <string name="web_account_billing_cancelled_google_until" translatable="false">A sua subscrição foi cancelada. A sincronização permanece ativa até {date}. Reative-a a partir das suas subscrições do Google Play.</string>
     <string name="web_account_billing_cancelled_web_ends" translatable="false">A sua subscrição foi cancelada. A sincronização permanece ativa até ao fim do período atual. Reative-a a partir desta página para continuar a renovar.</string>
     <string name="web_account_billing_cancelled_web_until" translatable="false">A sua subscrição foi cancelada. A sincronização permanece ativa até {date}. Reative-a a partir desta página para continuar a renovar.</string>
-    <string name="web_account_billing_choose_plan" translatable="false">Escolha mensal ou anual para ativar a sincronização alojada para esta conta.</string>
+    <string name="web_account_billing_choose_plan" translatable="false">1 mês de teste gratuito</string>
     <string name="web_account_billing_managed_apple" translatable="false">Esta subscrição é gerida pela Apple. Utilize as suas subscrições de conta Apple para fazer alterações de faturação.</string>
     <string name="web_account_billing_managed_google" translatable="false">Esta subscrição é gerida pelo Google Play. Utilize as subscrições do Google Play para fazer alterações de faturação.</string>
     <string name="web_account_billing_sync_active_no_sub" translatable="false">O acesso de sincronização está ativo para esta conta sem uma subscrição web.</string>
@@ -1501,7 +1501,7 @@
     <string name="web_home_sync_create_account" translatable="false">Criar conta</string>
     <string name="web_home_sync_currency_note" translatable="false">Preços em USD</string>
     <string name="web_home_sync_eyebrow" translatable="false">Sincronização opcional</string>
-    <string name="web_home_sync_plan_note" formatted="false" translatable="false">ou $23,99 / ano — poupar 33%</string>
+    <string name="web_home_sync_plan_note" translatable="false">1 mês de teste gratuito</string>
     <string name="web_home_sync_plan_period" translatable="false">/mês</string>
     <string name="web_home_sync_plan_subtitle" translatable="false">Sincronização entre dispositivos</string>
     <string name="web_home_sync_point1" translatable="false">Your workspace will follow you across devices</string>

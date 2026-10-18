@@ -1175,6 +1175,7 @@
     <string name="web_account_use_different_account" translatable="false">Use a different account</string>
     <string name="web_account_verify_gate_body" translatable="false">We sent a verification link to your account email. Confirm it to turn on KnotQ Sync.</string>
     <string name="web_account_verify_gate_title" translatable="false">Verify your email to subscribe</string>
+    <string name="web_auth_checking_existing_session" translatable="false">Checking your existing KnotQ session…</string>
     <string name="web_auth_confirm_password_label" translatable="false">Confirm password</string>
     <string name="web_auth_confirm_your_password" translatable="false">Confirm your password.</string>
     <string name="web_auth_create_account" translatable="false">Create account</string>

@@ -1018,7 +1018,7 @@
     <string name="web_account_billing_cancelled_google_until" translatable="false">Votre abonnement est annulé. La synchronisation reste active jusqu\'au {date}. Réactivez-le depuis vos abonnements Google Play.</string>
     <string name="web_account_billing_cancelled_web_ends" translatable="false">Votre abonnement est annulé. La synchronisation reste active jusqu\'à la fin de la période actuelle. Réactivez-le depuis cette page pour continuer le renouvellement.</string>
     <string name="web_account_billing_cancelled_web_until" translatable="false">Votre abonnement est annulé. La synchronisation reste active jusqu\'au {date}. Réactivez-le depuis cette page pour continuer le renouvellement.</string>
-    <string name="web_account_billing_choose_plan" translatable="false">Choisissez le mensuel ou l\'annuel pour activer la synchronisation hébergée pour ce compte.</string>
+    <string name="web_account_billing_choose_plan" translatable="false">1 mois d’essai gratuit</string>
     <string name="web_account_billing_managed_apple" translatable="false">Cet abonnement est géré par Apple. Utilisez les abonnements de votre compte Apple pour apporter des modifications à la facturation.</string>
     <string name="web_account_billing_managed_google" translatable="false">Cet abonnement est géré par Google Play. Utilisez les abonnements Google Play pour apporter des modifications à la facturation.</string>
     <string name="web_account_billing_sync_active_no_sub" translatable="false">L\'accès à la synchronisation est actif pour ce compte sans abonnement web.</string>
@@ -1501,7 +1501,7 @@
     <string name="web_home_sync_create_account" translatable="false">Créer un compte</string>
     <string name="web_home_sync_currency_note" translatable="false">Prix en USD</string>
     <string name="web_home_sync_eyebrow" translatable="false">Synchronisation facultative</string>
-    <string name="web_home_sync_plan_note" formatted="false" translatable="false">ou 23,99 $ / an — économisez 33 %</string>
+    <string name="web_home_sync_plan_note" translatable="false">1 mois d’essai gratuit</string>
     <string name="web_home_sync_plan_period" translatable="false">/mois</string>
     <string name="web_home_sync_plan_subtitle" translatable="false">Synchronisation multi-appareils</string>
     <string name="web_home_sync_point1" translatable="false">Your workspace will follow you across devices</string>

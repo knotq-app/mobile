@@ -1018,7 +1018,7 @@
     <string name="web_account_billing_cancelled_google_until" translatable="false">Je abonnement is geannuleerd. Sync blijft actief tot {date}. Activeer het opnieuw vanuit je Google Play-abonnementen.</string>
     <string name="web_account_billing_cancelled_web_ends" translatable="false">Je abonnement is geannuleerd. Sync blijft actief tot het einde van de huidige periode. Activeer het opnieuw op deze pagina om het abonnement te verlengen.</string>
     <string name="web_account_billing_cancelled_web_until" translatable="false">Je abonnement is geannuleerd. Sync blijft actief tot {date}. Activeer het opnieuw op deze pagina om het abonnement te verlengen.</string>
-    <string name="web_account_billing_choose_plan" translatable="false">Kies maandelijks of jaarlijks om gehoste synchronisatie voor dit account in te schakelen.</string>
+    <string name="web_account_billing_choose_plan" translatable="false">1 maand gratis proefperiode</string>
     <string name="web_account_billing_managed_apple" translatable="false">Dit abonnement wordt beheerd door Apple. Gebruik je Apple Account-abonnementen om factureringswijzigingen aan te brengen.</string>
     <string name="web_account_billing_managed_google" translatable="false">Dit abonnement wordt beheerd door Google Play. Gebruik Google Play-abonnementen om factureringswijzigingen aan te brengen.</string>
     <string name="web_account_billing_sync_active_no_sub" translatable="false">Syncaccess is actief voor dit account zonder webabonnement.</string>
@@ -1501,7 +1501,7 @@
     <string name="web_home_sync_create_account" translatable="false">Account aanmaken</string>
     <string name="web_home_sync_currency_note" translatable="false">Prijzen in USD</string>
     <string name="web_home_sync_eyebrow" translatable="false">Optionele synchronisatie</string>
-    <string name="web_home_sync_plan_note" formatted="false" translatable="false">of $23,99 / jaar — bespaar 33%</string>
+    <string name="web_home_sync_plan_note" translatable="false">1 maand gratis proefperiode</string>
     <string name="web_home_sync_plan_period" translatable="false">/maand</string>
     <string name="web_home_sync_plan_subtitle" translatable="false">Synchronisatie tussen verschillende apparaten</string>
     <string name="web_home_sync_point1" translatable="false">Your workspace will follow you across devices</string>

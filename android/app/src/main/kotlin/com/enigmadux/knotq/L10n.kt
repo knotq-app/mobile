@@ -1011,6 +1011,7 @@ object L10n {
         "web.account.use_different_account" to R.string.web_account_use_different_account,
         "web.account.verify_gate_body" to R.string.web_account_verify_gate_body,
         "web.account.verify_gate_title" to R.string.web_account_verify_gate_title,
+        "web.auth.checking_existing_session" to R.string.web_auth_checking_existing_session,
         "web.auth.confirm_password_label" to R.string.web_auth_confirm_password_label,
         "web.auth.confirm_your_password" to R.string.web_auth_confirm_your_password,
         "web.auth.create_account" to R.string.web_auth_create_account,

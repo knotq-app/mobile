@@ -1018,7 +1018,7 @@
     <string name="web_account_billing_cancelled_google_until" translatable="false">Tu suscripción está cancelada. La sincronización permanece activa hasta {date}. Vuelve a habilitarla desde tus suscripciones de Google Play.</string>
     <string name="web_account_billing_cancelled_web_ends" translatable="false">Tu suscripción está cancelada. La sincronización permanece activa hasta que termine el período actual. Vuelve a habilitarla desde esta página para seguir renovándola.</string>
     <string name="web_account_billing_cancelled_web_until" translatable="false">Tu suscripción está cancelada. La sincronización permanece activa hasta {date}. Vuelve a habilitarla desde esta página para seguir renovándola.</string>
-    <string name="web_account_billing_choose_plan" translatable="false">Elige mensual o anual para habilitar la sincronización alojada en esta cuenta.</string>
+    <string name="web_account_billing_choose_plan" translatable="false">1 mes de prueba gratis</string>
     <string name="web_account_billing_managed_apple" translatable="false">Apple gestiona esta suscripción. Usa tus suscripciones de cuenta de Apple para hacer cambios de facturación.</string>
     <string name="web_account_billing_managed_google" translatable="false">Google Play gestiona esta suscripción. Usa tus suscripciones de Google Play para hacer cambios de facturación.</string>
     <string name="web_account_billing_sync_active_no_sub" translatable="false">El acceso a la sincronización está activo para esta cuenta sin una suscripción web.</string>
@@ -1501,7 +1501,7 @@
     <string name="web_home_sync_create_account" translatable="false">Crear cuenta</string>
     <string name="web_home_sync_currency_note" translatable="false">Precios en USD</string>
     <string name="web_home_sync_eyebrow" translatable="false">Sincronización opcional</string>
-    <string name="web_home_sync_plan_note" formatted="false" translatable="false">o $23.99 / año — ahorra 33%</string>
+    <string name="web_home_sync_plan_note" translatable="false">1 mes de prueba gratis</string>
     <string name="web_home_sync_plan_period" translatable="false">/mes</string>
     <string name="web_home_sync_plan_subtitle" translatable="false">Sincronización entre dispositivos</string>
     <string name="web_home_sync_point1" translatable="false">Your workspace will follow you across devices</string>

@@ -1018,7 +1018,7 @@
     <string name="web_account_billing_cancelled_google_until" translatable="false">Vaše predplatné je zrušené. Synchronizácia zostáva aktívna do {date}. Opätovne ju zapnite z predplatných Google Play.</string>
     <string name="web_account_billing_cancelled_web_ends" translatable="false">Vaše predplatné je zrušené. Synchronizácia zostáva aktívna až do konca aktuálneho obdobia. Opätovne ju zapnite z tejto stránky, aby sa pokračovalo v obnovovaní.</string>
     <string name="web_account_billing_cancelled_web_until" translatable="false">Vaše predplatné je zrušené. Synchronizácia zostáva aktívna do {date}. Opätovne ju zapnite z tejto stránky, aby sa pokračovalo v obnovovaní.</string>
-    <string name="web_account_billing_choose_plan" translatable="false">Vyberte mesačné alebo ročné nastavenie, aby ste povolili hostovanú synchronizáciu pre tento účet.</string>
+    <string name="web_account_billing_choose_plan" translatable="false">1 mesiac bezplatnej skúšobnej verzie</string>
     <string name="web_account_billing_managed_apple" translatable="false">Toto predplatné spravuje Apple. Na zmenu nastavenia fakturácie použite predplatné svojho Apple účtu.</string>
     <string name="web_account_billing_managed_google" translatable="false">Toto predplatné spravuje Google Play. Na zmenu nastavenia fakturácie použite predplatné Google Play.</string>
     <string name="web_account_billing_sync_active_no_sub" translatable="false">Prístup k synchronizácii je aktívny pre tento účet bez webového predplatného.</string>
@@ -1501,7 +1501,7 @@
     <string name="web_home_sync_create_account" translatable="false">Vytvoriť konto</string>
     <string name="web_home_sync_currency_note" translatable="false">Ceny v USD</string>
     <string name="web_home_sync_eyebrow" translatable="false">Voliteľná synchronizácia</string>
-    <string name="web_home_sync_plan_note" formatted="false" translatable="false">alebo 23,99 USD / rok — ušetrite 33 %</string>
+    <string name="web_home_sync_plan_note" translatable="false">1 mesiac bezplatnej skúšobnej verzie</string>
     <string name="web_home_sync_plan_period" translatable="false">/mesiac</string>
     <string name="web_home_sync_plan_subtitle" translatable="false">Synchronizácia medzi zariadeniami</string>
     <string name="web_home_sync_point1" translatable="false">Your workspace will follow you across devices</string>

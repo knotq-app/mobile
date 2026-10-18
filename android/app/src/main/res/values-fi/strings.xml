@@ -1018,7 +1018,7 @@
     <string name="web_account_billing_cancelled_google_until" translatable="false">Tilauksesi on peruutettu. Synkronointi pysyy aktiivisena {date} saakka. Ota se uudelleen käyttöön Google Play -tilauksista.</string>
     <string name="web_account_billing_cancelled_web_ends" translatable="false">Tilauksesi on peruutettu. Synkronointi pysyy aktiivisena nykyisen jakson päättymiseen asti. Ota se uudelleen käyttöön tältä sivulta jatkuvaa uusimista varten.</string>
     <string name="web_account_billing_cancelled_web_until" translatable="false">Tilauksesi on peruutettu. Synkronointi pysyy aktiivisena {date} saakka. Ota se uudelleen käyttöön tältä sivulta jatkuvaa uusimista varten.</string>
-    <string name="web_account_billing_choose_plan" translatable="false">Valitse kuukausittain tai vuosittain, jotta voit ottaa isännöidyn synkronoinnin käyttöön tälle tilille.</string>
+    <string name="web_account_billing_choose_plan" translatable="false">1 kuukauden ilmainen kokeilu</string>
     <string name="web_account_billing_managed_apple" translatable="false">Tätä tilausta hallinnoi Apple. Käytä Apple-tilin tilauksia muuttaaksesi laskutustietoja.</string>
     <string name="web_account_billing_managed_google" translatable="false">Tätä tilausta hallinnoi Google Play. Käytä Google Play -tilauksia muuttaaksesi laskutustietoja.</string>
     <string name="web_account_billing_sync_active_no_sub" translatable="false">Synkronoinnin käyttöoikeus on aktiivinen tälle tilille ilman verkkotilausta.</string>
@@ -1501,7 +1501,7 @@
     <string name="web_home_sync_create_account" translatable="false">Luo tili</string>
     <string name="web_home_sync_currency_note" translatable="false">Hinnat USD-valuutassa</string>
     <string name="web_home_sync_eyebrow" translatable="false">Valinnainen synkronointi</string>
-    <string name="web_home_sync_plan_note" formatted="false" translatable="false">tai 23,99 $ / vuosi — säästä 33%</string>
+    <string name="web_home_sync_plan_note" translatable="false">1 kuukauden ilmainen kokeilu</string>
     <string name="web_home_sync_plan_period" translatable="false">/kk</string>
     <string name="web_home_sync_plan_subtitle" translatable="false">Laitteiden välinen synkronointi</string>
     <string name="web_home_sync_point1" translatable="false">Your workspace will follow you across devices</string>

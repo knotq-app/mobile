@@ -1018,7 +1018,7 @@
     <string name="web_account_billing_cancelled_google_until" translatable="false">Ihr Abonnement wurde storniert. Sync bleibt aktiv bis {date}. Aktivieren Sie es über Ihre Google Play-Abos erneut.</string>
     <string name="web_account_billing_cancelled_web_ends" translatable="false">Ihr Abonnement wurde storniert. Sync bleibt aktiv, bis der aktuelle Zeitraum endet. Aktivieren Sie es auf dieser Seite erneut, um die Verlängerung zu beibehalten.</string>
     <string name="web_account_billing_cancelled_web_until" translatable="false">Ihr Abonnement wurde storniert. Sync bleibt aktiv bis {date}. Aktivieren Sie es auf dieser Seite erneut, um die Verlängerung zu beibehalten.</string>
-    <string name="web_account_billing_choose_plan" translatable="false">Wählen Sie monatlich oder jährlich, um gehostetes Sync für dieses Konto zu aktivieren.</string>
+    <string name="web_account_billing_choose_plan" translatable="false">1 Monat kostenlos testen</string>
     <string name="web_account_billing_managed_apple" translatable="false">Dieses Abonnement wird von Apple verwaltet. Verwenden Sie Ihre Apple-Kontoabos, um Änderungen bei der Abrechnung vorzunehmen.</string>
     <string name="web_account_billing_managed_google" translatable="false">Dieses Abonnement wird von Google Play verwaltet. Verwenden Sie Google Play-Abos, um Änderungen bei der Abrechnung vorzunehmen.</string>
     <string name="web_account_billing_sync_active_no_sub" translatable="false">Sync-Zugriff ist für dieses Konto ohne Web-Abonnement aktiv.</string>
@@ -1114,8 +1114,8 @@
     <string name="web_account_plan_annual" translatable="false">Jährlich</string>
     <string name="web_account_plan_monthly" translatable="false">Monatlich</string>
     <string name="web_account_plan_save_badge" formatted="false" translatable="false">33% sparen</string>
-    <string name="web_account_price_annual" translatable="false">23,99 €/Jahr</string>
-    <string name="web_account_price_monthly" translatable="false">2,99 €/Monat</string>
+    <string name="web_account_price_annual" translatable="false">23,99 $/Jahr</string>
+    <string name="web_account_price_monthly" translatable="false">2,99 $/Monat</string>
     <string name="web_account_provider_apple" translatable="false">Apple App Store</string>
     <string name="web_account_provider_google" translatable="false">Google Play</string>
     <string name="web_account_provider_unknown" translatable="false">Anbieter unbekannt</string>
@@ -1232,8 +1232,8 @@
     <string name="web_checkout_point_cancel_anytime" translatable="false">Jederzeit stornieren – Ihre Daten bleiben immer lokal</string>
     <string name="web_checkout_point_schemes_stay_in_step" translatable="false">Schemen, Kalender und Medien bleiben aktuell</string>
     <string name="web_checkout_point_sync_workspace" translatable="false">Synchronisieren Sie Ihre Arbeitsbereich und Benachrichtigungen auf Desktop und Mobilgeräten</string>
-    <string name="web_checkout_price_annual" translatable="false">23,99 €/Jahr</string>
-    <string name="web_checkout_price_monthly" translatable="false">2,99 €/Monat</string>
+    <string name="web_checkout_price_annual" translatable="false">23,99 $/Jahr</string>
+    <string name="web_checkout_price_monthly" translatable="false">2,99 $/Monat</string>
     <string name="web_checkout_sync_title" translatable="false">KnotQ Sync</string>
     <string name="web_checkout_verify_gate_body" translatable="false">Bestätigen Sie den Überprüfungs-Link, den wir an Ihre Konto-E-Mail gesendet haben. Checkout bleibt gesperrt, bis Ihre Adresse überprüft ist.</string>
     <string name="web_checkout_verify_gate_title" translatable="false">Überprüfen Sie Ihre E-Mail vor dem Abonnement</string>
@@ -1501,7 +1501,7 @@
     <string name="web_home_sync_create_account" translatable="false">Konto erstellen</string>
     <string name="web_home_sync_currency_note" translatable="false">Preise in USD</string>
     <string name="web_home_sync_eyebrow" translatable="false">Optionale Synchronisierung</string>
-    <string name="web_home_sync_plan_note" formatted="false" translatable="false">oder 23,99 USD/Jahr — sparen Sie 33 %</string>
+    <string name="web_home_sync_plan_note" translatable="false">1 Monat kostenlos testen</string>
     <string name="web_home_sync_plan_period" translatable="false">/Monat</string>
     <string name="web_home_sync_plan_subtitle" translatable="false">Geräteübergreifende Synchronisierung</string>
     <string name="web_home_sync_point1" translatable="false">Your workspace will follow you across devices</string>
