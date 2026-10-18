@@ -64,6 +64,7 @@ use crdt_changes::{
 // they are unreferenced (the UDL sync fns stub out), so silence dead-code here.
 #[cfg_attr(not(feature = "accounts"), allow(dead_code))]
 mod media_sync;
+mod sync_failure_log;
 use media_sync::{
     mobile_download_missing_media_assets, mobile_media_to_item_media,
     mobile_notification_schedule_snapshot, mobile_upload_local_media_assets_for_documents,
@@ -159,7 +160,11 @@ pub enum MobileError {
 impl From<anyhow::Error> for MobileError {
     fn from(error: anyhow::Error) -> Self {
         Self::Core {
-            reason: error.to_string(),
+            // `{:#}` joins the whole anyhow cause chain. Plain `to_string()` kept
+            // only the outermost context, so every sync failure surfaced as
+            // "parse sync response from <url>" with the actual reason (timeout,
+            // gzip, decode error) discarded.
+            reason: format!("{error:#}"),
         }
     }
 }
@@ -251,6 +256,7 @@ fn install_stderr_capture(app_dir: &Path) {
 impl MobileCore {
     pub fn new(app_dir: String) -> Result<Self, MobileError> {
         install_stderr_capture(Path::new(&app_dir));
+        sync_failure_log::init(Path::new(&app_dir));
         let inner = MobileCoreInner::open(Path::new(&app_dir).to_path_buf())?;
         let ws_changed = std::sync::Arc::clone(&inner.ws_changed);
         Ok(Self {

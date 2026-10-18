@@ -241,7 +241,7 @@ impl MobileCoreInner {
             ws_changed: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
             ws_api_base: None,
             account_workspace_cache: None,
-            http_agent: ureq::Agent::new(),
+            http_agent: crate::media_sync::mobile_sync_agent(),
         })
     }
 

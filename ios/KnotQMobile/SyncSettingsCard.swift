@@ -363,6 +363,14 @@ struct SyncSettingsCard: View {
                 }
             }
             #endif
+            // A store build's data container cannot be read from a Mac, so this is
+            // the only way a failed sync's cause (timeout, truncated body, decode
+            // error) can leave the phone. Hidden until a failure has been recorded.
+            if let logURL = SyncDiagnostics.failureLogURL {
+                ShareLink(item: logURL) {
+                    Label("Share sync log", systemImage: "doc.text")
+                }
+            }
             // Sign-out is account/session housekeeping, not a StoreKit action.
             // Keep it available in accounts-only builds as well, so a stalled
             // transport can be reset without deleting local workspace data.
@@ -665,3 +673,20 @@ private struct SyncCardButtonStyle: ButtonStyle {
     }
 }
 #endif
+
+/// Where the Rust core records sync transport failures (`knotq-sync-failures.log`).
+/// The directory mirrors `RustBridge.init`; the file exists only after a failure.
+enum SyncDiagnostics {
+    static var failureLogURL: URL? {
+        guard let support = try? FileManager.default.url(
+            for: .applicationSupportDirectory,
+            in: .userDomainMask,
+            appropriateFor: nil,
+            create: false
+        ) else { return nil }
+        let url = support
+            .appendingPathComponent("KnotQMobile", isDirectory: true)
+            .appendingPathComponent("knotq-sync-failures.log")
+        return FileManager.default.fileExists(atPath: url.path) ? url : nil
+    }
+}

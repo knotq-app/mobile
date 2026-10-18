@@ -17,7 +17,7 @@ use knotq_sync::{
 };
 use sha2::{Digest, Sha256};
 
-use crate::{mobile_notification_lead_times, MobileItemMedia, NOTIFICATION_HORIZON_DAYS};
+use crate::{sync_failure_log, mobile_notification_lead_times, MobileItemMedia, NOTIFICATION_HORIZON_DAYS};
 
 // Sync HTTP transport + media asset upload/download/collection glue for the
 // mobile core. None of these are part of the UniFFI surface.
@@ -57,6 +57,15 @@ fn parse_image_format(raw: &str) -> Option<ImageAssetFormat> {
     }
 }
 
+/// The shared HTTP agent: a dead network fails within the connect/idle-read limit
+/// while the per-request OVERALL deadline stays long enough to finish a large body.
+pub(crate) fn mobile_sync_agent() -> ureq::Agent {
+    ureq::AgentBuilder::new()
+        .timeout_connect(MOBILE_SYNC_REQUEST_TIMEOUT)
+        .timeout_read(MOBILE_SYNC_REQUEST_TIMEOUT)
+        .build()
+}
+
 #[derive(Clone)]
 pub(crate) struct MobileSyncHttpClient {
     pub(crate) api_base: String,
@@ -72,6 +81,11 @@ pub(crate) struct MobileSyncHttpClient {
 // here, so do not add the desktop-sized 30s HTTP wait on top of it. Large media
 // transfers intentionally keep their separate 30s timeout below.
 const MOBILE_SYNC_REQUEST_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(8);
+// `MOBILE_SYNC_REQUEST_TIMEOUT` is applied by `mobile_sync_agent` as connect and
+// per-read (idle) limits, so a dead network still fails in 8s. The OVERALL deadline covers the response
+// body too, and one pull page can be up to 8 MiB of CRDT state (~11 MB of JSON):
+// an 8s overall deadline cut off a healthy-but-slow download of that body.
+const MOBILE_SYNC_OVERALL_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(30);
 // The backend caps one pull's raw CRDT payload at 8 MiB; base64 and JSON
 // framing put the valid wire response below this ceiling with room for head
 // metadata. Keep a client-side bound too, because the configured API endpoint
@@ -153,7 +167,7 @@ impl MobileSyncHttpClient {
         Self::with_agent(
             api_base.to_string(),
             bearer_token.to_string(),
-            ureq::Agent::new(),
+            mobile_sync_agent(),
         )
     }
 
@@ -224,12 +238,12 @@ impl MobileSyncHttpClient {
     }
 
     fn get_json<T: serde::de::DeserializeOwned>(&self, url: &str) -> Result<T> {
+        let started = std::time::Instant::now();
         let response = self
             .authorized_sync(self.agent.get(url))
             .call()
-            .map_err(mobile_sync_http_error)?;
-        read_bounded_json(response.into_reader(), MAX_SYNC_JSON_RESPONSE_BYTES)
-            .with_context(|| format!("parse sync response from {url}"))
+            .map_err(|error| record_request_failure(url, started, error))?;
+        read_sync_response(url, response, started)
     }
 
     fn post_json<T, R>(&self, url: &str, body: &T) -> Result<R>
@@ -237,12 +251,12 @@ impl MobileSyncHttpClient {
         T: serde::Serialize,
         R: serde::de::DeserializeOwned,
     {
+        let started = std::time::Instant::now();
         let response = self
             .authorized_sync(self.agent.post(url))
             .send_json(serde_json::to_value(body)?)
-            .map_err(mobile_sync_http_error)?;
-        read_bounded_json(response.into_reader(), MAX_SYNC_JSON_RESPONSE_BYTES)
-            .with_context(|| format!("parse sync response from {url}"))
+            .map_err(|error| record_request_failure(url, started, error))?;
+        read_sync_response(url, response, started)
     }
 
     fn authorized(&self, request: ureq::Request) -> ureq::Request {
@@ -253,7 +267,7 @@ impl MobileSyncHttpClient {
 
     fn authorized_sync(&self, request: ureq::Request) -> ureq::Request {
         request
-            .timeout(MOBILE_SYNC_REQUEST_TIMEOUT)
+            .timeout(MOBILE_SYNC_OVERALL_TIMEOUT)
             .set("authorization", &format!("Bearer {}", self.bearer_token))
     }
 }
@@ -271,12 +285,19 @@ impl SyncTransport for MobileSyncHttpClient {
         // epoch-stale re-pull can react — the plain string this used to return
         // silently disabled both on the HTTP fallback path. Auth rejections keep
         // the exact "unauthorized" message the shells' retry matches on.
+        let started = std::time::Instant::now();
         let response = self
             .authorized_sync(self.agent.post(&url))
             .send_json(serde_json::to_value(request)?)
-            .map_err(mobile_sync_push_http_error)?;
-        read_bounded_json(response.into_reader(), MAX_SYNC_JSON_RESPONSE_BYTES)
-            .with_context(|| format!("parse sync response from {url}"))
+            .map_err(|error| {
+                let error = mobile_sync_push_http_error(error);
+                sync_failure_log::record(
+                    "sync-request",
+                    &format!("{url} elapsed_ms={} error={error:#}", started.elapsed().as_millis()),
+                );
+                error
+            })?;
+        read_sync_response(&url, response, started)
     }
 }
 
@@ -567,6 +588,42 @@ fn mobile_sync_http_error(error: ureq::Error) -> anyhow::Error {
         }
         error => anyhow!("sync backend request failed: {error}"),
     }
+}
+
+fn record_request_failure(url: &str, started: std::time::Instant, error: ureq::Error) -> anyhow::Error {
+    let error = mobile_sync_http_error(error);
+    sync_failure_log::record(
+        "sync-request",
+        &format!("{url} elapsed_ms={} error={error:#}", started.elapsed().as_millis()),
+    );
+    error
+}
+
+/// Read a sync response body, and when that fails SAY WHY: the failure carries the
+/// status, encoding, length, timing and the underlying cause, and the same line is
+/// written to the durable sync-failure log.
+fn read_sync_response<T: serde::de::DeserializeOwned>(
+    url: &str,
+    response: ureq::Response,
+    started: std::time::Instant,
+) -> Result<T> {
+    let header = |name: &str| response.header(name).unwrap_or("-").to_string();
+    let meta = format!(
+        "status={} content-type={} content-encoding={} content-length={} cf-ray={}",
+        response.status(),
+        response.content_type(),
+        header("content-encoding"),
+        header("content-length"),
+        header("cf-ray"),
+    );
+    read_bounded_json(response.into_reader(), MAX_SYNC_JSON_RESPONSE_BYTES).map_err(|error| {
+        let elapsed_ms = started.elapsed().as_millis();
+        sync_failure_log::record(
+            "sync-response",
+            &format!("{url} {meta} elapsed_ms={elapsed_ms} error={error:#}"),
+        );
+        error.context(format!("parse sync response from {url} ({meta}, {elapsed_ms}ms)"))
+    })
 }
 
 fn read_bounded_json<T: serde::de::DeserializeOwned>(
@@ -967,5 +1024,44 @@ mod sync_api_base_tests {
         ));
         fs::create_dir_all(&path).unwrap();
         path
+    }
+    /// A server that promises a long gzip body and hangs up partway used to surface
+    /// as only "parse sync response from <url>". The cause and the response shape
+    /// must travel with the error.
+    #[test]
+    fn truncated_response_error_names_its_cause_and_response_shape() {
+        use std::io::Write;
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let server = std::thread::spawn(move || {
+            let (mut stream, _) = listener.accept().unwrap();
+            let mut request = [0u8; 4096];
+            let _ = std::io::Read::read(&mut stream, &mut request);
+            let mut encoder =
+                flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::default());
+            encoder.write_all(&vec![b'a'; 100_000]).unwrap();
+            let full = encoder.finish().unwrap();
+            let head = format!(
+                "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\ncontent-encoding: gzip\r\ncontent-length: {}\r\nconnection: close\r\n\r\n",
+                full.len()
+            );
+            stream.write_all(head.as_bytes()).unwrap();
+            stream.write_all(&full[..full.len() / 2]).unwrap();
+        });
+        let client = MobileSyncHttpClient::new_for_test(&format!("http://127.0.0.1:{port}"), "t");
+        let error = client
+            .post_json::<_, serde_json::Value>(
+                &format!("http://127.0.0.1:{port}/v1/sync/pull"),
+                &serde_json::json!({}),
+            )
+            .unwrap_err();
+        server.join().unwrap();
+        let message = format!("{error:#}");
+        assert!(message.contains("parse sync response from"), "{message}");
+        assert!(message.contains("status=200"), "{message}");
+        // ureq strips content-encoding/content-length once it decodes a gzip body,
+        // so the cause string is what tells a truncation from a timeout.
+        assert!(message.contains("read bounded JSON response"), "{message}");
+        assert!(message.contains("closed before all bytes"), "{message}");
     }
 }
