@@ -1064,4 +1064,59 @@ mod sync_api_base_tests {
         assert!(message.contains("read bounded JSON response"), "{message}");
         assert!(message.contains("closed before all bytes"), "{message}");
     }
+    /// Repro for the field failure "parse sync response from …/v1/sync/pull": a
+    /// full-size pull page (~11 MB of JSON) over a ~10 Mbps link takes ~9s, which the
+    /// old 8s OVERALL deadline cut off mid-body. Slow (~20s), so run on demand:
+    /// `cargo test -p knotq-mobile-core --features accounts -- --ignored slow_large_pull`
+    #[test]
+    #[ignore]
+    fn slow_large_pull_survives_the_overall_deadline() {
+        use std::io::Write;
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let server = std::thread::spawn(move || {
+            // Serve the same slow body twice: once per client under test.
+            for _ in 0..2 {
+                let (mut stream, _) = listener.accept().unwrap();
+                let mut request = [0u8; 8192];
+                let _ = std::io::Read::read(&mut stream, &mut request);
+                let pad = "A".repeat(11 * 1024 * 1024);
+                let body = format!("{{\"pad\":\"{pad}\"}}");
+                let head = format!(
+                    "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\ncontent-length: {}\r\nconnection: close\r\n\r\n",
+                    body.len()
+                );
+                if stream.write_all(head.as_bytes()).is_err() {
+                    continue;
+                }
+                for chunk in body.as_bytes().chunks(120 * 1024) {
+                    if stream.write_all(chunk).is_err() {
+                        break;
+                    }
+                    std::thread::sleep(std::time::Duration::from_millis(100));
+                }
+            }
+        });
+        let url = format!("http://127.0.0.1:{port}/v1/sync/pull");
+
+        // The configuration shipped in 1.3.3: default agent, 8s overall deadline.
+        let old = ureq::Agent::new()
+            .post(&url)
+            .timeout(std::time::Duration::from_secs(8))
+            .send_json(serde_json::json!({}))
+            .map_err(anyhow::Error::from)
+            .and_then(|r| {
+                super::read_bounded_json::<serde_json::Value>(
+                    r.into_reader(),
+                    super::MAX_SYNC_JSON_RESPONSE_BYTES,
+                )
+            });
+        let old_error = format!("{:#}", old.unwrap_err());
+        eprintln!("OLD CONFIG FAILED AS EXPECTED: {old_error}");
+
+        let new = MobileSyncHttpClient::new_for_test(&format!("http://127.0.0.1:{port}"), "t")
+            .post_json::<_, serde_json::Value>(&url, &serde_json::json!({}));
+        server.join().unwrap();
+        new.expect("the new deadline must let a slow but steady download finish");
+    }
 }
