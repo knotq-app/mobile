@@ -1018,7 +1018,7 @@
     <string name="web_account_billing_cancelled_google_until" translatable="false">Abonnementet ditt er avbestilt. Synk forblir aktivt til {date}. Aktiver det på nytt fra Google Play-abonnementene dine.</string>
     <string name="web_account_billing_cancelled_web_ends" translatable="false">Abonnementet ditt er avbestilt. Synk forblir aktivt til slutten av den nåværende perioden. Aktiver det på nytt fra denne siden for å fortsette fornyelsen.</string>
     <string name="web_account_billing_cancelled_web_until" translatable="false">Abonnementet ditt er avbestilt. Synk forblir aktivt til {date}. Aktiver det på nytt fra denne siden for å fortsette fornyelsen.</string>
-    <string name="web_account_billing_choose_plan" translatable="false">Velg månedlig eller årlig for å aktivere hoastet synk for denne kontoen.</string>
+    <string name="web_account_billing_choose_plan" translatable="false">1 måneds gratis prøveperiode</string>
     <string name="web_account_billing_managed_apple" translatable="false">Dette abonnementet administreres av Apple. Bruk Apple-kontoen din til å gjøre faktureringsendringer.</string>
     <string name="web_account_billing_managed_google" translatable="false">Dette abonnementet administreres av Google Play. Bruk Google Play-abonnementene dine til å gjøre faktureringsendringer.</string>
     <string name="web_account_billing_sync_active_no_sub" translatable="false">Synktilgang er aktivt for denne kontoen uten webabonnement.</string>
@@ -1501,7 +1501,7 @@
     <string name="web_home_sync_create_account" translatable="false">Opprett konto</string>
     <string name="web_home_sync_currency_note" translatable="false">Priser i USD</string>
     <string name="web_home_sync_eyebrow" translatable="false">Valgfri synkronisering</string>
-    <string name="web_home_sync_plan_note" formatted="false" translatable="false">eller $23,99 / år – spar 33%</string>
+    <string name="web_home_sync_plan_note" translatable="false">1 måneds gratis prøveperiode</string>
     <string name="web_home_sync_plan_period" translatable="false">/måned</string>
     <string name="web_home_sync_plan_subtitle" translatable="false">Synkronisering på tvers av enheter</string>
     <string name="web_home_sync_point1" translatable="false">Your workspace will follow you across devices</string>

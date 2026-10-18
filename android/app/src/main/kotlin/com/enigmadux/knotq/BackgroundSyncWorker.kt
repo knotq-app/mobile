@@ -252,3 +252,15 @@ internal fun enqueueOneTimeSync(context: Context) {
         KnotQWorkManager.enqueueUnique(context, "knotq-push-sync", ExistingWorkPolicy.KEEP, request)
     }
 }
+
+/// Like [enqueueOneTimeSync] but APPEND_OR_REPLACE-style: a notification action
+/// (Mark Done) must be pushed even when an earlier sync job is already running,
+/// because that job may have read the pending queue before the edit landed.
+/// Appending queues a fresh run behind it instead of being dropped (KEEP).
+internal fun enqueueActionSync(context: Context) {
+    if (!BuildConfig.ACCOUNTS_ENABLED) return
+    runCatching {
+        val request = OneTimeWorkRequest.Builder(BackgroundSyncWorker::class.java).build()
+        KnotQWorkManager.enqueueUnique(context, "knotq-action-sync", ExistingWorkPolicy.APPEND_OR_REPLACE, request)
+    }
+}

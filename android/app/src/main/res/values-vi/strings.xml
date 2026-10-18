@@ -1018,7 +1018,7 @@
     <string name="web_account_billing_cancelled_google_until" translatable="false">Đăng ký của bạn đã bị hủy. Đồng bộ vẫn hoạt động cho đến {date}. Kích hoạt lại từ những đăng ký Google Play của bạn.</string>
     <string name="web_account_billing_cancelled_web_ends" translatable="false">Đăng ký của bạn đã bị hủy. Đồng bộ vẫn hoạt động cho đến khi khoảng thời gian hiện tại kết thúc. Kích hoạt lại từ trang này để tiếp tục gia hạn.</string>
     <string name="web_account_billing_cancelled_web_until" translatable="false">Đăng ký của bạn đã bị hủy. Đồng bộ vẫn hoạt động cho đến {date}. Kích hoạt lại từ trang này để tiếp tục gia hạn.</string>
-    <string name="web_account_billing_choose_plan" translatable="false">Chọn hàng tháng hoặc hàng năm để bật đồng bộ được lưu trữ cho tài khoản này.</string>
+    <string name="web_account_billing_choose_plan" translatable="false">Dùng thử miễn phí 1 tháng</string>
     <string name="web_account_billing_managed_apple" translatable="false">Đăng ký này được quản lý bởi Apple. Sử dụng những đăng ký tài khoản Apple của bạn để thực hiện thay đổi thanh toán.</string>
     <string name="web_account_billing_managed_google" translatable="false">Đăng ký này được quản lý bởi Google Play. Sử dụng những đăng ký Google Play để thực hiện thay đổi thanh toán.</string>
     <string name="web_account_billing_sync_active_no_sub" translatable="false">Truy cập đồng bộ đang hoạt động cho tài khoản này mà không có đăng ký web.</string>
@@ -1501,7 +1501,7 @@
     <string name="web_home_sync_create_account" translatable="false">Tạo tài khoản</string>
     <string name="web_home_sync_currency_note" translatable="false">Giá được hiển thị bằng USD</string>
     <string name="web_home_sync_eyebrow" translatable="false">Đồng bộ hóa tùy chọn</string>
-    <string name="web_home_sync_plan_note" formatted="false" translatable="false">hoặc 23,99 USD / năm — tiết kiệm 33%</string>
+    <string name="web_home_sync_plan_note" translatable="false">Dùng thử miễn phí 1 tháng</string>
     <string name="web_home_sync_plan_period" translatable="false">/tháng</string>
     <string name="web_home_sync_plan_subtitle" translatable="false">Đồng bộ hóa trên nhiều thiết bị</string>
     <string name="web_home_sync_point1" translatable="false">Your workspace will follow you across devices</string>

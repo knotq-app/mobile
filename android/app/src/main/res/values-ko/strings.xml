@@ -1018,7 +1018,7 @@
     <string name="web_account_billing_cancelled_google_until" translatable="false">구독이 취소되었습니다. 동기화는 {date}까지 활성 상태입니다. Google Play 구독에서 다시 사용하도록 설정하세요.</string>
     <string name="web_account_billing_cancelled_web_ends" translatable="false">구독이 취소되었습니다. 동기화는 현재 기간이 끝날 때까지 활성 상태입니다. 이 페이지에서 다시 사용하도록 설정하여 계속 갱신하세요.</string>
     <string name="web_account_billing_cancelled_web_until" translatable="false">구독이 취소되었습니다. 동기화는 {date}까지 활성 상태입니다. 이 페이지에서 다시 사용하도록 설정하여 계속 갱신하세요.</string>
-    <string name="web_account_billing_choose_plan" translatable="false">월간 또는 연간을 선택하여 이 계정에서 호스팅된 동기화를 사용하도록 설정하세요.</string>
+    <string name="web_account_billing_choose_plan" translatable="false">1개월 무료 체험</string>
     <string name="web_account_billing_managed_apple" translatable="false">이 구독은 Apple에서 관리합니다. Apple 계정 구독을 사용하여 청구 변경을 하세요.</string>
     <string name="web_account_billing_managed_google" translatable="false">이 구독은 Google Play에서 관리합니다. Google Play 구독을 사용하여 청구 변경을 하세요.</string>
     <string name="web_account_billing_sync_active_no_sub" translatable="false">웹 구독 없이 이 계정에서 동기화 액세스가 활성입니다.</string>
@@ -1501,7 +1501,7 @@
     <string name="web_home_sync_create_account" translatable="false">계정 만들기</string>
     <string name="web_home_sync_currency_note" translatable="false">가격은 USD로 표시됩니다</string>
     <string name="web_home_sync_eyebrow" translatable="false">선택적 동기화</string>
-    <string name="web_home_sync_plan_note" formatted="false" translatable="false">또는 $23.99/년 — 33% 절약</string>
+    <string name="web_home_sync_plan_note" translatable="false">1개월 무료 체험</string>
     <string name="web_home_sync_plan_period" translatable="false">/월</string>
     <string name="web_home_sync_plan_subtitle" translatable="false">장치 간 동기화</string>
     <string name="web_home_sync_point1" translatable="false">Your workspace will follow you across devices</string>

@@ -49,27 +49,24 @@ final class MobileNotificationScheduler: NSObject, UNUserNotificationCenterDeleg
 
     /// Actions that arrived before `configure(model:)` wired up the app model.
     /// A cold launch straight into a notification action can deliver the response
-    /// before the SwiftUI scene has built `AppModel`; the old
-    /// `model?.handleNotificationAction(...)` optional-chained that away, silently
-    /// losing the user's tap (the item never got marked done at all).
-    @MainActor private var queuedActions: [MobileNotificationActionRequest] = []
+    /// before the SwiftUI scene has built `AppModel`. Each waits here (holding its
+    /// completion handler, so iOS keeps the process alive) and then runs the full
+    /// path — core write, background assertion and server push — once the model
+    /// exists. Queuing and returning instead let iOS suspend the process before the
+    /// push ever happened, so a cold-launch "Mark Done" only reached the server
+    /// when the user next opened the app.
+    @MainActor private var modelWaiters: [CheckedContinuation<AppModel, Never>] = []
 
     @MainActor
     func configure(model: AppModel) {
         self.model = model
         prepareForLaunch()
-        guard !queuedActions.isEmpty else { return }
-        let pending = queuedActions
-        queuedActions.removeAll()
+        let waiters = modelWaiters
+        modelWaiters.removeAll()
         // Deferred into a Task: `configure` is called from `AppModel.init`, so the
         // model is not fully constructed yet at this point.
         Task { @MainActor in
-            for request in pending {
-                let changed = await model.handleNotificationActionNow(request)
-                if changed, model.syncSession?.supportsSync == true {
-                    _ = await model.runBackgroundSync()
-                }
-            }
+            for waiter in waiters { waiter.resume(returning: model) }
         }
     }
 
@@ -87,33 +84,44 @@ final class MobileNotificationScheduler: NSObject, UNUserNotificationCenterDeleg
     /// rebuild, widget publish and badge update have all landed.
     @MainActor
     func applyAction(_ request: MobileNotificationActionRequest) async {
-        guard let model else {
-            queuedActions.append(request)
-            return
-        }
         // Marking done from the lock screen runs the app in the background, where
         // iOS suspends the process the moment the delegate reports completion.
-        // The assertion buys the time for the widget/badge publish that follows
-        // the core write; without it they stay stale until the next launch.
+        // The assertion buys the time for the widget/badge publish and the server
+        // push that follow the core write; without it they stay stale until the
+        // next launch. Taken before waiting for the model so a cold launch is
+        // covered too.
         var taskID = UIBackgroundTaskIdentifier.invalid
         taskID = UIApplication.shared.beginBackgroundTask(withName: "knotq.notification-action") {
             guard taskID != .invalid else { return }
             UIApplication.shared.endBackgroundTask(taskID)
             taskID = .invalid
         }
+        defer {
+            if taskID != .invalid {
+                UIApplication.shared.endBackgroundTask(taskID)
+                taskID = .invalid
+            }
+        }
+        let model: AppModel
+        if let ready = self.model {
+            model = ready
+        } else {
+            model = await withCheckedContinuation { modelWaiters.append($0) }
+        }
         let changed = await model.handleNotificationActionNow(request)
-        // Do not schedule this as a detached Task. Once the notification delegate
-        // calls its completion handler, iOS may suspend the process immediately,
-        // which previously made the server push a matter of luck. Keep the same
-        // background assertion through one bounded sync so a completed item is
-        // persisted locally first, then sent to entitled peers whenever possible.
-        if changed, model.syncSession?.supportsSync == true {
-            _ = await model.runBackgroundSync()
+        // Keep the same background assertion through one bounded sync so a
+        // completed item is persisted locally first, then sent to peers while we
+        // are still allowed to run.
+        guard changed, model.syncSession?.supportsSync == true else { return }
+        // A sync already in flight (30s poll, socket nudge) began before this edit
+        // and `runBackgroundSync` refuses to start a second one, which used to drop
+        // the push silently. Wait for it to finish, then send ours.
+        var waited = 0
+        while model.syncInProgress, waited < 40 {
+            try? await Task.sleep(nanoseconds: 250_000_000)
+            waited += 1
         }
-        if taskID != .invalid {
-            UIApplication.shared.endBackgroundTask(taskID)
-            taskID = .invalid
-        }
+        _ = await model.runBackgroundSync()
     }
 
     @MainActor

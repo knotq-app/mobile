@@ -1018,7 +1018,7 @@
     <string name="web_account_billing_cancelled_google_until" translatable="false">サブスクリプションがキャンセルされました。同期は{date}までアクティブのままです。Google Playサブスクリプションから再度有効にしてください。</string>
     <string name="web_account_billing_cancelled_web_ends" translatable="false">サブスクリプションがキャンセルされました。同期は現在の期間が終わるまでアクティブのままです。このページから再度有効にして、更新を続けてください。</string>
     <string name="web_account_billing_cancelled_web_until" translatable="false">サブスクリプションがキャンセルされました。同期は{date}までアクティブのままです。このページから再度有効にして、更新を続けてください。</string>
-    <string name="web_account_billing_choose_plan" translatable="false">月額または年額を選択して、このアカウントのホストされた同期を有効にしてください。</string>
+    <string name="web_account_billing_choose_plan" translatable="false">1か月無料トライアル</string>
     <string name="web_account_billing_managed_apple" translatable="false">このサブスクリプションはAppleによって管理されています。Apple Accountのサブスクリプションを使用して、請求を変更してください。</string>
     <string name="web_account_billing_managed_google" translatable="false">このサブスクリプションはGoogle Playによって管理されています。Google Playサブスクリプションを使用して、請求を変更してください。</string>
     <string name="web_account_billing_sync_active_no_sub" translatable="false">このアカウントのWebサブスクリプション無しで同期アクセスがアクティブです。</string>
@@ -1501,7 +1501,7 @@
     <string name="web_home_sync_create_account" translatable="false">アカウントを作成</string>
     <string name="web_home_sync_currency_note" translatable="false">価格はUSDで表示されます</string>
     <string name="web_home_sync_eyebrow" translatable="false">オプションの同期</string>
-    <string name="web_home_sync_plan_note" formatted="false" translatable="false">または$23.99/年 — 33%節約</string>
+    <string name="web_home_sync_plan_note" translatable="false">1か月無料トライアル</string>
     <string name="web_home_sync_plan_period" translatable="false">/月</string>
     <string name="web_home_sync_plan_subtitle" translatable="false">デバイス間同期</string>
     <string name="web_home_sync_point1" translatable="false">Your workspace will follow you across devices</string>

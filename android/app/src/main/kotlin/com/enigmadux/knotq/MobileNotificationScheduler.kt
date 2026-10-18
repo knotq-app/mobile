@@ -265,6 +265,9 @@ internal object MobileNotificationScheduler {
             .put("trigger_at", intent.getStringExtra(EXTRA_TRIGGER_AT).orEmpty())
         if (withCore(appContext) { it.request(body) } == null) return
         refreshFromCore(appContext)
+        // Push the completion to peers now rather than whenever the app is next
+        // opened, so their stale banners clear promptly.
+        enqueueActionSync(appContext)
         // The receiver mutated the core behind a live (but stopped) activity's
         // back. Without this the app still shows the item as pending when the
         // user returns to it — stale until a full restart.

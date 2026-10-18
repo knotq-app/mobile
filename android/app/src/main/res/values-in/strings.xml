@@ -1018,7 +1018,7 @@
     <string name="web_account_billing_cancelled_google_until" translatable="false">Langganan Anda dibatalkan. Sinkronisasi tetap aktif hingga {date}. Aktifkan kembali dari langganan Google Play Anda.</string>
     <string name="web_account_billing_cancelled_web_ends" translatable="false">Langganan Anda dibatalkan. Sinkronisasi tetap aktif hingga periode saat ini berakhir. Aktifkan kembali dari halaman ini untuk terus memperbarui.</string>
     <string name="web_account_billing_cancelled_web_until" translatable="false">Langganan Anda dibatalkan. Sinkronisasi tetap aktif hingga {date}. Aktifkan kembali dari halaman ini untuk terus memperbarui.</string>
-    <string name="web_account_billing_choose_plan" translatable="false">Pilih bulanan atau tahunan untuk mengaktifkan sinkronisasi tuan rumah untuk akun ini.</string>
+    <string name="web_account_billing_choose_plan" translatable="false">Uji coba gratis selama 1 bulan</string>
     <string name="web_account_billing_managed_apple" translatable="false">Langganan ini dikelola oleh Apple. Gunakan langganan akun Apple Anda untuk membuat perubahan penagihan.</string>
     <string name="web_account_billing_managed_google" translatable="false">Langganan ini dikelola oleh Google Play. Gunakan langganan Google Play untuk membuat perubahan penagihan.</string>
     <string name="web_account_billing_sync_active_no_sub" translatable="false">Akses sinkronisasi aktif untuk akun ini tanpa langganan web.</string>
@@ -1501,7 +1501,7 @@
     <string name="web_home_sync_create_account" translatable="false">Buat akun</string>
     <string name="web_home_sync_currency_note" translatable="false">Harga ditampilkan dalam USD</string>
     <string name="web_home_sync_eyebrow" translatable="false">Sinkronisasi opsional</string>
-    <string name="web_home_sync_plan_note" formatted="false" translatable="false">atau $23,99 / tahun — hemat 33%</string>
+    <string name="web_home_sync_plan_note" translatable="false">Uji coba gratis selama 1 bulan</string>
     <string name="web_home_sync_plan_period" translatable="false">/bulan</string>
     <string name="web_home_sync_plan_subtitle" translatable="false">Sinkronisasi lintas perangkat</string>
     <string name="web_home_sync_point1" translatable="false">Your workspace will follow you across devices</string>

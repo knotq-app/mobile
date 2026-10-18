@@ -1018,7 +1018,7 @@
     <string name="web_account_billing_cancelled_google_until" translatable="false">आपकी सदस्यता रद्द कर दी गई है। सिंक {date} तक सक्रिय रहता है। अपनी Google Play सदस्यता से इसे फिर से सक्षम करें।</string>
     <string name="web_account_billing_cancelled_web_ends" translatable="false">आपकी सदस्यता रद्द कर दी गई है। सिंक वर्तमान अवधि के अंत तक सक्रिय रहता है। नवीकरण जारी रखने के लिए इस पृष्ठ से इसे फिर से सक्षम करें।</string>
     <string name="web_account_billing_cancelled_web_until" translatable="false">आपकी सदस्यता रद्द कर दी गई है। सिंक {date} तक सक्रिय रहता है। नवीकरण जारी रखने के लिए इस पृष्ठ से इसे फिर से सक्षम करें।</string>
-    <string name="web_account_billing_choose_plan" translatable="false">इस खाते के लिए होस्ट की गई सिंक सक्षम करने के लिए मासिक या वार्षिक चुनें।</string>
+    <string name="web_account_billing_choose_plan" translatable="false">1 महीने का मुफ़्त परीक्षण</string>
     <string name="web_account_billing_managed_apple" translatable="false">यह सदस्यता Apple द्वारा प्रबंधित है। बिलिंग परिवर्तन करने के लिए अपने Apple खाते की सदस्यता का उपयोग करें।</string>
     <string name="web_account_billing_managed_google" translatable="false">यह सदस्यता Google Play द्वारा प्रबंधित है। बिलिंग परिवर्तन करने के लिए Google Play सदस्यता का उपयोग करें।</string>
     <string name="web_account_billing_sync_active_no_sub" translatable="false">इस खाते के लिए वेब सदस्यता के बिना सिंक एक्सेस सक्रिय है।</string>
@@ -1501,7 +1501,7 @@
     <string name="web_home_sync_create_account" translatable="false">खाता बनाएं</string>
     <string name="web_home_sync_currency_note" translatable="false">कीमतें USD में दिखाई गई हैं</string>
     <string name="web_home_sync_eyebrow" translatable="false">वैकल्पिक सिंक</string>
-    <string name="web_home_sync_plan_note" formatted="false" translatable="false">या $23.99 / वर्ष — 33% बचाएं</string>
+    <string name="web_home_sync_plan_note" translatable="false">1 महीने का मुफ़्त परीक्षण</string>
     <string name="web_home_sync_plan_period" translatable="false">/माह</string>
     <string name="web_home_sync_plan_subtitle" translatable="false">क्रॉस-डिवाइस सिंक</string>
     <string name="web_home_sync_point1" translatable="false">Your workspace will follow you across devices</string>

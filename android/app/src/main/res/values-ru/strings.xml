@@ -1018,7 +1018,7 @@
     <string name="web_account_billing_cancelled_google_until" translatable="false">Ваша подписка отменена. Синхронизация остаётся активной до {date}. Повторно включите её в подписках Google Play.</string>
     <string name="web_account_billing_cancelled_web_ends" translatable="false">Ваша подписка отменена. Синхронизация остаётся активной до конца текущего периода. Повторно включите её на этой странице, чтобы продолжить автоматическое продление.</string>
     <string name="web_account_billing_cancelled_web_until" translatable="false">Ваша подписка отменена. Синхронизация остаётся активной до {date}. Повторно включите её на этой странице, чтобы продолжить автоматическое продление.</string>
-    <string name="web_account_billing_choose_plan" translatable="false">Выберите ежемесячное или годовое планирование, чтобы включить размещённую синхронизацию для этой учётной записи.</string>
+    <string name="web_account_billing_choose_plan" translatable="false">1 месяц бесплатного пробного периода</string>
     <string name="web_account_billing_managed_apple" translatable="false">Эта подписка управляется Apple. Используйте подписки вашей учётной записи Apple для внесения изменений в выставление счётов.</string>
     <string name="web_account_billing_managed_google" translatable="false">Эта подписка управляется Google Play. Используйте подписки Google Play для внесения изменений в выставление счётов.</string>
     <string name="web_account_billing_sync_active_no_sub" translatable="false">Доступ синхронизации активен для этой учётной записи без веб-подписки.</string>
@@ -1501,7 +1501,7 @@
     <string name="web_home_sync_create_account" translatable="false">Создать учётную запись</string>
     <string name="web_home_sync_currency_note" translatable="false">Цены указаны в USD</string>
     <string name="web_home_sync_eyebrow" translatable="false">Дополнительная синхронизация</string>
-    <string name="web_home_sync_plan_note" formatted="false" translatable="false">или 23,99 доллара в год — экономия 33%</string>
+    <string name="web_home_sync_plan_note" translatable="false">1 месяц бесплатного пробного периода</string>
     <string name="web_home_sync_plan_period" translatable="false">в месяц</string>
     <string name="web_home_sync_plan_subtitle" translatable="false">Синхронизация между устройствами</string>
     <string name="web_home_sync_point1" translatable="false">Your workspace will follow you across devices</string>

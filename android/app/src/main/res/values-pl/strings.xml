@@ -1018,7 +1018,7 @@
     <string name="web_account_billing_cancelled_google_until" translatable="false">Twoja subskrypcja jest anulowana. Synchronizacja pozostaje aktywna do {date}. Włącz ją ponownie w swoich subskrypcjach Google Play.</string>
     <string name="web_account_billing_cancelled_web_ends" translatable="false">Twoja subskrypcja jest anulowana. Synchronizacja pozostaje aktywna do końca bieżącego okresu. Włącz ją ponownie z tej strony, aby kontynuować odnowienie.</string>
     <string name="web_account_billing_cancelled_web_until" translatable="false">Twoja subskrypcja jest anulowana. Synchronizacja pozostaje aktywna do {date}. Włącz ją ponownie z tej strony, aby kontynuować odnowienie.</string>
-    <string name="web_account_billing_choose_plan" translatable="false">Wybierz miesięczny lub roczny plan, aby włączyć synchronizację w chmurze dla tego konta.</string>
+    <string name="web_account_billing_choose_plan" translatable="false">1 miesiąc bezpłatnego okresu próbnego</string>
     <string name="web_account_billing_managed_apple" translatable="false">Ta subskrypcja jest zarządzana przez Apple. Użyj subskrypcji konta Apple, aby wprowadzić zmiany w rozliczeniach.</string>
     <string name="web_account_billing_managed_google" translatable="false">Ta subskrypcja jest zarządzana przez Google Play. Użyj subskrypcji Google Play, aby wprowadzić zmiany w rozliczeniach.</string>
     <string name="web_account_billing_sync_active_no_sub" translatable="false">Dostęp do synchronizacji jest aktywny dla tego konta bez internetowej subskrypcji.</string>
@@ -1114,8 +1114,8 @@
     <string name="web_account_plan_annual" translatable="false">Roczny</string>
     <string name="web_account_plan_monthly" translatable="false">Miesięczny</string>
     <string name="web_account_plan_save_badge" formatted="false" translatable="false">Oszczędź 33%</string>
-    <string name="web_account_price_annual" translatable="false">23,99 zł/rok</string>
-    <string name="web_account_price_monthly" translatable="false">2,99 zł/miesiąc</string>
+    <string name="web_account_price_annual" translatable="false">23,99 USD/rok</string>
+    <string name="web_account_price_monthly" translatable="false">2,99 USD/miesiąc</string>
     <string name="web_account_provider_apple" translatable="false">Apple App Store</string>
     <string name="web_account_provider_google" translatable="false">Google Play</string>
     <string name="web_account_provider_unknown" translatable="false">Dostawca nieznany</string>
@@ -1232,8 +1232,8 @@
     <string name="web_checkout_point_cancel_anytime" translatable="false">Anuluj w dowolnym momencie — Twoje dane zawsze pozostają lokalnie</string>
     <string name="web_checkout_point_schemes_stay_in_step" translatable="false">Schematy, kalendarz i multimedia pozostają na bieżąco</string>
     <string name="web_checkout_point_sync_workspace" translatable="false">Synchronizuj swoją przestrzeń roboczą i powiadomienia na urządzeniach mobilnych i komputerach</string>
-    <string name="web_checkout_price_annual" translatable="false">23,99 zł/rok</string>
-    <string name="web_checkout_price_monthly" translatable="false">2,99 zł/miesiąc</string>
+    <string name="web_checkout_price_annual" translatable="false">23,99 USD/rok</string>
+    <string name="web_checkout_price_monthly" translatable="false">2,99 USD/miesiąc</string>
     <string name="web_checkout_sync_title" translatable="false">KnotQ Synchronizacja</string>
     <string name="web_checkout_verify_gate_body" translatable="false">Potwierdź link weryfikacyjny, który wysłaliśmy na e-mail Twojego konta. Kasa zostaje zablokowana do czasu zweryfikowania adresu.</string>
     <string name="web_checkout_verify_gate_title" translatable="false">Zweryfikuj swój e-mail przed subskrypcją</string>
@@ -1501,7 +1501,7 @@
     <string name="web_home_sync_create_account" translatable="false">Utwórz konto</string>
     <string name="web_home_sync_currency_note" translatable="false">Ceny w USD</string>
     <string name="web_home_sync_eyebrow" translatable="false">Opcjonalna synchronizacja</string>
-    <string name="web_home_sync_plan_note" formatted="false" translatable="false">lub 23,99 USD / rok — oszczędź 33%</string>
+    <string name="web_home_sync_plan_note" translatable="false">1 miesiąc bezpłatnego okresu próbnego</string>
     <string name="web_home_sync_plan_period" translatable="false">/miesiąc</string>
     <string name="web_home_sync_plan_subtitle" translatable="false">Synchronizacja między urządzeniami</string>
     <string name="web_home_sync_point1" translatable="false">Your workspace will follow you across devices</string>

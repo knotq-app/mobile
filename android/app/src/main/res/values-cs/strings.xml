@@ -1018,7 +1018,7 @@
     <string name="web_account_billing_cancelled_google_until" translatable="false">Vaše předplatné je zrušeno. Synchronizace zůstane aktivní až do {date}. Znovu ji povolte z vašich předplatných Google Play.</string>
     <string name="web_account_billing_cancelled_web_ends" translatable="false">Vaše předplatné je zrušeno. Synchronizace zůstane aktivní až do konce aktuálního období. Znovu ji povolte z této stránky, aby se nadále obnovovala.</string>
     <string name="web_account_billing_cancelled_web_until" translatable="false">Vaše předplatné je zrušeno. Synchronizace zůstane aktivní až do {date}. Znovu ji povolte z této stránky, aby se nadále obnovovala.</string>
-    <string name="web_account_billing_choose_plan" translatable="false">Zvolte měsíční nebo roční odběr, abyste povolili hostovanou synchronizaci pro tento účet.</string>
+    <string name="web_account_billing_choose_plan" translatable="false">1 měsíc zdarma</string>
     <string name="web_account_billing_managed_apple" translatable="false">Toto předplatné je spravováno společností Apple. Chcete-li provést změny fakturace, použijte svůj účet Apple.</string>
     <string name="web_account_billing_managed_google" translatable="false">Toto předplatné je spravováno společností Google Play. Chcete-li provést změny fakturace, použijte Google Play.</string>
     <string name="web_account_billing_sync_active_no_sub" translatable="false">Přístup k synchronizaci je aktivní pro tento účet bez webového předplatného.</string>
@@ -1501,7 +1501,7 @@
     <string name="web_home_sync_create_account" translatable="false">Vytvořit účet</string>
     <string name="web_home_sync_currency_note" translatable="false">Ceny v USD</string>
     <string name="web_home_sync_eyebrow" translatable="false">Volitelná synchronizace</string>
-    <string name="web_home_sync_plan_note" formatted="false" translatable="false">nebo 23,99 USD/rok — ušetřete 33 %</string>
+    <string name="web_home_sync_plan_note" translatable="false">1 měsíc zdarma</string>
     <string name="web_home_sync_plan_period" translatable="false">/měsíc</string>
     <string name="web_home_sync_plan_subtitle" translatable="false">Synchronizace mezi zařízeními</string>
     <string name="web_home_sync_point1" translatable="false">Your workspace will follow you across devices</string>
