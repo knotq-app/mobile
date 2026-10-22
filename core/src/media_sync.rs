@@ -1061,6 +1061,11 @@ mod sync_api_base_tests {
             );
             stream.write_all(head.as_bytes()).unwrap();
             stream.write_all(&full[..full.len() / 2]).unwrap();
+            // Hang up cleanly: send FIN, then drain what the client sent. Dropping a
+            // socket with unread request bytes makes Linux send RST, and the client
+            // then sees "connection reset" instead of a truncated body.
+            let _ = stream.shutdown(std::net::Shutdown::Write);
+            let _ = std::io::copy(&mut stream, &mut std::io::sink());
         });
         let client = MobileSyncHttpClient::new_for_test(&format!("http://127.0.0.1:{port}"), "t");
         let error = client
