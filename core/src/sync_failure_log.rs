@@ -35,7 +35,9 @@ pub(crate) fn record(kind: &str, detail: &str) {
     let Some(path) = LOG_PATH.get() else {
         return;
     };
-    let _guard = WRITE_LOCK.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+    let _guard = WRITE_LOCK
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
     let line = format_entry(kind, detail);
     if std::fs::metadata(path).is_ok_and(|meta| meta.len() >= ROTATE_AT_BYTES) {
         let mut rotated = path.clone().into_os_string();

@@ -135,10 +135,7 @@ impl SyncTransport for FallbackTransport<'_> {
                         return Err(ws_server_pull_error(status, code))
                     }
                     Err(error) => {
-                        crate::sync_failure_log::record(
-                            "ws-pull-fallback",
-                            &format!("{error:?}"),
-                        );
+                        crate::sync_failure_log::record("ws-pull-fallback", &format!("{error:?}"));
                         // A suspended mobile process can retain a socket that
                         // still reports connected but no longer delivers replies.
                         // Stop it on the first transport failure so the owner can
@@ -164,10 +161,7 @@ impl SyncTransport for FallbackTransport<'_> {
                         return Err(ws_server_push_error(status, code))
                     }
                     Err(error) => {
-                        crate::sync_failure_log::record(
-                            "ws-push-fallback",
-                            &format!("{error:?}"),
-                        );
+                        crate::sync_failure_log::record("ws-push-fallback", &format!("{error:?}"));
                         if cfg!(debug_assertions) {
                             eprintln!("sync: websocket push failed; falling back to HTTP");
                         }

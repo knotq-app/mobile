@@ -17,7 +17,9 @@ use knotq_sync::{
 };
 use sha2::{Digest, Sha256};
 
-use crate::{sync_failure_log, mobile_notification_lead_times, MobileItemMedia, NOTIFICATION_HORIZON_DAYS};
+use crate::{
+    mobile_notification_lead_times, sync_failure_log, MobileItemMedia, NOTIFICATION_HORIZON_DAYS,
+};
 
 // Sync HTTP transport + media asset upload/download/collection glue for the
 // mobile core. None of these are part of the UniFFI surface.
@@ -293,7 +295,10 @@ impl SyncTransport for MobileSyncHttpClient {
                 let error = mobile_sync_push_http_error(error);
                 sync_failure_log::record(
                     "sync-request",
-                    &format!("{url} elapsed_ms={} error={error:#}", started.elapsed().as_millis()),
+                    &format!(
+                        "{url} elapsed_ms={} error={error:#}",
+                        started.elapsed().as_millis()
+                    ),
                 );
                 error
             })?;
@@ -590,11 +595,18 @@ fn mobile_sync_http_error(error: ureq::Error) -> anyhow::Error {
     }
 }
 
-fn record_request_failure(url: &str, started: std::time::Instant, error: ureq::Error) -> anyhow::Error {
+fn record_request_failure(
+    url: &str,
+    started: std::time::Instant,
+    error: ureq::Error,
+) -> anyhow::Error {
     let error = mobile_sync_http_error(error);
     sync_failure_log::record(
         "sync-request",
-        &format!("{url} elapsed_ms={} error={error:#}", started.elapsed().as_millis()),
+        &format!(
+            "{url} elapsed_ms={} error={error:#}",
+            started.elapsed().as_millis()
+        ),
     );
     error
 }
@@ -622,7 +634,9 @@ fn read_sync_response<T: serde::de::DeserializeOwned>(
             "sync-response",
             &format!("{url} {meta} elapsed_ms={elapsed_ms} error={error:#}"),
         );
-        error.context(format!("parse sync response from {url} ({meta}, {elapsed_ms}ms)"))
+        error.context(format!(
+            "parse sync response from {url} ({meta}, {elapsed_ms}ms)"
+        ))
     })
 }
 
