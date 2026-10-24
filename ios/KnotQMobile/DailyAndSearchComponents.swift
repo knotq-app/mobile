@@ -199,7 +199,26 @@ struct DailyDayEditorSection: View {
     @State private var localIsEmpty: Bool?
 
     private var effectiveIsEmpty: Bool { localIsEmpty ?? isEmpty }
-    private var isCarryoverCandidate: Bool { selected && effectiveIsEmpty }
+    // "Roll over" is only offered on a genuinely blank day. `effectiveIsEmpty`
+    // is the looser feed-visibility test (text/dates/media only), so a day that
+    // holds just a table, an empty checkbox/bullet or an indented blank line
+    // would look empty here while the core (and the editor) count it as content.
+    // Require the same strict placeholder test the core's carryover uses, and let
+    // the editor's live emptiness win once the user has edited.
+    private var isCarryoverCandidate: Bool {
+        selected && effectiveIsEmpty && (localIsEmpty == true || snapshotIsBlankPlaceholder)
+    }
+    private var snapshotIsBlankPlaceholder: Bool {
+        let items = entry.scheme.items
+        return items.isEmpty || (items.count == 1 && items.allSatisfy {
+            $0.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                && $0.marker == "blank"
+                && $0.indent == 0
+                && $0.start == nil && $0.end == nil && $0.repeatRule == nil
+                && $0.notificationOffsetSecs == nil
+                && $0.media.isEmpty && $0.tables.isEmpty
+        })
+    }
     private var showsTitle: Bool { !effectiveIsEmpty || selected }
 
     var body: some View {

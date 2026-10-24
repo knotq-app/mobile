@@ -131,6 +131,21 @@ enum EditorKeyboardHandoff {
     private static var field: UITextView?
     private static var observer: NSObjectProtocol?
     private static var timeout: DispatchWorkItem?
+    private static var strandedGuard: DispatchWorkItem?
+
+    /// How long the proxy may hold first responder before it is presumed
+    /// stranded. The proxy exists only to carry the keyboard across a push
+    /// (~0.5s) into an editor that takes it over; when nothing takes it — the
+    /// destination is read-only, never auto-focuses, or the push was abandoned —
+    /// it would otherwise sit invisibly as first responder with a toolbar whose
+    /// buttons are inert (its coordinator is gone) and a prediction bar feeding
+    /// a field nobody can see: the toolbar and autocomplete "just don't respond".
+    private static let strandedAfter: TimeInterval = 3
+
+    private static func cancelStrandedGuard() {
+        strandedGuard?.cancel()
+        strandedGuard = nil
+    }
 
     static func shouldPrepare(isKeyboardVisible: Bool, hasTextInput: Bool) -> Bool {
         !isKeyboardVisible && !hasTextInput
@@ -197,6 +212,9 @@ enum EditorKeyboardHandoff {
             return
         }
         field = next
+        let guardWork = DispatchWorkItem { MainActor.assumeIsolated { cancel() } }
+        strandedGuard = guardWork
+        DispatchQueue.main.asyncAfter(deadline: .now() + strandedAfter, execute: guardWork)
 
         let finish: @MainActor @Sendable () -> Void = {
             observer.map(NotificationCenter.default.removeObserver)
@@ -237,6 +255,7 @@ enum EditorKeyboardHandoff {
         case .title: accepted = editor.focusTitle()
         }
         guard accepted else { return false }
+        cancelStrandedGuard()
         field.removeFromSuperview()
         self.field = nil
         return true
@@ -247,6 +266,7 @@ enum EditorKeyboardHandoff {
     /// first responder would dismiss the keyboard the open just raised.
     static func discardIfNotFirstResponder() {
         guard let field, !field.isFirstResponder else { return }
+        cancelStrandedGuard()
         observer.map(NotificationCenter.default.removeObserver)
         observer = nil
         timeout?.cancel()
@@ -256,6 +276,7 @@ enum EditorKeyboardHandoff {
     }
 
     static func cancel() {
+        cancelStrandedGuard()
         observer.map(NotificationCenter.default.removeObserver)
         observer = nil
         timeout?.cancel()
