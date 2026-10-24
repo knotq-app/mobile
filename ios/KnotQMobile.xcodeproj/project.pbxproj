@@ -61,6 +61,7 @@
 		010000000000000000000034 /* ScheduleFormComponents.swift in Sources */ = {isa = PBXBuildFile; fileRef = 020000000000000000000034 /* ScheduleFormComponents.swift */; };
 		010000000000000000000035 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = 020000000000000000000035 /* PrivacyInfo.xcprivacy */; };
 		010000000000000000000036 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = 020000000000000000000036 /* PrivacyInfo.xcprivacy */; };
+		0100000000000000000000F1 /* DailyCarryoverButtonTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0200000000000000000000F1 /* DailyCarryoverButtonTests.swift */; };
 		010000000000000000000037 /* KeyboardAccessoryTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 020000000000000000000037 /* KeyboardAccessoryTests.swift */; };
 		010000000000000000000040 /* MarkerConcealmentTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 020000000000000000000040 /* MarkerConcealmentTests.swift */; };
 		010000000000000000000050 /* SchemeEditorLayoutManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 020000000000000000000050 /* SchemeEditorLayoutManager.swift */; };
@@ -193,6 +194,7 @@
 		020000000000000000000034 /* ScheduleFormComponents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScheduleFormComponents.swift; sourceTree = "<group>"; };
 		020000000000000000000035 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
 		020000000000000000000036 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
+		0200000000000000000000F1 /* DailyCarryoverButtonTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DailyCarryoverButtonTests.swift; sourceTree = "<group>"; };
 		020000000000000000000037 /* KeyboardAccessoryTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeyboardAccessoryTests.swift; sourceTree = "<group>"; };
 		020000000000000000000040 /* MarkerConcealmentTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MarkerConcealmentTests.swift; sourceTree = "<group>"; };
 		020000000000000000000041 /* KnotQMobileTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = KnotQMobileTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -393,6 +395,7 @@
 				020000000000000000000040 /* MarkerConcealmentTests.swift */,
 				02000000000000000000006F /* SchemeWriteTrackerTests.swift */,
 				020000000000000000000037 /* KeyboardAccessoryTests.swift */,
+				0200000000000000000000F1 /* DailyCarryoverButtonTests.swift */,
 				020000000000000000000031 /* SchemeWriteFlightTests.swift */,
 				020000000000000000000071 /* ScheduleTargetTests.swift */,
 				020000000000000000000072 /* RefreshFlightGateTests.swift */,
@@ -713,6 +716,7 @@
 				010000000000000000000040 /* MarkerConcealmentTests.swift in Sources */,
 				01000000000000000000001A /* SchemeWriteTrackerTests.swift in Sources */,
 				010000000000000000000037 /* KeyboardAccessoryTests.swift in Sources */,
+				0100000000000000000000F1 /* DailyCarryoverButtonTests.swift in Sources */,
 				01000000000000000000001B /* SchemeWriteFlightTests.swift in Sources */,
 				010000000000000000000071 /* ScheduleTargetTests.swift in Sources */,
 				010000000000000000000072 /* RefreshFlightGateTests.swift in Sources */,
