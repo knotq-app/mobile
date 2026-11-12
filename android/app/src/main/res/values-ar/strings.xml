@@ -1478,13 +1478,23 @@
     <string name="web_home_features_schemes_eyebrow" translatable="false">الخطط</string>
     <string name="web_home_features_schemes_image_alt" translatable="false">محرر خطة KnotQ يعرض وثيقة خريطة طريق المنتج مع المهام وخانات الاختيار ومنتقيات التاريخ المضمنة.</string>
     <string name="web_home_features_schemes_title" translatable="false">خططك تعيش كمستندات</string>
+    <string name="web_home_hero_chapter_calendar_body" translatable="false">انقر على أي خانة زمنية في التقويم.</string>
+    <string name="web_home_hero_chapter_calendar_title" translatable="false">أضف حدثًا في أي وقت من أسبوعك</string>
+    <string name="web_home_hero_chapter_daily_body" translatable="false">قسّم يومك إلى مهام صغيرة وأنجزها واحدة تلو الأخرى.</string>
+    <string name="web_home_hero_chapter_daily_title" translatable="false">الصف اليومي: صفحة جديدة كل يوم</string>
+    <string name="web_home_hero_chapter_mobile_body" translatable="false">مع أداة للشاشة الرئيسية.</string>
+    <string name="web_home_hero_chapter_mobile_title" translatable="false">على هاتفك أيضًا</string>
+    <string name="web_home_hero_chapter_schedule_body" translatable="false">اضغط {shortcut} على أي سطر في المستند.</string>
+    <string name="web_home_hero_chapter_schedule_title" translatable="false">اكتب سطرًا ثم حدّد له وقتًا</string>
     <string name="web_home_hero_download_cta" translatable="false">تنزيل</string>
     <string name="web_home_hero_eyebrow" translatable="false">التنظيم + التقويم</string>
+    <string name="web_home_hero_headline" translatable="false">الملاحظات والمهام والتقويم في مساحة عمل واحدة</string>
     <string name="web_home_hero_image_alt" translatable="false">تقويم KnotQ يعرض أسبوعًا مكتظًا بالفصول والاجتماعات والمهام المستحقة.</string>
     <string name="web_home_hero_lead" translatable="false">KnotQ يحول مستندات Markdown إلى جدول زمني مباشر.</string>
-    <string name="web_home_hero_meta" translatable="false">مجاني · iOS وAndroid وmacOS وWindows وLinux · مزامنة اختيارية متاحة يعمل</string>
+    <string name="web_home_hero_meta" translatable="false">iOS وAndroid وmacOS وWindows وLinux</string>
     <string name="web_home_hero_read_guide" translatable="false">اقرأ الدليل</string>
     <string name="web_home_hero_title" translatable="false">التذكيرات والمهام والأحداث والخطط في مساحة عمل واحدة</string>
+    <string name="web_home_hero_video_label" translatable="false">تسجيل شاشة لـ KnotQ: إضافة حدث في التقويم، وجدولة سطر في مستند، والصف اليومي.</string>
     <string name="web_home_meta_description" translatable="false">KnotQ مساحة عمل تخطيط محلية أولاً حيث تصبح الملاحظات المنظمة مهام وآجال نهائية وتذكيرات وأحداث تقويم.</string>
     <string name="web_home_meta_title" translatable="false">‏KnotQ: تقويم ومخطط تنظيمي</string>
     <string name="web_home_pitch_eyebrow" translatable="false">لماذا KnotQ</string>

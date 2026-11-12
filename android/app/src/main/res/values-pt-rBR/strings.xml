@@ -1478,13 +1478,23 @@
     <string name="web_home_features_schemes_eyebrow" translatable="false">Esquemas</string>
     <string name="web_home_features_schemes_image_alt" translatable="false">Editor de esquema do KnotQ mostrando um documento de roteiro de produto com tarefas, caixas de seleção e seletores de data em linha.</string>
     <string name="web_home_features_schemes_title" translatable="false">Seus planos existem como documentos</string>
+    <string name="web_home_hero_chapter_calendar_body" translatable="false">Clique em qualquer horário no calendário.</string>
+    <string name="web_home_hero_chapter_calendar_title" translatable="false">Adicione um evento em qualquer horário da semana</string>
+    <string name="web_home_hero_chapter_daily_body" translatable="false">Divida o dia em tarefas pequenas e marque cada uma ao concluir.</string>
+    <string name="web_home_hero_chapter_daily_title" translatable="false">Fila Diária: uma página nova todo dia</string>
+    <string name="web_home_hero_chapter_mobile_body" translatable="false">Inclui um widget para a tela de início.</string>
+    <string name="web_home_hero_chapter_mobile_title" translatable="false">No seu celular também</string>
+    <string name="web_home_hero_chapter_schedule_body" translatable="false">Pressione {shortcut} em qualquer linha de um documento.</string>
+    <string name="web_home_hero_chapter_schedule_title" translatable="false">Escreva uma linha e dê a ela um horário</string>
     <string name="web_home_hero_download_cta" translatable="false">Baixar</string>
     <string name="web_home_hero_eyebrow" translatable="false">Organização + Calendário</string>
+    <string name="web_home_hero_headline" translatable="false">Notas, tarefas e calendário em um só espaço de trabalho</string>
     <string name="web_home_hero_image_alt" translatable="false">Calendário do KnotQ mostrando uma semana lotada com aulas, reuniões e atribuições vencidas.</string>
     <string name="web_home_hero_lead" translatable="false">KnotQ transforma documentos markdown em um cronograma ao vivo.</string>
-    <string name="web_home_hero_meta" translatable="false">Grátis · iOS, Android, macOS, Windows, Linux · sincronização opcional disponível</string>
+    <string name="web_home_hero_meta" translatable="false">iOS, Android, macOS, Windows, Linux</string>
     <string name="web_home_hero_read_guide" translatable="false">Ler o guia</string>
     <string name="web_home_hero_title" translatable="false">Lembretes, Atribuições, Eventos e Planos em um workspace</string>
+    <string name="web_home_hero_video_label" translatable="false">Gravação de tela do KnotQ: adicionando um evento no calendário, agendando uma linha em um documento e a Fila Diária.</string>
     <string name="web_home_meta_description" translatable="false">KnotQ é um workspace de planejamento local primeiro onde notas estruturadas se tornam tarefas, prazos, lembretes e eventos de calendário.</string>
     <string name="web_home_meta_title" translatable="false">KnotQ: calendário e agenda de organização</string>
     <string name="web_home_pitch_eyebrow" translatable="false">Por que KnotQ</string>

@@ -1478,13 +1478,23 @@
     <string name="web_home_features_schemes_eyebrow" translatable="false">סכמות</string>
     <string name="web_home_features_schemes_image_alt" translatable="false">עורך סכמות KnotQ המציג מסמך מפת דרכים של מוצר עם משימות, תיבות סימון ובחירי תאריך ישירים.</string>
     <string name="web_home_features_schemes_title" translatable="false">התוכניות שלך חיות כמסמכים</string>
+    <string name="web_home_hero_chapter_calendar_body" translatable="false">לחצו על כל משבצת זמן בלוח השנה.</string>
+    <string name="web_home_hero_chapter_calendar_title" translatable="false">הוסיפו אירוע בכל מקום בשבוע</string>
+    <string name="web_home_hero_chapter_daily_body" translatable="false">פרקו את היום למשימות קטנות וסמנו אותן כשסיימתם.</string>
+    <string name="web_home_hero_chapter_daily_title" translatable="false">התור היומי: דף חדש בכל יום</string>
+    <string name="web_home_hero_chapter_mobile_body" translatable="false">כולל ווידג\'ט למסך הבית.</string>
+    <string name="web_home_hero_chapter_mobile_title" translatable="false">גם בטלפון שלכם</string>
+    <string name="web_home_hero_chapter_schedule_body" translatable="false">הקישו {shortcut} על כל שורה במסמך.</string>
+    <string name="web_home_hero_chapter_schedule_title" translatable="false">כתבו שורה ותנו לה שעה</string>
     <string name="web_home_hero_download_cta" translatable="false">הורד</string>
     <string name="web_home_hero_eyebrow" translatable="false">ארגון + לוח שנה</string>
+    <string name="web_home_hero_headline" translatable="false">הערות, משימות ולוח שנה בסביבת עבודה אחת</string>
     <string name="web_home_hero_image_alt" translatable="false">לוח שנה KnotQ המציג שבוע עמוס עם שיעורים, פגישות והקצאות בזכות.</string>
     <string name="web_home_hero_lead" translatable="false">KnotQ הופך מסמכי markdown ללוח זמנים חי.</string>
-    <string name="web_home_hero_meta" translatable="false">חינם · iOS, Android, macOS, Windows, Linux · סנכרון אופציונלי זמין</string>
+    <string name="web_home_hero_meta" translatable="false">iOS, Android, macOS, Windows, Linux</string>
     <string name="web_home_hero_read_guide" translatable="false">קרא את המדריך</string>
     <string name="web_home_hero_title" translatable="false">תזכורות, הקצאות, אירועים ותוכניות במרחב עבודה אחד</string>
+    <string name="web_home_hero_video_label" translatable="false">הקלטת מסך של KnotQ: הוספת אירוע ללוח השנה, תזמון שורה במסמך והתור היומי.</string>
     <string name="web_home_meta_description" translatable="false">KnotQ היא מרחב עבודה תכנון מקומי קדם שלו מסמכים מובנים הופכים משימות, דדליינים, תזכורות ופריטי לוח שנה.</string>
     <string name="web_home_meta_title" translatable="false">KnotQ: יומן ומתכנן ארגון</string>
     <string name="web_home_pitch_eyebrow" translatable="false">למה KnotQ</string>

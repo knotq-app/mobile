@@ -1478,13 +1478,23 @@
     <string name="web_home_features_schemes_eyebrow" translatable="false">Σχέδια</string>
     <string name="web_home_features_schemes_image_alt" translatable="false">Επεξεργαστής σχεδίων KnotQ που δείχνει ένα έγγραφο χάρτη δρόμων προϊόντος με εργασίες, πλαίσια ελέγχου και ενσωματωμένους επιλογείς ημερομηνίας.</string>
     <string name="web_home_features_schemes_title" translatable="false">Τα σχέδιά σας ζουν ως έγγραφα</string>
+    <string name="web_home_hero_chapter_calendar_body" translatable="false">Κάντε κλικ σε οποιοδήποτε χρονικό διάστημα στο ημερολόγιο.</string>
+    <string name="web_home_hero_chapter_calendar_title" translatable="false">Προσθέστε ένα συμβάν οπουδήποτε στην εβδομάδα σας</string>
+    <string name="web_home_hero_chapter_daily_body" translatable="false">Χωρίστε τη σημερινή μέρα σε μικρές εργασίες και τσεκάρετέ τες.</string>
+    <string name="web_home_hero_chapter_daily_title" translatable="false">Ημερήσια Ουρά: μια καινούργια σελίδα κάθε μέρα</string>
+    <string name="web_home_hero_chapter_mobile_body" translatable="false">Με widget για την αρχική οθόνη.</string>
+    <string name="web_home_hero_chapter_mobile_title" translatable="false">Και στο κινητό σας</string>
+    <string name="web_home_hero_chapter_schedule_body" translatable="false">Πατήστε {shortcut} σε οποιαδήποτε γραμμή ενός εγγράφου.</string>
+    <string name="web_home_hero_chapter_schedule_title" translatable="false">Γράψτε μια γραμμή και δώστε της μια ώρα</string>
     <string name="web_home_hero_download_cta" translatable="false">Λήψη</string>
     <string name="web_home_hero_eyebrow" translatable="false">Οργάνωση + Ημερολόγιο</string>
+    <string name="web_home_hero_headline" translatable="false">Σημειώσεις, εργασίες και ημερολόγιο σε έναν χώρο εργασίας</string>
     <string name="web_home_hero_image_alt" translatable="false">Ημερολόγιο KnotQ που δείχνει μια γεμάτη εβδομάδα με μαθήματα, συναντήσεις και αναθέσεις λήξης.</string>
     <string name="web_home_hero_lead" translatable="false">Το KnotQ μετατρέπει έγγραφα markdown σε ένα ζωντανό πρόγραμμα.</string>
-    <string name="web_home_hero_meta" translatable="false">· iOS, Android, macOS, Windows, Linux · διαθέσιμος προαιρετικός συγχρονισμός Το</string>
+    <string name="web_home_hero_meta" translatable="false">iOS, Android, macOS, Windows, Linux</string>
     <string name="web_home_hero_read_guide" translatable="false">Διαβάστε τον οδηγό</string>
     <string name="web_home_hero_title" translatable="false">Υπενθυμίσεις, Αναθέσεις, Γεγονότα και Σχέδια σε έναν χώρο εργασίας</string>
+    <string name="web_home_hero_video_label" translatable="false">Εγγραφή οθόνης του KnotQ: προσθήκη συμβάντος στο ημερολόγιο, προγραμματισμός γραμμής σε έγγραφο και η Ημερήσια Ουρά.</string>
     <string name="web_home_meta_description" translatable="false">Το KnotQ είναι ένας τοπικός χώρος εργασίας σχεδιασμού επιτραπέζιου υπολογιστή όπου δομημένες σημειώσεις γίνονται εργασίες, προθεσμίες, υπενθυμίσεις και γεγονότα ημερολογίου.</string>
     <string name="web_home_meta_title" translatable="false">KnotQ: ημερολόγιο και οργανωτής προγραμματισμού</string>
     <string name="web_home_pitch_eyebrow" translatable="false">Γιατί KnotQ</string>

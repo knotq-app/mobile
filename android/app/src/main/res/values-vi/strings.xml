@@ -1478,13 +1478,23 @@
     <string name="web_home_features_schemes_eyebrow" translatable="false">Lược đồ</string>
     <string name="web_home_features_schemes_image_alt" translatable="false">Trình soạn thảo lược đồ KnotQ hiển thị tài liệu lộ trình sản phẩm với các tác vụ, hộp kiểm và chọn ngày nội tuyến.</string>
     <string name="web_home_features_schemes_title" translatable="false">Các kế hoạch của bạn sống như tài liệu</string>
+    <string name="web_home_hero_chapter_calendar_body" translatable="false">Nhấp vào bất kỳ khung giờ nào trên lịch.</string>
+    <string name="web_home_hero_chapter_calendar_title" translatable="false">Thêm sự kiện vào bất kỳ đâu trong tuần</string>
+    <string name="web_home_hero_chapter_daily_body" translatable="false">Chia hôm nay thành những việc nhỏ và đánh dấu khi xong.</string>
+    <string name="web_home_hero_chapter_daily_title" translatable="false">Hàng đợi Hàng ngày: một trang mới mỗi ngày</string>
+    <string name="web_home_hero_chapter_mobile_body" translatable="false">Có tiện ích trên Màn hình chính.</string>
+    <string name="web_home_hero_chapter_mobile_title" translatable="false">Cả trên điện thoại</string>
+    <string name="web_home_hero_chapter_schedule_body" translatable="false">Nhấn {shortcut} trên bất kỳ dòng nào trong tài liệu.</string>
+    <string name="web_home_hero_chapter_schedule_title" translatable="false">Viết một dòng, rồi đặt giờ cho nó</string>
     <string name="web_home_hero_download_cta" translatable="false">Tải xuống</string>
     <string name="web_home_hero_eyebrow" translatable="false">Tổ chức + Lịch</string>
+    <string name="web_home_hero_headline" translatable="false">Ghi chú, công việc và lịch trong một không gian làm việc</string>
     <string name="web_home_hero_image_alt" translatable="false">Lịch KnotQ hiển thị một tuần bận rộn với các lớp học, cuộc họp và các bài tập đến hạn.</string>
     <string name="web_home_hero_lead" translatable="false">KnotQ chuyển tài liệu markdown thành lịch trực tiếp.</string>
-    <string name="web_home_hero_meta" translatable="false">miễn phí · iOS, Android, macOS, Windows, Linux · Đồng bộ hóa tùy chọn có sẵn</string>
+    <string name="web_home_hero_meta" translatable="false">iOS, Android, macOS, Windows, Linux</string>
     <string name="web_home_hero_read_guide" translatable="false">Đọc hướng dẫn</string>
     <string name="web_home_hero_title" translatable="false">Nhắc nhở, Bài tập, Sự kiện và Kế hoạch trong một không gian làm việc</string>
+    <string name="web_home_hero_video_label" translatable="false">Bản ghi màn hình KnotQ: thêm sự kiện vào lịch, lên lịch cho một dòng trong tài liệu và Hàng đợi Hàng ngày.</string>
     <string name="web_home_meta_description" translatable="false">KnotQ là một không gian làm việc lên kế hoạch cục bộ-trước tiên nơi các ghi chú có cấu trúc trở thành tác vụ, hạn chót, nhắc nhở và sự kiện lịch.</string>
     <string name="web_home_meta_title" translatable="false">KnotQ: lịch và trình lập kế hoạch tổ chức</string>
     <string name="web_home_pitch_eyebrow" translatable="false">Tại sao KnotQ</string>

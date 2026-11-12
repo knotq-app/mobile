@@ -1478,13 +1478,23 @@
     <string name="web_home_features_schemes_eyebrow" translatable="false">Şemalar</string>
     <string name="web_home_features_schemes_image_alt" translatable="false">Görevler, onay kutuları ve satır içi tarih seçicileri içeren bir ürün yol haritası belgesi gösteren KnotQ şema editörü.</string>
     <string name="web_home_features_schemes_title" translatable="false">Planlarınız Belgeler Olarak Yaşar</string>
+    <string name="web_home_hero_chapter_calendar_body" translatable="false">Takvimde herhangi bir zaman dilimine tıklayın.</string>
+    <string name="web_home_hero_chapter_calendar_title" translatable="false">Haftanın herhangi bir yerine etkinlik ekleyin</string>
+    <string name="web_home_hero_chapter_daily_body" translatable="false">Bugünü küçük görevlere bölün ve bitirdikçe işaretleyin.</string>
+    <string name="web_home_hero_chapter_daily_title" translatable="false">Günlük Kuyruk: her gün yeni bir sayfa</string>
+    <string name="web_home_hero_chapter_mobile_body" translatable="false">Ana Ekran widget\'ı dahil.</string>
+    <string name="web_home_hero_chapter_mobile_title" translatable="false">Telefonunuzda da</string>
+    <string name="web_home_hero_chapter_schedule_body" translatable="false">Bir belgedeki herhangi bir satırda {shortcut} tuşlarına basın.</string>
+    <string name="web_home_hero_chapter_schedule_title" translatable="false">Bir satır yazın, ardından ona bir saat verin</string>
     <string name="web_home_hero_download_cta" translatable="false">İndir</string>
     <string name="web_home_hero_eyebrow" translatable="false">Organizasyon + Takvim</string>
+    <string name="web_home_hero_headline" translatable="false">Notlar, görevler ve takvim tek bir çalışma alanında</string>
     <string name="web_home_hero_image_alt" translatable="false">Sınıflar, toplantılar ve vade ödevlerini içeren bir dolu hafta gösteren KnotQ takvimi.</string>
     <string name="web_home_hero_lead" translatable="false">KnotQ markdown belgelerini canlı bir programa dönüştürür.</string>
-    <string name="web_home_hero_meta" translatable="false">Ücretsiz · iOS, Android, macOS, Windows, Linux · isteğe bağlı senkronizasyon mevcuttur</string>
+    <string name="web_home_hero_meta" translatable="false">iOS, Android, macOS, Windows, Linux</string>
     <string name="web_home_hero_read_guide" translatable="false">Rehberi Oku</string>
     <string name="web_home_hero_title" translatable="false">Bir Çalışma Alanında Hatırlatıcılar, Ödevler, Etkinlikler ve Planlar</string>
+    <string name="web_home_hero_video_label" translatable="false">KnotQ ekran kaydı: takvime etkinlik ekleme, bir belgedeki satırı planlama ve Günlük Kuyruk.</string>
     <string name="web_home_meta_description" translatable="false">KnotQ, yapılandırılmış notların görevler, son tarihler, hatırlatıcılar ve takvim etkinlikleri haline geldiği yerel-ilk bir masaüstü planlama çalışma alanıdır.</string>
     <string name="web_home_meta_title" translatable="false">KnotQ: takvim ve organizasyon planlayıcı</string>
     <string name="web_home_pitch_eyebrow" translatable="false">Neden KnotQ</string>

@@ -1478,13 +1478,23 @@
     <string name="web_home_features_schemes_eyebrow" translatable="false">योजनाएं</string>
     <string name="web_home_features_schemes_image_alt" translatable="false">कार्य, चेकबॉक्स, और इनलाइन दिनांक पिकर के साथ एक उत्पाद रोडमैप दस्तावेज़ दिखाते हुए KnotQ योजना संपादक।</string>
     <string name="web_home_features_schemes_title" translatable="false">आपकी योजनाएं दस्तावेज़ के रूप में रहती हैं</string>
+    <string name="web_home_hero_chapter_calendar_body" translatable="false">कैलेंडर में किसी भी टाइम स्लॉट पर क्लिक करें।</string>
+    <string name="web_home_hero_chapter_calendar_title" translatable="false">अपने हफ़्ते में कहीं भी इवेंट जोड़ें</string>
+    <string name="web_home_hero_chapter_daily_body" translatable="false">आज के काम को छोटे टास्क में बाँटें और पूरा होने पर टिक करें।</string>
+    <string name="web_home_hero_chapter_daily_title" translatable="false">Daily Queue: हर दिन एक नया पेज</string>
+    <string name="web_home_hero_chapter_mobile_body" translatable="false">होम स्क्रीन विजेट के साथ।</string>
+    <string name="web_home_hero_chapter_mobile_title" translatable="false">आपके फ़ोन पर भी</string>
+    <string name="web_home_hero_chapter_schedule_body" translatable="false">किसी दस्तावेज़ की किसी भी लाइन पर {shortcut} दबाएँ।</string>
+    <string name="web_home_hero_chapter_schedule_title" translatable="false">एक लाइन लिखें, फिर उसे समय दें</string>
     <string name="web_home_hero_download_cta" translatable="false">डाउनलोड</string>
     <string name="web_home_hero_eyebrow" translatable="false">संगठन + कैलेंडर</string>
+    <string name="web_home_hero_headline" translatable="false">नोट्स, टास्क और कैलेंडर एक ही वर्कस्पेस में</string>
     <string name="web_home_hero_image_alt" translatable="false">कक्षाओं, बैठकों, और बकाया असाइनमेंट के साथ एक भरी हुई सप्ताह दिखाते हुए KnotQ कैलेंडर।</string>
     <string name="web_home_hero_lead" translatable="false">KnotQ मार्कडाउन दस्तावेज़ को लाइव शेड्यूल में बदल देता है।</string>
-    <string name="web_home_hero_meta" translatable="false">मुफ़्त · iOS, Android, macOS, Windows, Linux · वैकल्पिक सिंक उपलब्ध</string>
+    <string name="web_home_hero_meta" translatable="false">iOS, Android, macOS, Windows, Linux</string>
     <string name="web_home_hero_read_guide" translatable="false">गाइड पढ़ें</string>
     <string name="web_home_hero_title" translatable="false">एक वर्कस्पेस में रिमाइंडर, असाइनमेंट, इवेंट, और योजनाएं</string>
+    <string name="web_home_hero_video_label" translatable="false">KnotQ की स्क्रीन रिकॉर्डिंग: कैलेंडर में इवेंट जोड़ना, दस्तावेज़ में एक लाइन शेड्यूल करना, और Daily Queue।</string>
     <string name="web_home_meta_description" translatable="false">KnotQ एक स्थानीय-प्रथम डेस्कटॉप योजना वर्कस्पेस है जहां संरचित नोट्स कार्य, समय सीमा, रिमाइंडर, और कैलेंडर इवेंट बन जाते हैं।</string>
     <string name="web_home_meta_title" translatable="false">KnotQ: कैलेंडर और संगठन प्लानर</string>
     <string name="web_home_pitch_eyebrow" translatable="false">KnotQ क्यों</string>

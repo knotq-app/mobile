@@ -1478,13 +1478,23 @@
     <string name="web_home_features_schemes_eyebrow" translatable="false">Sémák</string>
     <string name="web_home_features_schemes_image_alt" translatable="false">KnotQ séma szerkesztõ egy termékmérföld-térkép dokumentumot mutat feladatokkal, jelölõnégyzetekkel és soron belüli dátumválasztókkal.</string>
     <string name="web_home_features_schemes_title" translatable="false">Az Ön tervei dokumentumokként élnek</string>
+    <string name="web_home_hero_chapter_calendar_body" translatable="false">Kattintson bármelyik idősávra a naptárban.</string>
+    <string name="web_home_hero_chapter_calendar_title" translatable="false">Adjon hozzá eseményt bárhová a hetében</string>
+    <string name="web_home_hero_chapter_daily_body" translatable="false">Bontsa a mai napot apró feladatokra, és pipálja ki őket.</string>
+    <string name="web_home_hero_chapter_daily_title" translatable="false">Napi sor: minden nap egy új oldal</string>
+    <string name="web_home_hero_chapter_mobile_body" translatable="false">Kezdőképernyő-widgettel.</string>
+    <string name="web_home_hero_chapter_mobile_title" translatable="false">A telefonján is</string>
+    <string name="web_home_hero_chapter_schedule_body" translatable="false">Nyomja meg a(z) {shortcut} billentyűt egy dokumentum bármely során.</string>
+    <string name="web_home_hero_chapter_schedule_title" translatable="false">Írjon egy sort, majd adjon meg hozzá időpontot</string>
     <string name="web_home_hero_download_cta" translatable="false">Letöltés</string>
     <string name="web_home_hero_eyebrow" translatable="false">Szervezés + Naptár</string>
+    <string name="web_home_hero_headline" translatable="false">Jegyzetek, feladatok és naptár egy munkaterületen</string>
     <string name="web_home_hero_image_alt" translatable="false">KnotQ naptár egy zsúfolt hetet mutat osztályokkal, értekezletekkel és határidõs feladatokkal.</string>
     <string name="web_home_hero_lead" translatable="false">A KnotQ markdown dokumentumokat élõ ütemezésre alakít.</string>
-    <string name="web_home_hero_meta" translatable="false">ingyenes · iOS, Android, macOS, Windows, Linux · opcionális szinkronizálás elérhető A</string>
+    <string name="web_home_hero_meta" translatable="false">iOS, Android, macOS, Windows, Linux</string>
     <string name="web_home_hero_read_guide" translatable="false">Az útmutató elolvasása</string>
     <string name="web_home_hero_title" translatable="false">Emlékeztetõk, feladatok, események és tervek egy munkahelyen</string>
+    <string name="web_home_hero_video_label" translatable="false">Képernyőfelvétel a KnotQ-ról: esemény hozzáadása a naptárhoz, egy sor ütemezése egy dokumentumban és a Napi sor.</string>
     <string name="web_home_meta_description" translatable="false">A KnotQ egy helyi-elsõ asztali tervezési munkahely, ahol strukturált jegyzetekbõl feladatok, határidõk, emlékeztetõk és naptári események válnak.</string>
     <string name="web_home_meta_title" translatable="false">KnotQ: naptár és szervezési tervező</string>
     <string name="web_home_pitch_eyebrow" translatable="false">Miért KnotQ</string>

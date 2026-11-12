@@ -1478,13 +1478,23 @@
     <string name="web_home_features_schemes_eyebrow" translatable="false">Skema</string>
     <string name="web_home_features_schemes_image_alt" translatable="false">Editor skema KnotQ menampilkan dokumen roadmap produk dengan tugas, kotak centang, dan pemilih tanggal sebaris.</string>
     <string name="web_home_features_schemes_title" translatable="false">Rencana Anda hidup sebagai dokumen</string>
+    <string name="web_home_hero_chapter_calendar_body" translatable="false">Klik slot waktu mana pun di kalender.</string>
+    <string name="web_home_hero_chapter_calendar_title" translatable="false">Tambahkan acara di mana saja dalam minggu Anda</string>
+    <string name="web_home_hero_chapter_daily_body" translatable="false">Pecah hari ini menjadi tugas kecil dan centang satu per satu.</string>
+    <string name="web_home_hero_chapter_daily_title" translatable="false">Antrean Harian: halaman baru setiap hari</string>
+    <string name="web_home_hero_chapter_mobile_body" translatable="false">Dilengkapi widget Layar Utama.</string>
+    <string name="web_home_hero_chapter_mobile_title" translatable="false">Juga di ponsel Anda</string>
+    <string name="web_home_hero_chapter_schedule_body" translatable="false">Tekan {shortcut} pada baris mana pun di dokumen.</string>
+    <string name="web_home_hero_chapter_schedule_title" translatable="false">Tulis satu baris, lalu beri waktu</string>
     <string name="web_home_hero_download_cta" translatable="false">Unduh</string>
     <string name="web_home_hero_eyebrow" translatable="false">Organisasi + Kalender</string>
+    <string name="web_home_hero_headline" translatable="false">Catatan, tugas, dan kalender dalam satu ruang kerja</string>
     <string name="web_home_hero_image_alt" translatable="false">Kalender KnotQ menampilkan minggu yang padat dengan kelas, pertemuan, dan tugas yang jatuh tempo.</string>
     <string name="web_home_hero_lead" translatable="false">KnotQ mengubah dokumen markdown menjadi jadwal langsung.</string>
-    <string name="web_home_hero_meta" translatable="false">Gratis · iOS, Android, macOS, Windows, Linux · sinkronisasi opsional tersedia</string>
+    <string name="web_home_hero_meta" translatable="false">iOS, Android, macOS, Windows, Linux</string>
     <string name="web_home_hero_read_guide" translatable="false">Baca panduan</string>
     <string name="web_home_hero_title" translatable="false">Pengingat, Penugasan, Acara, dan Rencana dalam satu ruang kerja</string>
+    <string name="web_home_hero_video_label" translatable="false">Rekaman layar KnotQ: menambahkan acara di kalender, menjadwalkan baris di dokumen, dan Antrean Harian.</string>
     <string name="web_home_meta_description" translatable="false">KnotQ adalah ruang kerja perencanaan desktop lokal-pertama di mana catatan terstruktur menjadi tugas, tenggat waktu, pengingat, dan acara kalender.</string>
     <string name="web_home_meta_title" translatable="false">KnotQ: kalender dan perencana organisasi</string>
     <string name="web_home_pitch_eyebrow" translatable="false">Mengapa KnotQ</string>
