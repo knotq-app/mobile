@@ -1498,13 +1498,23 @@
     <string name="web_home_features_widget_eyebrow" translatable="false">Widget</string>
     <string name="web_home_features_widget_image_alt" translatable="false">KnotQ Upcoming widget on an iPhone Home Screen showing colour-coded events and assignments.</string>
     <string name="web_home_features_widget_title" translatable="false">What’s next, on your Home Screen</string>
+    <string name="web_home_hero_chapter_calendar_body" translatable="false">Click any time slot on the calendar.</string>
+    <string name="web_home_hero_chapter_calendar_title" translatable="false">Add an event anywhere in your week</string>
+    <string name="web_home_hero_chapter_daily_body" translatable="false">Break today into small tasks and check them off.</string>
+    <string name="web_home_hero_chapter_daily_title" translatable="false">Daily Queue: a fresh page every day</string>
+    <string name="web_home_hero_chapter_mobile_body" translatable="false">Includes a Home Screen widget.</string>
+    <string name="web_home_hero_chapter_mobile_title" translatable="false">On your phone too</string>
+    <string name="web_home_hero_chapter_schedule_body" translatable="false">Press {shortcut} on any line in a document.</string>
+    <string name="web_home_hero_chapter_schedule_title" translatable="false">Write a line, then give it a time</string>
     <string name="web_home_hero_download_cta" translatable="false">Download</string>
     <string name="web_home_hero_eyebrow" translatable="false">Organization + Calendar</string>
+    <string name="web_home_hero_headline" translatable="false">Notes, tasks, and calendar in one workspace</string>
     <string name="web_home_hero_image_alt" translatable="false">KnotQ calendar showing a packed week with classes, meetings, and due assignments.</string>
     <string name="web_home_hero_lead" translatable="false">KnotQ turns markdown documents into a live schedule.</string>
-    <string name="web_home_hero_meta" translatable="false">Free · iOS, Android, macOS, Windows, Linux · optional sync available</string>
+    <string name="web_home_hero_meta" translatable="false">iOS, Android, macOS, Windows, Linux</string>
     <string name="web_home_hero_read_guide" translatable="false">Read the guide</string>
     <string name="web_home_hero_title" translatable="false">Reminders, Assignments, Events, and Plans in one workspace</string>
+    <string name="web_home_hero_video_label" translatable="false">Screen recording of KnotQ: adding an event on the calendar, scheduling a line in a document, and the Daily Queue.</string>
     <string name="web_home_meta_description" translatable="false">KnotQ is a local-first desktop planning workspace where structured notes become tasks, deadlines, reminders, and calendar events.</string>
     <string name="web_home_meta_title" translatable="false">KnotQ: Calendar + Organization Planner</string>
     <string name="web_home_overview_ai_body" translatable="false">Connect KnotQ to AI tools with control over how your workspace is shared.</string>

@@ -1478,13 +1478,23 @@
     <string name="web_home_features_schemes_eyebrow" translatable="false">Schémy</string>
     <string name="web_home_features_schemes_image_alt" translatable="false">Editor schém KnotQ zobrazujúci dokument mapy produktov s úlohami, zaškrtávacími políčkami a vpísanými výberačmi dátumov.</string>
     <string name="web_home_features_schemes_title" translatable="false">Vaše plány žijú ako dokumenty</string>
+    <string name="web_home_hero_chapter_calendar_body" translatable="false">Kliknite na ľubovoľný časový úsek v kalendári.</string>
+    <string name="web_home_hero_chapter_calendar_title" translatable="false">Pridajte udalosť kamkoľvek do svojho týždňa</string>
+    <string name="web_home_hero_chapter_daily_body" translatable="false">Rozdeľte dnešok na malé úlohy a odškrtávajte ich.</string>
+    <string name="web_home_hero_chapter_daily_title" translatable="false">Denná fronta: každý deň nová stránka</string>
+    <string name="web_home_hero_chapter_mobile_body" translatable="false">Vrátane widgetu na plochu.</string>
+    <string name="web_home_hero_chapter_mobile_title" translatable="false">Aj vo vašom telefóne</string>
+    <string name="web_home_hero_chapter_schedule_body" translatable="false">Na ľubovoľnom riadku dokumentu stlačte {shortcut}.</string>
+    <string name="web_home_hero_chapter_schedule_title" translatable="false">Napíšte riadok a priraďte mu čas</string>
     <string name="web_home_hero_download_cta" translatable="false">Stiahnuť</string>
     <string name="web_home_hero_eyebrow" translatable="false">Organizácia + kalendár</string>
+    <string name="web_home_hero_headline" translatable="false">Poznámky, úlohy a kalendár v jednom pracovnom priestore</string>
     <string name="web_home_hero_image_alt" translatable="false">Kalendár KnotQ zobrazujúci napitý týždeň s triedami, stretnutiami a vynútenými úlohami.</string>
     <string name="web_home_hero_lead" translatable="false">KnotQ zmení dokumenty markdown na živý rozvrh.</string>
-    <string name="web_home_hero_meta" translatable="false">Free · iOS, Android, macOS, Windows, Linux · dostupná voliteľná synchronizácia</string>
+    <string name="web_home_hero_meta" translatable="false">iOS, Android, macOS, Windows, Linux</string>
     <string name="web_home_hero_read_guide" translatable="false">Čítajte sprievodcu</string>
     <string name="web_home_hero_title" translatable="false">Pripomienky, úlohy, udalosti a plány v jednom pracovnom priestore</string>
+    <string name="web_home_hero_video_label" translatable="false">Záznam obrazovky KnotQ: pridanie udalosti do kalendára, naplánovanie riadka v dokumente a Denná fronta.</string>
     <string name="web_home_meta_description" translatable="false">KnotQ je pracovný priestor plánovania s miestnym prioritou, kde sa štruktúrované poznámky stávajú úlohami, termínmi, pripomienkami a položkami kalendára.</string>
     <string name="web_home_meta_title" translatable="false">KnotQ: kalendár a plánovač organizácie</string>
     <string name="web_home_pitch_eyebrow" translatable="false">Prečo KnotQ</string>

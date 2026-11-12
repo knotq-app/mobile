@@ -1478,13 +1478,23 @@
     <string name="web_home_features_schemes_eyebrow" translatable="false">Schema\'s</string>
     <string name="web_home_features_schemes_image_alt" translatable="false">KnotQ-schema-editor met een productroadsmapdocument met taken, selectievakjes en inline datumkiezers.</string>
     <string name="web_home_features_schemes_title" translatable="false">Je plannen bestaan als documenten</string>
+    <string name="web_home_hero_chapter_calendar_body" translatable="false">Klik op een willekeurig tijdvak in de agenda.</string>
+    <string name="web_home_hero_chapter_calendar_title" translatable="false">Voeg overal in je week een afspraak toe</string>
+    <string name="web_home_hero_chapter_daily_body" translatable="false">Verdeel vandaag in kleine taken en vink ze af.</string>
+    <string name="web_home_hero_chapter_daily_title" translatable="false">Daily Queue: elke dag een nieuwe pagina</string>
+    <string name="web_home_hero_chapter_mobile_body" translatable="false">Met een widget voor je beginscherm.</string>
+    <string name="web_home_hero_chapter_mobile_title" translatable="false">Ook op je telefoon</string>
+    <string name="web_home_hero_chapter_schedule_body" translatable="false">Druk op {shortcut} op een regel in een document.</string>
+    <string name="web_home_hero_chapter_schedule_title" translatable="false">Schrijf een regel en geef hem een tijd</string>
     <string name="web_home_hero_download_cta" translatable="false">Download</string>
     <string name="web_home_hero_eyebrow" translatable="false">Organisatie + Agenda</string>
+    <string name="web_home_hero_headline" translatable="false">Notities, taken en agenda in één werkruimte</string>
     <string name="web_home_hero_image_alt" translatable="false">KnotQ-agenda met een drukke week met lessen, vergaderingen en vervallen taken.</string>
     <string name="web_home_hero_lead" translatable="false">KnotQ verandert markdown-documenten in een live agenda.</string>
-    <string name="web_home_hero_meta" translatable="false">Gratis · iOS, Android, macOS, Windows, Linux · optionele synchronisatie beschikbaar</string>
+    <string name="web_home_hero_meta" translatable="false">iOS, Android, macOS, Windows, Linux</string>
     <string name="web_home_hero_read_guide" translatable="false">Lees de gids</string>
     <string name="web_home_hero_title" translatable="false">Herinneringen, Taken, Evenementen en Plannen in één werkruimte</string>
+    <string name="web_home_hero_video_label" translatable="false">Schermopname van KnotQ: een afspraak toevoegen in de agenda, een regel in een document inplannen en de Daily Queue.</string>
     <string name="web_home_meta_description" translatable="false">KnotQ is een desktop-planningswerkruimte die eerst lokaal werkt, waar gestructureerde notities taken, deadlines, herinneringen en agendagebeurtenissen worden.</string>
     <string name="web_home_meta_title" translatable="false">KnotQ: agenda- en organisatieplanner</string>
     <string name="web_home_pitch_eyebrow" translatable="false">Waarom KnotQ</string>

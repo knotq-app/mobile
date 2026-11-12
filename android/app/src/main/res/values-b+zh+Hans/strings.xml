@@ -1478,13 +1478,23 @@
     <string name="web_home_features_schemes_eyebrow" translatable="false">方案</string>
     <string name="web_home_features_schemes_image_alt" translatable="false">KnotQ 方案编辑器显示包含任务、复选框和内联日期选择器的产品路线图文档。</string>
     <string name="web_home_features_schemes_title" translatable="false">您的计划以文档的形式存在</string>
+    <string name="web_home_hero_chapter_calendar_body" translatable="false">点击日历上的任意时间段。</string>
+    <string name="web_home_hero_chapter_calendar_title" translatable="false">在一周的任意时间添加事件</string>
+    <string name="web_home_hero_chapter_daily_body" translatable="false">把今天拆成小任务，完成一项勾一项。</string>
+    <string name="web_home_hero_chapter_daily_title" translatable="false">日常队列：每天一张新页面</string>
+    <string name="web_home_hero_chapter_mobile_body" translatable="false">还有主屏幕小组件。</string>
+    <string name="web_home_hero_chapter_mobile_title" translatable="false">手机上也能用</string>
+    <string name="web_home_hero_chapter_schedule_body" translatable="false">在文档的任意一行按下 {shortcut}。</string>
+    <string name="web_home_hero_chapter_schedule_title" translatable="false">写下一行，再给它一个时间</string>
     <string name="web_home_hero_download_cta" translatable="false">下载</string>
     <string name="web_home_hero_eyebrow" translatable="false">组织 + 日历</string>
+    <string name="web_home_hero_headline" translatable="false">笔记、任务和日历，集中在一个工作区</string>
     <string name="web_home_hero_image_alt" translatable="false">KnotQ 日历显示充满课程、会议和截止分配的一周。</string>
     <string name="web_home_hero_lead" translatable="false">KnotQ 将 markdown 文档转换为实时日程。</string>
-    <string name="web_home_hero_meta" translatable="false">免费 · iOS、Android、macOS、Windows、Linux · 可选同步可用</string>
+    <string name="web_home_hero_meta" translatable="false">iOS、Android、macOS、Windows、Linux</string>
     <string name="web_home_hero_read_guide" translatable="false">阅读指南</string>
     <string name="web_home_hero_title" translatable="false">提醒、分配、事件和计划在一个工作区中</string>
+    <string name="web_home_hero_video_label" translatable="false">KnotQ 屏幕录像：在日历中添加事件、为文档中的一行安排时间，以及日常队列。</string>
     <string name="web_home_meta_description" translatable="false">KnotQ 是一个本地优先的桌面规划工作区，其中结构化笔记变成任务、截止日期、提醒和日历事件。</string>
     <string name="web_home_meta_title" translatable="false">KnotQ：日历与整理规划工具</string>
     <string name="web_home_pitch_eyebrow" translatable="false">为什么选择 KnotQ</string>

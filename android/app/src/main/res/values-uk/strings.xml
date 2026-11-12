@@ -1478,13 +1478,23 @@
     <string name="web_home_features_schemes_eyebrow" translatable="false">Схеми</string>
     <string name="web_home_features_schemes_image_alt" translatable="false">Редактор схем KnotQ, що показує документ дорожної карти продукту з завданнями, прапорцями та вбудованими відбірниками дати.</string>
     <string name="web_home_features_schemes_title" translatable="false">Ваші плани живуть як документи</string>
+    <string name="web_home_hero_chapter_calendar_body" translatable="false">Натисніть будь-який часовий проміжок у календарі.</string>
+    <string name="web_home_hero_chapter_calendar_title" translatable="false">Додавайте подію в будь-який час тижня</string>
+    <string name="web_home_hero_chapter_daily_body" translatable="false">Розбийте день на невеликі завдання й позначайте їх виконаними.</string>
+    <string name="web_home_hero_chapter_daily_title" translatable="false">Щоденна черга: щодня нова сторінка</string>
+    <string name="web_home_hero_chapter_mobile_body" translatable="false">З віджетом для головного екрана.</string>
+    <string name="web_home_hero_chapter_mobile_title" translatable="false">І на телефоні</string>
+    <string name="web_home_hero_chapter_schedule_body" translatable="false">Натисніть {shortcut} на будь-якому рядку документа.</string>
+    <string name="web_home_hero_chapter_schedule_title" translatable="false">Напишіть рядок і призначте йому час</string>
     <string name="web_home_hero_download_cta" translatable="false">Завантажити</string>
     <string name="web_home_hero_eyebrow" translatable="false">Організація + календар</string>
+    <string name="web_home_hero_headline" translatable="false">Нотатки, завдання й календар в одному робочому просторі</string>
     <string name="web_home_hero_image_alt" translatable="false">Календар KnotQ з розташованим тижнем, що показує класи, зустрічі та дуже закінчувані завдання.</string>
     <string name="web_home_hero_lead" translatable="false">KnotQ перетворює документи markdown на живий розклад.</string>
-    <string name="web_home_hero_meta" translatable="false">Безкоштовно · iOS, Android, macOS, Windows, Linux · доступна опціональна синхронізація</string>
+    <string name="web_home_hero_meta" translatable="false">iOS, Android, macOS, Windows, Linux</string>
     <string name="web_home_hero_read_guide" translatable="false">Прочитайте посібник</string>
     <string name="web_home_hero_title" translatable="false">Нагадування, завдання, события та плани в одному робочому просторі</string>
+    <string name="web_home_hero_video_label" translatable="false">Запис екрана KnotQ: додавання події в календар, планування рядка в документі та Щоденна черга.</string>
     <string name="web_home_meta_description" translatable="false">KnotQ — це локальний робочий простір планування, де структуровані нотатки стають завданнями, крайніми термінами, нагадуваннями та подіями календаря.</string>
     <string name="web_home_meta_title" translatable="false">KnotQ: календар і планувальник організації</string>
     <string name="web_home_pitch_eyebrow" translatable="false">Чому KnotQ</string>

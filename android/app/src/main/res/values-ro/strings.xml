@@ -1478,13 +1478,23 @@
     <string name="web_home_features_schemes_eyebrow" translatable="false">Scheme</string>
     <string name="web_home_features_schemes_image_alt" translatable="false">Editor de schemă KnotQ care arată un document cu hartă de drum produsului cu sarcini, casete de selectare și selectoare de date inline.</string>
     <string name="web_home_features_schemes_title" translatable="false">Planurile dvs. trăiesc ca documente</string>
+    <string name="web_home_hero_chapter_calendar_body" translatable="false">Dă clic pe orice interval orar din calendar.</string>
+    <string name="web_home_hero_chapter_calendar_title" translatable="false">Adaugă un eveniment oriunde în săptămâna ta</string>
+    <string name="web_home_hero_chapter_daily_body" translatable="false">Împarte ziua în sarcini mici și bifează-le pe rând.</string>
+    <string name="web_home_hero_chapter_daily_title" translatable="false">Coada zilei: o pagină nouă în fiecare zi</string>
+    <string name="web_home_hero_chapter_mobile_body" translatable="false">Include un widget pentru ecranul principal.</string>
+    <string name="web_home_hero_chapter_mobile_title" translatable="false">Și pe telefon</string>
+    <string name="web_home_hero_chapter_schedule_body" translatable="false">Apasă {shortcut} pe orice rând dintr-un document.</string>
+    <string name="web_home_hero_chapter_schedule_title" translatable="false">Scrie un rând, apoi dă-i o oră</string>
     <string name="web_home_hero_download_cta" translatable="false">Descarcă</string>
     <string name="web_home_hero_eyebrow" translatable="false">Organizare + Calendar</string>
+    <string name="web_home_hero_headline" translatable="false">Notițe, sarcini și calendar într-un singur spațiu de lucru</string>
     <string name="web_home_hero_image_alt" translatable="false">Calendar KnotQ care arată o săptămână aglomerată cu clase, întâlniri și sarcini scadente.</string>
     <string name="web_home_hero_lead" translatable="false">KnotQ transformă documentele markdown într-un program live.</string>
-    <string name="web_home_hero_meta" translatable="false">gratuit · iOS, Android, macOS, Windows, Linux · sincronizare opțională disponibilă</string>
+    <string name="web_home_hero_meta" translatable="false">iOS, Android, macOS, Windows, Linux</string>
     <string name="web_home_hero_read_guide" translatable="false">Citiți ghidul</string>
     <string name="web_home_hero_title" translatable="false">Mementouri, Sarcini, Evenimente și Planuri într-un spațiu de lucru</string>
+    <string name="web_home_hero_video_label" translatable="false">Înregistrare de ecran KnotQ: adăugarea unui eveniment în calendar, programarea unui rând dintr-un document și Coada zilei.</string>
     <string name="web_home_meta_description" translatable="false">KnotQ este un spațiu de lucru de planificare desktop local-first, unde notele structurate devin sarcini, termene limită, mementouri și evenimente de calendar.</string>
     <string name="web_home_meta_title" translatable="false">KnotQ: calendar și agendă de organizare</string>
     <string name="web_home_pitch_eyebrow" translatable="false">De ce KnotQ</string>

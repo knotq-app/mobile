@@ -1478,13 +1478,23 @@
     <string name="web_home_features_schemes_eyebrow" translatable="false">스킴</string>
     <string name="web_home_features_schemes_image_alt" translatable="false">작업, 체크박스 및 인라인 날짜 선택기가 있는 제품 로드맵 문서를 표시하는 KnotQ 스킴 편집기입니다.</string>
     <string name="web_home_features_schemes_title" translatable="false">계획을 문서로 작성</string>
+    <string name="web_home_hero_chapter_calendar_body" translatable="false">캘린더에서 원하는 시간대를 클릭하세요.</string>
+    <string name="web_home_hero_chapter_calendar_title" translatable="false">한 주 어디에든 일정 추가</string>
+    <string name="web_home_hero_chapter_daily_body" translatable="false">오늘 할 일을 작은 단위로 나누고 하나씩 체크하세요.</string>
+    <string name="web_home_hero_chapter_daily_title" translatable="false">일일 큐: 매일 새로운 페이지</string>
+    <string name="web_home_hero_chapter_mobile_body" translatable="false">홈 화면 위젯도 제공합니다.</string>
+    <string name="web_home_hero_chapter_mobile_title" translatable="false">휴대폰에서도</string>
+    <string name="web_home_hero_chapter_schedule_body" translatable="false">문서의 아무 줄에서나 {shortcut}를 누르세요.</string>
+    <string name="web_home_hero_chapter_schedule_title" translatable="false">한 줄을 쓰고 시간을 지정하세요</string>
     <string name="web_home_hero_download_cta" translatable="false">다운로드</string>
     <string name="web_home_hero_eyebrow" translatable="false">조직 + 캘린더</string>
+    <string name="web_home_hero_headline" translatable="false">메모, 할 일, 캘린더를 하나의 작업 공간에서</string>
     <string name="web_home_hero_image_alt" translatable="false">클래스, 회의 및 기한이 있는 바쁜 주를 보여주는 KnotQ 캘린더입니다.</string>
     <string name="web_home_hero_lead" translatable="false">KnotQ는 마크다운 문서를 실시간 일정으로 변환합니다.</string>
-    <string name="web_home_hero_meta" translatable="false">무료 · iOS, Android, macOS, Windows, Linux · 선택적 동기화 가능</string>
+    <string name="web_home_hero_meta" translatable="false">iOS, Android, macOS, Windows, Linux</string>
     <string name="web_home_hero_read_guide" translatable="false">가이드 읽기</string>
     <string name="web_home_hero_title" translatable="false">알림, 할당, 이벤트 및 계획이 한 워크스페이스에 통합됨</string>
+    <string name="web_home_hero_video_label" translatable="false">KnotQ 화면 녹화: 캘린더에 일정 추가, 문서의 한 줄 일정 지정, 일일 큐.</string>
     <string name="web_home_meta_description" translatable="false">KnotQ는 구조화된 노트가 작업, 기한, 알림 및 캘린더 이벤트로 변환되는 로컬 우선 데스크톱 계획 워크스페이스입니다.</string>
     <string name="web_home_meta_title" translatable="false">KnotQ: 캘린더 및 정리 플래너</string>
     <string name="web_home_pitch_eyebrow" translatable="false">왜 KnotQ인가</string>

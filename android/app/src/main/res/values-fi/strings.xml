@@ -1478,13 +1478,23 @@
     <string name="web_home_features_schemes_eyebrow" translatable="false">Kaaviot</string>
     <string name="web_home_features_schemes_image_alt" translatable="false">KnotQ-kaavion editori näyttää tuotteen etenemissuunnitelma-asiakirjan tehtävillä, valintaruuduilla ja rinnakkaisilla päivämäärän valitsijoilla.</string>
     <string name="web_home_features_schemes_title" translatable="false">Suunnitelmasi elävät asiakirjoina</string>
+    <string name="web_home_hero_chapter_calendar_body" translatable="false">Napsauta mitä tahansa aikaväliä kalenterissa.</string>
+    <string name="web_home_hero_chapter_calendar_title" translatable="false">Lisää tapahtuma mihin tahansa viikkoosi</string>
+    <string name="web_home_hero_chapter_daily_body" translatable="false">Jaa päivä pieniin tehtäviin ja merkitse ne tehdyiksi.</string>
+    <string name="web_home_hero_chapter_daily_title" translatable="false">Päivittäinen jono: uusi sivu joka päivä</string>
+    <string name="web_home_hero_chapter_mobile_body" translatable="false">Mukana kotinäytön widget.</string>
+    <string name="web_home_hero_chapter_mobile_title" translatable="false">Myös puhelimessasi</string>
+    <string name="web_home_hero_chapter_schedule_body" translatable="false">Paina {shortcut} millä tahansa asiakirjan rivillä.</string>
+    <string name="web_home_hero_chapter_schedule_title" translatable="false">Kirjoita rivi ja anna sille aika</string>
     <string name="web_home_hero_download_cta" translatable="false">Lataa</string>
     <string name="web_home_hero_eyebrow" translatable="false">Organisaatio + Kalenteri</string>
+    <string name="web_home_hero_headline" translatable="false">Muistiinpanot, tehtävät ja kalenteri yhdessä työtilassa</string>
     <string name="web_home_hero_image_alt" translatable="false">KnotQ-kalenteri näyttää täynnä olevan viikon luokilla, kokouksilla ja erääntyvillä tehtävillä.</string>
     <string name="web_home_hero_lead" translatable="false">KnotQ muuttaa markdown-asiakirjat live-aikatauluksi.</string>
-    <string name="web_home_hero_meta" translatable="false">ilmainen · iOS, Android, macOS, Windows, Linux · valinnainen synkronointi saatavilla</string>
+    <string name="web_home_hero_meta" translatable="false">iOS, Android, macOS, Windows, Linux</string>
     <string name="web_home_hero_read_guide" translatable="false">Lue opas</string>
     <string name="web_home_hero_title" translatable="false">Muistutukset, tehtävät, tapahtumat ja suunnitelmat yhdessä työtilassa</string>
+    <string name="web_home_hero_video_label" translatable="false">Näyttötallenne KnotQ:sta: tapahtuman lisääminen kalenteriin, rivin ajoittaminen asiakirjassa ja Päivittäinen jono.</string>
     <string name="web_home_meta_description" translatable="false">KnotQ on paikallisen ensimmäisen pöytäkoneen suunnittelutyötila, jossa strukturoidut muistiinpanot tulevat tehtäviksi, määräpäiviksi, muistutuksiksi ja kalenterin tapahtumiksi.</string>
     <string name="web_home_meta_title" translatable="false">KnotQ: kalenteri ja organisoinnin suunnittelija</string>
     <string name="web_home_pitch_eyebrow" translatable="false">Miksi KnotQ</string>

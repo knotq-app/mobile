@@ -1478,13 +1478,23 @@
     <string name="web_home_features_schemes_eyebrow" translatable="false">Skjemaer</string>
     <string name="web_home_features_schemes_image_alt" translatable="false">KnotQ-skjemaredigeringsprogram som viser et produktveikart-dokument med oppgaver, avmerkingsbokser og inline datoveleg.</string>
     <string name="web_home_features_schemes_title" translatable="false">Planene dine lever som dokumenter</string>
+    <string name="web_home_hero_chapter_calendar_body" translatable="false">Klikk på et hvilket som helst tidspunkt i kalenderen.</string>
+    <string name="web_home_hero_chapter_calendar_title" translatable="false">Legg til en hendelse hvor som helst i uken</string>
+    <string name="web_home_hero_chapter_daily_body" translatable="false">Del dagen opp i små oppgaver, og kryss dem av.</string>
+    <string name="web_home_hero_chapter_daily_title" translatable="false">Daglig kø: en ny side hver dag</string>
+    <string name="web_home_hero_chapter_mobile_body" translatable="false">Med widget for Hjem-skjermen.</string>
+    <string name="web_home_hero_chapter_mobile_title" translatable="false">Også på telefonen</string>
+    <string name="web_home_hero_chapter_schedule_body" translatable="false">Trykk {shortcut} på en linje i et dokument.</string>
+    <string name="web_home_hero_chapter_schedule_title" translatable="false">Skriv en linje, og gi den et tidspunkt</string>
     <string name="web_home_hero_download_cta" translatable="false">Last ned</string>
     <string name="web_home_hero_eyebrow" translatable="false">Organisering + Kalender</string>
+    <string name="web_home_hero_headline" translatable="false">Notater, oppgaver og kalender i ett arbeidsområde</string>
     <string name="web_home_hero_image_alt" translatable="false">KnotQ-kalender som viser en pakket uke med klasser, møter og forfalt oppgaver.</string>
     <string name="web_home_hero_lead" translatable="false">KnotQ gjør markdown-dokumenter til en direkteplanlegging.</string>
-    <string name="web_home_hero_meta" translatable="false">Gratis · iOS, Android, macOS, Windows, Linux · valgfri synkronisering tilgjengelig</string>
+    <string name="web_home_hero_meta" translatable="false">iOS, Android, macOS, Windows, Linux</string>
     <string name="web_home_hero_read_guide" translatable="false">Les veiledningen</string>
     <string name="web_home_hero_title" translatable="false">Påminnelser, oppgaver, begivenheter og planer på ett sted</string>
+    <string name="web_home_hero_video_label" translatable="false">Skjermopptak av KnotQ: en hendelse legges til i kalenderen, en linje i et dokument planlegges, og Daglig kø.</string>
     <string name="web_home_meta_description" translatable="false">KnotQ er en lokalt-først-skrivebordsplanleggingsarbeitsflate der strukturerte notater blir oppgaver, frister, påminnelser og kalenderhendelser.</string>
     <string name="web_home_meta_title" translatable="false">KnotQ: kalender og planlegger for organisering</string>
     <string name="web_home_pitch_eyebrow" translatable="false">Hvorfor KnotQ</string>

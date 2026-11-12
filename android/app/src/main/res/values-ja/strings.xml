@@ -1478,13 +1478,23 @@
     <string name="web_home_features_schemes_eyebrow" translatable="false">スキーム</string>
     <string name="web_home_features_schemes_image_alt" translatable="false">タスク、チェックボックス、インラインデートピッカーを含む製品ロードマップドキュメントを表示するKnotQスキームエディター。</string>
     <string name="web_home_features_schemes_title" translatable="false">計画はドキュメントとして生活する</string>
+    <string name="web_home_hero_chapter_calendar_body" translatable="false">カレンダーの好きな時間枠をクリックします。</string>
+    <string name="web_home_hero_chapter_calendar_title" translatable="false">週のどこにでも予定を追加</string>
+    <string name="web_home_hero_chapter_daily_body" translatable="false">今日を小さなタスクに分けて、終わったらチェック。</string>
+    <string name="web_home_hero_chapter_daily_title" translatable="false">Daily Queue：毎日まっさらなページ</string>
+    <string name="web_home_hero_chapter_mobile_body" translatable="false">ホーム画面ウィジェットも使えます。</string>
+    <string name="web_home_hero_chapter_mobile_title" translatable="false">スマートフォンでも</string>
+    <string name="web_home_hero_chapter_schedule_body" translatable="false">ドキュメントの任意の行で {shortcut} を押します。</string>
+    <string name="web_home_hero_chapter_schedule_title" translatable="false">行を書いて、時間を設定</string>
     <string name="web_home_hero_download_cta" translatable="false">ダウンロード</string>
     <string name="web_home_hero_eyebrow" translatable="false">組織化 + カレンダー</string>
+    <string name="web_home_hero_headline" translatable="false">メモ、タスク、カレンダーをひとつのワークスペースに</string>
     <string name="web_home_hero_image_alt" translatable="false">クラス、会議、期限のある課題が詰まった週を表示するKnotQカレンダー。</string>
     <string name="web_home_hero_lead" translatable="false">KnotQはマークダウンドキュメントをライブスケジュールに変えます。</string>
-    <string name="web_home_hero_meta" translatable="false">無料 · iOS、Android、macOS、Windows、Linux · オプションで同期が利用可能</string>
+    <string name="web_home_hero_meta" translatable="false">iOS、Android、macOS、Windows、Linux</string>
     <string name="web_home_hero_read_guide" translatable="false">ガイドを読む</string>
     <string name="web_home_hero_title" translatable="false">リマインダー、課題、イベント、計画を1つのワークスペースで</string>
+    <string name="web_home_hero_video_label" translatable="false">KnotQ の画面録画：カレンダーへの予定追加、ドキュメント内の行のスケジュール設定、Daily Queue。</string>
     <string name="web_home_meta_description" translatable="false">KnotQはローカルファースト デスクトップ計画ワークスペースで、構造化されたメモはタスク、期限、リマインダー、カレンダーイベントになります。</string>
     <string name="web_home_meta_title" translatable="false">KnotQ：カレンダー＆整理プランナー</string>
     <string name="web_home_pitch_eyebrow" translatable="false">KnotQを選ぶ理由</string>

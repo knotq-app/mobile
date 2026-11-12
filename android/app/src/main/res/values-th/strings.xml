@@ -1478,13 +1478,23 @@
     <string name="web_home_features_schemes_eyebrow" translatable="false">โครงการ</string>
     <string name="web_home_features_schemes_image_alt" translatable="false">ตัวแก้ไขโครงการ KnotQ แสดงเอกสารแผนผังผลิตภัณฑ์ที่มีงาน ช่องทำเครื่องหมาย และตัวเลือกวันที่แบบอินไลน์</string>
     <string name="web_home_features_schemes_title" translatable="false">แผนของคุณอยู่เป็นเอกสาร</string>
+    <string name="web_home_hero_chapter_calendar_body" translatable="false">คลิกช่วงเวลาใดก็ได้บนปฏิทิน</string>
+    <string name="web_home_hero_chapter_calendar_title" translatable="false">เพิ่มกิจกรรมได้ทุกช่วงของสัปดาห์</string>
+    <string name="web_home_hero_chapter_daily_body" translatable="false">แบ่งวันนี้เป็นงานเล็ก ๆ แล้วทำเครื่องหมายเมื่อเสร็จ</string>
+    <string name="web_home_hero_chapter_daily_title" translatable="false">คิวรายวัน: หน้าใหม่ทุกวัน</string>
+    <string name="web_home_hero_chapter_mobile_body" translatable="false">มีวิดเจ็ตบนหน้าจอโฮม</string>
+    <string name="web_home_hero_chapter_mobile_title" translatable="false">บนโทรศัพท์ก็ได้</string>
+    <string name="web_home_hero_chapter_schedule_body" translatable="false">กด {shortcut} ที่บรรทัดใดก็ได้ในเอกสาร</string>
+    <string name="web_home_hero_chapter_schedule_title" translatable="false">เขียนหนึ่งบรรทัด แล้วกำหนดเวลา</string>
     <string name="web_home_hero_download_cta" translatable="false">ดาวน์โหลด</string>
     <string name="web_home_hero_eyebrow" translatable="false">องค์กร + ปฏิทิน</string>
+    <string name="web_home_hero_headline" translatable="false">โน้ต งาน และปฏิทินในพื้นที่ทำงานเดียว</string>
     <string name="web_home_hero_image_alt" translatable="false">ปฏิทิน KnotQ แสดงสัปดาห์ที่เต็มไปด้วยชั้นเรียน การประชุม และมอบหมายที่ค้างไว้</string>
     <string name="web_home_hero_lead" translatable="false">KnotQ เปลี่ยนเอกสารมาร์กดาวน์เป็นตารางเวลาที่ใช้ได้</string>
-    <string name="web_home_hero_meta" translatable="false">ฟรี · iOS, Android, macOS, Windows, Linux · ตัวเลือกการซิงค์พร้อมใช้งาน</string>
+    <string name="web_home_hero_meta" translatable="false">iOS, Android, macOS, Windows, Linux</string>
     <string name="web_home_hero_read_guide" translatable="false">อ่านคำแนะนำ</string>
     <string name="web_home_hero_title" translatable="false">การเตือน งาน เหตุการณ์ และแผนในพื้นที่ทำงานเดียว</string>
+    <string name="web_home_hero_video_label" translatable="false">บันทึกหน้าจอของ KnotQ: การเพิ่มกิจกรรมในปฏิทิน การตั้งเวลาให้บรรทัดในเอกสาร และคิวรายวัน</string>
     <string name="web_home_meta_description" translatable="false">KnotQ เป็นพื้นที่ทำงานการวางแผนที่เป็นเครื่องหมายแรกท้องถิ่นซึ่งหมายเหตุที่มีโครงสร้างกลายเป็นงาน เส้นตาย การเตือน และเหตุการณ์ปฏิทิน</string>
     <string name="web_home_meta_title" translatable="false">KnotQ: ปฏิทินและตัววางแผนการจัดระเบียบ</string>
     <string name="web_home_pitch_eyebrow" translatable="false">ทำไมถึง KnotQ</string>
