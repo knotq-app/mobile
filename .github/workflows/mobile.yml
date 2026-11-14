@@ -306,6 +306,8 @@ jobs:
           echo "name=$simulator_name" >> "$GITHUB_OUTPUT"
 
       - name: Run the complete iOS test target
+        env:
+          RESULT_BUNDLE: ${{ runner.temp }}/KnotQMobile-${{ github.run_id }}-${{ strategy.job-index }}.xcresult
         working-directory: app/mobile
         run: >-
           xcodebuild test
@@ -314,6 +316,55 @@ jobs:
           -destination "platform=iOS Simulator,name=${{ steps.ios-simulator.outputs.name }}"
           -only-testing:KnotQMobileTests
           -parallel-testing-enabled NO
+          -resultBundlePath "$RESULT_BUNDLE"
+
+      - name: Print XCTest failure details
+        if: failure()
+        env:
+          RESULT_BUNDLE: ${{ runner.temp }}/KnotQMobile-${{ github.run_id }}-${{ strategy.job-index }}.xcresult
+        run: |
+          if [[ ! -d "$RESULT_BUNDLE" ]]; then
+            echo "No xcresult bundle was produced at $RESULT_BUNDLE"
+            exit 0
+          fi
+          if xcrun xcresulttool get test-results tests --path "$RESULT_BUNDLE" > "$RUNNER_TEMP/ios-test-results.json"; then
+            python3 - "$RUNNER_TEMP/ios-test-results.json" <<'PY'
+          import json
+          import sys
+
+          with open(sys.argv[1]) as source:
+              results = json.load(source)
+
+          failures = []
+
+          def visit(node, parents=()):
+              path = (*parents, node.get("name", "<unnamed>"))
+              if node.get("result") == "Failed":
+                  failures.append({
+                      "test": " > ".join(path),
+                      "type": node.get("nodeType"),
+                      "details": node.get("details"),
+                      "sourceLocation": node.get("sourceLocation"),
+                  })
+              for child in node.get("children", []):
+                  visit(child, path)
+
+          for node in results.get("testNodes", []):
+              visit(node)
+          print(json.dumps(failures or results, indent=2)[:60000])
+          PY
+          else
+            echo "xcresulttool could not decode the test result bundle; the bundle will be uploaded."
+          fi
+
+      - name: Upload XCTest result bundle
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios-test-results-${{ matrix.tz }}
+          path: ${{ runner.temp }}/KnotQMobile-${{ github.run_id }}-${{ strategy.job-index }}.xcresult
+          if-no-files-found: ignore
+          retention-days: 7
 
       # xcodebuild reports a host-app crash only as
       # "Crash: KnotQMobile (<pid>) <external symbol>", which names neither the
