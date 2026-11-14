@@ -269,7 +269,6 @@ jobs:
     env:
       TZ: ${{ matrix.tz }}
       RUST_BACKTRACE: 1
-      IOS_RESULT_BUNDLE: ${{ runner.temp }}/KnotQMobile-${{ github.run_id }}-${{ strategy.job-index }}.xcresult
     steps:
       - name: Check out desktop/shared crates
         uses: actions/checkout@v6
@@ -307,6 +306,8 @@ jobs:
           echo "name=$simulator_name" >> "$GITHUB_OUTPUT"
 
       - name: Run the complete iOS test target
+        env:
+          RESULT_BUNDLE: ${{ runner.temp }}/KnotQMobile-${{ github.run_id }}-${{ strategy.job-index }}.xcresult
         working-directory: app/mobile
         run: >-
           xcodebuild test
@@ -315,7 +316,7 @@ jobs:
           -destination "platform=iOS Simulator,name=${{ steps.ios-simulator.outputs.name }}"
           -only-testing:KnotQMobileTests
           -parallel-testing-enabled NO
-          -resultBundlePath "$IOS_RESULT_BUNDLE"
+          -resultBundlePath "$RESULT_BUNDLE"
 
       - name: Print XCTest failure details
         if: failure()
